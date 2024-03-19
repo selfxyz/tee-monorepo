@@ -1,2 +1,2 @@
-# serverless-gateway-
+# serverless-gateway
 Gateway for Oyster Severless
