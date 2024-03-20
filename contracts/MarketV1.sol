@@ -35,27 +35,21 @@ contract MarketV1 is
 
     //-------------------------------- Overrides start --------------------------------//
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function _grantRole(
-        bytes32 role,
-        address account
-    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) {
-        super._grantRole(role, account);
+    function _grantRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+        return super._grantRole(role, account);
     }
 
-    function _revokeRole(
-        bytes32 role,
-        address account
-    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) {
-        super._revokeRole(role, account);
+    function _revokeRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+        bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0);
+
+        return res;
     }
 
     function _authorizeUpgrade(address /*account*/) internal view override onlyAdmin {}

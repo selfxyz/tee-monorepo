@@ -38,15 +38,17 @@ contract AttestationVerifier is Initializable,  // initializer
         return super.supportsInterface(interfaceId);
     }
 
-    function _grantRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) {
-        super._grantRole(role, account);
+    function _grantRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+        return super._grantRole(role, account);
     }
 
-    function _revokeRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) {
-        super._revokeRole(role, account);
+    function _revokeRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+        bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0, "AV:RR-All admins cant be removed");
+
+        return res;
     }
 
     function _authorizeUpgrade(address /*account*/) onlyAdmin internal view override {}
