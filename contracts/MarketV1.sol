@@ -76,7 +76,7 @@ contract MarketV1 is
         __UUPSUpgradeable_init_unchained();
         __Lock_init_unchained(_selectors, _lockWaitTimes);
 
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
         _updateToken(_token);
     }

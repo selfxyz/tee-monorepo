@@ -68,7 +68,7 @@ contract AttestationAutherSample is Initializable,  // initializer
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(images);
 
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
 //-------------------------------- Initializer start --------------------------------//

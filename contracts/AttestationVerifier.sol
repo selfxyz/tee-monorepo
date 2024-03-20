@@ -68,7 +68,7 @@ contract AttestationVerifier is Initializable,  // initializer
         __AccessControlEnumerable_init_unchained();
         __UUPSUpgradeable_init_unchained();
 
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
         for (uint i = 0; i < enclaveKeys.length; i++) {
             address enclaveKey = enclaveKeys[i];
