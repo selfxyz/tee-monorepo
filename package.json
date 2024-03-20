@@ -1,7 +1,7 @@
 {
-  "name": "@marlinprotocol/contracts",
-  "version": "2.0.0",
-  "description": "Contracts pertaining to Marlin",
+  "name": "@marlinprotocol/oyster-contracts",
+  "version": "1.0.0",
+  "description": "Contracts pertaining to Marlin Oyster",
   "directories": {
     "test": "test"
   },
@@ -17,13 +17,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/marlinprotocol/contracts.git"
+    "url": "https://github.com/marlinprotocol/oyster-contracts.git"
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/marlinprotocol/contracts/issues"
+    "url": "https://github.com/marlinprotocol/oyster-contracts/issues"
   },
-  "homepage": "https://github.com/marlinprotocol/contracts",
+  "homepage": "https://github.com/marlinprotocol/oyster-contracts",
   "dependencies": {
     "@openzeppelin/contracts": "4.9.2",
     "@openzeppelin/contracts-upgradeable": "4.9.2"
