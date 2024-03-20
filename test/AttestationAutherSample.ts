@@ -1,13 +1,13 @@
 import { expect } from "chai";
 import { Signer, Wallet, BigNumber as BN } from "ethers";
 import { ethers, network, upgrades } from "hardhat";
-import { AttestationAutherSample, AttestationAutherUpgradeable } from "../../typechain-types/contracts/enclaves/AttestationAutherSample";
-import { AttestationVerifier } from "../../typechain-types";
-import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
+import { AttestationAutherSample, AttestationAutherUpgradeable } from "../typechain-types/contracts/enclaves/AttestationAutherSample";
+import { AttestationVerifier } from "../typechain-types";
+import { takeSnapshotBeforeAndAfterEveryTest } from "../utils/testSuite";
 import { keccak256, parseUnits, solidityPack } from "ethers/lib/utils";
-import { testERC165 } from "../helpers/erc165";
-import { testAdminRole } from "../helpers/rbac";
-import { getAttestationAutherSample, getAttestationVerifier } from "../../utils/typechainConvertor";
+import { testERC165 } from "./helpers/erc165";
+import { testAdminRole } from "./helpers/rbac";
+import { getAttestationAutherSample, getAttestationVerifier } from "../utils/typechainConvertor";
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 
 

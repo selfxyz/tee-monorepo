@@ -3,11 +3,11 @@ import { BigNumber as BN, Contract, Signer } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
-import { MarketV1 } from "../../typechain-types";
-import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { getMarketV1 } from "../../utils/typechainConvertor";
-import { testERC165 } from "../helpers/erc165";
-import { testAdminRole } from "../helpers/rbac";
+import { MarketV1 } from "../typechain-types";
+import { takeSnapshotBeforeAndAfterEveryTest } from "../utils/testSuite";
+import { getMarketV1 } from "../utils/typechainConvertor";
+import { testERC165 } from "./helpers/erc165";
+import { testAdminRole } from "./helpers/rbac";
 
 declare module "ethers" {
 	interface BigNumber {

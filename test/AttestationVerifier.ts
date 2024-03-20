@@ -1,12 +1,12 @@
 import { expect } from "chai";
 import { Signer, Wallet, BigNumber as BN } from "ethers";
 import { ethers, network, upgrades } from "hardhat";
-import { AttestationVerifier } from "../../typechain-types";
-import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
+import { AttestationVerifier } from "../typechain-types";
+import { takeSnapshotBeforeAndAfterEveryTest } from "../utils/testSuite";
 import { keccak256, parseUnits, solidityPack } from "ethers/lib/utils";
-import { testERC165 } from "../helpers/erc165";
-import { testAdminRole } from "../helpers/rbac";
-import { getAttestationVerifier } from "../../utils/typechainConvertor";
+import { testERC165 } from "./helpers/erc165";
+import { testAdminRole } from "./helpers/rbac";
+import { getAttestationVerifier } from "../utils/typechainConvertor";
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 
 const image1: AttestationVerifier.EnclaveImageStruct = {
