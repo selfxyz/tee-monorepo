@@ -11,7 +11,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 contract Pond is
     Initializable,  // initializer
     ERC20Upgradeable,  // token
-    ERC1967UpgradeUpgradeable,  // delegate slots, proxy admin, private upgrade
     UUPSUpgradeable  // public upgrade
 {
     // in case we add more contracts in the inheritance chain
@@ -28,7 +27,6 @@ contract Pond is
     ) public initializer {
         __Context_init_unchained();
         __ERC20_init_unchained(_name, _symbol);
-        __ERC1967Upgrade_init_unchained();
         __UUPSUpgradeable_init_unchained();
 
         _mint(msg.sender, 10000000000e18);

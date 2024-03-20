@@ -18,7 +18,6 @@ contract MarketV1 is
     ERC165Upgradeable, // supportsInterface
     AccessControlUpgradeable, // RBAC
     AccessControlEnumerableUpgradeable, // RBAC enumeration
-    ERC1967UpgradeUpgradeable, // delegate slots, proxy admin, private upgrade
     UUPSUpgradeable, // public upgrade
     LockUpgradeable // time locks
 {
@@ -75,7 +74,6 @@ contract MarketV1 is
         __ERC165_init_unchained();
         __AccessControl_init_unchained();
         __AccessControlEnumerable_init_unchained();
-        __ERC1967Upgrade_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __Lock_init_unchained(_selectors, _lockWaitTimes);
 

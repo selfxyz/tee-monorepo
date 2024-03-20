@@ -16,7 +16,6 @@ contract AttestationAutherSample is Initializable,  // initializer
     ERC165Upgradeable,  // supportsInterface
     AccessControlUpgradeable,  // RBAC
     AccessControlEnumerableUpgradeable,  // RBAC enumeration
-    ERC1967UpgradeUpgradeable,  // delegate slots, proxy admin, private upgrade
     UUPSUpgradeable,  // public upgrade
     AttestationAutherUpgradeable  // auther
 {
@@ -66,7 +65,6 @@ contract AttestationAutherSample is Initializable,  // initializer
         __ERC165_init_unchained();
         __AccessControl_init_unchained();
         __AccessControlEnumerable_init_unchained();
-        __ERC1967Upgrade_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(images);
 
