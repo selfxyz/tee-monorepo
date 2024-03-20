@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
@@ -237,7 +237,7 @@ contract AttestationVerifier is Initializable,  // initializer
             timestamp
         ));
 
-        address signer = ECDSAUpgradeable.recover(digest, attestation);
+        address signer = ECDSA.recover(digest, attestation);
         bytes32 sourceImageId = isVerified[signer];
 
         require(

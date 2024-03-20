@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
@@ -106,7 +106,7 @@ contract AttestationAutherSample is Initializable,  // initializer
             message
         ));
 
-        address signer = ECDSAUpgradeable.recover(digest, signature);
+        address signer = ECDSA.recover(digest, signature);
 
         _allowOnlyVerified(signer);
     }
