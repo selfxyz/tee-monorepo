@@ -26,6 +26,10 @@ export default {
       url: "https://arb1.arbitrum.io/rpc",
       accounts: process.env.ARBITRUM_DEPLOYER_KEY !== undefined ? [process.env.ARBITRUM_DEPLOYER_KEY] : undefined,
     },
+    arbnova: {
+      url: "https://nova.arbitrum.io/rpc",
+      accounts: process.env.ARBITRUM_NOVA_DEPLOYER_KEY !== undefined ? [process.env.ARBITRUM_NOVA_DEPLOYER_KEY] : undefined,
+    },
     goerli: {
       url: "https://rpc.goerli.dev",
       accounts: process.env.GOERLI_DEPLOYER_KEY !== undefined ? [process.env.GOERLI_DEPLOYER_KEY] : undefined,
@@ -75,6 +79,7 @@ export default {
       arb1: process.env.ARBISCAN_API_KEY,
       arbg: process.env.ARBISCAN_API_KEY,
       arbs: process.env.ARBISCAN_API_KEY,
+      arbnova: process.env.ARBISCAN_API_KEY,
       linea: process.env.LINEASCAN_API_KEY,
       polygon: process.env.POLYGONSCAN_API_KEY,
     },
@@ -91,6 +96,13 @@ export default {
       urls: {
         apiURL: "https://api-sepolia.arbiscan.io/api",
         browserURL: "https://sepolia.arbiscan.io",
+      },
+    }, {
+      network: "arbnova",
+      chainId: 42170,
+      urls: {
+        apiURL: "https://api-nova.arbiscan.io/api",
+        browserURL: "https://nova.arbiscan.io",
       },
     }, {
       network: "arb1",
