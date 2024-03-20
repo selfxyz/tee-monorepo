@@ -226,13 +226,11 @@ describe("AttestationVerifier - Whitelist image", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -287,13 +285,11 @@ describe("AttestationVerifier - Revoke image", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -331,13 +327,11 @@ describe("AttestationVerifier - Whitelist enclave", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -383,13 +377,11 @@ describe("AttestationVerifier - Revoke enclave", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -421,13 +413,11 @@ describe("AttestationVerifier - Verify enclave key", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -554,13 +544,11 @@ describe("AttestationVerifier - Safe verify with params", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -652,13 +640,11 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-        const attestationVerifierContract = await upgrades.deployProxy(
+        attestationVerifier = await upgrades.deployProxy(
             AttestationVerifier,
             [[image1, image2], [addrs[13], addrs[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        attestationVerifier = attestationVerifierContract;
-        // attestationVerifier = getAttestationVerifier(await attestationVerifierContract.getAddress(), signers[0]);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
