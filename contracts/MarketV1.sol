@@ -35,15 +35,29 @@ contract MarketV1 is
 
     //-------------------------------- Overrides start --------------------------------//
 
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function supportsInterface(
+        bytes4 interfaceId
+    )
+        public
+        view
+        virtual
+        override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 
-    function _grantRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function _grantRole(
+        bytes32 role,
+        address account
+    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
         return super._grantRole(role, account);
     }
 
-    function _revokeRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function _revokeRole(
+        bytes32 role,
+        address account
+    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
         bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
@@ -60,7 +74,12 @@ contract MarketV1 is
 
     uint256[50] private __gap_1;
 
-    function initialize(address _admin, IERC20 _token, bytes32[] memory _selectors, uint256[] memory _lockWaitTimes) public initializer {
+    function initialize(
+        address _admin,
+        IERC20 _token,
+        bytes32[] memory _selectors,
+        uint256[] memory _lockWaitTimes
+    ) public initializer {
         require(_selectors.length == _lockWaitTimes.length);
 
         __Context_init_unchained();
@@ -194,7 +213,13 @@ contract MarketV1 is
         token.transfer(_to, _amount);
     }
 
-    function _jobOpen(string memory _metadata, address _owner, address _provider, uint256 _rate, uint256 _balance) internal {
+    function _jobOpen(
+        string memory _metadata,
+        address _owner,
+        address _provider,
+        uint256 _rate,
+        uint256 _balance
+    ) internal {
         _deposit(_owner, _balance);
         uint256 _jobIndex = jobIndex;
         jobIndex = _jobIndex + 1;
@@ -257,7 +282,8 @@ contract MarketV1 is
         _jobSettle(_job);
 
         // leftover adjustment
-        uint256 _leftover = (jobs[_job].rate * lockWaitTime[RATE_LOCK_SELECTOR] + 10 ** EXTRA_DECIMALS - 1) / 10 ** EXTRA_DECIMALS;
+        uint256 _leftover = (jobs[_job].rate * lockWaitTime[RATE_LOCK_SELECTOR] + 10 ** EXTRA_DECIMALS - 1) /
+            10 ** EXTRA_DECIMALS;
         require(jobs[_job].balance >= _leftover, "not enough balance");
         uint256 _maxAmount = jobs[_job].balance - _leftover;
         require(_amount <= _maxAmount, "not enough balance");

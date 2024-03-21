@@ -11,13 +11,14 @@ import "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnume
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./AttestationAutherUpgradeable.sol";
 
-contract AttestationAutherSample is Initializable,  // initializer
-    ContextUpgradeable,  // _msgSender, _msgData
-    ERC165Upgradeable,  // supportsInterface
-    AccessControlUpgradeable,  // RBAC
-    AccessControlEnumerableUpgradeable,  // RBAC enumeration
-    UUPSUpgradeable,  // public upgrade
-    AttestationAutherUpgradeable  // auther
+contract AttestationAutherSample is
+    Initializable, // initializer
+    ContextUpgradeable, // _msgSender, _msgData
+    ERC165Upgradeable, // supportsInterface
+    AccessControlUpgradeable, // RBAC
+    AccessControlEnumerableUpgradeable, // RBAC enumeration
+    UUPSUpgradeable, // public upgrade
+    AttestationAutherUpgradeable // auther
 {
     // in case we add more contracts in the inheritance chain
     uint256[500] private __gap_0;
@@ -25,26 +26,41 @@ contract AttestationAutherSample is Initializable,  // initializer
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
-    constructor(IAttestationVerifier attestationVerifier, uint256 maxAge)
-        initializer
-        AttestationAutherUpgradeable(attestationVerifier, maxAge) {}
+    constructor(
+        IAttestationVerifier attestationVerifier,
+        uint256 maxAge
+    ) initializer AttestationAutherUpgradeable(attestationVerifier, maxAge) {}
 
     modifier onlyAdmin() {
         require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");
         _;
     }
 
-//-------------------------------- Overrides start --------------------------------//
+    //-------------------------------- Overrides start --------------------------------//
 
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function supportsInterface(
+        bytes4 interfaceId
+    )
+        public
+        view
+        virtual
+        override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 
-    function _grantRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function _grantRole(
+        bytes32 role,
+        address account
+    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
         return super._grantRole(role, account);
     }
 
-    function _revokeRole(bytes32 role, address account) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
+    function _revokeRole(
+        bytes32 role,
+        address account
+    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
         bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
@@ -53,11 +69,11 @@ contract AttestationAutherSample is Initializable,  // initializer
         return res;
     }
 
-    function _authorizeUpgrade(address /*account*/) onlyAdmin internal view override {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyAdmin {}
 
-//-------------------------------- Overrides end --------------------------------//
+    //-------------------------------- Overrides end --------------------------------//
 
-//-------------------------------- Initializer start --------------------------------//
+    //-------------------------------- Initializer start --------------------------------//
 
     function initialize(EnclaveImage[] memory images, address _admin) external initializer {
         require(images.length != 0, "AAS:I-At least one image necessary");
@@ -73,11 +89,15 @@ contract AttestationAutherSample is Initializable,  // initializer
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
-//-------------------------------- Initializer start --------------------------------//
+    //-------------------------------- Initializer start --------------------------------//
 
-//-------------------------------- Admin methods start --------------------------------//
+    //-------------------------------- Admin methods start --------------------------------//
 
-    function whitelistEnclaveImage(bytes memory PCR0, bytes memory PCR1, bytes memory PCR2) external onlyAdmin returns (bytes32) {
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyAdmin returns (bytes32) {
         return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
@@ -93,25 +113,19 @@ contract AttestationAutherSample is Initializable,  // initializer
         return _revokeEnclaveKey(enclavePubKey);
     }
 
-//-------------------------------- Admin methods end --------------------------------//
+    //-------------------------------- Admin methods end --------------------------------//
 
-//-------------------------------- Open methods start -------------------------------//
+    //-------------------------------- Open methods start -------------------------------//
 
     string public constant SIGNATURE_PREFIX = "attestation-auther-sample-";
 
-    function verify(
-        bytes memory signature, 
-        string memory message
-    ) external view {
-        bytes32 digest = keccak256(abi.encodePacked(
-            SIGNATURE_PREFIX,
-            message
-        ));
+    function verify(bytes memory signature, string memory message) external view {
+        bytes32 digest = keccak256(abi.encodePacked(SIGNATURE_PREFIX, message));
 
         address signer = ECDSA.recover(digest, signature);
 
         _allowOnlyVerified(signer);
     }
 
-//-------------------------------- Open methods end -------------------------------//
+    //-------------------------------- Open methods end -------------------------------//
 }

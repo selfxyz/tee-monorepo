@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./interfaces/IAttestationVerifier.sol";
 
 contract AttestationAutherUpgradeable is
-    Initializable  // initializer
+    Initializable // initializer
 {
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IAttestationVerifier public immutable ATTESTATION_VERIFIER;
@@ -50,11 +50,9 @@ contract AttestationAutherUpgradeable is
         return address(uint160(uint256(hash)));
     }
 
-    function _whitelistEnclaveImage(EnclaveImage memory image) internal returns(bytes32) {
+    function _whitelistEnclaveImage(EnclaveImage memory image) internal returns (bytes32) {
         require(
-            image.PCR0.length == 48 &&
-            image.PCR1.length == 48 &&
-            image.PCR2.length == 48,
+            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48,
             "AA:WI-PCR values must be 48 bytes"
         );
 
@@ -98,16 +96,10 @@ contract AttestationAutherUpgradeable is
         uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) internal {
-        require(
-            whitelistedImages[imageId].PCR0.length != 0,
-            "AA:VK-Enclave image to verify not whitelisted"
-        );
+        require(whitelistedImages[imageId].PCR0.length != 0, "AA:VK-Enclave image to verify not whitelisted");
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        require(
-            verifiedKeys[enclaveKey] == bytes32(0),
-            "AA:VK-Enclave key already verified"
-        );
-        require(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE , "AA:VK-Attestation too old");
+        require(verifiedKeys[enclaveKey] == bytes32(0), "AA:VK-Enclave key already verified");
+        require(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE, "AA:VK-Attestation too old");
 
         EnclaveImage memory image = whitelistedImages[imageId];
         ATTESTATION_VERIFIER.verify(
@@ -138,14 +130,8 @@ contract AttestationAutherUpgradeable is
 
     function _allowOnlyVerified(address key) internal view {
         bytes32 imageId = verifiedKeys[key];
-        require(
-            imageId != bytes32(0),
-            "AA:AOV-Enclave key must be verified"
-        );
-        require(
-            whitelistedImages[imageId].PCR0.length != 0,
-            "AA:AOV-Source image must be whitelisted"
-        );
+        require(imageId != bytes32(0), "AA:AOV-Enclave key must be verified");
+        require(whitelistedImages[imageId].PCR0.length != 0, "AA:AOV-Source image must be whitelisted");
     }
 
     function getWhitelistedImage(bytes32 _imageId) external view returns (EnclaveImage memory) {
