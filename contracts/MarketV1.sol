@@ -172,6 +172,12 @@ contract MarketV1 is
 
     uint256[47] private __gap_3;
 
+    error MarketV1JobOnlyOwner();
+    error MarketV1JobNotFound();
+    error MarketV1JobNotEnoughBalance();
+    error MarketV1JobNonZeroRate();
+    error MarketV1JobNoRequest();
+
     event TokenUpdated(IERC20 indexed oldToken, IERC20 indexed newToken);
 
     event JobOpened(
@@ -193,7 +199,7 @@ contract MarketV1 is
     event JobMetadataUpdated(bytes32 indexed job, string metadata);
 
     modifier onlyJobOwner(bytes32 _job) {
-        require(jobs[_job].owner == _msgSender(), "only job owner");
+        if (!(jobs[_job].owner == _msgSender())) revert MarketV1JobOnlyOwner();
         _;
     }
 
@@ -265,7 +271,7 @@ contract MarketV1 is
     }
 
     function _jobDeposit(bytes32 _job, address _from, uint256 _amount) internal {
-        require(jobs[_job].owner != address(0), "not found");
+        if (!(jobs[_job].owner != address(0))) revert MarketV1JobNotFound();
 
         _deposit(_from, _amount);
         jobs[_job].balance += _amount;
@@ -274,16 +280,16 @@ contract MarketV1 is
     }
 
     function _jobWithdraw(bytes32 _job, address _to, uint256 _amount) internal {
-        require(jobs[_job].owner != address(0), "not found");
+        if (!(jobs[_job].owner != address(0))) revert MarketV1JobNotFound();
 
         _jobSettle(_job);
 
         // leftover adjustment
         uint256 _leftover = (jobs[_job].rate * _lockWaitTime(RATE_LOCK_SELECTOR) + 10 ** EXTRA_DECIMALS - 1) /
             10 ** EXTRA_DECIMALS;
-        require(jobs[_job].balance >= _leftover, "not enough balance");
+        if (!(jobs[_job].balance >= _leftover)) revert MarketV1JobNotEnoughBalance();
         uint256 _maxAmount = jobs[_job].balance - _leftover;
-        require(_amount <= _maxAmount, "not enough balance");
+        if (!(_amount <= _maxAmount)) revert MarketV1JobNotEnoughBalance();
 
         jobs[_job].balance -= _amount;
         _withdraw(_to, _amount);
@@ -292,7 +298,7 @@ contract MarketV1 is
     }
 
     function _jobReviseRate(bytes32 _job, uint256 _newRate) internal {
-        require(jobs[_job].owner != address(0), "not found");
+        if (!(jobs[_job].owner != address(0))) revert MarketV1JobNotFound();
 
         _jobSettle(_job);
 
@@ -323,7 +329,7 @@ contract MarketV1 is
         // non-0 rate jobs can be closed after proper notice
         uint256 _newRate = _unlock(RATE_LOCK_SELECTOR, _job);
         // 0 rate implies closing to the control plane
-        require(_newRate == 0, "rate should be zero");
+        if (!(_newRate == 0)) revert MarketV1JobNonZeroRate();
 
         return _jobClose(_job);
     }
@@ -342,7 +348,7 @@ contract MarketV1 is
     }
 
     function jobReviseRateCancel(bytes32 _job) external onlyJobOwner(_job) {
-        require(_lockStatus(RATE_LOCK_SELECTOR, _job) != LockStatus.None, "no request");
+        if (!(_lockStatus(RATE_LOCK_SELECTOR, _job) != LockStatus.None)) revert MarketV1JobNoRequest();
         _revertLock(RATE_LOCK_SELECTOR, _job);
         emit JobReviseRateCancelled(_job);
     }
