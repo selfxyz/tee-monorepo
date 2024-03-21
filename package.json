@@ -40,6 +40,7 @@
     "@types/chai": "^4.3.13",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.30",
+    "@types/yargs": "^17.0.32",
     "chai": "^4.4.1",
     "dotenv": "^16.4.5",
     "ethereum-waffle": "^4.0.10",
@@ -50,6 +51,7 @@
     "solidity-coverage": "^0.8.11",
     "ts-node": "^10.9.2",
     "typechain": "^8.3.2",
-    "typescript": "^5.4.2"
+    "typescript": "^5.4.2",
+    "yargs": "^17.7.2"
   }
 }
