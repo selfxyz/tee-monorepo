@@ -198,10 +198,6 @@ contract MarketV1 is
         token = _token;
     }
 
-    function updateToken(IERC20 _token) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _updateToken(_token);
-    }
-
     function _deposit(address _from, uint256 _amount) internal {
         token.transferFrom(_from, address(this), _amount);
     }
