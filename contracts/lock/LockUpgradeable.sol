@@ -16,7 +16,7 @@ contract LockUpgradeable is
     /// @custom:storage-location erc7201:marlin.oyster.storage.Lock
     struct LockStorage {
         mapping(bytes32 => Lock) locks;
-        mapping(bytes32 => uint256) lockWaitTime;
+        mapping(bytes32 => uint256) lockWaitTimes;
     }
 
     // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.Lock")) - 1)) & ~bytes32(uint256(0xff))
@@ -50,7 +50,7 @@ contract LockUpgradeable is
     function _lockWaitTime(bytes32 _lockId) internal view returns (uint256) {
         LockStorage storage $ = _getLockStorage();
 
-        return $.lockWaitTime[_lockId];
+        return $.lockWaitTimes[_lockId];
     }
 
     function _lockStatus(bytes32 _selector, bytes32 _key) internal view returns (LockStatus) {
@@ -72,7 +72,7 @@ contract LockUpgradeable is
 
         require(_lockStatus(_selector, _key) == LockStatus.None);
 
-        uint256 _duration = $.lockWaitTime[_selector];
+        uint256 _duration = $.lockWaitTimes[_selector];
         bytes32 _lockId = keccak256(abi.encodePacked(_selector, _key));
         uint256 _unlockTime = block.timestamp + _duration;
         $.locks[_lockId].unlockTime = _unlockTime;
@@ -118,8 +118,8 @@ contract LockUpgradeable is
     function _updateLockWaitTime(bytes32 _selector, uint256 _newLockWaitTime) internal {
         LockStorage storage $ = _getLockStorage();
 
-        emit LockWaitTimeUpdated(_selector, $.lockWaitTime[_selector], _newLockWaitTime);
-        $.lockWaitTime[_selector] = _newLockWaitTime;
+        emit LockWaitTimeUpdated(_selector, $.lockWaitTimes[_selector], _newLockWaitTime);
+        $.lockWaitTimes[_selector] = _newLockWaitTime;
     }
 
     function _updateLockWaitTimes(bytes32[] memory _selectors, uint256[] memory _newLockWaitTimes) internal {
