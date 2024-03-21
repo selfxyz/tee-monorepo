@@ -24,9 +24,11 @@ contract MarketV1 is
     uint256[500] private __gap_0;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
+    // disable all initializers and reinitializers
     // safeguard against takeover of the logic contract
-    constructor() initializer {}
+    constructor() {
+        _disableInitializers();
+    }
 
     modifier onlyAdmin() {
         require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");

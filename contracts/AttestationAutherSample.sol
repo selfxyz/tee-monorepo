@@ -24,12 +24,14 @@ contract AttestationAutherSample is
     uint256[500] private __gap_0;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
+    // disable all initializers and reinitializers
     // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier,
         uint256 maxAge
-    ) initializer AttestationAutherUpgradeable(attestationVerifier, maxAge) {}
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
+        _disableInitializers();
+    }
 
     modifier onlyAdmin() {
         require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");

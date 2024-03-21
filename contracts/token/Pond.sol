@@ -17,9 +17,11 @@ contract Pond is
     uint256[500] private __gap0;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
+    // disable all initializers and reinitializers
     // safeguard against takeover of the logic contract
-    constructor() initializer {}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(string memory _name, string memory _symbol) public initializer {
         __Context_init_unchained();
