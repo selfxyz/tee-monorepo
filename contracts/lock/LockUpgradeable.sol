@@ -35,6 +35,8 @@ contract LockUpgradeable is
     }
 
     error LockLengthMismatch();
+    error LockShouldBeNone();
+    error LockShouldBeUnlocked();
 
     event LockWaitTimeUpdated(bytes32 indexed selector, uint256 prevLockTime, uint256 updatedLockTime);
     event LockCreated(bytes32 indexed selector, bytes32 indexed key, uint256 iValue, uint256 unlockTime);
@@ -74,7 +76,7 @@ contract LockUpgradeable is
     function _lock(bytes32 _selector, bytes32 _key, uint256 _iValue) internal returns (uint256) {
         LockStorage storage $ = _getLockStorage();
 
-        require(_lockStatus(_selector, _key) == LockStatus.None);
+        if (!(_lockStatus(_selector, _key) == LockStatus.None)) revert LockShouldBeNone();
 
         uint256 _duration = $.lockWaitTimes[_selector];
         bytes32 _lockId = keccak256(abi.encodePacked(_selector, _key));
@@ -100,7 +102,7 @@ contract LockUpgradeable is
     }
 
     function _unlock(bytes32 _selector, bytes32 _key) internal returns (uint256) {
-        require(_lockStatus(_selector, _key) == LockStatus.Unlocked);
+        if (!(_lockStatus(_selector, _key) == LockStatus.Unlocked)) revert LockShouldBeUnlocked();
         return _revertLock(_selector, _key);
     }
 
