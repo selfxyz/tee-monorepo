@@ -103,13 +103,17 @@ contract MarketV1 is
 
     uint256[49] private __gap_2;
 
+    error MarketV1ProviderNotFound();
+    error MarketV1ProviderAlreadyExists();
+    error MarketV1ProviderInvalidCp();
+
     event ProviderAdded(address indexed provider, string cp);
     event ProviderRemoved(address indexed provider);
     event ProviderUpdatedWithCp(address indexed provider, string newCp);
 
     function _providerAdd(address _provider, string memory _cp) internal {
-        require(bytes(providers[_provider].cp).length == 0, "already exists");
-        require(bytes(_cp).length != 0, "invalid");
+        if (!(bytes(providers[_provider].cp).length == 0)) revert MarketV1ProviderAlreadyExists();
+        if (!(bytes(_cp).length != 0)) revert MarketV1ProviderInvalidCp();
 
         providers[_provider] = Provider(_cp);
 
@@ -117,7 +121,7 @@ contract MarketV1 is
     }
 
     function _providerRemove(address _provider) internal {
-        require(bytes(providers[_provider].cp).length != 0, "not found");
+        if (!(bytes(providers[_provider].cp).length != 0)) revert MarketV1ProviderNotFound();
 
         delete providers[_provider];
 
@@ -125,8 +129,8 @@ contract MarketV1 is
     }
 
     function _providerUpdateWithCp(address _provider, string memory _cp) internal {
-        require(bytes(providers[_provider].cp).length != 0, "not found");
-        require(bytes(_cp).length != 0, "invalid");
+        if (!(bytes(providers[_provider].cp).length != 0)) revert MarketV1ProviderNotFound();
+        if (!(bytes(_cp).length != 0)) revert MarketV1ProviderInvalidCp();
 
         providers[_provider].cp = _cp;
 
