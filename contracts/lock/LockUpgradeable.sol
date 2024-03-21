@@ -6,8 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 
 contract LockUpgradeable is
-    Initializable, // initializer
-    ContextUpgradeable // _msgSender, _msgData
+    Initializable // initializer
 {
     struct Lock {
         uint256 unlockTime;
