@@ -32,6 +32,8 @@ contract AttestationVerifier is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    error AttestationVerifierCannotRemoveAllAdmins();
+
     function supportsInterface(
         bytes4 interfaceId
     )
@@ -58,7 +60,7 @@ contract AttestationVerifier is
         bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
-        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0, "AV:RR-All admins cant be removed");
+        if (!(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0)) revert AttestationVerifierCannotRemoveAllAdmins();
 
         return res;
     }
@@ -69,6 +71,10 @@ contract AttestationVerifier is
 
     //-------------------------------- Initializer start --------------------------------//
 
+    error AttestationVerifierNoImageProvided();
+    error AttestationVerifierInitLengthMismatch();
+    error AttestationVerifierInvalidAdmin();
+
     function initialize(
         EnclaveImage[] memory images,
         address[] memory enclaveKeys,
@@ -76,9 +82,9 @@ contract AttestationVerifier is
     ) external initializer {
         // The images and their enclave keys are whitelisted without verification that enclave keys are created within
         // the enclave. This is to initialize chain of trust and will be replaced with a more robust solution.
-        require(images.length != 0, "AV:I-At least one image must be provided");
-        require(images.length == enclaveKeys.length, "AV:I-Image and key length mismatch");
-        require(_admin != address(0), "AV:I-At least one admin necessary");
+        if (!(images.length != 0)) revert AttestationVerifierNoImageProvided();
+        if (!(images.length == enclaveKeys.length)) revert AttestationVerifierInitLengthMismatch();
+        if (!(_admin != address(0))) revert AttestationVerifierInvalidAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -125,26 +131,32 @@ contract AttestationVerifier is
 
     //-------------------------------- Admin methods start --------------------------------//
 
+    error AttestationVerifierImageNotWhitelisted();
+    error AttestationVerifierImageAlreadyWhitelisted();
+    error AttestationVerifierKeyNotVerified();
+    error AttestationVerifierKeyAlreadyVerified();
+    error AttestationVerifierKeyInvalid();
+
     function whitelistImage(bytes memory PCR0, bytes memory PCR1, bytes memory PCR2) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _whitelistImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
     function revokeWhitelistedImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(whitelistedImages[imageId].PCR0.length != 0, "AV:RWI-Image not whitelisted");
+        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
         delete whitelistedImages[imageId];
         emit WhitelistedImageRevoked(imageId);
     }
 
     function whitelistEnclave(bytes32 imageId, address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(whitelistedImages[imageId].PCR0.length != 0, "AV:WE-Image not whitelisted");
-        require(isVerified[enclaveKey] == bytes32(0), "AV:WE-Enclave key already verified");
-        require(enclaveKey != address(0), "AV:WE-Invalid enclave key");
+        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
+        if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
+        if (!(enclaveKey != address(0))) revert AttestationVerifierKeyInvalid();
         isVerified[enclaveKey] = imageId;
         emit EnclaveKeyWhitelisted(imageId, enclaveKey);
     }
 
     function revokeWhitelistedEnclave(address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(isVerified[enclaveKey] != bytes32(0), "AV:RWE-Enclave key not verified");
+        if (!(isVerified[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
         bytes32 imageId = isVerified[enclaveKey];
         delete isVerified[enclaveKey];
         emit WhitelistedEnclaveKeyRevoked(imageId, enclaveKey);
@@ -156,6 +168,8 @@ contract AttestationVerifier is
 
     uint256 public constant MAX_AGE = 300;
 
+    error AttestationVerifierAttestationTooOld();
+
     // This function is used to add enclave key of a whitelisted image to the list of verified enclave keys.
     function verifyEnclaveKey(
         bytes memory attestation,
@@ -166,10 +180,11 @@ contract AttestationVerifier is
         // in milliseconds
         uint256 timestamp
     ) external {
-        require(timestamp / 1000 > block.timestamp - MAX_AGE, "AV:V-Attestation too old");
-        require(whitelistedImages[imageId].PCR0.length != 0, "AV:V-Enclave image to verify not whitelisted");
+        if (!(timestamp / 1000 > block.timestamp - MAX_AGE)) revert AttestationVerifierAttestationTooOld();
+        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
+
         address enclaveKey = pubKeyToAddress(enclavePubKey);
-        require(isVerified[enclaveKey] == bytes32(0), "AV:V-Enclave key already verified");
+        if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
 
         EnclaveImage memory image = whitelistedImages[imageId];
         _verify(attestation, enclavePubKey, image, enclaveCPUs, enclaveMemory, timestamp);
@@ -215,14 +230,16 @@ contract AttestationVerifier is
 
     //-------------------------------- Internal methods start -------------------------------//
 
+    error AttestationVerifierPCRsInvalid();
+    error AttestationVerifierDoesNotVerify();
+
     function _whitelistImage(EnclaveImage memory image) internal returns (bytes32) {
-        require(
-            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48,
-            "AV:IWI-PCR values must be 48 bytes"
-        );
+        if (!(
+            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48
+        )) revert AttestationVerifierPCRsInvalid();
 
         bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
-        require(whitelistedImages[imageId].PCR0.length == 0, "AV:IWI-image already whitelisted");
+        if(!(whitelistedImages[imageId].PCR0.length == 0)) revert AttestationVerifierImageAlreadyWhitelisted();
         whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
         emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
         return imageId;
@@ -252,16 +269,17 @@ contract AttestationVerifier is
         address signer = ECDSA.recover(digest, attestation);
         bytes32 sourceImageId = isVerified[signer];
 
-        require(
-            sourceImageId != bytes32(0) && whitelistedImages[sourceImageId].PCR0.length != 0,
-            "AV:V-invalid attestation or unwhitelisted image/signer"
-        );
+        if (!(
+            sourceImageId != bytes32(0) && whitelistedImages[sourceImageId].PCR0.length != 0
+        )) revert AttestationVerifierDoesNotVerify();
     }
 
     //-------------------------------- Internal methods end -------------------------------//
 
+    error AttestationVerifierPubkeyLengthInvalid();
+
     function pubKeyToAddress(bytes memory pubKey) public pure returns (address) {
-        require(pubKey.length == 64, "Invalid public key length");
+        if (!(pubKey.length == 64)) revert AttestationVerifierPubkeyLengthInvalid();
 
         bytes32 hash = keccak256(pubKey);
         return address(uint160(uint256(hash)));
