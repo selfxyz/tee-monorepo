@@ -169,7 +169,7 @@ describe("MarketV1", function() {
 	it("cannot register as provider with empty cp", async () => {
 		await expect(
 			marketv1.connect(signers[1]).providerAdd(""),
-		).to.be.revertedWith("invalid");
+		).to.be.revertedWithCustomError(marketv1, "MarketV1ProviderInvalidCp");
 	});
 
 	it("cannot register as provider if already registered", async () => {
@@ -177,7 +177,7 @@ describe("MarketV1", function() {
 
 		await expect(
 			marketv1.connect(signers[1]).providerAdd("https://example.com/"),
-		).to.be.revertedWith("already exists");
+		).to.be.revertedWithCustomError(marketv1, "MarketV1ProviderAlreadyExists");
 	});
 });
 
@@ -216,7 +216,7 @@ describe("MarketV1", function() {
 	it("cannot unregister as provider if never registered", async () => {
 		await expect(
 			marketv1.connect(signers[1]).providerRemove(),
-		).to.be.revertedWith("not found");
+		).to.be.revertedWithCustomError(marketv1, "MarketV1ProviderNotFound");
 	});
 
 	it("cannot register as provider if already unregistered", async () => {
@@ -225,7 +225,7 @@ describe("MarketV1", function() {
 
 		await expect(
 			marketv1.connect(signers[1]).providerRemove(),
-		).to.be.revertedWith("not found");
+		).to.be.revertedWithCustomError(marketv1, "MarketV1ProviderNotFound");
 	});
 });
 
@@ -269,7 +269,7 @@ describe("MarketV1", function() {
 		await marketv1.connect(signers[1]).providerAdd("https://example.com/");
 		await expect(
 			marketv1.connect(signers[1]).providerUpdateWithCp(""),
-		).to.be.revertedWith("invalid");
+		).to.be.revertedWithCustomError(marketv1, "MarketV1ProviderInvalidCp");
 	});
 
 	it("cannot update if never registered", async () => {
@@ -277,7 +277,7 @@ describe("MarketV1", function() {
 			marketv1
 				.connect(signers[1])
 				.providerUpdateWithCp("https://example.com/new"),
-		).to.be.revertedWith("not found");
+		).to.be.revertedWithCustomError(marketv1, "MarketV1ProviderNotFound");
 	});
 });
 
