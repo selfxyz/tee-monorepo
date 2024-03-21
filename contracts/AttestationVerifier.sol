@@ -156,7 +156,7 @@ contract AttestationVerifier is
     }
 
     function revokeWhitelistedEnclave(address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!(isVerified[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
+        if (!(isVerified[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyNotVerified();
         bytes32 imageId = isVerified[enclaveKey];
         delete isVerified[enclaveKey];
         emit WhitelistedEnclaveKeyRevoked(imageId, enclaveKey);
