@@ -30,11 +30,6 @@ contract AttestationVerifier is
         _disableInitializers();
     }
 
-    modifier onlyAdmin() {
-        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");
-        _;
-    }
-
     //-------------------------------- Overrides start --------------------------------//
 
     function supportsInterface(
@@ -68,7 +63,7 @@ contract AttestationVerifier is
         return res;
     }
 
-    function _authorizeUpgrade(address /*account*/) internal view override onlyAdmin {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -130,17 +125,17 @@ contract AttestationVerifier is
 
     //-------------------------------- Admin methods start --------------------------------//
 
-    function whitelistImage(bytes memory PCR0, bytes memory PCR1, bytes memory PCR2) external onlyAdmin {
+    function whitelistImage(bytes memory PCR0, bytes memory PCR1, bytes memory PCR2) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _whitelistImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
-    function revokeWhitelistedImage(bytes32 imageId) external onlyAdmin {
+    function revokeWhitelistedImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(whitelistedImages[imageId].PCR0.length != 0, "AV:RWI-Image not whitelisted");
         delete whitelistedImages[imageId];
         emit WhitelistedImageRevoked(imageId);
     }
 
-    function whitelistEnclave(bytes32 imageId, address enclaveKey) external onlyAdmin {
+    function whitelistEnclave(bytes32 imageId, address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(whitelistedImages[imageId].PCR0.length != 0, "AV:WE-Image not whitelisted");
         require(isVerified[enclaveKey] == bytes32(0), "AV:WE-Enclave key already verified");
         require(enclaveKey != address(0), "AV:WE-Invalid enclave key");
@@ -148,7 +143,7 @@ contract AttestationVerifier is
         emit EnclaveKeyWhitelisted(imageId, enclaveKey);
     }
 
-    function revokeWhitelistedEnclave(address enclaveKey) external onlyAdmin {
+    function revokeWhitelistedEnclave(address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(isVerified[enclaveKey] != bytes32(0), "AV:RWE-Enclave key not verified");
         bytes32 imageId = isVerified[enclaveKey];
         delete isVerified[enclaveKey];
