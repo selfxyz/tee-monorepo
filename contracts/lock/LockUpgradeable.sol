@@ -53,6 +53,10 @@ contract LockUpgradeable is
         return $.lockWaitTimes[_lockId];
     }
 
+    function lockWaitTime(bytes32 _lockId) public view returns (uint256) {
+        return _lockWaitTime(_lockId);
+    }
+
     function _lockStatus(bytes32 _selector, bytes32 _key) internal view returns (LockStatus) {
         LockStorage storage $ = _getLockStorage();
 
