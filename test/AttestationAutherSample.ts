@@ -1,8 +1,7 @@
 import { expect } from "chai";
 import { Signer, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherSample, AttestationAutherUpgradeable } from "../typechain-types/contracts/enclaves/AttestationAutherSample";
-import { AttestationVerifier } from "../typechain-types";
+import { AttestationVerifier, AttestationAutherUpgradeable, AttestationAutherSample } from "../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../utils/testSuite";
 import { keccak256, solidityPacked } from "ethers";
 import { testERC165 } from "./helpers/erc165";
