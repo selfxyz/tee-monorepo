@@ -60,7 +60,7 @@ describe("MarketV1", function() {
 				[addrs[0], addrs[11], SELECTORS, [...WAIT_TIMES, 0]],
 				{ kind: "uups" },
 			),
-		).to.be.reverted;
+		).to.be.revertedWithCustomError(MarketV1, "MarketV1InitLengthMismatch");
 	});
 
 	it("upgrades", async function() {
@@ -909,7 +909,7 @@ describe("MarketV1", function() {
 			.jobReviseRateInitiate(ethers.ZeroHash, 2);
 		await expect(marketv1
 			.connect(signers[1])
-			.jobReviseRateInitiate(ethers.ZeroHash, 2)).to.be.reverted;
+			.jobReviseRateInitiate(ethers.ZeroHash, 2)).to.be.revertedWithCustomError(marketv1, "LockShouldBeNone");
 	});
 
 	it("cannot initiate rate revision for non existent job", async () => {
@@ -1204,7 +1204,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobReviseRateFinalize(ethers.ZeroHash)).to.be.reverted;
+			.jobReviseRateFinalize(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "LockShouldBeUnlocked");
 	});
 
 	it("cannot finalize rate revision for non existent job", async () => {
@@ -1439,7 +1439,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobClose(ethers.ZeroHash)).to.be.reverted;
+			.jobClose(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "LockShouldBeUnlocked");
 	});
 
 	it("cannot close non existent job", async () => {
