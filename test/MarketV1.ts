@@ -95,7 +95,7 @@ describe("MarketV1", function() {
 			upgrades.upgradeProxy(await marketv1.getAddress(), MarketV1.connect(signers[1]), {
 				kind: "uups",
 			}),
-		).to.be.revertedWith("only admin");
+		).to.be.revertedWithCustomError(marketv1, "AccessControlUnauthorizedAccount");
 	});
 });
 
