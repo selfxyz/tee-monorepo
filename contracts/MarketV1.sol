@@ -30,11 +30,6 @@ contract MarketV1 is
         _disableInitializers();
     }
 
-    modifier onlyAdmin() {
-        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");
-        _;
-    }
-
     //-------------------------------- Overrides start --------------------------------//
 
     function supportsInterface(
@@ -68,7 +63,7 @@ contract MarketV1 is
         return res;
     }
 
-    function _authorizeUpgrade(address /*account*/) internal view override onlyAdmin {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -203,7 +198,7 @@ contract MarketV1 is
         token = _token;
     }
 
-    function updateToken(IERC20 _token) external onlyAdmin {
+    function updateToken(IERC20 _token) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _updateToken(_token);
     }
 
