@@ -176,7 +176,7 @@ describe("AttestationVerifier - Init", function() {
             upgrades.upgradeProxy(await attestationVerifier.getAddress(), AttestationVerifier.connect(signers[1]), {
                 kind: "uups",
             }),
-        ).to.be.revertedWith("only admin");
+        ).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 });
 
@@ -236,7 +236,7 @@ describe("AttestationVerifier - Whitelist image", function() {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("non admin cannot whitelist image", async function() {
-        await expect(attestationVerifier.connect(signers[1]).whitelistImage(image3.PCR0, image3.PCR1, image3.PCR2)).to.be.revertedWith("only admin");
+        await expect(attestationVerifier.connect(signers[1]).whitelistImage(image3.PCR0, image3.PCR1, image3.PCR2)).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
     it("admin can whitelist image", async function() {
@@ -295,7 +295,7 @@ describe("AttestationVerifier - Revoke image", function() {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("non admin cannot revoke image", async function() {
-        await expect(attestationVerifier.connect(signers[1]).revokeWhitelistedImage(getImageId(image1))).to.be.revertedWith("only admin");
+        await expect(attestationVerifier.connect(signers[1]).revokeWhitelistedImage(getImageId(image1))).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
     it("admin can revoke image", async function() {
@@ -337,7 +337,7 @@ describe("AttestationVerifier - Whitelist enclave", function() {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("non admin cannot whitelist enclave", async function() {
-        await expect(attestationVerifier.connect(signers[1]).whitelistEnclave(getImageId(image1), addrs[15])).to.be.revertedWith("only admin");
+        await expect(attestationVerifier.connect(signers[1]).whitelistEnclave(getImageId(image1), addrs[15])).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
     it("admin can whitelist enclave", async function() {
@@ -387,7 +387,7 @@ describe("AttestationVerifier - Revoke enclave", function() {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("non admin cannot revoke enclave", async function() {
-        await expect(attestationVerifier.connect(signers[1]).revokeWhitelistedEnclave(addrs[14])).to.be.revertedWith("only admin");
+        await expect(attestationVerifier.connect(signers[1]).revokeWhitelistedEnclave(addrs[14])).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
     it("admin can revoke enclave", async function() {
