@@ -32,6 +32,8 @@ contract MarketV1 is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    error MarketV1CannotRemoveAllAdmins();
+
     function supportsInterface(
         bytes4 interfaceId
     )
@@ -58,7 +60,7 @@ contract MarketV1 is
         bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
-        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0);
+        if (!(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0)) revert MarketV1CannotRemoveAllAdmins();
 
         return res;
     }
@@ -71,13 +73,15 @@ contract MarketV1 is
 
     uint256[50] private __gap_1;
 
+    error MarketV1InitLengthMismatch();
+
     function initialize(
         address _admin,
         IERC20 _token,
         bytes32[] memory _selectors,
         uint256[] memory _lockWaitTimes
     ) public initializer {
-        require(_selectors.length == _lockWaitTimes.length);
+        if (!(_selectors.length == _lockWaitTimes.length)) revert MarketV1InitLengthMismatch();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
