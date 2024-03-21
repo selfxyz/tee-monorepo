@@ -562,7 +562,8 @@ describe("MarketV1", function() {
 	it("cannot deposit to never registered job", async () => {
 		await expect(marketv1
 			.connect(signers[1])
-			.jobDeposit(ethers.zeroPadValue("0x01", 32), 25)).to.be.revertedWith("not found");
+			.jobDeposit(ethers.zeroPadValue("0x01", 32), 25))
+			.to.be.revertedWithCustomError(marketv1, "MarketV1JobNotFound");
 	});
 
 	it("cannot deposit to closed job", async () => {
@@ -591,7 +592,8 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobDeposit(ethers.ZeroHash, 25)).to.be.revertedWith("not found");
+			.jobDeposit(ethers.ZeroHash, 25))
+			.to.be.revertedWithCustomError(marketv1, "MarketV1JobNotFound");
 	});
 });
 
@@ -749,7 +751,8 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signer)
-			.jobWithdraw(ethers.ZeroHash, 100)).to.be.revertedWith("not found");
+			.jobWithdraw(ethers.ZeroHash, 100))
+			.to.be.revertedWithCustomError(marketv1, "MarketV1JobNotFound");
 	});
 
 	it("cannot withdraw from third party job", async () => {
@@ -774,7 +777,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[2])
-			.jobWithdraw(ethers.ZeroHash, 100)).to.be.revertedWith("only job owner");
+			.jobWithdraw(ethers.ZeroHash, 100)).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 
 	it("cannot withdraw if balance is below leftover threshold", async () => {
@@ -800,7 +803,7 @@ describe("MarketV1", function() {
 		await time.increaseTo(ts + 300n);
 		await expect(marketv1
 			.connect(signers[1])
-			.jobWithdraw(ethers.ZeroHash, 100)).to.be.revertedWith("not enough balance");
+			.jobWithdraw(ethers.ZeroHash, 100)).to.be.revertedWithCustomError(marketv1, "MarketV1JobNotEnoughBalance");
 	});
 
 	it("cannot withdraw if it puts balance below leftover threshold", async () => {
@@ -826,7 +829,7 @@ describe("MarketV1", function() {
 		await time.increaseTo(ts + 20n);
 		await expect(marketv1
 			.connect(signers[1])
-			.jobWithdraw(ethers.ZeroHash, 300)).to.be.revertedWith("not enough balance");
+			.jobWithdraw(ethers.ZeroHash, 300)).to.be.revertedWithCustomError(marketv1, "MarketV1JobNotEnoughBalance");
 	});
 });
 
@@ -930,7 +933,7 @@ describe("MarketV1", function() {
 		expect(await pond.balanceOf(await marketv1.getAddress())).to.equal(800);
 
 		await expect(marketv1
-			.jobReviseRateInitiate(ethers.zeroPadValue("0x01", 32), 2)).to.be.revertedWith("only job owner");
+			.jobReviseRateInitiate(ethers.zeroPadValue("0x01", 32), 2)).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 
 	it("cannot initiate rate revision for third party job", async () => {
@@ -954,7 +957,7 @@ describe("MarketV1", function() {
 		expect(await pond.balanceOf(await marketv1.getAddress())).to.equal(800);
 
 		await expect(marketv1
-			.jobReviseRateInitiate(ethers.ZeroHash, 2)).to.be.revertedWith("only job owner");
+			.jobReviseRateInitiate(ethers.ZeroHash, 2)).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 });
 
@@ -1046,7 +1049,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobReviseRateCancel(ethers.ZeroHash)).to.be.revertedWith("no request");
+			.jobReviseRateCancel(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "MarketV1JobNoRequest");
 	});
 
 	it("cannot cancel rate revision for non existent job", async () => {
@@ -1075,7 +1078,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobReviseRateCancel(ethers.zeroPadValue("0x01", 32))).to.be.revertedWith("only job owner");
+			.jobReviseRateCancel(ethers.zeroPadValue("0x01", 32))).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 
 	it("cannot cancel rate revision for third party job", async () => {
@@ -1103,7 +1106,7 @@ describe("MarketV1", function() {
 			.jobReviseRateInitiate(ethers.ZeroHash, 2);
 
 		await expect(marketv1
-			.jobReviseRateCancel(ethers.ZeroHash)).to.be.revertedWith("only job owner");
+			.jobReviseRateCancel(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 });
 
@@ -1230,7 +1233,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobReviseRateFinalize(ethers.zeroPadValue("0x01", 32))).to.be.revertedWith("only job owner");
+			.jobReviseRateFinalize(ethers.zeroPadValue("0x01", 32))).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 
 	it("cannot finalize rate revision for third party job", async () => {
@@ -1258,7 +1261,7 @@ describe("MarketV1", function() {
 			.jobReviseRateInitiate(ethers.ZeroHash, 2);
 
 		await expect(marketv1
-			.jobReviseRateFinalize(ethers.ZeroHash)).to.be.revertedWith("only job owner");
+			.jobReviseRateFinalize(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 });
 
@@ -1411,7 +1414,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobClose(ethers.ZeroHash)).to.be.revertedWith("rate should be zero");
+			.jobClose(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "MarketV1JobNonZeroRate");
 	});
 
 	it("cannot close if never requested", async () => {
@@ -1465,7 +1468,7 @@ describe("MarketV1", function() {
 
 		await expect(marketv1
 			.connect(signers[1])
-			.jobClose(ethers.zeroPadValue("0x01", 32))).to.be.revertedWith("only job owner");
+			.jobClose(ethers.zeroPadValue("0x01", 32))).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 
 	it("cannot close third party job", async () => {
@@ -1493,7 +1496,7 @@ describe("MarketV1", function() {
 			.jobReviseRateInitiate(ethers.ZeroHash, 2);
 
 		await expect(marketv1
-			.jobClose(ethers.ZeroHash)).to.be.revertedWith("only job owner");
+			.jobClose(ethers.ZeroHash)).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 	});
 });
 
@@ -1575,7 +1578,7 @@ describe("MarketV1", function() {
 		expect(await pond.balanceOf(marketv1.getAddress())).to.equal(50);
 
 		await expect(marketv1
-			.jobMetadataUpdate(ethers.ZeroHash, "some updated metadata")).to.be.revertedWith("only job owner");
+			.jobMetadataUpdate(ethers.ZeroHash, "some updated metadata")).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 
 	});
 });
