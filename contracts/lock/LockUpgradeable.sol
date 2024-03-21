@@ -34,6 +34,8 @@ contract LockUpgradeable is
         Locked
     }
 
+    error LockLengthMismatch();
+
     event LockWaitTimeUpdated(bytes32 indexed selector, uint256 prevLockTime, uint256 updatedLockTime);
     event LockCreated(bytes32 indexed selector, bytes32 indexed key, uint256 iValue, uint256 unlockTime);
     event LockDeleted(bytes32 indexed selector, bytes32 indexed key, uint256 iValue);
@@ -115,7 +117,7 @@ contract LockUpgradeable is
     }
 
     function _updateLockWaitTimes(bytes32[] memory _selectors, uint256[] memory _newLockWaitTimes) internal {
-        require(_selectors.length == _newLockWaitTimes.length, "Lock: length mismatch");
+        if (!(_selectors.length == _newLockWaitTimes.length)) revert LockLengthMismatch();
 
         for (uint256 _i = 0; _i < _selectors.length; _i++) {
             _updateLockWaitTime(_selectors[_i], _newLockWaitTimes[_i]);
