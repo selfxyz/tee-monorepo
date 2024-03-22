@@ -77,7 +77,6 @@ contract AttestationVerifier is
         bytes PCR1;
         bytes PCR2;
     }
-    string public constant ATTESTATION_PREFIX = "Enclave Attestation Verified";
 
     // ImageId -> image details
     mapping(bytes32 => EnclaveImage) public whitelistedImages;
@@ -215,8 +214,10 @@ contract AttestationVerifier is
 
     error AttestationVerifierDoesNotVerify();
 
+    string public constant SIGNATURE_PREFIX = "Enclave Attestation Verified";
+
     function _verify(
-        bytes memory attestation,
+        bytes memory signature,
         bytes memory enclaveKey,
         EnclaveImage memory image,
         uint256 enclaveCPUs,
@@ -225,7 +226,7 @@ contract AttestationVerifier is
     ) internal view {
         bytes32 digest = keccak256(
             abi.encode(
-                ATTESTATION_PREFIX,
+                SIGNATURE_PREFIX,
                 enclaveKey,
                 image.PCR0,
                 image.PCR1,
@@ -236,7 +237,7 @@ contract AttestationVerifier is
             )
         );
 
-        address signer = ECDSA.recover(digest, attestation);
+        address signer = ECDSA.recover(digest, signature);
         bytes32 sourceImageId = isVerified[signer];
 
         if (!(sourceImageId != bytes32(0) && whitelistedImages[sourceImageId].PCR0.length != 0))
@@ -244,7 +245,7 @@ contract AttestationVerifier is
     }
 
     function verify(
-        bytes memory attestation,
+        bytes memory signature,
         bytes memory enclaveKey,
         bytes memory PCR0,
         bytes memory PCR1,
@@ -253,12 +254,12 @@ contract AttestationVerifier is
         uint256 enclaveMemory,
         uint256 timestamp
     ) external view {
-        _verify(attestation, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
+        _verify(signature, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
     }
 
     function verify(bytes memory data) external view {
         (
-            bytes memory attestation,
+            bytes memory signature,
             bytes memory enclaveKey,
             bytes memory PCR0,
             bytes memory PCR1,
@@ -267,7 +268,7 @@ contract AttestationVerifier is
             uint256 enclaveMemory,
             uint256 timestamp
         ) = abi.decode(data, (bytes, bytes, bytes, bytes, bytes, uint256, uint256, uint256));
-        _verify(attestation, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
+        _verify(signature, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
     }
 
     //-------------------------------- Read only methods end -------------------------------//
