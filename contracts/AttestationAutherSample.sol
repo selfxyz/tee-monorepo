@@ -35,6 +35,8 @@ contract AttestationAutherSample is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    error AttestationAutherSampleCannotRemoveAllAdmins();
+
     function supportsInterface(
         bytes4 interfaceId
     )
@@ -61,7 +63,7 @@ contract AttestationAutherSample is
         bool res = super._revokeRole(role, account);
 
         // protect against accidentally removing all admins
-        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0, "AAS:RR-All admins cant be removed");
+        if (!(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0)) revert AttestationAutherSampleCannotRemoveAllAdmins();
 
         return res;
     }
@@ -72,9 +74,12 @@ contract AttestationAutherSample is
 
     //-------------------------------- Initializer start --------------------------------//
 
+    error AttestationAutherSampleNoImageProvided();
+    error AttestationAutherSampleInvalidAdmin();
+
     function initialize(EnclaveImage[] memory images, address _admin) external initializer {
-        require(images.length != 0, "AAS:I-At least one image necessary");
-        require(_admin != address(0), "AAS:I-At least one admin necessary");
+        if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
+        if (!(_admin != address(0))) revert AttestationAutherSampleInvalidAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
