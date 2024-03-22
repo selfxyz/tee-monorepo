@@ -14,7 +14,7 @@ export default {
   networks: {
     hardhat: {
       accounts: {
-        count: 500
+        count: 50
       },
       allowBlocksWithSameTimestamp: true,
     },
