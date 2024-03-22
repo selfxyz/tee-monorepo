@@ -272,10 +272,8 @@ contract AttestationVerifier is
             bytes memory PCR0,
             bytes memory PCR1,
             bytes memory PCR2,
-            uint256 enclaveCPUs,
-            uint256 enclaveMemory,
-            uint256 timestamp
-        ) = abi.decode(data, (bytes, bytes, bytes, bytes, bytes, uint256, uint256, uint256));
+           uint256 timestamp
+        ) = abi.decode(data, (bytes, bytes, bytes, bytes, bytes, uint256));
         _verify(signature, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), timestamp);
     }
 
