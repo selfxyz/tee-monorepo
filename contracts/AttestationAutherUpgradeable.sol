@@ -41,6 +41,14 @@ contract AttestationAutherUpgradeable is
         }
     }
 
+    error AttestationAutherPubkeyLengthInvalid();
+    error AttestationAutherPCRsInvalid();
+    error AttestationAutherImageNotWhitelisted();
+    error AttestationAutherImageAlreadyWhitelisted();
+    error AttestationAutherKeyNotVerified();
+    error AttestationAutherKeyAlreadyVerified();
+    error AttestationAutherAttestationTooOld();
+
     event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
     event EnclaveImageRevoked(bytes32 indexed imageId);
     event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
@@ -54,7 +62,7 @@ contract AttestationAutherUpgradeable is
     }
 
     function _pubKeyToAddress(bytes memory pubKey) internal pure returns (address) {
-        require(pubKey.length == 64, "Invalid public key length");
+        if (!(pubKey.length == 64)) revert AttestationAutherPubkeyLengthInvalid();
 
         bytes32 hash = keccak256(pubKey);
         return address(uint160(uint256(hash)));
@@ -63,13 +71,12 @@ contract AttestationAutherUpgradeable is
     function _whitelistEnclaveImage(EnclaveImage memory image) internal returns (bytes32) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        require(
-            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48,
-            "AA:WI-PCR values must be 48 bytes"
-        );
+        if (!(
+            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48
+        )) revert AttestationAutherPCRsInvalid();
 
         bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
-        require($.whitelistedImages[imageId].PCR0.length == 0, "AA:WI-image already whitelisted");
+        if (!($.whitelistedImages[imageId].PCR0.length == 0)) revert AttestationAutherImageAlreadyWhitelisted();
         $.whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
         emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
         return imageId;
@@ -78,7 +85,7 @@ contract AttestationAutherUpgradeable is
     function _revokeEnclaveImage(bytes32 imageId) internal {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        require($.whitelistedImages[imageId].PCR0.length != 0, "AA:RI-Image not whitelisted");
+        if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
 
         delete $.whitelistedImages[imageId];
         emit EnclaveImageRevoked(imageId);
@@ -87,9 +94,9 @@ contract AttestationAutherUpgradeable is
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        require($.whitelistedImages[imageId].PCR0.length != 0, "AA:WK-Image not whitelisted");
+        if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        require($.verifiedKeys[enclaveKey] == bytes32(0), "AA:WK-Enclave key already verified");
+        if (!($.verifiedKeys[enclaveKey] == bytes32(0))) revert AttestationAutherKeyAlreadyVerified();
 
         $.verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
@@ -99,7 +106,7 @@ contract AttestationAutherUpgradeable is
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        require($.verifiedKeys[enclaveKey] != bytes32(0), "AA:RK-Enclave key not verified");
+        if (!($.verifiedKeys[enclaveKey] != bytes32(0))) revert AttestationAutherKeyNotVerified();
 
         delete $.verifiedKeys[enclaveKey];
         emit EnclaveKeyRevoked(enclavePubKey);
@@ -116,10 +123,10 @@ contract AttestationAutherUpgradeable is
     ) internal {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        require($.whitelistedImages[imageId].PCR0.length != 0, "AA:VK-Enclave image to verify not whitelisted");
+        if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        require($.verifiedKeys[enclaveKey] == bytes32(0), "AA:VK-Enclave key already verified");
-        require(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE, "AA:VK-Attestation too old");
+        if (!($.verifiedKeys[enclaveKey] == bytes32(0))) revert AttestationAutherKeyAlreadyVerified();
+        if (!(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE)) revert AttestationAutherAttestationTooOld();
 
         EnclaveImage memory image = $.whitelistedImages[imageId];
         ATTESTATION_VERIFIER.verify(
@@ -152,8 +159,8 @@ contract AttestationAutherUpgradeable is
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = $.verifiedKeys[key];
-        require(imageId != bytes32(0), "AA:AOV-Enclave key must be verified");
-        require($.whitelistedImages[imageId].PCR0.length != 0, "AA:AOV-Source image must be whitelisted");
+        if (!(imageId != bytes32(0))) revert AttestationAutherKeyNotVerified();
+        if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
     }
 
     function getWhitelistedImage(bytes32 _imageId) external view returns (EnclaveImage memory) {
