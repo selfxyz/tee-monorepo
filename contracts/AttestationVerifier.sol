@@ -77,7 +77,7 @@ contract AttestationVerifier is
 
     function initialize(
         EnclaveImage[] memory images,
-        address[] memory enclaveKeys,
+        bytes[] memory enclaveKeys,
         address _admin
     ) external initializer {
         // The images and their enclave keys are whitelisted without verification that enclave keys are created within
@@ -95,11 +95,8 @@ contract AttestationVerifier is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
         for (uint i = 0; i < enclaveKeys.length; i++) {
-            address enclaveKey = enclaveKeys[i];
-            bytes32 imageId = _whitelistImage(images[i]);
-
-            isVerified[enclaveKey] = imageId;
-            emit EnclaveKeyWhitelisted(imageId, enclaveKey);
+            bytes32 imageId = _whitelistEnclaveImage(images[i]);
+            _whitelistEnclaveKey(enclaveKeys[i], imageId);
         }
     }
 
@@ -121,49 +118,85 @@ contract AttestationVerifier is
 
     uint256[48] private __gap_1;
 
-    event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
-    event WhitelistedImageRevoked(bytes32 indexed imageId);
-    event WhitelistedEnclaveKeyRevoked(bytes32 indexed imageId, address indexed enclaveKey);
-    event EnclaveKeyWhitelisted(bytes32 indexed imageId, address indexed enclaveKey);
-    event EnclaveKeyVerified(bytes32 indexed imageId, bytes enclaveKey);
-
     //-------------------------------- Declarations end --------------------------------//
 
     //-------------------------------- Admin methods start --------------------------------//
+
+    error AttestationVerifierPubkeyLengthInvalid();
+    error AttestationVerifierPCRsInvalid();
 
     error AttestationVerifierImageNotWhitelisted();
     error AttestationVerifierImageAlreadyWhitelisted();
     error AttestationVerifierKeyNotVerified();
     error AttestationVerifierKeyAlreadyVerified();
-    error AttestationVerifierKeyInvalid();
 
-    function whitelistImage(
+    event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
+    event EnclaveImageRevoked(bytes32 indexed imageId);
+    event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
+    event EnclaveKeyRevoked(bytes indexed enclavePubKey);
+    event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
+
+    function _pubKeyToAddress(bytes memory pubKey) internal pure returns (address) {
+        if (!(pubKey.length == 64)) revert AttestationVerifierPubkeyLengthInvalid();
+
+        bytes32 hash = keccak256(pubKey);
+        return address(uint160(uint256(hash)));
+    }
+
+    function pubKeyToAddress(bytes memory pubKey) public pure returns (address) {
+        return _pubKeyToAddress(pubKey);
+    }
+
+    function _whitelistEnclaveImage(EnclaveImage memory image) internal returns (bytes32) {
+        if (!(image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48))
+            revert AttestationVerifierPCRsInvalid();
+
+        bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
+        if (!(whitelistedImages[imageId].PCR0.length == 0)) revert AttestationVerifierImageAlreadyWhitelisted();
+        whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
+        emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
+        return imageId;
+    }
+
+    function _revokeEnclaveImage(bytes32 imageId) internal {
+        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
+        delete whitelistedImages[imageId];
+        emit EnclaveImageRevoked(imageId);
+    }
+
+    function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal {
+        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
+        address enclaveKey = _pubKeyToAddress(enclavePubKey);
+        if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
+        isVerified[enclaveKey] = imageId;
+        emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
+    }
+
+    function _revokeEnclaveKey(bytes memory enclavePubKey) internal {
+        address enclaveKey = _pubKeyToAddress(enclavePubKey);
+        if (!(isVerified[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyNotVerified();
+        delete isVerified[enclaveKey];
+        emit EnclaveKeyRevoked(enclavePubKey);
+    }
+
+    function whitelistEnclaveImage(
         bytes memory PCR0,
         bytes memory PCR1,
         bytes memory PCR2
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _whitelistImage(EnclaveImage(PCR0, PCR1, PCR2));
+        _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
-    function revokeWhitelistedImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
-        delete whitelistedImages[imageId];
-        emit WhitelistedImageRevoked(imageId);
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _revokeEnclaveImage(imageId);
     }
 
-    function whitelistEnclave(bytes32 imageId, address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
-        if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
-        if (!(enclaveKey != address(0))) revert AttestationVerifierKeyInvalid();
-        isVerified[enclaveKey] = imageId;
-        emit EnclaveKeyWhitelisted(imageId, enclaveKey);
+    function whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _whitelistEnclaveKey(enclavePubKey, imageId);
     }
 
-    function revokeWhitelistedEnclave(address enclaveKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!(isVerified[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyNotVerified();
-        bytes32 imageId = isVerified[enclaveKey];
-        delete isVerified[enclaveKey];
-        emit WhitelistedEnclaveKeyRevoked(imageId, enclaveKey);
+    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _revokeEnclaveKey(enclavePubKey);
     }
 
     //-------------------------------- Admin methods end --------------------------------//
@@ -174,79 +207,43 @@ contract AttestationVerifier is
 
     error AttestationVerifierAttestationTooOld();
 
-    // This function is used to add enclave key of a whitelisted image to the list of verified enclave keys.
-    function verifyEnclaveKey(
-        bytes memory attestation,
+    function _verifyEnclaveKey(
+        bytes memory signature,
         bytes memory enclavePubKey,
         bytes32 imageId,
         uint256 enclaveCPUs,
         uint256 enclaveMemory,
-        // in milliseconds
-        uint256 timestamp
-    ) external {
-        if (!(timestamp / 1000 > block.timestamp - MAX_AGE)) revert AttestationVerifierAttestationTooOld();
+        uint256 timestampInMilliseconds
+    ) internal {
+        if (!(timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE)) revert AttestationVerifierAttestationTooOld();
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
 
         address enclaveKey = pubKeyToAddress(enclavePubKey);
         if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
 
         EnclaveImage memory image = whitelistedImages[imageId];
-        _verify(attestation, enclavePubKey, image, enclaveCPUs, enclaveMemory, timestamp);
+        _verify(signature, enclavePubKey, image, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
 
         isVerified[enclaveKey] = imageId;
-        emit EnclaveKeyVerified(imageId, enclavePubKey);
+        emit EnclaveKeyVerified(enclavePubKey, imageId);
+    }
+
+    function verifyEnclaveKey(
+        bytes memory signature,
+        bytes memory enclavePubKey,
+        bytes32 imageId,
+        uint256 enclaveCPUs,
+        uint256 enclaveMemory,
+        uint256 timestampInMilliseconds
+    ) external {
+        return _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
     }
 
     //-------------------------------- Open methods end -------------------------------//
 
     //-------------------------------- Read only methods start -------------------------------//
 
-    // These functions are used to verify enclave key of any image by the enclave key generated in a whitelisted image.
-
-    function verify(
-        bytes memory attestation,
-        bytes memory enclaveKey,
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2,
-        uint256 enclaveCPUs,
-        uint256 enclaveMemory,
-        uint256 timestamp
-    ) external view {
-        _verify(attestation, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
-    }
-
-    function verify(bytes memory data) external view {
-        (
-            bytes memory attestation,
-            bytes memory enclaveKey,
-            bytes memory PCR0,
-            bytes memory PCR1,
-            bytes memory PCR2,
-            uint256 enclaveCPUs,
-            uint256 enclaveMemory,
-            uint256 timestamp
-        ) = abi.decode(data, (bytes, bytes, bytes, bytes, bytes, uint256, uint256, uint256));
-        _verify(attestation, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
-    }
-
-    //-------------------------------- Read only methods end -------------------------------//
-
-    //-------------------------------- Internal methods start -------------------------------//
-
-    error AttestationVerifierPCRsInvalid();
     error AttestationVerifierDoesNotVerify();
-
-    function _whitelistImage(EnclaveImage memory image) internal returns (bytes32) {
-        if (!(image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48))
-            revert AttestationVerifierPCRsInvalid();
-
-        bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
-        if (!(whitelistedImages[imageId].PCR0.length == 0)) revert AttestationVerifierImageAlreadyWhitelisted();
-        whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
-        emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
-        return imageId;
-    }
 
     function _verify(
         bytes memory attestation,
@@ -276,18 +273,32 @@ contract AttestationVerifier is
             revert AttestationVerifierDoesNotVerify();
     }
 
-    //-------------------------------- Internal methods end -------------------------------//
-
-    error AttestationVerifierPubkeyLengthInvalid();
-
-    function _pubKeyToAddress(bytes memory pubKey) internal pure returns (address) {
-        if (!(pubKey.length == 64)) revert AttestationVerifierPubkeyLengthInvalid();
-
-        bytes32 hash = keccak256(pubKey);
-        return address(uint160(uint256(hash)));
+    function verify(
+        bytes memory attestation,
+        bytes memory enclaveKey,
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2,
+        uint256 enclaveCPUs,
+        uint256 enclaveMemory,
+        uint256 timestamp
+    ) external view {
+        _verify(attestation, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
     }
 
-    function pubKeyToAddress(bytes memory pubKey) public pure returns (address) {
-        return _pubKeyToAddress(pubKey);
+    function verify(bytes memory data) external view {
+        (
+            bytes memory attestation,
+            bytes memory enclaveKey,
+            bytes memory PCR0,
+            bytes memory PCR1,
+            bytes memory PCR2,
+            uint256 enclaveCPUs,
+            uint256 enclaveMemory,
+            uint256 timestamp
+        ) = abi.decode(data, (bytes, bytes, bytes, bytes, bytes, uint256, uint256, uint256));
+        _verify(attestation, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), enclaveCPUs, enclaveMemory, timestamp);
     }
+
+    //-------------------------------- Read only methods end -------------------------------//
 }
