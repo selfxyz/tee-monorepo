@@ -214,7 +214,24 @@ contract AttestationVerifier is
 
     error AttestationVerifierDoesNotVerify();
 
-    string public constant SIGNATURE_PREFIX = "Enclave Attestation Verified";
+    bytes32 private constant DOMAIN_SEPARATOR =
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.AttestationVerifier"),
+                keccak256("1")
+            )
+        );
+
+    struct Attestation {
+        bytes enclaveKey;
+        bytes PCR0;
+        bytes PCR1;
+        bytes PCR2;
+        uint256 timestamp;
+    }
+    bytes32 private constant ATTESTATION_TYPEHASH =
+        keccak256("Attestation(bytes enclaveKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestamp)");
 
     function _verify(
         bytes memory signature,
@@ -224,18 +241,17 @@ contract AttestationVerifier is
         uint256 enclaveMemory,
         uint256 timestamp
     ) internal view {
-        bytes32 digest = keccak256(
+        bytes32 hashStruct = keccak256(
             abi.encode(
-                SIGNATURE_PREFIX,
-                enclaveKey,
-                image.PCR0,
-                image.PCR1,
-                image.PCR2,
-                enclaveCPUs,
-                enclaveMemory,
+                ATTESTATION_TYPEHASH,
+                keccak256(enclaveKey),
+                keccak256(image.PCR0),
+                keccak256(image.PCR1),
+                keccak256(image.PCR2),
                 timestamp
             )
         );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
 
         address signer = ECDSA.recover(digest, signature);
         bytes32 sourceImageId = isVerified[signer];
