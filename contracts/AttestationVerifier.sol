@@ -137,7 +137,11 @@ contract AttestationVerifier is
     error AttestationVerifierKeyAlreadyVerified();
     error AttestationVerifierKeyInvalid();
 
-    function whitelistImage(bytes memory PCR0, bytes memory PCR1, bytes memory PCR2) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function whitelistImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _whitelistImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
@@ -234,12 +238,11 @@ contract AttestationVerifier is
     error AttestationVerifierDoesNotVerify();
 
     function _whitelistImage(EnclaveImage memory image) internal returns (bytes32) {
-        if (!(
-            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48
-        )) revert AttestationVerifierPCRsInvalid();
+        if (!(image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48))
+            revert AttestationVerifierPCRsInvalid();
 
         bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
-        if(!(whitelistedImages[imageId].PCR0.length == 0)) revert AttestationVerifierImageAlreadyWhitelisted();
+        if (!(whitelistedImages[imageId].PCR0.length == 0)) revert AttestationVerifierImageAlreadyWhitelisted();
         whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
         emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
         return imageId;
@@ -269,9 +272,8 @@ contract AttestationVerifier is
         address signer = ECDSA.recover(digest, attestation);
         bytes32 sourceImageId = isVerified[signer];
 
-        if (!(
-            sourceImageId != bytes32(0) && whitelistedImages[sourceImageId].PCR0.length != 0
-        )) revert AttestationVerifierDoesNotVerify();
+        if (!(sourceImageId != bytes32(0) && whitelistedImages[sourceImageId].PCR0.length != 0))
+            revert AttestationVerifierDoesNotVerify();
     }
 
     //-------------------------------- Internal methods end -------------------------------//
