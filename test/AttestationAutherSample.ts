@@ -112,7 +112,7 @@ describe("AttestationAutherSample - Init", function() {
 				[[], addrs[0]],
 				{ kind: "uups", constructorArgs: [addrs[10], 600] },
 			)
-		).to.be.revertedWith("AAS:I-At least one image necessary");
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleNoImageProvided");
 	});
 
 	it("cannot initialize with zero address as admin", async function() {
@@ -123,7 +123,7 @@ describe("AttestationAutherSample - Init", function() {
 				[[image1, image2, image3], ethers.ZeroAddress],
 				{ kind: "uups", constructorArgs: [addrs[10], 600] },
 			)
-		).to.be.revertedWith("AAS:I-At least one admin necessary");
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleInvalidAdmin");
 	});
 
 	it("upgrades", async function() {
