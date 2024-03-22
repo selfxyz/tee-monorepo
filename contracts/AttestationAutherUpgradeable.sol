@@ -153,7 +153,8 @@ contract AttestationAutherUpgradeable is
         uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) external {
-        return _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
+        return
+            _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
     }
 
     function _allowOnlyVerified(address key) internal view {

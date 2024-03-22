@@ -34,13 +34,7 @@ contract AttestationVerifier is
 
     function supportsInterface(
         bytes4 interfaceId
-    )
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, AccessControlUpgradeable)
-        returns (bool)
-    {
+    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
@@ -54,11 +48,7 @@ contract AttestationVerifier is
     error AttestationVerifierInitLengthMismatch();
     error AttestationVerifierInvalidAdmin();
 
-    function initialize(
-        EnclaveImage[] memory images,
-        bytes[] memory enclaveKeys,
-        address _admin
-    ) external initializer {
+    function initialize(EnclaveImage[] memory images, bytes[] memory enclaveKeys, address _admin) external initializer {
         // The images and their enclave keys are whitelisted without verification that enclave keys are created within
         // the enclave. This is to initialize chain of trust and will be replaced with a more robust solution.
         if (!(images.length != 0)) revert AttestationVerifierNoImageProvided();
@@ -193,7 +183,8 @@ contract AttestationVerifier is
         uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) internal {
-        if (!(timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE)) revert AttestationVerifierAttestationTooOld();
+        if (!(timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
+            revert AttestationVerifierAttestationTooOld();
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
 
         address enclaveKey = pubKeyToAddress(enclavePubKey);
@@ -214,7 +205,8 @@ contract AttestationVerifier is
         uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) external {
-        return _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
+        return
+            _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
     }
 
     //-------------------------------- Open methods end -------------------------------//
