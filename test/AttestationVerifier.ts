@@ -638,7 +638,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 300000],
             ),
         )).to.not.be.reverted;
@@ -649,31 +649,31 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR0, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR0, image3.PCR2, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR1, image3.PCR1, image3.PCR2, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[14], image3.PCR0, image3.PCR1, image3.PCR2, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 200000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
@@ -684,7 +684,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
@@ -697,7 +697,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
@@ -710,7 +710,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
-                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256", "uint256", "uint256"],
+                ["bytes", "bytes", "bytes", "bytes", "bytes", "uint256"],
                 [attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 300000],
             ),
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
@@ -745,7 +745,7 @@ function createAttestation(
     timestamp: number,
 ): string {
     const hashStruct = keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
+        solidityPacked(
             ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"],
             [
                 ATTESTATION_TYPEHASH,
