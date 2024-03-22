@@ -33,11 +33,6 @@ contract AttestationAutherSample is
         _disableInitializers();
     }
 
-    modifier onlyAdmin() {
-        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");
-        _;
-    }
-
     //-------------------------------- Overrides start --------------------------------//
 
     function supportsInterface(
@@ -71,7 +66,7 @@ contract AttestationAutherSample is
         return res;
     }
 
-    function _authorizeUpgrade(address /*account*/) internal view override onlyAdmin {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -99,19 +94,19 @@ contract AttestationAutherSample is
         bytes memory PCR0,
         bytes memory PCR1,
         bytes memory PCR2
-    ) external onlyAdmin returns (bytes32) {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32) {
         return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
-    function revokeEnclaveImage(bytes32 imageId) external onlyAdmin {
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
         return _revokeEnclaveImage(imageId);
     }
 
-    function whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) external onlyAdmin {
+    function whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
         return _whitelistEnclaveKey(enclavePubKey, imageId);
     }
 
-    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyAdmin {
+    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
         return _revokeEnclaveKey(enclavePubKey);
     }
 
