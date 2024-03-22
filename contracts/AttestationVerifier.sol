@@ -280,10 +280,14 @@ contract AttestationVerifier is
 
     error AttestationVerifierPubkeyLengthInvalid();
 
-    function pubKeyToAddress(bytes memory pubKey) public pure returns (address) {
+    function _pubKeyToAddress(bytes memory pubKey) internal pure returns (address) {
         if (!(pubKey.length == 64)) revert AttestationVerifierPubkeyLengthInvalid();
 
         bytes32 hash = keccak256(pubKey);
         return address(uint160(uint256(hash)));
+    }
+
+    function pubKeyToAddress(bytes memory pubKey) public pure returns (address) {
+        return _pubKeyToAddress(pubKey);
     }
 }
