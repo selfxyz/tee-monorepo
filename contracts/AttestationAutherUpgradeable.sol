@@ -117,8 +117,6 @@ contract AttestationAutherUpgradeable is
         bytes memory signature,
         bytes memory enclavePubKey,
         bytes32 imageId,
-        uint256 enclaveCPUs,
-        uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) internal {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
@@ -136,8 +134,6 @@ contract AttestationAutherUpgradeable is
             image.PCR0,
             image.PCR1,
             image.PCR2,
-            enclaveCPUs,
-            enclaveMemory,
             timestampInMilliseconds
         );
 
@@ -149,12 +145,10 @@ contract AttestationAutherUpgradeable is
         bytes memory signature,
         bytes memory enclavePubKey,
         bytes32 imageId,
-        uint256 enclaveCPUs,
-        uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) external {
         return
-            _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
+            _verifyEnclaveKey(signature, enclavePubKey, imageId, timestampInMilliseconds);
     }
 
     function _allowOnlyVerified(address key) internal view {
