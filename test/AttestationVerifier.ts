@@ -444,7 +444,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("can verify enclave key", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, pubkeys[15], getImageId(image1), timestamp - 240000))
             .to.emit(attestationVerifier, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image1));
@@ -453,7 +453,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with too old attestation", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[14], timestamp - 360000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 360000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, pubkeys[15], getImageId(image1), timestamp - 360000))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierAttestationTooOld");
@@ -461,7 +461,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with invalid data", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, pubkeys[15], getImageId(image2), timestamp - 240000))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
@@ -473,7 +473,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with invalid public key", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(ethers.ZeroAddress, image1, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(ethers.ZeroAddress, image1, wallets[14], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, ethers.ZeroAddress, getImageId(image1), timestamp - 240000))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierPubkeyLengthInvalid");
@@ -481,7 +481,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with unwhitelisted image", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, pubkeys[15], getImageId(image3), timestamp - 240000))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
@@ -489,7 +489,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot reverify enclave key", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, pubkeys[15], getImageId(image1), timestamp - 240000))
             .to.emit(attestationVerifier, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image1));
@@ -501,7 +501,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with unwhitelisted key", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[16], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[16], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(attestation, pubkeys[15], getImageId(image1), timestamp - 240000))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
@@ -509,7 +509,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with revoked key", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
         await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
 
@@ -519,7 +519,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
     it("cannot verify enclave key with revoked image", async function() {
         const timestamp = await time.latest() * 1000;
-        let attestation = createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
+        let attestation = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
         await attestationVerifier.revokeEnclaveImage(getImageId(image2));
 
@@ -553,7 +553,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can verify", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,bytes,bytes,bytes,bytes,uint256)'](
             attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 300000,
@@ -561,7 +561,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
     });
 
     it("cannot verify with invalid data", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,bytes,bytes,bytes,bytes,uint256)'](
             attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR0, 300000,
@@ -581,7 +581,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
     });
 
     it("cannot verify with unwhitelisted key", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[16], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[16], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,bytes,bytes,bytes,bytes,uint256)'](
             attestation, pubkeys[15], image3.PCR0, image3.PCR1, image3.PCR2, 300000,
@@ -589,7 +589,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
     });
 
     it("cannot verify with revoked key", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
 
@@ -599,7 +599,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
     });
 
     it("cannot verify with revoked image", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await attestationVerifier.revokeEnclaveImage(getImageId(image2));
 
@@ -634,7 +634,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can verify", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
@@ -645,7 +645,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
     });
 
     it("cannot verify with invalid data", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
@@ -680,7 +680,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
     });
 
     it("cannot verify with unwhitelisted key", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[16], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[16], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
@@ -691,7 +691,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
     });
 
     it("cannot verify with revoked key", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
 
@@ -704,7 +704,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
     });
 
     it("cannot verify with revoked image", async function() {
-        let attestation = createAttestation(pubkeys[15], image3, wallets[14], 300000);
+        let attestation = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await attestationVerifier.revokeEnclaveImage(getImageId(image2));
 
@@ -725,49 +725,34 @@ function normalize(key: string): string {
     return '0x' + key.substring(4);
 }
 
-let DOMAIN_SEPARATOR =
-    keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-            ["bytes32", "bytes32", "bytes32"],
-            [
-                ethers.id("EIP712Domain(string name,string version)"),
-                ethers.id("marlin.oyster.AttestationVerifier"),
-                ethers.id("1"),
-            ],
-        ),
-    );
-let ATTESTATION_TYPEHASH = ethers.id("Attestation(bytes enclaveKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestamp)");
+const domain = {
+    name: 'marlin.oyster.AttestationVerifier',
+    version: '1',
+};
 
-function createAttestation(
+const types = {
+    Attestation: [
+        { name: 'enclaveKey', type: 'bytes' },
+        { name: 'PCR0', type: 'bytes' },
+        { name: 'PCR1', type: 'bytes' },
+        { name: 'PCR2', type: 'bytes' },
+        { name: 'timestamp', type: 'uint256' },
+    ]
+}
+
+async function createAttestation(
     enclaveKey: string,
     image: AttestationVerifier.EnclaveImageStruct,
     sourceEnclaveKey: Wallet,
     timestamp: number,
-): string {
-    const hashStruct = keccak256(
-        solidityPacked(
-            ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"],
-            [
-                ATTESTATION_TYPEHASH,
-                keccak256(enclaveKey),
-                keccak256(image.PCR0),
-                keccak256(image.PCR1),
-                keccak256(image.PCR2),
-                timestamp,
-            ],
-        ),
-    );
-    const digest = ethers.keccak256(
-        solidityPacked(
-            ["string", "bytes32", "bytes32"],
-            [
-                '\x19\x01',
-                DOMAIN_SEPARATOR,
-                hashStruct,
-            ],
-        ),
-    );
-    const sign = sourceEnclaveKey.signingKey.sign(digest);
+): Promise<string> {
+    const sign = await sourceEnclaveKey.signTypedData(domain, types, {
+        enclaveKey: enclaveKey,
+        PCR0: image.PCR0,
+        PCR1: image.PCR1,
+        PCR2: image.PCR2,
+        timestamp: timestamp,
+    });
     return ethers.Signature.from(sign).serialized;
 }
 
