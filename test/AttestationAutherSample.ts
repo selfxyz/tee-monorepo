@@ -70,7 +70,6 @@ describe("AttestationAutherSample - Init", function() {
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await attestationAutherSample.getRoleMemberCount(await attestationAutherSample.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -89,7 +88,6 @@ describe("AttestationAutherSample - Init", function() {
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await attestationAutherSample.getRoleMemberCount(await attestationAutherSample.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -139,7 +137,6 @@ describe("AttestationAutherSample - Init", function() {
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await attestationAutherSample.getRoleMemberCount(await attestationAutherSample.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -189,10 +186,6 @@ testERC165(
 			"grantRole(bytes32,address)",
 			"revokeRole(bytes32,address)",
 			"renounceRole(bytes32,address)",
-		],
-		IAccessControlEnumerable: [
-			"getRoleMember(bytes32,uint256)",
-			"getRoleMemberCount(bytes32)",
 		],
 	},
 );

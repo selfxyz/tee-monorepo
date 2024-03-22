@@ -64,8 +64,9 @@ export function testAdminRole(name: string, deployer: (signers: Signer[], addrs:
       expect(await contract.hasRole(DEFAULT_ADMIN_ROLE, addrs[1])).to.be.false;
     });
 
-    it("admin cannot renounce own admin role if there are no other admins", async function() {
-      await expect(contract.renounceRole(DEFAULT_ADMIN_ROLE, addrs[0])).to.be.reverted;
+    it("admin can renounce own admin role even if there are no other admins", async function() {
+      await contract.renounceRole(DEFAULT_ADMIN_ROLE, addrs[0]);
+      expect(await contract.hasRole(DEFAULT_ADMIN_ROLE, addrs[0])).to.be.false;
     });
 
     it("admin cannot renounce admin role of other admins", async function() {

@@ -65,7 +65,6 @@ describe("AttestationVerifier - Init", function() {
         );
 
         expect(await attestationVerifier.hasRole(await attestationVerifier.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-        expect(await attestationVerifier.getRoleMemberCount(await attestationVerifier.DEFAULT_ADMIN_ROLE())).to.equal(1);
         expect(await attestationVerifier.isVerified(addrs[13])).to.equal(getImageId(image1));
         {
             const { PCR0, PCR1, PCR2 } = await attestationVerifier.whitelistedImages(getImageId(image1));
@@ -82,7 +81,6 @@ describe("AttestationVerifier - Init", function() {
         );
 
         expect(await attestationVerifier.hasRole(await attestationVerifier.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-        expect(await attestationVerifier.getRoleMemberCount(await attestationVerifier.DEFAULT_ADMIN_ROLE())).to.equal(1);
         expect(await attestationVerifier.isVerified(addrs[13])).to.equal(getImageId(image1));
         {
             const { PCR0, PCR1, PCR2 } = await attestationVerifier.whitelistedImages(getImageId(image1));
@@ -150,7 +148,6 @@ describe("AttestationVerifier - Init", function() {
         await upgrades.upgradeProxy(await attestationVerifier.getAddress(), AttestationVerifier, { kind: "uups" });
 
         expect(await attestationVerifier.hasRole(await attestationVerifier.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-        expect(await attestationVerifier.getRoleMemberCount(await attestationVerifier.DEFAULT_ADMIN_ROLE())).to.equal(1);
         expect(await attestationVerifier.isVerified(addrs[13])).to.equal(getImageId(image1));
         {
             const { PCR0, PCR1, PCR2 } = await attestationVerifier.whitelistedImages(getImageId(image1));
@@ -204,10 +201,6 @@ testERC165(
             "grantRole(bytes32,address)",
             "revokeRole(bytes32,address)",
             "renounceRole(bytes32,address)",
-        ],
-        IAccessControlEnumerable: [
-            "getRoleMember(bytes32,uint256)",
-            "getRoleMemberCount(bytes32)",
         ],
     },
 );

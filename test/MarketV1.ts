@@ -118,10 +118,6 @@ testERC165(
 			"revokeRole(bytes32,address)",
 			"renounceRole(bytes32,address)",
 		],
-		IAccessControlEnumerable: [
-			"getRoleMember(bytes32,uint256)",
-			"getRoleMemberCount(bytes32)",
-		],
 	},
 );
 
