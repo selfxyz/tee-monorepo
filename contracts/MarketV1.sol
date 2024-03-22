@@ -160,7 +160,7 @@ contract MarketV1 is
     bytes32 public constant RATE_LOCK_SELECTOR = keccak256("RATE_LOCK");
 
     struct Job {
-        string metadata;
+        bytes metadata;
         address owner;
         address provider;
         uint256 rate;
@@ -186,7 +186,7 @@ contract MarketV1 is
 
     event JobOpened(
         bytes32 indexed job,
-        string metadata,
+        bytes metadata,
         address indexed owner,
         address indexed provider,
         uint256 rate,
@@ -200,7 +200,7 @@ contract MarketV1 is
     event JobReviseRateInitiated(bytes32 indexed job, uint256 newRate);
     event JobReviseRateCancelled(bytes32 indexed job);
     event JobReviseRateFinalized(bytes32 indexed job, uint256 newRate);
-    event JobMetadataUpdated(bytes32 indexed job, string metadata);
+    event JobMetadataUpdated(bytes32 indexed job, bytes metadata);
 
     modifier onlyJobOwner(bytes32 _job) {
         if (!(jobs[_job].owner == _msgSender())) revert MarketV1JobOnlyOwner();
@@ -221,7 +221,7 @@ contract MarketV1 is
     }
 
     function _jobOpen(
-        string memory _metadata,
+        bytes memory _metadata,
         address _owner,
         address _provider,
         uint256 _rate,
@@ -311,12 +311,12 @@ contract MarketV1 is
         emit JobReviseRateFinalized(_job, _newRate);
     }
 
-    function _jobMetadataUpdate(bytes32 _job, string memory _metadata) internal {
+    function _jobMetadataUpdate(bytes32 _job, bytes memory _metadata) internal {
         jobs[_job].metadata = _metadata;
         emit JobMetadataUpdated(_job, _metadata);
     }
 
-    function jobOpen(string calldata _metadata, address _provider, uint256 _rate, uint256 _balance) external {
+    function jobOpen(bytes calldata _metadata, address _provider, uint256 _rate, uint256 _balance) external {
         return _jobOpen(_metadata, _msgSender(), _provider, _rate, _balance);
     }
 
@@ -362,7 +362,7 @@ contract MarketV1 is
         return _jobReviseRate(_job, _newRate);
     }
 
-    function jobMetadataUpdate(bytes32 _job, string calldata _metadata) external onlyJobOwner(_job) {
+    function jobMetadataUpdate(bytes32 _job, bytes calldata _metadata) external onlyJobOwner(_job) {
         return _jobMetadataUpdate(_job, _metadata);
     }
 
