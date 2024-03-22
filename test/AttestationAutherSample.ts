@@ -167,7 +167,7 @@ describe("AttestationAutherSample - Init", function() {
 				kind: "uups",
 				constructorArgs: [addrs[10], 600],
 			}),
-		).to.be.revertedWith("only admin");
+		).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
 	});
 });
 
@@ -227,7 +227,7 @@ describe("AttestationAutherSample - Whitelist image", function() {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("non admin cannot whitelist image", async function() {
-		await expect(attestationAutherSample.connect(signers[1]).whitelistEnclaveImage(image3.PCR0, image3.PCR1, image3.PCR2)).to.be.revertedWith("only admin");
+		await expect(attestationAutherSample.connect(signers[1]).whitelistEnclaveImage(image3.PCR0, image3.PCR1, image3.PCR2)).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
 	});
 
 	it("admin can whitelist image", async function() {
@@ -286,7 +286,7 @@ describe("AttestationAutherSample - Revoke image", function() {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("non admin cannot revoke image", async function() {
-		await expect(attestationAutherSample.connect(signers[1]).revokeEnclaveImage(getImageId(image1))).to.be.revertedWith("only admin");
+		await expect(attestationAutherSample.connect(signers[1]).revokeEnclaveImage(getImageId(image1))).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
 	});
 
 	it("admin can revoke image", async function() {
@@ -329,7 +329,7 @@ describe("AttestationAutherSample - Whitelist enclave", function() {
 
 	it("non admin cannot whitelist enclave", async function() {
 		let wallet15 = walletForIndex(15);
-		await expect(attestationAutherSample.connect(signers[1]).whitelistEnclaveKey(normalize(wallet15.signingKey.publicKey), getImageId(image1))).to.be.revertedWith("only admin");
+		await expect(attestationAutherSample.connect(signers[1]).whitelistEnclaveKey(normalize(wallet15.signingKey.publicKey), getImageId(image1))).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
 	});
 
 	it("admin can whitelist enclave", async function() {
@@ -379,7 +379,7 @@ describe("AttestationAutherSample - Revoke enclave", function() {
 
 	it("non admin cannot revoke enclave", async function() {
 		let wallet14 = walletForIndex(14);
-		await expect(attestationAutherSample.connect(signers[1]).revokeEnclaveKey(normalize(wallet14.signingKey.publicKey))).to.be.revertedWith("only admin");
+		await expect(attestationAutherSample.connect(signers[1]).revokeEnclaveKey(normalize(wallet14.signingKey.publicKey))).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
 	});
 
 	it("admin can revoke enclave", async function() {
