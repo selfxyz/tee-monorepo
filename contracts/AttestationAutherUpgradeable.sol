@@ -33,7 +33,8 @@ contract AttestationAutherUpgradeable is
     }
 
     // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.AttestationAuther")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant AttestationAutherStorageLocation = 0xc17b4b708b6f44255c20913a9d97a05300b670342c71fe5ae5b617bd4db55000;
+    bytes32 private constant AttestationAutherStorageLocation =
+        0xc17b4b708b6f44255c20913a9d97a05300b670342c71fe5ae5b617bd4db55000;
 
     function _getAttestationAutherStorage() private pure returns (AttestationAutherStorage storage $) {
         assembly {
@@ -71,9 +72,8 @@ contract AttestationAutherUpgradeable is
     function _whitelistEnclaveImage(EnclaveImage memory image) internal returns (bytes32) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        if (!(
-            image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48
-        )) revert AttestationAutherPCRsInvalid();
+        if (!(image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48))
+            revert AttestationAutherPCRsInvalid();
 
         bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
         if (!($.whitelistedImages[imageId].PCR0.length == 0)) revert AttestationAutherImageAlreadyWhitelisted();
@@ -126,7 +126,8 @@ contract AttestationAutherUpgradeable is
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
         if (!($.verifiedKeys[enclaveKey] == bytes32(0))) revert AttestationAutherKeyAlreadyVerified();
-        if (!(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE)) revert AttestationAutherAttestationTooOld();
+        if (!(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE))
+            revert AttestationAutherAttestationTooOld();
 
         EnclaveImage memory image = $.whitelistedImages[imageId];
         ATTESTATION_VERIFIER.verify(
