@@ -91,10 +91,29 @@ contract AttestationAutherSample is
 
     //-------------------------------- Open methods start -------------------------------//
 
-    string public constant SIGNATURE_PREFIX = "attestation-auther-sample-";
+    bytes32 private constant DOMAIN_SEPARATOR =
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.AttestationAutherSample"),
+                keccak256("1")
+            )
+        );
+
+    struct Message {
+        string message;
+    }
+    bytes32 private constant MESSAGE_TYPEHASH =
+        keccak256("Message(string message)");
 
     function verify(bytes memory signature, string memory message) external view {
-        bytes32 digest = keccak256(abi.encodePacked(SIGNATURE_PREFIX, message));
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                MESSAGE_TYPEHASH,
+                keccak256(bytes(message))
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
 
         address signer = ECDSA.recover(digest, signature);
 
