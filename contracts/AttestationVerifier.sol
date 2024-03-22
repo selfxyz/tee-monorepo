@@ -7,7 +7,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/IAttestationVerifier.sol";
 
@@ -16,7 +15,6 @@ contract AttestationVerifier is
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
     AccessControlUpgradeable, // RBAC
-    AccessControlEnumerableUpgradeable, // RBAC enumeration
     UUPSUpgradeable, // public upgrade
     IAttestationVerifier // interface
 {
@@ -40,29 +38,10 @@ contract AttestationVerifier is
         public
         view
         virtual
-        override(ERC165Upgradeable, AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
+        override(ERC165Upgradeable, AccessControlUpgradeable)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
-    }
-
-    function _grantRole(
-        bytes32 role,
-        address account
-    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
-        return super._grantRole(role, account);
-    }
-
-    function _revokeRole(
-        bytes32 role,
-        address account
-    ) internal virtual override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable) returns (bool) {
-        bool res = super._revokeRole(role, account);
-
-        // protect against accidentally removing all admins
-        if (!(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0)) revert AttestationVerifierCannotRemoveAllAdmins();
-
-        return res;
     }
 
     function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -89,7 +68,6 @@ contract AttestationVerifier is
         __Context_init_unchained();
         __ERC165_init_unchained();
         __AccessControl_init_unchained();
-        __AccessControlEnumerable_init_unchained();
         __UUPSUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
