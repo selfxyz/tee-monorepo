@@ -314,10 +314,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 50);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		const jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -331,14 +331,14 @@ describe("MarketV1", function() {
 	it("cannot open job without enough approved", async () => {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 49);
 		await expect(
-			marketv1.connect(signers[1]).jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50),
+			marketv1.connect(signers[1]).jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50),
 		).to.be.revertedWithCustomError(pond, "ERC20InsufficientAllowance");
 	});
 
 	it("cannot open job without enough balance", async () => {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 5000);
 		await expect(
-			marketv1.connect(signers[1]).jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 5000),
+			marketv1.connect(signers[1]).jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 5000),
 		).to.be.revertedWithCustomError(pond, "ERC20InsufficientBalance");
 	});
 });
@@ -376,10 +376,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 50);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -396,7 +396,7 @@ describe("MarketV1", function() {
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
 		let amount = 5n * (jobInfo.lastSettled - ts);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -415,10 +415,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 50);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -434,7 +434,7 @@ describe("MarketV1", function() {
 		await marketv1.jobSettle(ethers.ZeroHash);
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -480,10 +480,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 75);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -498,7 +498,7 @@ describe("MarketV1", function() {
 			.jobDeposit(ethers.ZeroHash, 25);
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -516,10 +516,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 74);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -541,10 +541,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 5000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -573,10 +573,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 5000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -630,10 +630,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -651,7 +651,7 @@ describe("MarketV1", function() {
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
 		let amount = 1n * (jobInfo.lastSettled - ts);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -670,10 +670,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -692,7 +692,7 @@ describe("MarketV1", function() {
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
 		let amount = 1n * (jobInfo.lastSettled - ts);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -711,10 +711,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -733,7 +733,7 @@ describe("MarketV1", function() {
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
 		let amount = 1n * (jobInfo.lastSettled - ts);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -762,10 +762,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -787,10 +787,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -813,10 +813,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -866,10 +866,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -891,10 +891,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -919,10 +919,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -943,10 +943,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -994,10 +994,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1016,7 +1016,7 @@ describe("MarketV1", function() {
 			.jobReviseRateCancel(ethers.ZeroHash);
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1034,10 +1034,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1059,10 +1059,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1088,10 +1088,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1143,10 +1143,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1170,7 +1170,7 @@ describe("MarketV1", function() {
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
 		let amount = 1n * (jobInfo.lastSettled - ts);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(2);
@@ -1189,10 +1189,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1214,10 +1214,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1243,10 +1243,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1298,10 +1298,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1324,7 +1324,7 @@ describe("MarketV1", function() {
 			.jobClose(ethers.ZeroHash);
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("");
+		expect(jobInfo.metadata).to.equal("0x");
 		expect(jobInfo.owner).to.equal(ethers.ZeroAddress);
 		expect(jobInfo.provider).to.equal(ethers.ZeroAddress);
 		expect(jobInfo.rate).to.equal(0);
@@ -1343,10 +1343,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1372,7 +1372,7 @@ describe("MarketV1", function() {
 			.jobClose(ethers.ZeroHash);
 
 		jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("");
+		expect(jobInfo.metadata).to.equal("0x");
 		expect(jobInfo.owner).to.equal(ethers.ZeroAddress);
 		expect(jobInfo.provider).to.equal(ethers.ZeroAddress);
 		expect(jobInfo.rate).to.equal(0);
@@ -1391,10 +1391,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1424,10 +1424,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1449,10 +1449,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1478,10 +1478,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(await marketv1.getAddress(), 1000);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 1n * 10n ** 12n, 800);
+			.jobOpen("0x1234567890", addrs[2], 1n * 10n ** 12n, 800);
 
 		let jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(1n * 10n ** 12n);
@@ -1533,10 +1533,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(marketv1.getAddress(), 100);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		const jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -1548,10 +1548,10 @@ describe("MarketV1", function() {
 
 		await marketv1
 			.connect(signers[1])
-			.jobMetadataUpdate(ethers.ZeroHash, "some updated metadata");
+			.jobMetadataUpdate(ethers.ZeroHash, "0x0987654321");
 
 		const jobInfo2 = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo2.metadata).to.equal("some updated metadata");
+		expect(jobInfo2.metadata).to.equal("0x0987654321");
 
 		expect(await pond.balanceOf(addrs[1])).to.equal(950);
 		expect(await pond.balanceOf(marketv1.getAddress())).to.equal(50);
@@ -1564,10 +1564,10 @@ describe("MarketV1", function() {
 		await (pond.connect(signers[1]) as Contract).approve(marketv1.getAddress(), 100);
 		await marketv1
 			.connect(signers[1])
-			.jobOpen("some metadata", addrs[2], 5n * 10n ** 12n, 50);
+			.jobOpen("0x1234567890", addrs[2], 5n * 10n ** 12n, 50);
 
 		const jobInfo = await marketv1.jobs(ethers.ZeroHash);
-		expect(jobInfo.metadata).to.equal("some metadata");
+		expect(jobInfo.metadata).to.equal("0x1234567890");
 		expect(jobInfo.owner).to.equal(addrs[1]);
 		expect(jobInfo.provider).to.equal(addrs[2]);
 		expect(jobInfo.rate).to.equal(5n * 10n ** 12n);
@@ -1578,7 +1578,7 @@ describe("MarketV1", function() {
 		expect(await pond.balanceOf(marketv1.getAddress())).to.equal(50);
 
 		await expect(marketv1
-			.jobMetadataUpdate(ethers.ZeroHash, "some updated metadata")).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
+			.jobMetadataUpdate(ethers.ZeroHash, "0x0987654321")).to.be.revertedWithCustomError(marketv1, "MarketV1JobOnlyOwner");
 
 	});
 });
