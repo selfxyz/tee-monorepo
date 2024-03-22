@@ -113,7 +113,7 @@ contract AttestationAutherUpgradeable is
     }
 
     // add enclave key of a whitelisted image to the list of verified enclave keys
-    function _verifyKey(
+    function _verifyEnclaveKey(
         bytes memory signature,
         bytes memory enclavePubKey,
         bytes32 imageId,
@@ -145,7 +145,7 @@ contract AttestationAutherUpgradeable is
         emit EnclaveKeyVerified(enclavePubKey, imageId);
     }
 
-    function verifyKey(
+    function verifyEnclaveKey(
         bytes memory signature,
         bytes memory enclavePubKey,
         bytes32 imageId,
@@ -153,7 +153,7 @@ contract AttestationAutherUpgradeable is
         uint256 enclaveMemory,
         uint256 timestampInMilliseconds
     ) external {
-        return _verifyKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
+        return _verifyEnclaveKey(signature, enclavePubKey, imageId, enclaveCPUs, enclaveMemory, timestampInMilliseconds);
     }
 
     function _allowOnlyVerified(address key) internal view {
