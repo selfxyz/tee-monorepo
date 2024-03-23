@@ -464,7 +464,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, { ...attestation, enclavePubKey: pubkeys[16] }))
-            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, { ...attestation, PCR0: attestation.PCR1 }))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, { ...attestation, PCR1: attestation.PCR0 }))
@@ -472,9 +472,9 @@ describe("AttestationVerifier - Verify enclave key", function() {
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, { ...attestation, PCR2: attestation.PCR0 }))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, { ...attestation, PCR0: image2.PCR0, PCR1: image2.PCR1, PCR2: image2.PCR2 }))
-            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, { ...attestation, timestampInMilliseconds: timestamp - 200000 }))
-            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify enclave key with invalid public key", async function() {
@@ -510,7 +510,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image1, wallets[16], timestamp - 240000);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify enclave key with revoked key", async function() {
@@ -520,7 +520,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
         await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify enclave key with revoked image", async function() {
@@ -530,7 +530,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
         await attestationVerifier.revokeEnclaveImage(getImageId(image2));
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+            .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
     });
 });
 
@@ -571,22 +571,22 @@ describe("AttestationVerifier - Safe verify with params", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, { ...attestation, enclavePubKey: pubkeys[16] },
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, { ...attestation, PCR0: attestation.PCR1 },
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, { ...attestation, PCR1: attestation.PCR0 },
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, { ...attestation, PCR2: attestation.PCR0 },
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, { ...attestation, PCR0: image2.PCR0, PCR1: image2.PCR1, PCR2: image2.PCR2 },
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, { ...attestation, timestampInMilliseconds: 200000 },
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify with unwhitelisted key", async function() {
@@ -594,7 +594,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, attestation,
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify with revoked key", async function() {
@@ -604,7 +604,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, attestation,
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify with revoked image", async function() {
@@ -614,7 +614,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, attestation,
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
     });
 });
 
@@ -661,37 +661,37 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values({ ...attestation, enclavePubKey: pubkeys[16] })],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values({ ...attestation, PCR0: attestation.PCR1 })],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values({ ...attestation, PCR1: attestation.PCR0 })],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values({ ...attestation, PCR2: attestation.PCR0 })],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values({ ...attestation, PCR0: image2.PCR0, PCR1: image2.PCR1, PCR2: image2.PCR2 })],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values({ ...attestation, timestampInMilliseconds: 200000 })],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify with unwhitelisted key", async function() {
@@ -702,7 +702,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values(attestation)],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify with revoked key", async function() {
@@ -715,7 +715,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values(attestation)],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
     it("cannot verify with revoked image", async function() {
@@ -728,7 +728,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
                 ["bytes", "(bytes,bytes,bytes,bytes,uint256)"],
                 [signature, Object.values(attestation)],
             ),
-        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierDoesNotVerify");
+        )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
     });
 });
 
