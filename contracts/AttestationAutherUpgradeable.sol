@@ -113,10 +113,7 @@ contract AttestationAutherUpgradeable is
     }
 
     // add enclave key of a whitelisted image to the list of verified enclave keys
-    function _verifyEnclaveKey(
-        bytes memory signature,
-        IAttestationVerifier.Attestation memory attestation
-    ) internal {
+    function _verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) internal {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
@@ -126,21 +123,14 @@ contract AttestationAutherUpgradeable is
         if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE))
             revert AttestationAutherAttestationTooOld();
 
-        ATTESTATION_VERIFIER.verify(
-            signature,
-            attestation
-        );
+        ATTESTATION_VERIFIER.verify(signature, attestation);
 
         $.verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
     }
 
-    function verifyEnclaveKey(
-        bytes memory signature,
-        IAttestationVerifier.Attestation memory attestation
-    ) external {
-        return
-            _verifyEnclaveKey(signature, attestation);
+    function verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) external {
+        return _verifyEnclaveKey(signature, attestation);
     }
 
     function _allowOnlyVerified(address key) internal view {

@@ -103,16 +103,10 @@ contract AttestationAutherSample is
     struct Message {
         string message;
     }
-    bytes32 private constant MESSAGE_TYPEHASH =
-        keccak256("Message(string message)");
+    bytes32 private constant MESSAGE_TYPEHASH = keccak256("Message(string message)");
 
     function verify(bytes memory signature, string memory message) external view {
-        bytes32 hashStruct = keccak256(
-            abi.encode(
-                MESSAGE_TYPEHASH,
-                keccak256(bytes(message))
-            )
-        );
+        bytes32 hashStruct = keccak256(abi.encode(MESSAGE_TYPEHASH, keccak256(bytes(message))));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
 
         address signer = ECDSA.recover(digest, signature);

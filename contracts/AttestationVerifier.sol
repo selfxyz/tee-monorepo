@@ -174,10 +174,7 @@ contract AttestationVerifier is
 
     error AttestationVerifierAttestationTooOld();
 
-    function _verifyEnclaveKey(
-        bytes memory signature,
-        IAttestationVerifier.Attestation memory attestation
-    ) internal {
+    function _verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) internal {
         if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
             revert AttestationVerifierAttestationTooOld();
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
@@ -192,12 +189,8 @@ contract AttestationVerifier is
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
     }
 
-    function verifyEnclaveKey(
-        bytes memory signature,
-        Attestation memory attestation
-    ) external {
-        return
-            _verifyEnclaveKey(signature, attestation);
+    function verifyEnclaveKey(bytes memory signature, Attestation memory attestation) external {
+        return _verifyEnclaveKey(signature, attestation);
     }
 
     //-------------------------------- Open methods end -------------------------------//
@@ -218,10 +211,7 @@ contract AttestationVerifier is
     bytes32 private constant ATTESTATION_TYPEHASH =
         keccak256("Attestation(bytes enclavePubKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestampInMilliseconds)");
 
-    function _verify(
-        bytes memory signature,
-        Attestation memory attestation
-    ) internal view {
+    function _verify(bytes memory signature, Attestation memory attestation) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 ATTESTATION_TYPEHASH,
@@ -241,18 +231,12 @@ contract AttestationVerifier is
             revert AttestationVerifierDoesNotVerify();
     }
 
-    function verify(
-        bytes memory signature,
-        Attestation memory attestation
-    ) external view {
+    function verify(bytes memory signature, Attestation memory attestation) external view {
         _verify(signature, attestation);
     }
 
     function verify(bytes memory data) external view {
-        (
-            bytes memory signature,
-            Attestation memory attestation
-        ) = abi.decode(data, (bytes, Attestation));
+        (bytes memory signature, Attestation memory attestation) = abi.decode(data, (bytes, Attestation));
         _verify(signature, attestation);
     }
 
