@@ -81,7 +81,7 @@ contract AttestationVerifier is
     // ImageId -> image details
     mapping(bytes32 => EnclaveImage) public whitelistedImages;
     // enclaveKey -> ImageId
-    mapping(address => bytes32) public isVerified;
+    mapping(address => bytes32) public verifiedKeys;
 
     uint256[48] private __gap_1;
 
@@ -134,15 +134,15 @@ contract AttestationVerifier is
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal {
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
-        isVerified[enclaveKey] = imageId;
+        if (!(verifiedKeys[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
+        verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
     }
 
     function _revokeEnclaveKey(bytes memory enclavePubKey) internal {
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!(isVerified[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyNotVerified();
-        delete isVerified[enclaveKey];
+        if (!(verifiedKeys[enclaveKey] != bytes32(0))) revert AttestationVerifierKeyNotVerified();
+        delete verifiedKeys[enclaveKey];
         emit EnclaveKeyRevoked(enclavePubKey);
     }
 
@@ -181,11 +181,11 @@ contract AttestationVerifier is
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
 
         address enclaveKey = pubKeyToAddress(attestation.enclavePubKey);
-        if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
+        if (!(verifiedKeys[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
 
         _verify(signature, attestation);
 
-        isVerified[enclaveKey] = imageId;
+        verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
     }
 
@@ -223,7 +223,7 @@ contract AttestationVerifier is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
 
         address signer = ECDSA.recover(digest, signature);
-        bytes32 imageId = isVerified[signer];
+        bytes32 imageId = verifiedKeys[signer];
 
         if (!(imageId != bytes32(0))) revert AttestationVerifierKeyNotVerified();
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
