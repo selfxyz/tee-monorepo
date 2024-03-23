@@ -115,40 +115,32 @@ contract AttestationAutherUpgradeable is
     // add enclave key of a whitelisted image to the list of verified enclave keys
     function _verifyEnclaveKey(
         bytes memory signature,
-        bytes memory enclavePubKey,
-        bytes32 imageId,
-        uint256 timestampInMilliseconds
+        IAttestationVerifier.Attestation memory attestation
     ) internal {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
+        bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
+        address enclaveKey = _pubKeyToAddress(attestation.enclavePubKey);
         if (!($.verifiedKeys[enclaveKey] == bytes32(0))) revert AttestationAutherKeyAlreadyVerified();
-        if (!(timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE))
+        if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE))
             revert AttestationAutherAttestationTooOld();
 
-        EnclaveImage memory image = $.whitelistedImages[imageId];
         ATTESTATION_VERIFIER.verify(
             signature,
-            enclavePubKey,
-            image.PCR0,
-            image.PCR1,
-            image.PCR2,
-            timestampInMilliseconds
+            attestation
         );
 
         $.verifiedKeys[enclaveKey] = imageId;
-        emit EnclaveKeyVerified(enclavePubKey, imageId);
+        emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
     }
 
     function verifyEnclaveKey(
         bytes memory signature,
-        bytes memory enclavePubKey,
-        bytes32 imageId,
-        uint256 timestampInMilliseconds
+        IAttestationVerifier.Attestation memory attestation
     ) external {
         return
-            _verifyEnclaveKey(signature, enclavePubKey, imageId, timestampInMilliseconds);
+            _verifyEnclaveKey(signature, attestation);
     }
 
     function _allowOnlyVerified(address key) internal view {
