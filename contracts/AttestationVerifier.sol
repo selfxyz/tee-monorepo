@@ -197,8 +197,6 @@ contract AttestationVerifier is
 
     //-------------------------------- Read only methods start -------------------------------//
 
-    error AttestationVerifierDoesNotVerify();
-
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
@@ -225,10 +223,10 @@ contract AttestationVerifier is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
 
         address signer = ECDSA.recover(digest, signature);
-        bytes32 sourceImageId = isVerified[signer];
+        bytes32 imageId = isVerified[signer];
 
-        if (!(sourceImageId != bytes32(0) && whitelistedImages[sourceImageId].PCR0.length != 0))
-            revert AttestationVerifierDoesNotVerify();
+        if (!(imageId != bytes32(0))) revert AttestationVerifierKeyNotVerified();
+        if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
     }
 
     function verify(bytes memory signature, Attestation memory attestation) external view {
