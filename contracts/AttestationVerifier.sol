@@ -176,32 +176,28 @@ contract AttestationVerifier is
 
     function _verifyEnclaveKey(
         bytes memory signature,
-        bytes memory enclavePubKey,
-        bytes32 imageId,
-        uint256 timestampInMilliseconds
+        IAttestationVerifier.Attestation memory attestation
     ) internal {
-        if (!(timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
+        if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
             revert AttestationVerifierAttestationTooOld();
+        bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
 
-        address enclaveKey = pubKeyToAddress(enclavePubKey);
+        address enclaveKey = pubKeyToAddress(attestation.enclavePubKey);
         if (!(isVerified[enclaveKey] == bytes32(0))) revert AttestationVerifierKeyAlreadyVerified();
 
-        EnclaveImage memory image = whitelistedImages[imageId];
-        _verify(signature, enclavePubKey, image, timestampInMilliseconds);
+        _verify(signature, attestation);
 
         isVerified[enclaveKey] = imageId;
-        emit EnclaveKeyVerified(enclavePubKey, imageId);
+        emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
     }
 
     function verifyEnclaveKey(
         bytes memory signature,
-        bytes memory enclavePubKey,
-        bytes32 imageId,
-        uint256 timestampInMilliseconds
+        Attestation memory attestation
     ) external {
         return
-            _verifyEnclaveKey(signature, enclavePubKey, imageId, timestampInMilliseconds);
+            _verifyEnclaveKey(signature, attestation);
     }
 
     //-------------------------------- Open methods end -------------------------------//
@@ -219,30 +215,21 @@ contract AttestationVerifier is
             )
         );
 
-    struct Attestation {
-        bytes enclaveKey;
-        bytes PCR0;
-        bytes PCR1;
-        bytes PCR2;
-        uint256 timestamp;
-    }
     bytes32 private constant ATTESTATION_TYPEHASH =
-        keccak256("Attestation(bytes enclaveKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestamp)");
+        keccak256("Attestation(bytes enclavePubKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestampInMilliseconds)");
 
     function _verify(
         bytes memory signature,
-        bytes memory enclaveKey,
-        EnclaveImage memory image,
-        uint256 timestamp
+        Attestation memory attestation
     ) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 ATTESTATION_TYPEHASH,
-                keccak256(enclaveKey),
-                keccak256(image.PCR0),
-                keccak256(image.PCR1),
-                keccak256(image.PCR2),
-                timestamp
+                keccak256(attestation.enclavePubKey),
+                keccak256(attestation.PCR0),
+                keccak256(attestation.PCR1),
+                keccak256(attestation.PCR2),
+                attestation.timestampInMilliseconds
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -256,25 +243,17 @@ contract AttestationVerifier is
 
     function verify(
         bytes memory signature,
-        bytes memory enclaveKey,
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2,
-        uint256 timestamp
+        Attestation memory attestation
     ) external view {
-        _verify(signature, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), timestamp);
+        _verify(signature, attestation);
     }
 
     function verify(bytes memory data) external view {
         (
             bytes memory signature,
-            bytes memory enclaveKey,
-            bytes memory PCR0,
-            bytes memory PCR1,
-            bytes memory PCR2,
-           uint256 timestamp
-        ) = abi.decode(data, (bytes, bytes, bytes, bytes, bytes, uint256));
-        _verify(signature, enclaveKey, EnclaveImage(PCR0, PCR1, PCR2), timestamp);
+            Attestation memory attestation
+        ) = abi.decode(data, (bytes, Attestation));
+        _verify(signature, attestation);
     }
 
     //-------------------------------- Read only methods end -------------------------------//
