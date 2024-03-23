@@ -3,13 +3,16 @@
 pragma solidity ^0.8.0;
 
 interface IAttestationVerifier {
+    struct Attestation {
+        bytes enclavePubKey;
+        bytes PCR0;
+        bytes PCR1;
+        bytes PCR2;
+        uint256 timestampInMilliseconds;
+    }
     function verify(
-        bytes memory attestation,
-        bytes memory enclaveKey,
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2,
-        uint256 timestamp
+        bytes memory signature,
+        Attestation memory attestation
     ) external view;
     function verify(bytes memory data) external view;
 }
