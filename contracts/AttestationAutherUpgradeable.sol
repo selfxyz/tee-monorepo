@@ -30,6 +30,7 @@ contract AttestationAutherUpgradeable is
     struct AttestationAutherStorage {
         mapping(bytes32 => EnclaveImage) whitelistedImages;
         mapping(address => bytes32) verifiedKeys;
+        mapping(bytes32 => mapping(bytes32 => bool)) imageFamilies;
     }
 
     // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.AttestationAuther")) - 1)) & ~bytes32(uint256(0xff))
