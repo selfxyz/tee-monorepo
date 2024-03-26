@@ -31,6 +31,10 @@ function getImageId(image: AttestationAutherUpgradeable.EnclaveImageStruct): str
 	return keccak256(solidityPacked(["bytes", "bytes", "bytes"], [image.PCR0, image.PCR1, image.PCR2]));
 }
 
+const FIRST_FAMILY = ethers.id("FIRST_FAMILY");
+const SECOND_FAMILY = ethers.id("SECOND_FAMILY");
+const THIRD_FAMILY = ethers.id("THIRD_FAMILY");
+
 describe("AttestationAutherSample - Init", function() {
 	let signers: Signer[];
 	let addrs: string[];
@@ -55,6 +59,14 @@ describe("AttestationAutherSample - Init", function() {
 
 		await expect(
 			attestationAutherSample.initialize([image1, image2], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initializeWithFamilies([], [], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initializeWithFamilies([image1, image2], [FIRST_FAMILY, SECOND_FAMILY], addrs[0]),
 		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
 	});
 
@@ -165,6 +177,74 @@ describe("AttestationAutherSample - Init", function() {
 				constructorArgs: [addrs[10], 600],
 			}),
 		).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+	});
+
+	it("deploys as proxy and initializes with families", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+		);
+
+		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
+		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
+
+		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
+		}
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image2));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image2);
+		}
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image3));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image3);
+		}
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), FIRST_FAMILY)).to.be.true;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image2), FIRST_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image3), FIRST_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), SECOND_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image2), SECOND_FAMILY)).to.be.true;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image3), SECOND_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), THIRD_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image2), THIRD_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image3), THIRD_FAMILY)).to.be.true;
+	});
+
+	it("cannot initialize with families with no whitelisted images", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[], [], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleNoImageProvided");
+	});
+
+	it("cannot initialize with families with zero address as admin", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY], ethers.ZeroAddress],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleInvalidAdmin");
+	});
+
+	it("cannot initialize with families with mismatched lengths", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleMismatchedLengths");
 	});
 });
 
