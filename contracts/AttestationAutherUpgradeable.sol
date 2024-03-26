@@ -186,4 +186,10 @@ contract AttestationAutherUpgradeable is
 
         return $.verifiedKeys[_key];
     }
+
+    function isImageInFamily(bytes32 imageId, bytes32 family) external view returns (bool) {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        return $.imageFamilies[family][imageId];
+    }
 }
