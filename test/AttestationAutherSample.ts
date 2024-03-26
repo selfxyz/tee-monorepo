@@ -381,6 +381,40 @@ describe("AttestationAutherSample - Revoke image", function() {
 	});
 });
 
+describe("AttestationAutherSample - Add image to family", function() {
+	let signers: Signer[];
+	let addrs: string[];
+	let attestationAutherSample: AttestationAutherSample;
+	const TEST_FAMILY = ethers.id("TEST_FAMILY");
+
+	before(async function() {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSample;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("non admin cannot add image to family", async function() {
+		await expect(attestationAutherSample.connect(signers[1]).addEnclaveImageToFamily(getImageId(image1), TEST_FAMILY)).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+	});
+
+	it("admin can add image to family", async function() {
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.false;
+
+		await expect(attestationAutherSample.addEnclaveImageToFamily(getImageId(image1), TEST_FAMILY))
+			.to.emit(attestationAutherSample, "EnclaveImageAddedToFamily").withArgs(getImageId(image1), TEST_FAMILY);
+
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.true;
+	});
+});
+
 describe("AttestationAutherSample - Whitelist enclave", function() {
 	let signers: Signer[];
 	let addrs: string[];
