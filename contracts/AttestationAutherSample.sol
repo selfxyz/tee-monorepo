@@ -128,5 +128,14 @@ contract AttestationAutherSample is
         _allowOnlyVerified(signer);
     }
 
+    function verifyFamily(bytes memory signature, string memory message, bytes32 family) external view {
+        bytes32 hashStruct = keccak256(abi.encode(MESSAGE_TYPEHASH, keccak256(bytes(message))));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+
+        address signer = ECDSA.recover(digest, signature);
+
+        _allowOnlyVerifiedFamily(signer, family);
+    }
+
     //-------------------------------- Open methods end -------------------------------//
 }
