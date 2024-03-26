@@ -47,6 +47,7 @@ contract AttestationAutherUpgradeable is
     error AttestationAutherPCRsInvalid();
     error AttestationAutherImageNotWhitelisted();
     error AttestationAutherImageAlreadyWhitelisted();
+    error AttestationAutherImageNotInFamily();
     error AttestationAutherKeyNotVerified();
     error AttestationAutherKeyAlreadyVerified();
     error AttestationAutherAttestationTooOld();
@@ -163,6 +164,15 @@ contract AttestationAutherUpgradeable is
         bytes32 imageId = $.verifiedKeys[key];
         if (!(imageId != bytes32(0))) revert AttestationAutherKeyNotVerified();
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
+    }
+
+    function _allowOnlyVerifiedFamily(address key, bytes32 family) internal view {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        bytes32 imageId = $.verifiedKeys[key];
+        if (!(imageId != bytes32(0))) revert AttestationAutherKeyNotVerified();
+        if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
+        if (!($.imageFamilies[family][imageId])) revert AttestationAutherImageNotInFamily();
     }
 
     function getWhitelistedImage(bytes32 _imageId) external view returns (EnclaveImage memory) {
