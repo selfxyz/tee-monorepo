@@ -735,7 +735,7 @@ describe("AttestationAutherSample - Safe verify with params", function() {
 		let signature = await createSignature("testmsg", wallets[14]);
 
 		await expect(attestationAutherSample.connect(signers[1]).verify(
-			signature, "randommsg",
+			signature, "testmsg",
 		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
 	});
 
@@ -757,6 +757,136 @@ describe("AttestationAutherSample - Safe verify with params", function() {
 		await expect(attestationAutherSample.connect(signers[1]).verify(
 			signature, "testmsg",
 		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+});
+
+describe("AttestationAutherSample - Verify with family", function() {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+
+	let attestationAutherSample: AttestationAutherSample;
+	let attestationVerifier: AttestationVerifier;
+
+	before(async function() {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+			{ kind: "uups", constructorArgs: [await attestationVerifier.getAddress(), 600], initializer: "initializeWithFamilies" },
+		) as unknown as AttestationAutherSample;
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 540000);
+
+		await attestationAutherSample.connect(signers[1]).verifyEnclaveKey(signature, attestation);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can verify", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(signature, "testmsg")).to.not.be.reverted;
+	});
+
+	it("cannot verify with invalid data", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "randommsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify with unwhitelisted key", async function() {
+		let signature = await createSignature("testmsg", wallets[14]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "testmsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify with revoked key", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "testmsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify with revoked image", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveImage(getImageId(image3));
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "testmsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+
+	it("can verify family", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(signature, "testmsg", THIRD_FAMILY)).to.not.be.reverted;
+	});
+
+	it("cannot verify family with invalid data", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "randommsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify family with unwhitelisted key", async function() {
+		let signature = await createSignature("testmsg", wallets[14]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify family with revoked key", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify family with revoked image", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveImage(getImageId(image3));
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+
+	it("cannot verify family with wrong family", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", SECOND_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotInFamily");
 	});
 });
 
