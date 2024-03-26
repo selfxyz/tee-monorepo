@@ -54,6 +54,7 @@ contract AttestationAutherUpgradeable is
     event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
     event EnclaveImageRevoked(bytes32 indexed imageId);
     event EnclaveImageAddedToFamily(bytes32 indexed imageId, bytes32 family);
+    event EnclaveImageRemovedFromFamily(bytes32 indexed imageId, bytes32 family);
     event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
     event EnclaveKeyRevoked(bytes indexed enclavePubKey);
     event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
@@ -98,6 +99,13 @@ contract AttestationAutherUpgradeable is
 
         $.imageFamilies[family][imageId] = true;
         emit EnclaveImageAddedToFamily(imageId, family);
+    }
+
+    function _removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) internal {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        $.imageFamilies[family][imageId] = false;
+        emit EnclaveImageRemovedFromFamily(imageId, family);
     }
 
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal {
