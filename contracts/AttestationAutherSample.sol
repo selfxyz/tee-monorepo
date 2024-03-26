@@ -87,6 +87,13 @@ contract AttestationAutherSample is
         return _revokeEnclaveKey(enclavePubKey);
     }
 
+    function addEnclaveImageToFamily(
+        bytes32 imageId,
+        bytes32 family
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _addEnclaveImageToFamily(imageId, family);
+    }
+
     //-------------------------------- Admin methods end --------------------------------//
 
     //-------------------------------- Open methods start -------------------------------//
