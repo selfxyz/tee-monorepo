@@ -49,6 +49,7 @@ contract AttestationAutherSample is
 
     error AttestationAutherSampleNoImageProvided();
     error AttestationAutherSampleInvalidAdmin();
+    error AttestationAutherSampleMismatchedLengths();
 
     function initialize(EnclaveImage[] memory images, address _admin) external initializer {
         if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
@@ -59,6 +60,20 @@ contract AttestationAutherSample is
         __AccessControl_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(images);
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+    }
+
+    function initializeWithFamilies(EnclaveImage[] memory images, bytes32[] memory families, address _admin) external initializer {
+        if (!(images.length == families.length)) revert AttestationAutherSampleMismatchedLengths();
+        if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
+        if (!(_admin != address(0))) revert AttestationAutherSampleInvalidAdmin();
+
+        __Context_init_unchained();
+        __ERC165_init_unchained();
+        __AccessControl_init_unchained();
+        __UUPSUpgradeable_init_unchained();
+        __AttestationAuther_init_unchained(images, families);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
