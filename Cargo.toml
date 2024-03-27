@@ -6,9 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.81"
 clap = { version = "4.5.3", features = ["derive"] }
 config = "0.14.0"
-ethers = "2.0.14"
+ethers = { git = "https://github.com/gakonst/ethers-rs", features = ["ws", "rustls", "abigen"] }
+log = "0.4.21"
 serde = "1.0.159"
 serde_derive = "1.0.193"
 serde_json = "1.0.88"

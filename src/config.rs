@@ -10,8 +10,10 @@ pub struct ConfigManager {
 pub struct Config {
     pub key: String,
     pub com_chain_id: u64,
-    pub com_chain_rpc: String,
+    pub com_chain_ws_url: String,
+    pub com_chain_http_url: String,
     pub com_chain_contract_addr: H160,
+    pub start_block: u64,
 }
 
 impl ConfigManager {
