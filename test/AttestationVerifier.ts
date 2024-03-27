@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationVerifier, IAttestationVerifier } from "../typechain-types";
+import { AttestationVerifier } from "../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../utils/testSuite";
 import { keccak256, solidityPacked } from "ethers";
 import { testERC165 } from "./helpers/erc165";

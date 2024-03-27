@@ -92,10 +92,8 @@ export async function verify() {
     throw new Error("Attestation Verifier not deployed");
   }
 
-  const implAddress = await upgrades.erc1967.getImplementationAddress(addresses[chainId]['AttestationVerifier']);
-
   await run("verify:verify", {
-    address: implAddress,
+    address: addresses[chainId]['AttestationVerifier'],
     constructorArguments: []
   });
 
