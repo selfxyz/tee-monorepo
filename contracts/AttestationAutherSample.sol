@@ -63,7 +63,11 @@ contract AttestationAutherSample is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
-    function initializeWithFamilies(EnclaveImage[] memory images, bytes32[] memory families, address _admin) external initializer {
+    function initializeWithFamilies(
+        EnclaveImage[] memory images,
+        bytes32[] memory families,
+        address _admin
+    ) external initializer {
         if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
         if (!(_admin != address(0))) revert AttestationAutherSampleInvalidAdmin();
 
@@ -100,17 +104,11 @@ contract AttestationAutherSample is
         return _revokeEnclaveKey(enclavePubKey);
     }
 
-    function addEnclaveImageToFamily(
-        bytes32 imageId,
-        bytes32 family
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addEnclaveImageToFamily(bytes32 imageId, bytes32 family) external onlyRole(DEFAULT_ADMIN_ROLE) {
         return _addEnclaveImageToFamily(imageId, family);
     }
 
-    function removeEnclaveImageFromFamily(
-        bytes32 imageId,
-        bytes32 family
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) external onlyRole(DEFAULT_ADMIN_ROLE) {
         return _removeEnclaveImageFromFamily(imageId, family);
     }
 

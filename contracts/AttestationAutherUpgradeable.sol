@@ -67,7 +67,10 @@ contract AttestationAutherUpgradeable is
         }
     }
 
-    function __AttestationAuther_init_unchained(EnclaveImage[] memory images, bytes32[] memory families) internal onlyInitializing {
+    function __AttestationAuther_init_unchained(
+        EnclaveImage[] memory images,
+        bytes32[] memory families
+    ) internal onlyInitializing {
         if (!(images.length == families.length)) revert AttestationAutherMismatchedLengths();
         for (uint256 i = 0; i < images.length; i++) {
             bytes32 imageId = _whitelistEnclaveImage(images[i]);
