@@ -87,6 +87,7 @@ pub async fn handle_all_req_chain_events(
                         "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                         request_chain.chain_id, log
                     );
+                    task::spawn(job_placed_handler(log, contract.clone()));
                 } else if topics[0] == keccak256("JobCancel(uint256)").into() {
                     info!(
                         "Request Chain ID: {:?}, JobCancel jobID: {:?}",
@@ -102,4 +103,8 @@ pub async fn handle_all_req_chain_events(
         });
     }
     Ok(())
+}
+
+async fn job_placed_handler(log: Log, contract: RequestChainContract<HttpProvider>) {
+    todo!()
 }
