@@ -244,7 +244,7 @@ describe("AttestationAutherSample - Init", function() {
 				[[image1, image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
 				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
 			)
-		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleMismatchedLengths");
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherMismatchedLengths");
 	});
 });
 
