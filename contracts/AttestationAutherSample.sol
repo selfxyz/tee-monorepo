@@ -63,6 +63,19 @@ contract AttestationAutherSample is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
+    function initializeWithFamilies(EnclaveImage[] memory images, bytes32[] memory families, address _admin) external initializer {
+        if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
+        if (!(_admin != address(0))) revert AttestationAutherSampleInvalidAdmin();
+
+        __Context_init_unchained();
+        __ERC165_init_unchained();
+        __AccessControl_init_unchained();
+        __UUPSUpgradeable_init_unchained();
+        __AttestationAuther_init_unchained(images, families);
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+    }
+
     //-------------------------------- Initializer start --------------------------------//
 
     //-------------------------------- Admin methods start --------------------------------//
@@ -85,6 +98,20 @@ contract AttestationAutherSample is
 
     function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
         return _revokeEnclaveKey(enclavePubKey);
+    }
+
+    function addEnclaveImageToFamily(
+        bytes32 imageId,
+        bytes32 family
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _addEnclaveImageToFamily(imageId, family);
+    }
+
+    function removeEnclaveImageFromFamily(
+        bytes32 imageId,
+        bytes32 family
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _removeEnclaveImageFromFamily(imageId, family);
     }
 
     //-------------------------------- Admin methods end --------------------------------//
@@ -112,6 +139,15 @@ contract AttestationAutherSample is
         address signer = ECDSA.recover(digest, signature);
 
         _allowOnlyVerified(signer);
+    }
+
+    function verifyFamily(bytes memory signature, string memory message, bytes32 family) external view {
+        bytes32 hashStruct = keccak256(abi.encode(MESSAGE_TYPEHASH, keccak256(bytes(message))));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+
+        address signer = ECDSA.recover(digest, signature);
+
+        _allowOnlyVerifiedFamily(signer, family);
     }
 
     //-------------------------------- Open methods end -------------------------------//

@@ -31,6 +31,10 @@ function getImageId(image: AttestationAutherUpgradeable.EnclaveImageStruct): str
 	return keccak256(solidityPacked(["bytes", "bytes", "bytes"], [image.PCR0, image.PCR1, image.PCR2]));
 }
 
+const FIRST_FAMILY = ethers.id("FIRST_FAMILY");
+const SECOND_FAMILY = ethers.id("SECOND_FAMILY");
+const THIRD_FAMILY = ethers.id("THIRD_FAMILY");
+
 describe("AttestationAutherSample - Init", function() {
 	let signers: Signer[];
 	let addrs: string[];
@@ -55,6 +59,14 @@ describe("AttestationAutherSample - Init", function() {
 
 		await expect(
 			attestationAutherSample.initialize([image1, image2], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initializeWithFamilies([], [], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initializeWithFamilies([image1, image2], [FIRST_FAMILY, SECOND_FAMILY], addrs[0]),
 		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
 	});
 
@@ -165,6 +177,74 @@ describe("AttestationAutherSample - Init", function() {
 				constructorArgs: [addrs[10], 600],
 			}),
 		).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+	});
+
+	it("deploys as proxy and initializes with families", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+		);
+
+		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
+		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
+
+		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
+		}
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image2));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image2);
+		}
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image3));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image3);
+		}
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), FIRST_FAMILY)).to.be.true;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image2), FIRST_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image3), FIRST_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), SECOND_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image2), SECOND_FAMILY)).to.be.true;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image3), SECOND_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), THIRD_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image2), THIRD_FAMILY)).to.be.false;
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image3), THIRD_FAMILY)).to.be.true;
+	});
+
+	it("cannot initialize with families with no whitelisted images", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[], [], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleNoImageProvided");
+	});
+
+	it("cannot initialize with families with zero address as admin", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY], ethers.ZeroAddress],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleInvalidAdmin");
+	});
+
+	it("cannot initialize with families with mismatched lengths", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherMismatchedLengths");
 	});
 });
 
@@ -298,6 +378,78 @@ describe("AttestationAutherSample - Revoke image", function() {
 
 	it("admin cannot revoke unwhitelisted image", async function() {
 		await expect(attestationAutherSample.revokeEnclaveImage(getImageId(image3))).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+});
+
+describe("AttestationAutherSample - Add image to family", function() {
+	let signers: Signer[];
+	let addrs: string[];
+	let attestationAutherSample: AttestationAutherSample;
+	const TEST_FAMILY = ethers.id("TEST_FAMILY");
+
+	before(async function() {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSample;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("non admin cannot add image to family", async function() {
+		await expect(attestationAutherSample.connect(signers[1]).addEnclaveImageToFamily(getImageId(image1), TEST_FAMILY)).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+	});
+
+	it("admin can add image to family", async function() {
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.false;
+
+		await expect(attestationAutherSample.addEnclaveImageToFamily(getImageId(image1), TEST_FAMILY))
+			.to.emit(attestationAutherSample, "EnclaveImageAddedToFamily").withArgs(getImageId(image1), TEST_FAMILY);
+
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.true;
+	});
+});
+
+describe("AttestationAutherSample - Remove image from family", function() {
+	let signers: Signer[];
+	let addrs: string[];
+	let attestationAutherSample: AttestationAutherSample;
+	const TEST_FAMILY = ethers.id("TEST_FAMILY");
+
+	before(async function() {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSample;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("non admin cannot add image to family", async function() {
+		await attestationAutherSample.addEnclaveImageToFamily(getImageId(image1), TEST_FAMILY);
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.true;
+
+		await expect(attestationAutherSample.connect(signers[1]).removeEnclaveImageFromFamily(getImageId(image1), TEST_FAMILY)).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+	});
+
+	it("admin can add image to family", async function() {
+		await attestationAutherSample.addEnclaveImageToFamily(getImageId(image1), TEST_FAMILY);
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.true;
+
+		await expect(attestationAutherSample.removeEnclaveImageFromFamily(getImageId(image1), TEST_FAMILY))
+			.to.emit(attestationAutherSample, "EnclaveImageRemovedFromFamily").withArgs(getImageId(image1), TEST_FAMILY);
+
+		expect(await attestationAutherSample.isImageInFamily(getImageId(image1), TEST_FAMILY)).to.be.false;
 	});
 });
 
@@ -583,7 +735,7 @@ describe("AttestationAutherSample - Safe verify with params", function() {
 		let signature = await createSignature("testmsg", wallets[14]);
 
 		await expect(attestationAutherSample.connect(signers[1]).verify(
-			signature, "randommsg",
+			signature, "testmsg",
 		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
 	});
 
@@ -605,6 +757,136 @@ describe("AttestationAutherSample - Safe verify with params", function() {
 		await expect(attestationAutherSample.connect(signers[1]).verify(
 			signature, "testmsg",
 		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+});
+
+describe("AttestationAutherSample - Verify with family", function() {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+
+	let attestationAutherSample: AttestationAutherSample;
+	let attestationVerifier: AttestationVerifier;
+
+	before(async function() {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+			{ kind: "uups", constructorArgs: [await attestationVerifier.getAddress(), 600], initializer: "initializeWithFamilies" },
+		) as unknown as AttestationAutherSample;
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 540000);
+
+		await attestationAutherSample.connect(signers[1]).verifyEnclaveKey(signature, attestation);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can verify", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(signature, "testmsg")).to.not.be.reverted;
+	});
+
+	it("cannot verify with invalid data", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "randommsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify with unwhitelisted key", async function() {
+		let signature = await createSignature("testmsg", wallets[14]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "testmsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify with revoked key", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "testmsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify with revoked image", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveImage(getImageId(image3));
+
+		await expect(attestationAutherSample.connect(signers[1]).verify(
+			signature, "testmsg",
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+
+	it("can verify family", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(signature, "testmsg", THIRD_FAMILY)).to.not.be.reverted;
+	});
+
+	it("cannot verify family with invalid data", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "randommsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify family with unwhitelisted key", async function() {
+		let signature = await createSignature("testmsg", wallets[14]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify family with revoked key", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot verify family with revoked image", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await attestationAutherSample.revokeEnclaveImage(getImageId(image3));
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", THIRD_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotWhitelisted");
+	});
+
+	it("cannot verify family with wrong family", async function() {
+		let signature = await createSignature("testmsg", wallets[15]);
+
+		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
+			signature, "testmsg", SECOND_FAMILY,
+		)).to.be.revertedWithCustomError(attestationAutherSample, "AttestationAutherImageNotInFamily");
 	});
 });
 

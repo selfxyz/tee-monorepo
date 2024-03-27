@@ -30,6 +30,7 @@ contract AttestationAutherUpgradeable is
     struct AttestationAutherStorage {
         mapping(bytes32 => EnclaveImage) whitelistedImages;
         mapping(address => bytes32) verifiedKeys;
+        mapping(bytes32 => mapping(bytes32 => bool)) imageFamilies;
     }
 
     // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.AttestationAuther")) - 1)) & ~bytes32(uint256(0xff))
@@ -46,12 +47,16 @@ contract AttestationAutherUpgradeable is
     error AttestationAutherPCRsInvalid();
     error AttestationAutherImageNotWhitelisted();
     error AttestationAutherImageAlreadyWhitelisted();
+    error AttestationAutherImageNotInFamily();
     error AttestationAutherKeyNotVerified();
     error AttestationAutherKeyAlreadyVerified();
     error AttestationAutherAttestationTooOld();
+    error AttestationAutherMismatchedLengths();
 
     event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
     event EnclaveImageRevoked(bytes32 indexed imageId);
+    event EnclaveImageAddedToFamily(bytes32 indexed imageId, bytes32 family);
+    event EnclaveImageRemovedFromFamily(bytes32 indexed imageId, bytes32 family);
     event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
     event EnclaveKeyRevoked(bytes indexed enclavePubKey);
     event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
@@ -59,6 +64,14 @@ contract AttestationAutherUpgradeable is
     function __AttestationAuther_init_unchained(EnclaveImage[] memory images) internal onlyInitializing {
         for (uint256 i = 0; i < images.length; i++) {
             _whitelistEnclaveImage(images[i]);
+        }
+    }
+
+    function __AttestationAuther_init_unchained(EnclaveImage[] memory images, bytes32[] memory families) internal onlyInitializing {
+        if (!(images.length == families.length)) revert AttestationAutherMismatchedLengths();
+        for (uint256 i = 0; i < images.length; i++) {
+            bytes32 imageId = _whitelistEnclaveImage(images[i]);
+            _addEnclaveImageToFamily(imageId, families[i]);
         }
     }
 
@@ -89,6 +102,20 @@ contract AttestationAutherUpgradeable is
 
         delete $.whitelistedImages[imageId];
         emit EnclaveImageRevoked(imageId);
+    }
+
+    function _addEnclaveImageToFamily(bytes32 imageId, bytes32 family) internal {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        $.imageFamilies[family][imageId] = true;
+        emit EnclaveImageAddedToFamily(imageId, family);
+    }
+
+    function _removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) internal {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        $.imageFamilies[family][imageId] = false;
+        emit EnclaveImageRemovedFromFamily(imageId, family);
     }
 
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal {
@@ -141,6 +168,15 @@ contract AttestationAutherUpgradeable is
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
     }
 
+    function _allowOnlyVerifiedFamily(address key, bytes32 family) internal view {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        bytes32 imageId = $.verifiedKeys[key];
+        if (!(imageId != bytes32(0))) revert AttestationAutherKeyNotVerified();
+        if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
+        if (!($.imageFamilies[family][imageId])) revert AttestationAutherImageNotInFamily();
+    }
+
     function getWhitelistedImage(bytes32 _imageId) external view returns (EnclaveImage memory) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
@@ -151,5 +187,11 @@ contract AttestationAutherUpgradeable is
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         return $.verifiedKeys[_key];
+    }
+
+    function isImageInFamily(bytes32 imageId, bytes32 family) external view returns (bool) {
+        AttestationAutherStorage storage $ = _getAttestationAutherStorage();
+
+        return $.imageFamilies[family][imageId];
     }
 }
