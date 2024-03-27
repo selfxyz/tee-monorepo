@@ -51,6 +51,7 @@ contract AttestationAutherUpgradeable is
     error AttestationAutherKeyNotVerified();
     error AttestationAutherKeyAlreadyVerified();
     error AttestationAutherAttestationTooOld();
+    error AttestationAutherMismatchedLengths();
 
     event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
     event EnclaveImageRevoked(bytes32 indexed imageId);
@@ -67,6 +68,7 @@ contract AttestationAutherUpgradeable is
     }
 
     function __AttestationAuther_init_unchained(EnclaveImage[] memory images, bytes32[] memory families) internal onlyInitializing {
+        if (!(images.length == families.length)) revert AttestationAutherMismatchedLengths();
         for (uint256 i = 0; i < images.length; i++) {
             bytes32 imageId = _whitelistEnclaveImage(images[i]);
             _addEnclaveImageToFamily(imageId, families[i]);
