@@ -1,4 +1,5 @@
 mod common_chain_interaction;
+mod common_chain_util;
 mod config;
 mod request_chain_interaction;
 
@@ -6,11 +7,15 @@ use anyhow::Context;
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use log::info;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use clap::Parser;
 
+use crate::common_chain_interaction::update_block_data;
+use crate::common_chain_util::BlockData;
 use crate::config::ConfigManager;
 use common_chain_interaction::CommonChainClient;
 
@@ -47,8 +52,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             "Failed to connect to the chain websocket provider. Please check the chain url.",
         )?;
     let signer_address = signer.address();
-    let chain_http_client = Provider::<Http>::connect(&config.com_chain_http_url)
-        .await
+    let chain_http_provider = Provider::<Http>::connect(&config.com_chain_http_url).await;
+
+    let chain_http_client = chain_http_provider
+        .clone()
         .with_signer(signer)
         .nonce_manager(signer_address);
 
@@ -65,6 +72,13 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await,
     );
+
+    // Start the block data updater
+    let recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>> =
+        Arc::new(RwLock::new(BTreeMap::new()));
+    tokio::spawn(async move {
+        update_block_data(chain_http_provider, &recent_blocks).await;
+    });
 
     // Listen for new jobs and handles them.
     info!("Starting the contract event listener.");

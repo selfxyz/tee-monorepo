@@ -1,14 +1,21 @@
+use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use log::info;
+use tokio::sync::RwLock;
+use tokio::time;
 // use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::request_chain_interaction::RequestChainData;
+use crate::common_chain_util::{prune_old_blocks, BlockData};
+use crate::request_chain_interaction::{
+    handle_all_req_chain_events, RequestChainClient, RequestChainData,
+};
 use crate::HttpProvider;
 
 abigen!(CommonChainContract, "./CommonChainContract.json",);
@@ -23,11 +30,13 @@ pub struct GatewayData {
 
 #[derive(Debug, Clone)]
 pub struct CommonChainClient {
+    pub key: String,
     pub chain_ws_client: Provider<Ws>,
     pub contract_addr: H160,
     pub start_block: u64,
     pub contract: CommonChainContract<HttpProvider>,
     pub gateway_data: GatewayData,
+    pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
 }
 
 impl CommonChainClient {
@@ -60,16 +69,23 @@ impl CommonChainClient {
             status: gateway.3,
         };
         info!("Gateway Data fetched. Common Chain Client Initialized");
+
+        let req_chain_clients =
+            handle_all_req_chain_events(gateway_data.request_chains.clone(), key.clone())
+                .await
+                .unwrap();
+        info!("Request Chain Clients Initialized");
+
         CommonChainClient {
+            key,
             chain_ws_client,
             contract_addr: *contract_addr,
             start_block,
             contract,
             gateway_data,
+            req_chain_clients,
         }
     }
-
-    // pub async fn get_req
 
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
         todo!()
@@ -203,4 +219,45 @@ impl CommonChainClient {
     //         );
     //     }
     // }
+}
+
+pub async fn update_block_data(
+    provider: Provider<Http>,
+    recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData>>>,
+) {
+    let mut interval = time::interval(Duration::from_secs(1));
+
+    loop {
+        interval.tick().await;
+
+        let latest_block = provider
+            .get_block_number()
+            .await
+            .context("Failed to get the latest block number. Please check the chain url.")
+            .unwrap()
+            .as_u64();
+        let latest_block_info = provider
+            .get_block(latest_block)
+            .await
+            .context("Failed to get the latest block information. Please check the chain url.")
+            .unwrap();
+
+        if latest_block_info.is_none() {
+            continue;
+        }
+
+        let timestamp = latest_block_info.unwrap().timestamp.as_u64();
+
+        // Update the 'recent_blocks' map
+        recent_blocks.write().await.insert(
+            timestamp,
+            BlockData {
+                number: latest_block,
+                timestamp,
+            },
+        );
+
+        // Prune old entries (more on this below)
+        prune_old_blocks(&recent_blocks).await;
+    }
 }
