@@ -228,13 +228,19 @@
         {
           "indexed": false,
           "internalType": "bytes",
-          "name": "codeInputs",
+          "name": "codeInput",
           "type": "bytes"
         },
         {
           "indexed": false,
           "internalType": "uint256",
           "name": "userTimeout",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "startTime",
           "type": "uint256"
         },
         {
