@@ -1,7 +1,6 @@
 mod common_chain_interaction;
 mod common_chain_util;
 mod config;
-mod request_chain_interaction;
 
 use anyhow::Context;
 use ethers::prelude::*;

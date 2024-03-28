@@ -4,21 +4,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ethers::abi::Address;
+use ethers::abi::{decode, Address, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
-use log::info;
+use ethers::utils::keccak256;
+use log::{error, info};
 use tokio::sync::RwLock;
-use tokio::time;
+use tokio::{task, time};
 // use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::common_chain_util::{prune_old_blocks, BlockData};
-use crate::request_chain_interaction::{
-    handle_all_req_chain_events, RequestChainClient, RequestChainData,
-};
 use crate::HttpProvider;
 
 abigen!(CommonChainContract, "./CommonChainContract.json",);
+abigen!(RequestChainContract, "./RequestChainContract.json",);
 
 #[derive(Debug, Clone)]
 pub struct GatewayData {
@@ -37,6 +36,33 @@ pub struct CommonChainClient {
     pub contract: CommonChainContract<HttpProvider>,
     pub gateway_data: GatewayData,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestChainData {
+    pub chain_id: U256,
+    pub contract_address: Address,
+    pub rpc_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestChainClient {
+    pub chain_id: U256,
+    pub contract_address: Address,
+    pub rpc_url: String,
+    pub contract: RequestChainContract<HttpProvider>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Job {
+    pub job_id: U256,
+    pub tx_hash: H256,
+    pub code_input: Bytes,
+    pub user_timout: U256,
+    pub starttime: U256,
+    pub max_gas_price: U256,
+    pub deposit: Address,
+    pub callback_deposit: U256,
 }
 
 impl CommonChainClient {
@@ -70,12 +96,6 @@ impl CommonChainClient {
         };
         info!("Gateway Data fetched. Common Chain Client Initialized");
 
-        let req_chain_clients =
-            handle_all_req_chain_events(gateway_data.request_chains.clone(), key.clone())
-                .await
-                .unwrap();
-        info!("Request Chain Clients Initialized");
-
         CommonChainClient {
             key,
             chain_ws_client,
@@ -83,11 +103,12 @@ impl CommonChainClient {
             start_block,
             contract,
             gateway_data,
-            req_chain_clients,
+            req_chain_clients: HashMap::new(),
         }
     }
 
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
+        self.handle_all_req_chain_events().await?;
         todo!()
         // let (tx, rx) = channel(100);
         // let self_ref = Arc::clone(&self);
@@ -96,6 +117,138 @@ impl CommonChainClient {
         // });
         // self._listen_jobs(tx).await?;
         // Ok(())
+    }
+
+    async fn handle_all_req_chain_events(self: Arc<Self>) -> Result<()> {
+        info!("Initializing Request Chain Clients for all request chains...");
+        let mut req_chain_data = self.gateway_data.request_chains.clone();
+        let mut request_chain_clients: HashMap<String, Arc<RequestChainClient>> = HashMap::new();
+        while let Some(request_chain) = req_chain_data.pop() {
+            let signer = self
+                .key
+                .clone()
+                .parse::<LocalWallet>()?
+                .with_chain_id(request_chain.chain_id.as_u64());
+            let signer_address = signer.address();
+
+            let req_chain_ws_client =
+            Provider::<Ws>::connect_with_reconnects(request_chain.rpc_url.clone(), 5).await.context(
+                "Failed to connect to the request chain websocket provider. Please check the chain url.",
+            )?;
+            let req_chain_http_client = Provider::<Http>::connect(&request_chain.rpc_url)
+                .await
+                .with_signer(signer)
+                .nonce_manager(signer_address);
+            let contract = RequestChainContract::new(
+                request_chain.contract_address,
+                Arc::new(req_chain_http_client),
+            );
+
+            let event_filter = Filter::new()
+                .address(request_chain.contract_address)
+                .select(0..)
+                .topic0(vec![
+                    keccak256(
+                        "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,uint256)",
+                    ),
+                    keccak256("JobCancelled(bytes32)"),
+                ]);
+
+            info!(
+                "Connected to the request chain provider for chain_id: {}",
+                request_chain.chain_id.as_u64()
+            );
+            info!(
+                "Subscribing to events for chain_id: {}",
+                request_chain.chain_id.as_u64()
+            );
+
+            let req_chain_client = Arc::from(RequestChainClient {
+                chain_id: request_chain.chain_id,
+                contract_address: request_chain.contract_address,
+                rpc_url: request_chain.rpc_url,
+                contract,
+            });
+
+            let req_chain_client_clone = Arc::clone(&req_chain_client);
+            let self_clone = Arc::clone(&self);
+
+            // Spawn a new task for each Request Chain Contract
+            task::spawn(async move {
+                // register subscription
+                let mut stream = req_chain_ws_client
+                    .subscribe_logs(&event_filter)
+                    .await
+                    .context("failed to subscribe to new jobs")
+                    .unwrap();
+
+                while let Some(log) = stream.next().await {
+                    let topics = log.topics.clone();
+
+                    if topics[0]
+                    == keccak256(
+                        "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,uint256)",
+                    )
+                    .into()
+                {
+                    info!(
+                        "Request Chain ID: {:?}, JobPlace jobID: {:?}",
+                        request_chain.chain_id, log.topics[1]
+                    );
+                    let req_chain_client = Arc::clone(&req_chain_client_clone);
+                    let self_clone = Arc::clone(&self_clone);
+                    task::spawn(async move {
+                        self_clone.job_placed_handler(req_chain_client, log).await;
+                    });
+                } else if topics[0] == keccak256("JobCancel(uint256)").into() {
+                    info!(
+                        "Request Chain ID: {:?}, JobCancel jobID: {:?}",
+                        request_chain.chain_id, log
+                    );
+                } else {
+                    error!(
+                        "Request Chain ID: {:?}, Unknown event: {:?}",
+                        request_chain.chain_id, log
+                    );
+                }
+                }
+            });
+
+            request_chain_clients.insert(request_chain.chain_id.to_string(), req_chain_client);
+        }
+
+        *Arc::make_mut(&mut Arc::from(self.req_chain_clients.clone())) = request_chain_clients;
+        Ok(())
+    }
+
+    async fn job_placed_handler(
+        self: Arc<Self>,
+        req_chain_client: Arc<RequestChainClient>,
+        log: Log,
+    ) {
+        let types = vec![
+            ParamType::Uint(256),
+            ParamType::FixedBytes(32),
+            ParamType::Bytes,
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+        ];
+
+        let decoded = decode(&types, &log.data.0).unwrap();
+
+        let job = Job {
+            job_id: decoded[0].clone().into_uint().unwrap(),
+            tx_hash: TxHash::from_slice(&decoded[1].clone().into_bytes().unwrap()),
+            code_input: decoded[2].clone().into_bytes().unwrap().into(),
+            user_timout: decoded[3].clone().into_uint().unwrap(),
+            starttime: decoded[4].clone().into_uint().unwrap(),
+            max_gas_price: decoded[5].clone().into_uint().unwrap(),
+            deposit: decoded[6].clone().into_address().unwrap(),
+            callback_deposit: decoded[7].clone().into_uint().unwrap(),
+        };
     }
 
     // async fn _listen_jobs(&self, tx: Sender) -> Result<(), Box<dyn Error>> {
