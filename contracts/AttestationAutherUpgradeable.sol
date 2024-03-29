@@ -85,7 +85,7 @@ contract AttestationAutherUpgradeable is
         return address(uint160(uint256(hash)));
     }
 
-    function _whitelistEnclaveImage(EnclaveImage memory image) internal returns (bytes32, bool) {
+    function _whitelistEnclaveImage(EnclaveImage memory image) internal virtual returns (bytes32, bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         if (!(image.PCR0.length == 48 && image.PCR1.length == 48 && image.PCR2.length == 48))
@@ -98,7 +98,7 @@ contract AttestationAutherUpgradeable is
         return (imageId, true);
     }
 
-    function _revokeEnclaveImage(bytes32 imageId) internal returns (bool) {
+    function _revokeEnclaveImage(bytes32 imageId) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) return false;
@@ -109,7 +109,7 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function _addEnclaveImageToFamily(bytes32 imageId, bytes32 family) internal returns (bool) {
+    function _addEnclaveImageToFamily(bytes32 imageId, bytes32 family) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         if (!($.imageFamilies[family][imageId] == false)) return false;
@@ -120,7 +120,7 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function _removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) internal returns (bool) {
+    function _removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         if (!($.imageFamilies[family][imageId] == true)) return false;
@@ -131,7 +131,7 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal returns (bool) {
+    function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
@@ -144,7 +144,7 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function _revokeEnclaveKey(bytes memory enclavePubKey) internal returns (bool) {
+    function _revokeEnclaveKey(bytes memory enclavePubKey) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
@@ -156,7 +156,7 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function _verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) internal returns (bool) {
+    function _verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
@@ -178,7 +178,7 @@ contract AttestationAutherUpgradeable is
         return _verifyEnclaveKey(signature, attestation);
     }
 
-    function _allowOnlyVerified(address key) internal view {
+    function _allowOnlyVerified(address key) internal virtual view {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = $.verifiedKeys[key];
@@ -186,7 +186,7 @@ contract AttestationAutherUpgradeable is
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
     }
 
-    function _allowOnlyVerifiedFamily(address key, bytes32 family) internal view {
+    function _allowOnlyVerifiedFamily(address key, bytes32 family) internal virtual view {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = $.verifiedKeys[key];
