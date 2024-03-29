@@ -118,13 +118,16 @@ contract AttestationVerifier is
 
         bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
         if (!(whitelistedImages[imageId].PCR0.length == 0)) return (imageId, false);
+
         whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
         emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
+
         return (imageId, true);
     }
 
     function _revokeEnclaveImage(bytes32 imageId) internal returns (bool) {
         if (!(whitelistedImages[imageId].PCR0.length != 0)) return false;
+
         delete whitelistedImages[imageId];
         emit EnclaveImageRevoked(imageId);
 
@@ -133,8 +136,10 @@ contract AttestationVerifier is
 
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal returns (bool) {
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
+
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
         if (!(verifiedKeys[enclaveKey] == bytes32(0))) return false;
+
         verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
 
@@ -144,6 +149,7 @@ contract AttestationVerifier is
     function _revokeEnclaveKey(bytes memory enclavePubKey) internal returns (bool) {
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
         if (!(verifiedKeys[enclaveKey] != bytes32(0))) return false;
+
         delete verifiedKeys[enclaveKey];
         emit EnclaveKeyRevoked(enclavePubKey);
 
@@ -184,10 +190,10 @@ contract AttestationVerifier is
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
 
+        _verify(signature, attestation);
+
         address enclaveKey = pubKeyToAddress(attestation.enclavePubKey);
         if (!(verifiedKeys[enclaveKey] == bytes32(0))) return false;
-
-        _verify(signature, attestation);
 
         verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);

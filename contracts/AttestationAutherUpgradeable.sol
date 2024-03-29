@@ -91,8 +91,10 @@ contract AttestationAutherUpgradeable is
 
         bytes32 imageId = keccak256(abi.encodePacked(image.PCR0, image.PCR1, image.PCR2));
         if (!($.whitelistedImages[imageId].PCR0.length == 0)) return (imageId, false);
+
         $.whitelistedImages[imageId] = EnclaveImage(image.PCR0, image.PCR1, image.PCR2);
         emit EnclaveImageWhitelisted(imageId, image.PCR0, image.PCR1, image.PCR2);
+
         return (imageId, true);
     }
 
@@ -133,6 +135,7 @@ contract AttestationAutherUpgradeable is
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
+
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
         if (!($.verifiedKeys[enclaveKey] == bytes32(0))) return false;
 
@@ -159,12 +162,13 @@ contract AttestationAutherUpgradeable is
 
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
-        address enclaveKey = _pubKeyToAddress(attestation.enclavePubKey);
-        if (!($.verifiedKeys[enclaveKey] == bytes32(0))) return false;
         if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - ATTESTATION_MAX_AGE))
             revert AttestationAutherAttestationTooOld();
 
         ATTESTATION_VERIFIER.verify(signature, attestation);
+
+        address enclaveKey = _pubKeyToAddress(attestation.enclavePubKey);
+        if (!($.verifiedKeys[enclaveKey] == bytes32(0))) return false;
 
         $.verifiedKeys[enclaveKey] = imageId;
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
