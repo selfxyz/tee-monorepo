@@ -33,8 +33,6 @@ contract AttestationAutherSample is
 
     //-------------------------------- Overrides start --------------------------------//
 
-    error AttestationAutherSampleCannotRemoveAllAdmins();
-
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {

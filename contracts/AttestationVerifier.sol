@@ -93,9 +93,7 @@ contract AttestationVerifier is
     error AttestationVerifierPCRsInvalid();
 
     error AttestationVerifierImageNotWhitelisted();
-    error AttestationVerifierImageAlreadyWhitelisted();
     error AttestationVerifierKeyNotVerified();
-    error AttestationVerifierKeyAlreadyVerified();
 
     event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
     event EnclaveImageRevoked(bytes32 indexed imageId);

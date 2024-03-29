@@ -46,10 +46,8 @@ contract AttestationAutherUpgradeable is
     error AttestationAutherPubkeyLengthInvalid();
     error AttestationAutherPCRsInvalid();
     error AttestationAutherImageNotWhitelisted();
-    error AttestationAutherImageAlreadyWhitelisted();
     error AttestationAutherImageNotInFamily();
     error AttestationAutherKeyNotVerified();
-    error AttestationAutherKeyAlreadyVerified();
     error AttestationAutherAttestationTooOld();
     error AttestationAutherMismatchedLengths();
 
