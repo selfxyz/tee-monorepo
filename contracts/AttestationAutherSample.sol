@@ -33,8 +33,6 @@ contract AttestationAutherSample is
 
     //-------------------------------- Overrides start --------------------------------//
 
-    error AttestationAutherSampleCannotRemoveAllAdmins();
-
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
@@ -88,27 +86,27 @@ contract AttestationAutherSample is
         bytes memory PCR0,
         bytes memory PCR1,
         bytes memory PCR2
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32) {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
         return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
-    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _revokeEnclaveImage(imageId);
     }
 
-    function whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _whitelistEnclaveKey(enclavePubKey, imageId);
     }
 
-    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _revokeEnclaveKey(enclavePubKey);
     }
 
-    function addEnclaveImageToFamily(bytes32 imageId, bytes32 family) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addEnclaveImageToFamily(bytes32 imageId, bytes32 family) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _addEnclaveImageToFamily(imageId, family);
     }
 
-    function removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function removeEnclaveImageFromFamily(bytes32 imageId, bytes32 family) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _removeEnclaveImageFromFamily(imageId, family);
     }
 
