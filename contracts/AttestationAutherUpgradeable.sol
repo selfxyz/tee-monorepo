@@ -71,7 +71,7 @@ contract AttestationAutherUpgradeable is
     ) internal onlyInitializing {
         if (!(images.length == families.length)) revert AttestationAutherMismatchedLengths();
         for (uint256 i = 0; i < images.length; i++) {
-            (bytes32 imageId,) = _whitelistEnclaveImage(images[i]);
+            (bytes32 imageId, ) = _whitelistEnclaveImage(images[i]);
             _addEnclaveImageToFamily(imageId, families[i]);
         }
     }
@@ -157,7 +157,10 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function _verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) internal virtual returns (bool) {
+    function _verifyEnclaveKey(
+        bytes memory signature,
+        IAttestationVerifier.Attestation memory attestation
+    ) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
@@ -176,11 +179,14 @@ contract AttestationAutherUpgradeable is
         return true;
     }
 
-    function verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) external returns (bool) {
+    function verifyEnclaveKey(
+        bytes memory signature,
+        IAttestationVerifier.Attestation memory attestation
+    ) external returns (bool) {
         return _verifyEnclaveKey(signature, attestation);
     }
 
-    function _allowOnlyVerified(address key) internal virtual view {
+    function _allowOnlyVerified(address key) internal view virtual {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = $.verifiedKeys[key];
@@ -188,7 +194,7 @@ contract AttestationAutherUpgradeable is
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
     }
 
-    function _allowOnlyVerifiedFamily(address key, bytes32 family) internal virtual view {
+    function _allowOnlyVerifiedFamily(address key, bytes32 family) internal view virtual {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
         bytes32 imageId = $.verifiedKeys[key];

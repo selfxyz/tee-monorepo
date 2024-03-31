@@ -63,7 +63,7 @@ contract AttestationVerifier is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
         for (uint i = 0; i < enclaveKeys.length; i++) {
-            (bytes32 imageId,) = _whitelistEnclaveImage(images[i]);
+            (bytes32 imageId, ) = _whitelistEnclaveImage(images[i]);
             _whitelistEnclaveKey(enclaveKeys[i], imageId);
         }
     }
@@ -168,7 +168,10 @@ contract AttestationVerifier is
         return _revokeEnclaveImage(imageId);
     }
 
-    function whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+    function whitelistEnclaveKey(
+        bytes memory enclavePubKey,
+        bytes32 imageId
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _whitelistEnclaveKey(enclavePubKey, imageId);
     }
 
@@ -184,7 +187,10 @@ contract AttestationVerifier is
 
     error AttestationVerifierAttestationTooOld();
 
-    function _verifyEnclaveKey(bytes memory signature, IAttestationVerifier.Attestation memory attestation) internal returns (bool) {
+    function _verifyEnclaveKey(
+        bytes memory signature,
+        IAttestationVerifier.Attestation memory attestation
+    ) internal returns (bool) {
         if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
             revert AttestationVerifierAttestationTooOld();
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
