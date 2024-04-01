@@ -1,7 +1,11 @@
 {
-  "name": "@marlinprotocol/oyster-contracts",
+  "name": "@marlinorg/oyster-contracts",
   "version": "1.0.0",
   "description": "Contracts pertaining to Marlin Oyster",
+  "files": [
+    "/contracts/**/*.sol",
+    "!/contracts/mocks/**/*"
+  ],
   "directories": {
     "test": "test"
   },
