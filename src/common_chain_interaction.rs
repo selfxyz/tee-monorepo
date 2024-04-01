@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,19 +10,22 @@ use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
 use log::{error, info};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
-// use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::common_chain_util::{prune_old_blocks, BlockData};
+use crate::common_chain_util::{get_next_block_number, prune_old_blocks, sign_response, BlockData};
 use crate::HttpProvider;
 
 abigen!(CommonChainContract, "./CommonChainContract.json",);
+abigen!(CommonChainGateway, "./CommonChainGateway.json",);
 abigen!(RequestChainContract, "./RequestChainContract.json",);
 
 #[derive(Debug, Clone)]
 pub struct GatewayData {
-    pub operator: Address,
+    pub address: Address,
     pub request_chains: Vec<RequestChainData>,
     pub stake_amount: U256,
     pub status: bool,
@@ -30,12 +34,17 @@ pub struct GatewayData {
 #[derive(Debug, Clone)]
 pub struct CommonChainClient {
     pub key: String,
+    pub address: Address,
     pub chain_ws_client: Provider<Ws>,
+    pub gateway_contract_addr: H160,
     pub contract_addr: H160,
     pub start_block: u64,
-    pub contract: CommonChainContract<HttpProvider>,
+    pub gateway_contract: CommonChainGateway<HttpProvider>,
+    pub com_chain_contract: CommonChainContract<HttpProvider>,
     pub gateway_data: GatewayData,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
+    pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
+    pub com_chain_id: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -63,63 +72,97 @@ pub struct Job {
     pub max_gas_price: U256,
     pub deposit: Address,
     pub callback_deposit: U256,
+    pub req_chain_id: U256,
 }
 
 impl CommonChainClient {
     pub async fn new(
+        address: Address,
         key: String,
         chain_ws_client: Provider<Ws>,
-        chain_http_client: HttpProvider,
+        chain_http_provider: Provider<Http>,
+        gateway_contract_addr: &H160,
         contract_addr: &H160,
         start_block: u64,
+        recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData>>>,
+        com_chain_id: u64,
     ) -> Self {
         info!("Initializing Common Chain Client...");
-        let contract = CommonChainContract::new(contract_addr.clone(), Arc::new(chain_http_client));
-        let gateway = contract
-            .gateways(key.parse::<Address>().unwrap())
+        let signer = key
+            .parse::<LocalWallet>()
+            .unwrap()
+            .with_chain_id(com_chain_id);
+        let signer_address = signer.address();
+        let chain_http_client = chain_http_provider
+            .clone()
+            .with_signer(signer.clone())
+            .nonce_manager(signer_address);
+
+        let gateway_contract =
+            CommonChainGateway::new(gateway_contract_addr.clone(), Arc::new(chain_http_client));
+        let gateway = gateway_contract
+            .get_gateway(key.parse::<Address>().unwrap())
             .await
             .context("Failed to get gateway data")
             .unwrap();
+
+        let mut request_chains: Vec<RequestChainData> = vec![];
+        for chain_id in gateway.1.iter() {
+            let (contract_address, rpc_url) = gateway_contract
+                .request_chains(chain_id.clone())
+                .await
+                .context("Failed to get request chain data")
+                .unwrap();
+            request_chains.push(RequestChainData {
+                chain_id: chain_id.clone(),
+                contract_address,
+                rpc_url,
+            });
+        }
         let gateway_data = GatewayData {
-            operator: gateway.0,
-            request_chains: gateway
-                .1
-                .into_iter()
-                .map(|(chain_id, contract_address, rpc_url)| RequestChainData {
-                    chain_id,
-                    contract_address,
-                    rpc_url,
-                })
-                .collect(),
+            address: gateway.0,
+            request_chains,
             stake_amount: gateway.2,
             status: gateway.3,
         };
+
+        let chain_http_client = chain_http_provider
+            .clone()
+            .with_signer(signer)
+            .nonce_manager(signer_address);
+        let com_chain_contract =
+            CommonChainContract::new(contract_addr.clone(), Arc::new(chain_http_client));
+
         info!("Gateway Data fetched. Common Chain Client Initialized");
 
         CommonChainClient {
             key,
+            address,
             chain_ws_client,
             contract_addr: *contract_addr,
+            gateway_contract_addr: *gateway_contract_addr,
             start_block,
-            contract,
+            gateway_contract,
+            com_chain_contract,
             gateway_data,
             req_chain_clients: HashMap::new(),
+            recent_blocks: Arc::clone(recent_blocks),
+            com_chain_id,
         }
     }
 
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
-        self.handle_all_req_chain_events().await?;
-        todo!()
-        // let (tx, rx) = channel(100);
-        // let self_ref = Arc::clone(&self);
-        // tokio::spawn(async move {
-        //     self_ref._send_txns(rx).await;
-        // });
-        // self._listen_jobs(tx).await?;
-        // Ok(())
+        let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
+        let self_clone = Arc::clone(&self);
+        self_clone.tx_to_common_chain(com_chain_rx).await?;
+        self.handle_all_req_chain_events(req_chain_tx).await?;
+        Ok(())
     }
 
-    async fn handle_all_req_chain_events(self: Arc<Self>) -> Result<()> {
+    async fn handle_all_req_chain_events(
+        self: Arc<Self>,
+        tx: Sender<(Job, Arc<CommonChainClient>)>,
+    ) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
         let mut req_chain_data = self.gateway_data.request_chains.clone();
         let mut request_chain_clients: HashMap<String, Arc<RequestChainClient>> = HashMap::new();
@@ -172,6 +215,7 @@ impl CommonChainClient {
 
             let req_chain_client_clone = Arc::clone(&req_chain_client);
             let self_clone = Arc::clone(&self);
+            let tx_clone = tx.clone();
 
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
@@ -197,8 +241,9 @@ impl CommonChainClient {
                     );
                     let req_chain_client = Arc::clone(&req_chain_client_clone);
                     let self_clone = Arc::clone(&self_clone);
+                    let tx = tx_clone.clone();
                     task::spawn(async move {
-                        self_clone.job_placed_handler(req_chain_client, log).await;
+                        self_clone.job_placed_handler(req_chain_client, log, tx.clone()).await;
                     });
                 } else if topics[0] == keccak256("JobCancel(uint256)").into() {
                     info!(
@@ -225,6 +270,7 @@ impl CommonChainClient {
         self: Arc<Self>,
         req_chain_client: Arc<RequestChainClient>,
         log: Log,
+        tx: Sender<(Job, Arc<CommonChainClient>)>,
     ) {
         let types = vec![
             ParamType::Uint(256),
@@ -248,130 +294,94 @@ impl CommonChainClient {
             max_gas_price: decoded[5].clone().into_uint().unwrap(),
             deposit: decoded[6].clone().into_address().unwrap(),
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
+            req_chain_id: req_chain_client.chain_id.clone(),
         };
+
+        let gateway_address = self
+            .select_gateway_for_job_relayed(job.clone(), req_chain_client)
+            .await
+            .context("Failed to select a gateway for the job")
+            .unwrap();
+
+        info!(
+            "Job ID: {:?}, Gateway Address: {:?}",
+            job.job_id, gateway_address
+        );
+
+        if gateway_address == self.address {
+            tx.send((job, self.clone())).await.unwrap();
+        }
     }
 
-    // async fn _listen_jobs(&self, tx: Sender) -> Result<(), Box<dyn Error>> {
-    //     // event filter
+    async fn select_gateway_for_job_relayed(
+        &self,
+        job: Job,
+        req_chain_client: Arc<RequestChainClient>,
+    ) -> Result<Address> {
+        let next_block_number = get_next_block_number(&self.recent_blocks, job.starttime.as_u64())
+            .await
+            .context("Failed to get the next block number")?;
 
-    //     let event_filter = Filter::new()
-    //         .address(self.contract_addr)
-    //         .select(self.start_block..)
-    //         .topic0(vec![keccak256(
-    //             "JobPlaced(uint256,address,string,address,bytes)",
-    //         )]);
+        // fetch all gateways' using getAllGateways function from the contract
+        let gateways: Vec<common_chain_gateway::Gateway> = self
+            .gateway_contract
+            .get_active_gateways_for_req_chain(req_chain_client.chain_id)
+            .block(next_block_number)
+            .call()
+            .await
+            .context("Failed to get all gateways")?;
 
-    //     let mut stream = self
-    //         .chain_ws_client
-    //         .subscribe_logs(&event_filter)
-    //         .await
-    //         .context("Failed to subscribe to new job placed events")?;
+        // convert Vec<Gateway> to Vec<GatewayData>
+        let mut gateway_data: Vec<GatewayData> = vec![];
+        for gateway in gateways {
+            let request_chains: Vec<RequestChainData> = vec![];
+            gateway_data.push(GatewayData {
+                address: gateway.operator,
+                request_chains,
+                stake_amount: gateway.stake_amount,
+                status: gateway.status,
+            });
+        }
 
-    //     info!("Listening for events...");
-    //     while let Some(event) = stream.next().await {
-    //         // If log is removed then skip
-    //         if event.removed.unwrap_or(false) {
-    //             continue;
-    //         }
+        // create a weighted probability distribution for gateways based on stake amount
+        // For example, if there are 3 gateways with stake amounts 100, 200, 300
+        // then the distribution arrat will be [100, 300, 600]
+        let mut stake_distribution: Vec<u64> = vec![];
+        let mut total_stake: u64 = 0;
+        for gateway in gateway_data.iter() {
+            total_stake += gateway.stake_amount.as_u64();
+            stake_distribution.push(total_stake);
+        }
 
-    //         // decode event data
-    //         let Ok(event_tokens) = decode(
-    //             &vec![ParamType::Uint(32), ParamType::String, ParamType::String],
-    //             &event.data.to_vec(),
-    //         ) else {
-    //             Self::log_skipped_event(&event, "Failed to decode event data");
-    //             continue;
-    //         };
+        // random number between 1 to total_stake from the job timestamp as a seed for the weighted random selection.
+        let seed = job.starttime.as_u64();
+        // use this seed in std_rng to generate a random number between 1 to total_stake
+        let mut rng = StdRng::seed_from_u64(seed);
+        let random_number = rng.gen_range(1..=total_stake);
 
-    //         // create job struct from event
-    //         let job = Job {
-    //             id: match event_tokens[0].clone().into_uint() {
-    //                 Some(id) => id,
-    //                 None => {
-    //                     Self::log_skipped_event(&event, "Failed to parse job ID from token");
-    //                     continue;
-    //                 }
-    //             },
-    //             txhash: match event_tokens[1].clone().into_string() {
-    //                 Some(txhash) => txhash,
-    //                 None => {
-    //                     Self::log_skipped_event(&event, "Failed to parse job txhash from token");
-    //                     continue;
-    //                 }
-    //             },
-    //             input: match event_tokens[2].clone().into_string() {
-    //                 Some(input) => input,
-    //                 None => {
-    //                     Self::log_skipped_event(&event, "Failed to parse job input from token");
-    //                     continue;
-    //                 }
-    //             },
-    //         };
+        // select the gateway based on the random number
+        // TODO: Can use binary search on stake_distribution to optimize this.
+        let selected_gateway = gateway_data
+            .iter()
+            .zip(stake_distribution.iter())
+            .find(|(_, stake)| random_number <= **stake)
+            .map(|(gateway, _)| gateway)
+            .context("Failed to select a gateway")?;
 
-    //         // Create a async task for event handler
-    //         let job_handler = Arc::clone(&self.job_handler);
-    //         let _success = match job_handler.job_placed(job, tx.clone()) {
-    //             Ok(res) => res,
-    //             Err(err) => {
-    //                 let msg = format!("Failed to place the job: {}", err);
-    //                 Self::log_skipped_event(&event, msg.as_str());
-    //             }
-    //         };
-    //     }
-    //     Ok(())
-    // }
+        Ok(selected_gateway.address)
+    }
 
-    // async fn _send_txns(&self, mut rx: Receiver<JobResponse>) {
-    //     while let Some(job_resp) = rx.recv().await {
-    //         info!("creating a transaction for jobFinish");
-    //         let call = self.contract.job_finish(
-    //             job_resp.id,
-    //             job_resp.resp,
-    //             job_resp.err,
-    //             job_resp.exec_time,
-    //             job_resp.timestamp,
-    //             job_resp.sig,
-    //         );
-    //         info!("transaction created");
+    async fn tx_to_common_chain(
+        self: Arc<Self>,
+        rx: Receiver<(Job, Arc<CommonChainClient>)>,
+    ) -> Result<()> {
+        while let Some((job, com_chain_client)) = rx.recv().await {
+            info!("Creating a transaction for relayJob");
+            let signature = sign_response(self.key, job.job_id, job.req_chain_id, codehash, code_inputs, deadline, job_owner)
+        }
 
-    //         let pending_tx = match call.send().await {
-    //             Ok(pending_tx) => pending_tx,
-    //             Err(err) => {
-    //                 error!(
-    //                     "Failed to send transaction for job {}: {:?}",
-    //                     job_resp.id, err
-    //                 );
-    //                 continue;
-    //             }
-    //         };
-
-    //         // Checking for one block confirmation
-    //         let tx_receipt = match pending_tx.await {
-    //             Ok(Some(tx)) => tx,
-    //             Ok(None) => {
-    //                 error!(
-    //                     "Transaction has been dropped from mempool for job: {}",
-    //                     job_resp.id
-    //                 );
-    //                 continue;
-    //             }
-    //             Err(err) => {
-    //                 error!(
-    //                     "Failed to confirm transaction for Job: {}: {:?}",
-    //                     job_resp.id, err
-    //                 );
-    //                 continue;
-    //             }
-    //         };
-
-    //         info!(
-    //             "Transaction confirmed for Job: {}, Block: {}, TxHash: {}",
-    //             job_resp.id,
-    //             tx_receipt.block_number.unwrap_or(0.into()),
-    //             tx_receipt.transaction_hash
-    //         );
-    //     }
-    // }
+        Ok(())
+    }
 }
 
 pub async fn update_block_data(

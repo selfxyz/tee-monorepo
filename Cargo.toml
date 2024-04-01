@@ -10,8 +10,12 @@ anyhow = "1.0.81"
 clap = { version = "4.5.3", features = ["derive"] }
 config = "0.14.0"
 ethers = { git = "https://github.com/gakonst/ethers-rs", features = ["ws", "rustls", "abigen"] }
+hex = "0.4.3"
+k256 = "0.13.3"
 log = "0.4.21"
+rand = { version = "0.8.5", features = ["std_rng"] }
 serde = "1.0.159"
 serde_derive = "1.0.193"
 serde_json = "1.0.88"
+tiny-keccak = "2.0.2"
 tokio = { version = "1.36.0", features = ["full"] }

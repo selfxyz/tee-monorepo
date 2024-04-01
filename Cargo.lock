@@ -2878,10 +2878,14 @@ dependencies = [
  "clap",
  "config",
  "ethers",
+ "hex",
+ "k256",
  "log",
+ "rand",
  "serde",
  "serde_derive",
  "serde_json",
+ "tiny-keccak",
  "tokio",
 ]
 
