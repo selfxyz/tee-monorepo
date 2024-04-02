@@ -65,6 +65,12 @@ pub struct RequestChainClient {
 }
 
 #[derive(Debug, Clone)]
+pub enum JobType {
+    JobRelay,
+    JobCancel,
+}
+
+#[derive(Debug, Clone)]
 pub struct Job {
     pub job_id: U256,
     pub tx_hash: FixedBytes,
@@ -76,6 +82,7 @@ pub struct Job {
     pub callback_deposit: U256,
     pub req_chain_id: U256,
     pub job_owner: Address,
+    pub job_type: JobType,
 }
 
 impl CommonChainClient {
@@ -301,6 +308,7 @@ impl CommonChainClient {
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
             req_chain_id: req_chain_client.chain_id.clone(),
             job_owner: log.address,
+            job_type: JobType::JobRelay,
         };
 
         let gateway_address = self
@@ -382,50 +390,85 @@ impl CommonChainClient {
         mut rx: Receiver<(Job, Arc<CommonChainClient>)>,
     ) -> Result<()> {
         while let Some((job, com_chain_client)) = rx.recv().await {
-            info!("Creating a transaction for relayJob");
-            let signature = sign_response(
-                &self.enclave_signer_key,
-                job.job_id,
-                job.req_chain_id,
-                &job.tx_hash,
-                &job.code_input,
-                job.user_timout.as_u64(),
-                &job.job_owner,
-            )
-            .await
-            .unwrap();
-            let signature = types::Bytes::from(signature.into_bytes());
-            let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
-
-            let txn = self.com_chain_contract.relay_job(
-                signature,
-                job.job_id,
-                job.req_chain_id,
-                tx_hash,
-                job.code_input,
-                job.user_timout,
-                job.job_owner,
-            );
-
-            let pending_txn = txn.send().await;
-            let Ok(pending_txn) = pending_txn else {
-                error!(
-                    "Failed to confirm transaction {} for job relay to CommonChain",
-                    pending_txn.unwrap_err()
-                );
-                return Ok(());
-            };
-
-            let txn_hash = pending_txn.tx_hash();
-            let Ok(Some(_)) = pending_txn.confirmations(1).await else {
-                error!(
-                    "Failed to confirm transaction {} for job relay to CommonChain",
-                    txn_hash
-                );
-                return Ok(());
-            };
+            match job.job_type {
+                JobType::JobRelay => {
+                    com_chain_client.relay_job_txn(job).await;
+                }
+                JobType::JobCancel => {
+                    com_chain_client.cancel_job(job).await;
+                }
+            }
         }
         Ok(())
+    }
+
+    async fn relay_job_txn(self: Arc<Self>, job: Job) {
+        info!("Creating a transaction for relayJob");
+        let signature = sign_response(
+            &self.enclave_signer_key,
+            job.job_id,
+            job.req_chain_id,
+            &job.tx_hash,
+            &job.code_input,
+            job.user_timout.as_u64(),
+            &job.job_owner,
+        )
+        .await
+        .unwrap();
+        let signature = types::Bytes::from(signature.into_bytes());
+        let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
+
+        let txn = self.com_chain_contract.relay_job(
+            signature,
+            job.job_id,
+            job.req_chain_id,
+            tx_hash,
+            job.code_input,
+            job.user_timout,
+            job.job_owner,
+        );
+
+        let pending_txn = txn.send().await;
+        let Ok(pending_txn) = pending_txn else {
+            error!(
+                "Failed to confirm transaction {} for job relay to CommonChain",
+                pending_txn.unwrap_err()
+            );
+            return;
+        };
+
+        let txn_hash = pending_txn.tx_hash();
+        let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+            error!(
+                "Failed to confirm transaction {} for job relay to CommonChain",
+                txn_hash
+            );
+            return;
+        };
+    }
+
+    async fn cancel_job(self: Arc<Self>, job: Job) {
+        todo!("Implement cancel_job_txn")
+        // info!("Creating a transaction for cancelJob");
+        // let txn = self.com_chain_contract.cancel_job(job.job_id);
+
+        // let pending_txn = txn.send().await;
+        // let Ok(pending_txn) = pending_txn else {
+        //     error!(
+        //         "Failed to confirm transaction {} for job cancel to CommonChain",
+        //         pending_txn.unwrap_err()
+        //     );
+        //     return;
+        // };
+
+        // let txn_hash = pending_txn.tx_hash();
+        // let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+        //     error!(
+        //         "Failed to confirm transaction {} for job cancel to CommonChain",
+        //         txn_hash
+        //     );
+        //     return;
+        // };
     }
 }
 
