@@ -10,6 +10,7 @@ pub struct ConfigManager {
 pub struct Config {
     pub key: String,
     pub pub_key: String,
+    pub enclave_signer_file: String,
     pub com_chain_id: u64,
     pub com_chain_ws_url: String,
     pub com_chain_http_url: String,

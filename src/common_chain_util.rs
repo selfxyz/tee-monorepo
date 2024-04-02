@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use ethers::abi::FixedBytes;
 use ethers::prelude::*;
 use ethers::types::{Address, U256};
 use ethers::utils::keccak256;
@@ -64,8 +65,8 @@ pub async fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
 pub async fn sign_response(
     signer_key: &SigningKey,
     job_id: U256,
-    req_chain_id: u64,
-    codehash: &H256,
+    req_chain_id: U256,
+    codehash: &FixedBytes,
     code_inputs: &Bytes,
     deadline: u64,
     job_owner: &Address,
@@ -73,13 +74,16 @@ pub async fn sign_response(
     let mut job_id_bytes = [0u8; 32];
     job_id.to_big_endian(&mut job_id_bytes);
 
+    let mut req_chain_id_bytes = [0u8; 32];
+    req_chain_id.to_big_endian(&mut req_chain_id_bytes);
+
     let mut hasher = Keccak::v256();
     hasher.update(b"|jobId|");
     hasher.update(&job_id_bytes);
     hasher.update(b"|chainId|");
-    hasher.update(&req_chain_id.to_be_bytes());
+    hasher.update(&req_chain_id_bytes);
     hasher.update(b"|codehash|");
-    hasher.update(codehash.as_bytes());
+    hasher.update(codehash);
     hasher.update(b"|codeInputs|");
     hasher.update(code_inputs);
     hasher.update(b"|deadline|");

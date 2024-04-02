@@ -3,15 +3,16 @@ mod common_chain_util;
 mod config;
 
 use anyhow::Context;
+use clap::Parser;
 use ethers::prelude::*;
 use ethers::providers::Provider;
+use k256::ecdsa::SigningKey;
 use log::info;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
+use tokio::fs;
 use tokio::sync::RwLock;
-
-use clap::Parser;
 
 use crate::common_chain_interaction::update_block_data;
 use crate::common_chain_util::{pub_key_to_address, BlockData};
@@ -43,6 +44,14 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         .context("Failed to get address from pub key")
         .unwrap();
 
+    let enclave_signer_key = SigningKey::from_slice(
+        fs::read(config.enclave_signer_file)
+            .await
+            .context("Failed to read the enclave signer key")?
+            .as_slice(),
+    )
+    .context("Invalid enclave signer key")?;
+
     // Connect to provider
     let chain_ws_client = Provider::<Ws>::connect_with_reconnects(config.com_chain_ws_url, 5)
         .await
@@ -67,6 +76,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         CommonChainClient::new(
             operator_address,
             config.key,
+            enclave_signer_key,
             chain_ws_client,
             chain_http_provider,
             &config.gateway_contract_addr,

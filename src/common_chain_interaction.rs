@@ -5,10 +5,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ethers::abi::{decode, Address, ParamType};
+use ethers::abi::{decode, Address, FixedBytes, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
+use k256::ecdsa::SigningKey;
 use log::{error, info};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -35,6 +36,7 @@ pub struct GatewayData {
 pub struct CommonChainClient {
     pub key: String,
     pub address: Address,
+    pub enclave_signer_key: SigningKey,
     pub chain_ws_client: Provider<Ws>,
     pub gateway_contract_addr: H160,
     pub contract_addr: H160,
@@ -65,7 +67,7 @@ pub struct RequestChainClient {
 #[derive(Debug, Clone)]
 pub struct Job {
     pub job_id: U256,
-    pub tx_hash: H256,
+    pub tx_hash: FixedBytes,
     pub code_input: Bytes,
     pub user_timout: U256,
     pub starttime: U256,
@@ -73,12 +75,14 @@ pub struct Job {
     pub deposit: Address,
     pub callback_deposit: U256,
     pub req_chain_id: U256,
+    pub job_owner: Address,
 }
 
 impl CommonChainClient {
     pub async fn new(
         address: Address,
         key: String,
+        enclave_signer_key: SigningKey,
         chain_ws_client: Provider<Ws>,
         chain_http_provider: Provider<Http>,
         gateway_contract_addr: &H160,
@@ -138,6 +142,7 @@ impl CommonChainClient {
         CommonChainClient {
             key,
             address,
+            enclave_signer_key,
             chain_ws_client,
             contract_addr: *contract_addr,
             gateway_contract_addr: *gateway_contract_addr,
@@ -154,7 +159,7 @@ impl CommonChainClient {
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
         let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
-        self_clone.tx_to_common_chain(com_chain_rx).await?;
+        self_clone.txns_to_common_chain(com_chain_rx).await?;
         self.handle_all_req_chain_events(req_chain_tx).await?;
         Ok(())
     }
@@ -287,7 +292,7 @@ impl CommonChainClient {
 
         let job = Job {
             job_id: decoded[0].clone().into_uint().unwrap(),
-            tx_hash: TxHash::from_slice(&decoded[1].clone().into_bytes().unwrap()),
+            tx_hash: decoded[1].clone().into_bytes().unwrap(),
             code_input: decoded[2].clone().into_bytes().unwrap().into(),
             user_timout: decoded[3].clone().into_uint().unwrap(),
             starttime: decoded[4].clone().into_uint().unwrap(),
@@ -295,6 +300,7 @@ impl CommonChainClient {
             deposit: decoded[6].clone().into_address().unwrap(),
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
             req_chain_id: req_chain_client.chain_id.clone(),
+            job_owner: log.address,
         };
 
         let gateway_address = self
@@ -371,15 +377,54 @@ impl CommonChainClient {
         Ok(selected_gateway.address)
     }
 
-    async fn tx_to_common_chain(
+    async fn txns_to_common_chain(
         self: Arc<Self>,
-        rx: Receiver<(Job, Arc<CommonChainClient>)>,
+        mut rx: Receiver<(Job, Arc<CommonChainClient>)>,
     ) -> Result<()> {
         while let Some((job, com_chain_client)) = rx.recv().await {
             info!("Creating a transaction for relayJob");
-            let signature = sign_response(self.key, job.job_id, job.req_chain_id, codehash, code_inputs, deadline, job_owner)
-        }
+            let signature = sign_response(
+                &self.enclave_signer_key,
+                job.job_id,
+                job.req_chain_id,
+                &job.tx_hash,
+                &job.code_input,
+                job.user_timout.as_u64(),
+                &job.job_owner,
+            )
+            .await
+            .unwrap();
+            let signature = types::Bytes::from(signature.into_bytes());
+            let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
 
+            let txn = self.com_chain_contract.relay_job(
+                signature,
+                job.job_id,
+                job.req_chain_id,
+                tx_hash,
+                job.code_input,
+                job.user_timout,
+                job.job_owner,
+            );
+
+            let pending_txn = txn.send().await;
+            let Ok(pending_txn) = pending_txn else {
+                error!(
+                    "Failed to confirm transaction {} for job relay to CommonChain",
+                    pending_txn.unwrap_err()
+                );
+                return Ok(());
+            };
+
+            let txn_hash = pending_txn.tx_hash();
+            let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+                error!(
+                    "Failed to confirm transaction {} for job relay to CommonChain",
+                    txn_hash
+                );
+                return Ok(());
+            };
+        }
         Ok(())
     }
 }
