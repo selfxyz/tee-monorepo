@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,6 +46,7 @@ pub struct CommonChainClient {
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
     pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
     pub com_chain_id: u64,
+    pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +160,7 @@ impl CommonChainClient {
             req_chain_clients: HashMap::new(),
             recent_blocks: Arc::clone(recent_blocks),
             com_chain_id,
+            active_jobs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -323,6 +324,13 @@ impl CommonChainClient {
         );
 
         if gateway_address == self.address {
+            // scope for the write lock
+            {
+                self.active_jobs
+                    .write()
+                    .await
+                    .insert(job.job_id, job.clone());
+            }
             tx.send((job, self.clone())).await.unwrap();
         }
     }
@@ -499,14 +507,17 @@ pub async fn update_block_data(
 
         let timestamp = latest_block_info.unwrap().timestamp.as_u64();
 
-        // Update the 'recent_blocks' map
-        recent_blocks.write().await.insert(
-            timestamp,
-            BlockData {
-                number: latest_block,
+        // scope for the write lock
+        {
+            // Update the 'recent_blocks' map
+            recent_blocks.write().await.insert(
                 timestamp,
-            },
-        );
+                BlockData {
+                    number: latest_block,
+                    timestamp,
+                },
+            );
+        }
 
         // Prune old entries (more on this below)
         prune_old_blocks(&recent_blocks).await;

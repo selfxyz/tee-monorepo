@@ -25,11 +25,14 @@ pub async fn prune_old_blocks(recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData
         .as_secs()
         - 120; // 2 minutes data retention
 
-    // Remove entries older than the cutoff time
-    recent_blocks
-        .write()
-        .await
-        .retain(|timestamp, _| timestamp > &oldest_valid_timestamp);
+    // scope for the write lock
+    {
+        // Remove entries older than the cutoff time
+        recent_blocks
+            .write()
+            .await
+            .retain(|timestamp, _| timestamp > &oldest_valid_timestamp);
+    }
 }
 
 pub async fn get_next_block_number(
@@ -38,12 +41,15 @@ pub async fn get_next_block_number(
 ) -> Option<u64> {
     let mut block_number: Option<u64> = None;
     while block_number.is_none() {
-        let recent_blocks = recent_blocks.read().await;
-        for (&_block_timestamp, block_data) in recent_blocks.range((
-            std::ops::Bound::Excluded(timestamp),
-            std::ops::Bound::Unbounded,
-        )) {
-            block_number = Some(block_data.number);
+        // scope for the read lock
+        {
+            let recent_blocks_state = recent_blocks.read().await;
+            for (&_block_timestamp, block_data) in recent_blocks_state.range((
+                std::ops::Bound::Excluded(timestamp),
+                std::ops::Bound::Unbounded,
+            )) {
+                block_number = Some(block_data.number);
+            }
         }
         // TODO: Use a subsription mechanism to avoid polling for future dev.
         tokio::time::sleep(Duration::from_millis(500)).await;
