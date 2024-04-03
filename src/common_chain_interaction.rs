@@ -519,7 +519,7 @@ pub async fn update_block_data(
             );
         }
 
-        // Prune old entries (more on this below)
+        // Prune old entries
         prune_old_blocks(&recent_blocks).await;
     }
 }
