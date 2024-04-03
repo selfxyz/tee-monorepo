@@ -68,7 +68,7 @@ pub fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
     Ok(Address::from_slice(&addr_bytes))
 }
 
-pub async fn sign_response(
+pub async fn sign_relay_job_response(
     signer_key: &SigningKey,
     job_id: U256,
     req_chain_id: U256,
@@ -76,12 +76,16 @@ pub async fn sign_response(
     code_inputs: &Bytes,
     deadline: u64,
     job_owner: &Address,
+    retry_number: U256,
 ) -> Option<String> {
     let mut job_id_bytes = [0u8; 32];
     job_id.to_big_endian(&mut job_id_bytes);
 
     let mut req_chain_id_bytes = [0u8; 32];
     req_chain_id.to_big_endian(&mut req_chain_id_bytes);
+
+    let mut retry_number_bytes = [0u8; 32];
+    retry_number.to_big_endian(&mut retry_number_bytes);
 
     let mut hasher = Keccak::v256();
     hasher.update(b"|jobId|");
@@ -96,6 +100,35 @@ pub async fn sign_response(
     hasher.update(&deadline.to_be_bytes());
     hasher.update(b"|jobOwner|");
     hasher.update(job_owner.as_bytes());
+    hasher.update(b"|retryNumber|");
+    hasher.update(&retry_number_bytes);
+
+    let mut hash = [0u8; 32];
+    hasher.finalize(&mut hash);
+
+    let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
+        eprintln!("Failed to sign the response: {}", err);
+        err
+    }) else {
+        return None;
+    };
+
+    Some(hex::encode(rs.to_bytes().append(27 + v.to_byte())))
+}
+
+pub async fn sign_reassign_gateway_relay_response(
+    signer_key: &SigningKey,
+    job_id: U256,
+    gateway_operator_old: &Address,
+) -> Option<String> {
+    let mut job_id_bytes = [0u8; 32];
+    job_id.to_big_endian(&mut job_id_bytes);
+
+    let mut hasher = Keccak::v256();
+    hasher.update(b"|jobId|");
+    hasher.update(&job_id_bytes);
+    hasher.update(b"|gatewayOperatorOld|");
+    hasher.update(gateway_operator_old.as_bytes());
 
     let mut hash = [0u8; 32];
     hasher.finalize(&mut hash);

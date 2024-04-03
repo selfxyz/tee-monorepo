@@ -16,7 +16,11 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
 
-use crate::common_chain_util::{get_next_block_number, prune_old_blocks, sign_response, BlockData, pub_key_to_address};
+use crate::common_chain_util::{
+    get_next_block_number, prune_old_blocks, pub_key_to_address,
+    sign_reassign_gateway_relay_response, sign_relay_job_response, BlockData,
+};
+use crate::constant::{MAX_GATEWAY_RETRIES, REQUEST_RELAY_TIMEOUT};
 use crate::HttpProvider;
 
 abigen!(CommonChainContract, "./CommonChainContract.json",);
@@ -67,7 +71,7 @@ pub struct RequestChainClient {
 #[derive(Debug, Clone)]
 pub enum JobType {
     JobRelay,
-    JobCancel,
+    SlashGatewayJob,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +87,8 @@ pub struct Job {
     pub req_chain_id: u64,
     pub job_owner: Address,
     pub job_type: JobType,
+    pub retry_number: U256,
+    pub gateway_address: Option<Address>,
 }
 
 impl CommonChainClient {
@@ -143,7 +149,8 @@ impl CommonChainClient {
             .await
             .context(
                 "Failed to connect to the chain websocket provider. Please check the chain url.",
-            ).unwrap();
+            )
+            .unwrap();
 
         CommonChainClient {
             signer,
@@ -156,7 +163,7 @@ impl CommonChainClient {
             gateway_contract,
             com_chain_contract,
             req_chain_clients: HashMap::new(),
-            recent_blocks: recent_blocks,
+            recent_blocks,
             request_chain_list,
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -178,10 +185,7 @@ impl CommonChainClient {
         let mut req_chain_data = self.request_chain_list.clone();
         let mut request_chain_clients: HashMap<String, Arc<RequestChainClient>> = HashMap::new();
         while let Some(request_chain) = req_chain_data.pop() {
-            let signer = self
-                .signer
-                .clone()
-                .with_chain_id(request_chain.chain_id);
+            let signer = self.signer.clone().with_chain_id(request_chain.chain_id);
             let signer_address = signer.address();
 
             let req_chain_ws_client =
@@ -253,13 +257,20 @@ impl CommonChainClient {
                     let self_clone = Arc::clone(&self_clone);
                     let tx = tx_clone.clone();
                     task::spawn(async move {
-                        self_clone.job_placed_handler(req_chain_client, log, tx.clone()).await;
+                        self_clone.job_placed_handler(req_chain_client, Some(log), None, tx.clone(),U256::from(0), None).await;
                     });
                 } else if topics[0] == keccak256("JobCancel(uint256)").into() {
                     info!(
                         "Request Chain ID: {:?}, JobCancel jobID: {:?}",
-                        request_chain.chain_id, log
+                        request_chain.chain_id, log.topics[1]
                     );
+                    let self_clone = Arc::clone(&self_clone);
+                    // TODO: Isn't it better if we also receive the Gateway Address in the event parameters?
+                    // This will help in identifying the gateway for the job and prevent an unnecessary
+                    // write lock to the active_jobs map.
+                    task::spawn(async move {
+                        self_clone.cancel_job_with_job_id(U256::from_big_endian(log.topics[1].as_fixed_bytes())).await;
+                    });
                 } else {
                     error!(
                         "Request Chain ID: {:?}, Unknown event: {:?}",
@@ -276,49 +287,76 @@ impl CommonChainClient {
         Ok(())
     }
 
+    // TODO: Fix this cycle compile error.
     async fn job_placed_handler(
         self: Arc<Self>,
         req_chain_client: Arc<RequestChainClient>,
-        log: Log,
+        log_option: Option<Log>,
+        job_option: Option<Job>,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
+        retry_number: U256,
+        selected_gateway_address: Option<Address>,
     ) {
-        let types = vec![
-            ParamType::Uint(256),
-            ParamType::FixedBytes(32),
-            ParamType::Bytes,
-            ParamType::Uint(256),
-            ParamType::Uint(256),
-            ParamType::Uint(256),
-            ParamType::Uint(256),
-            ParamType::Uint(256),
-        ];
+        let log: Log;
+        let mut job: Job;
+        if job_option.is_none() {
+            log = log_option.unwrap();
+            let types = vec![
+                ParamType::Uint(256),
+                ParamType::FixedBytes(32),
+                ParamType::Bytes,
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+            ];
 
-        let decoded = decode(&types, &log.data.0).unwrap();
+            let decoded = decode(&types, &log.data.0).unwrap();
 
-        let job = Job {
-            job_id: decoded[0].clone().into_uint().unwrap(),
-            tx_hash: decoded[1].clone().into_bytes().unwrap(),
-            code_input: decoded[2].clone().into_bytes().unwrap().into(),
-            user_timout: decoded[3].clone().into_uint().unwrap(),
-            starttime: decoded[4].clone().into_uint().unwrap(),
-            max_gas_price: decoded[5].clone().into_uint().unwrap(),
-            deposit: decoded[6].clone().into_address().unwrap(),
-            callback_deposit: decoded[7].clone().into_uint().unwrap(),
-            req_chain_id: req_chain_client.chain_id.clone(),
-            job_owner: log.address,
-            job_type: JobType::JobRelay,
-        };
+            job = Job {
+                job_id: decoded[0].clone().into_uint().unwrap(),
+                tx_hash: decoded[1].clone().into_bytes().unwrap(),
+                code_input: decoded[2].clone().into_bytes().unwrap().into(),
+                user_timout: decoded[3].clone().into_uint().unwrap(),
+                starttime: decoded[4].clone().into_uint().unwrap(),
+                max_gas_price: decoded[5].clone().into_uint().unwrap(),
+                deposit: decoded[6].clone().into_address().unwrap(),
+                callback_deposit: decoded[7].clone().into_uint().unwrap(),
+                req_chain_id: req_chain_client.chain_id.clone(),
+                job_owner: log.address,
+                job_type: JobType::JobRelay,
+                retry_number,
+                gateway_address: None,
+            };
+        } else {
+            job = job_option.unwrap();
+        }
 
-        let gateway_address = self
-            .select_gateway_for_job_relayed(job.clone(), req_chain_client)
-            .await
-            .context("Failed to select a gateway for the job")
-            .unwrap();
+        let gateway_address: Address;
 
-        info!(
-            "Job ID: {:?}, Gateway Address: {:?}",
-            job.job_id, gateway_address
-        );
+        if selected_gateway_address.is_none() {
+            gateway_address = self
+                .select_gateway_for_job_relayed(job.clone(), req_chain_client)
+                .await
+                .context("Failed to select a gateway for the job")
+                .unwrap();
+        } else {
+            gateway_address = selected_gateway_address.unwrap();
+        }
+
+        job.gateway_address = Some(gateway_address);
+
+        let self_clone = self.clone();
+        let job_clone = job.clone();
+        let tx_clone = tx.clone();
+
+        task::spawn(async move {
+            self_clone
+                .job_slash_timer(job_clone, tx_clone)
+                .await
+                .unwrap();
+        });
 
         if gateway_address == self.address {
             // scope for the write lock
@@ -330,6 +368,90 @@ impl CommonChainClient {
             }
             tx.send((job, self.clone())).await.unwrap();
         }
+    }
+
+    async fn job_slash_timer(
+        self: Arc<Self>,
+        mut job: Job,
+        tx: Sender<(Job, Arc<CommonChainClient>)>,
+    ) -> Result<()> {
+        time::sleep(Duration::from_secs(REQUEST_RELAY_TIMEOUT)).await;
+
+        // check if the JobRelayed event is triggered with the job.job_id
+        let event_filter = Filter::new()
+            .address(self.contract_addr)
+            .select(0..)
+            .topic0(vec![keccak256(
+                "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,uint256)",
+            )])
+            .topic1(job.job_id);
+
+        let logs = self.chain_ws_client.get_logs(&event_filter).await.unwrap();
+
+        for log in logs {
+            let decoded = decode(
+                &vec![
+                    ParamType::Uint(256),
+                    ParamType::Uint(256),
+                    ParamType::FixedBytes(32),
+                    ParamType::Bytes,
+                    ParamType::Uint(256),
+                    ParamType::Address,
+                    ParamType::Address,
+                    ParamType::Uint(256),
+                ],
+                &log.data.0,
+            )
+            .unwrap();
+
+            let job_id = decoded[0].clone().into_uint().unwrap();
+            let retry_number = decoded[7].clone().into_uint().unwrap();
+
+            if retry_number == job.retry_number {
+                info!("Job ID: {:?}, JobRelayed event triggered", job_id);
+                return Ok(());
+            }
+        }
+
+        // select a new gateway for the job
+        let gateway_address = self
+            .select_gateway_for_job_relayed(
+                job.clone(),
+                Arc::clone(&self.req_chain_clients[&job.req_chain_id.to_string()]),
+            )
+            .await
+            .context("Failed to select a gateway for the job")?;
+
+        // slash the previous gateway
+        let self_clone = self.clone();
+        let mut job_clone = job.clone();
+        job_clone.job_type = JobType::SlashGatewayJob;
+        let tx_clone = tx.clone();
+        task::spawn(async move {
+            tx_clone.send((job_clone, self_clone)).await.unwrap();
+        });
+
+        job.retry_number += U256::from(1);
+        if job.retry_number >= U256::from(MAX_GATEWAY_RETRIES) {
+            info!("Job ID: {:?}, Max retries reached", job.job_id);
+            return Ok(());
+        }
+        job.gateway_address = Some(gateway_address);
+
+        task::spawn(async move {
+            self.clone()
+                .job_placed_handler(
+                    Arc::clone(&self.req_chain_clients[&job.req_chain_id.to_string()]),
+                    None,
+                    Some(job.clone()),
+                    tx,
+                    job.retry_number,
+                    Some(gateway_address),
+                )
+                .await;
+        });
+
+        Ok(())
     }
 
     async fn select_gateway_for_job_relayed(
@@ -387,6 +509,11 @@ impl CommonChainClient {
             .map(|(gateway, _)| gateway)
             .context("Failed to select a gateway")?;
 
+        info!(
+            "Job ID: {:?}, Gateway Address: {:?}",
+            job.job_id, selected_gateway.address
+        );
+
         Ok(selected_gateway.address)
     }
 
@@ -397,10 +524,13 @@ impl CommonChainClient {
         while let Some((job, com_chain_client)) = rx.recv().await {
             match job.job_type {
                 JobType::JobRelay => {
-                    com_chain_client.relay_job_txn(job).await;
+                    let com_chain_client_clone = com_chain_client.clone();
+                    let job_clone = job.clone();
+                    com_chain_client_clone.relay_job_txn(job_clone).await;
+                    com_chain_client.remove_job(job).await;
                 }
-                JobType::JobCancel => {
-                    com_chain_client.cancel_job(job).await;
+                JobType::SlashGatewayJob => {
+                    com_chain_client.reassign_gateway_relay_txn(job).await;
                 }
             }
         }
@@ -409,7 +539,7 @@ impl CommonChainClient {
 
     async fn relay_job_txn(self: Arc<Self>, job: Job) {
         info!("Creating a transaction for relayJob");
-        let signature = sign_response(
+        let signature = sign_relay_job_response(
             &self.enclave_signer_key,
             job.job_id,
             job.req_chain_id.into(),
@@ -417,6 +547,7 @@ impl CommonChainClient {
             &job.code_input,
             job.user_timout.as_u64(),
             &job.job_owner,
+            job.retry_number,
         )
         .await
         .unwrap();
@@ -431,6 +562,7 @@ impl CommonChainClient {
             job.code_input,
             job.user_timout,
             job.job_owner,
+            job.retry_number,
         );
 
         let pending_txn = txn.send().await;
@@ -450,30 +582,73 @@ impl CommonChainClient {
             );
             return;
         };
+
+        info!(
+            "Transaction {} confirmed for job relay to CommonChain",
+            txn_hash
+        );
     }
 
-    async fn cancel_job(self: Arc<Self>, job: Job) {
-        todo!("Implement cancel_job_txn")
-        // info!("Creating a transaction for cancelJob");
-        // let txn = self.com_chain_contract.cancel_job(job.job_id);
+    async fn remove_job(self: Arc<Self>, job: Job) {
+        let mut active_jobs = self.active_jobs.write().await;
+        // The retry number check is to make sure we are removing the correct job from the active jobs list
+        // In a case where this txn took longer than the REQUEST_RELAY_TIMEOUT, the job might have been retried
+        // and the active_jobs list might have the same job_id with a different retry number.
+        if active_jobs.contains_key(&job.job_id)
+            && active_jobs[&job.job_id].retry_number == job.retry_number
+        {
+            active_jobs.remove(&job.job_id);
+        }
+    }
 
-        // let pending_txn = txn.send().await;
-        // let Ok(pending_txn) = pending_txn else {
-        //     error!(
-        //         "Failed to confirm transaction {} for job cancel to CommonChain",
-        //         pending_txn.unwrap_err()
-        //     );
-        //     return;
-        // };
+    async fn cancel_job_with_job_id(self: Arc<Self>, job_id: U256) {
+        info!("Remove the job from the active jobs list");
 
-        // let txn_hash = pending_txn.tx_hash();
-        // let Ok(Some(_)) = pending_txn.confirmations(1).await else {
-        //     error!(
-        //         "Failed to confirm transaction {} for job cancel to CommonChain",
-        //         txn_hash
-        //     );
-        //     return;
-        // };
+        // scope for the write lock
+        {
+            self.active_jobs.write().await.remove(&job_id);
+        }
+    }
+
+    async fn reassign_gateway_relay_txn(self: Arc<Self>, job: Job) {
+        info!("Creating a transaction for reassignGatewayRelay");
+        let signature = sign_reassign_gateway_relay_response(
+            &self.enclave_signer_key,
+            job.job_id,
+            job.gateway_address.as_ref().unwrap(),
+        )
+        .await
+        .unwrap();
+        let signature = types::Bytes::from(signature.into_bytes());
+
+        let txn = self.com_chain_contract.reassign_gateway_relay(
+            job.gateway_address.unwrap(),
+            job.job_id,
+            signature,
+        );
+
+        let pending_txn = txn.send().await;
+        let Ok(pending_txn) = pending_txn else {
+            error!(
+                "Failed to confirm transaction {} for reassign gateway relay to CommonChain",
+                pending_txn.unwrap_err()
+            );
+            return;
+        };
+
+        let txn_hash = pending_txn.tx_hash();
+        let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+            error!(
+                "Failed to confirm transaction {} for reassign gateway relay to CommonChain",
+                txn_hash
+            );
+            return;
+        };
+
+        info!(
+            "Transaction {} confirmed for reassign gateway relay to CommonChain",
+            txn_hash
+        );
     }
 }
 
