@@ -4,11 +4,12 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use ethers::abi::{decode, Address, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
+use k256::ecdsa::SigningKey;
 use log::{error, info};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -16,12 +17,13 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
 
-use crate::common_chain_util::{get_next_block_number, prune_old_blocks, sign_response, BlockData};
+use crate::common_chain_util::{get_next_block_number, prune_old_blocks, sign_response, BlockData, pub_key_to_address};
 use crate::HttpProvider;
 
 abigen!(CommonChainContract, "./CommonChainContract.json",);
 abigen!(CommonChainGateway, "./CommonChainGateway.json",);
 abigen!(RequestChainContract, "./RequestChainContract.json",);
+abigen!(CommonChainJobs, "./CommonChainJobs.json",);
 
 #[derive(Debug, Clone)]
 pub struct GatewayData {
@@ -33,7 +35,8 @@ pub struct GatewayData {
 
 #[derive(Debug, Clone)]
 pub struct CommonChainClient {
-    pub key: String,
+    pub signer: LocalWallet,
+    pub enclave_signer_key: SigningKey,
     pub address: Address,
     pub chain_ws_client: Provider<Ws>,
     pub gateway_contract_addr: H160,
@@ -41,22 +44,21 @@ pub struct CommonChainClient {
     pub start_block: u64,
     pub gateway_contract: CommonChainGateway<HttpProvider>,
     pub com_chain_contract: CommonChainContract<HttpProvider>,
-    pub gateway_data: GatewayData,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
     pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
-    pub com_chain_id: u64,
+    pub request_chain_list: Vec<RequestChainData>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RequestChainData {
-    pub chain_id: U256,
+    pub chain_id: u64,
     pub contract_address: Address,
     pub rpc_url: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct RequestChainClient {
-    pub chain_id: U256,
+    pub chain_id: u64,
     pub contract_address: Address,
     pub rpc_url: String,
     pub contract: RequestChainContract<HttpProvider>,
@@ -72,82 +74,82 @@ pub struct Job {
     pub max_gas_price: U256,
     pub deposit: Address,
     pub callback_deposit: U256,
-    pub req_chain_id: U256,
+    pub req_chain_id: u64,
 }
 
 impl CommonChainClient {
     pub async fn new(
-        address: Address,
-        key: String,
-        chain_ws_client: Provider<Ws>,
-        chain_http_provider: Provider<Http>,
+        enclave_signer_key: SigningKey,
+        enclave_pub_key: Bytes,
+        signer: LocalWallet,
+        com_chain_ws_url: &String,
+        chain_http_provider: Arc<HttpProvider>,
         gateway_contract_addr: &H160,
         contract_addr: &H160,
         start_block: u64,
-        recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData>>>,
-        com_chain_id: u64,
+        recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
+        request_chain_list: Vec<RequestChainData>,
     ) -> Self {
         info!("Initializing Common Chain Client...");
-        let signer = key
-            .parse::<LocalWallet>()
-            .unwrap()
-            .with_chain_id(com_chain_id);
-        let signer_address = signer.address();
-        let chain_http_client = chain_http_provider
-            .clone()
-            .with_signer(signer.clone())
-            .nonce_manager(signer_address);
+        // let signer_address = signer.address();
+        // let chain_http_client = chain_http_provider
+        //     .clone()
+        //     .with_signer(signer.clone())
+        //     .nonce_manager(signer_address);
 
         let gateway_contract =
-            CommonChainGateway::new(gateway_contract_addr.clone(), Arc::new(chain_http_client));
-        let gateway = gateway_contract
-            .get_gateway(key.parse::<Address>().unwrap())
-            .await
-            .context("Failed to get gateway data")
-            .unwrap();
+            CommonChainGateway::new(gateway_contract_addr.clone(), chain_http_provider.clone());
+        // pub_key_to_address
+        // let gateway = gateway_contract
+        //     .get_gateway(pub_key_to_address(&enclave_pub_key).unwrap())
+        //     .await
+        //     .context("Failed to get gateway data")
+        //     .unwrap();
 
-        let mut request_chains: Vec<RequestChainData> = vec![];
-        for chain_id in gateway.1.iter() {
-            let (contract_address, rpc_url) = gateway_contract
-                .request_chains(chain_id.clone())
-                .await
-                .context("Failed to get request chain data")
-                .unwrap();
-            request_chains.push(RequestChainData {
-                chain_id: chain_id.clone(),
-                contract_address,
-                rpc_url,
-            });
-        }
-        let gateway_data = GatewayData {
-            address: gateway.0,
-            request_chains,
-            stake_amount: gateway.2,
-            status: gateway.3,
-        };
+        // let mut request_chains: Vec<RequestChainData> = vec![];
+        // for chain_id in gateway.1.iter() {
+        //     let (contract_address, rpc_url) = gateway_contract
+        //         .request_chains(chain_id.clone())
+        //         .await
+        //         .context("Failed to get request chain data")
+        //         .unwrap();
+        //     request_chains.push(RequestChainData {
+        //         chain_id: chain_id.clone(),
+        //         contract_address,
+        //         rpc_url,
+        //     });
+        // }
+        // let gateway_data = GatewayData {
+        //     address: gateway.0,
+        //     request_chains: request_chain_list,
+        //     stake_amount: gateway.2,
+        //     status: gateway.3,
+        // };
 
-        let chain_http_client = chain_http_provider
-            .clone()
-            .with_signer(signer)
-            .nonce_manager(signer_address);
         let com_chain_contract =
-            CommonChainContract::new(contract_addr.clone(), Arc::new(chain_http_client));
+            CommonChainContract::new(contract_addr.clone(), chain_http_provider.clone());
 
         info!("Gateway Data fetched. Common Chain Client Initialized");
 
+        let chain_ws_client = Provider::<Ws>::connect_with_reconnects(com_chain_ws_url, 5)
+            .await
+            .context(
+                "Failed to connect to the chain websocket provider. Please check the chain url.",
+            ).unwrap();
+
         CommonChainClient {
-            key,
-            address,
+            signer,
+            enclave_signer_key,
+            address: pub_key_to_address(&enclave_pub_key).unwrap(),
             chain_ws_client,
             contract_addr: *contract_addr,
             gateway_contract_addr: *gateway_contract_addr,
             start_block,
             gateway_contract,
             com_chain_contract,
-            gateway_data,
             req_chain_clients: HashMap::new(),
-            recent_blocks: Arc::clone(recent_blocks),
-            com_chain_id,
+            recent_blocks: recent_blocks,
+            request_chain_list,
         }
     }
 
@@ -164,14 +166,13 @@ impl CommonChainClient {
         tx: Sender<(Job, Arc<CommonChainClient>)>,
     ) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
-        let mut req_chain_data = self.gateway_data.request_chains.clone();
+        let mut req_chain_data = self.request_chain_list.clone();
         let mut request_chain_clients: HashMap<String, Arc<RequestChainClient>> = HashMap::new();
         while let Some(request_chain) = req_chain_data.pop() {
             let signer = self
-                .key
+                .signer
                 .clone()
-                .parse::<LocalWallet>()?
-                .with_chain_id(request_chain.chain_id.as_u64());
+                .with_chain_id(request_chain.chain_id);
             let signer_address = signer.address();
 
             let req_chain_ws_client =
@@ -199,11 +200,11 @@ impl CommonChainClient {
 
             info!(
                 "Connected to the request chain provider for chain_id: {}",
-                request_chain.chain_id.as_u64()
+                request_chain.chain_id
             );
             info!(
                 "Subscribing to events for chain_id: {}",
-                request_chain.chain_id.as_u64()
+                request_chain.chain_id
             );
 
             let req_chain_client = Arc::from(RequestChainClient {
@@ -325,7 +326,7 @@ impl CommonChainClient {
         // fetch all gateways' using getAllGateways function from the contract
         let gateways: Vec<common_chain_gateway::Gateway> = self
             .gateway_contract
-            .get_active_gateways_for_req_chain(req_chain_client.chain_id)
+            .get_active_gateways_for_req_chain(req_chain_client.chain_id.into())
             .block(next_block_number)
             .call()
             .await
@@ -373,11 +374,11 @@ impl CommonChainClient {
 
     async fn tx_to_common_chain(
         self: Arc<Self>,
-        rx: Receiver<(Job, Arc<CommonChainClient>)>,
+        mut rx: Receiver<(Job, Arc<CommonChainClient>)>,
     ) -> Result<()> {
         while let Some((job, com_chain_client)) = rx.recv().await {
             info!("Creating a transaction for relayJob");
-            let signature = sign_response(self.key, job.job_id, job.req_chain_id, codehash, code_inputs, deadline, job_owner)
+            //TODO let signature = sign_response(&self.enclave_signer_key, job.job_id, job.req_chain_id.into(), codehash, code_inputs, deadline, job_owner);
         }
 
         Ok(())

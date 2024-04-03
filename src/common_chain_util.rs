@@ -51,7 +51,7 @@ pub async fn get_next_block_number(
     block_number
 }
 
-pub async fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
+pub fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
     if pub_key.len() != 64 {
         return Err(anyhow!("Invalid public key length"));
     }

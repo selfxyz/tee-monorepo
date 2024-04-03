@@ -8,14 +8,14 @@ pub struct ConfigManager {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub key: String,
-    pub pub_key: String,
     pub com_chain_id: u64,
     pub com_chain_ws_url: String,
     pub com_chain_http_url: String,
-    pub com_chain_contract_addr: H160,
     pub gateway_contract_addr: H160,
+    pub job_contract_addr: H160,
     pub start_block: u64,
+    pub enclave_secret_key: String,
+    pub enclave_public_key: String,
 }
 
 impl ConfigManager {
