@@ -1,11 +1,12 @@
+mod api_impl;
 mod common_chain_interaction;
 mod common_chain_util;
 mod config;
+mod constant;
 mod model;
-mod api_impl;
 
-use actix_web::{App, HttpServer};
 use actix_web::web::Data;
+use actix_web::{App, HttpServer};
 use anyhow::Context;
 use clap::Parser;
 use ethers::prelude::*;
@@ -18,11 +19,11 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::RwLock;
 
+use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
 use crate::common_chain_interaction::update_block_data;
 use crate::common_chain_util::BlockData;
 use crate::config::ConfigManager;
 use crate::model::AppState;
-use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
 
 type HttpProvider = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
