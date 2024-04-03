@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
-use anyhow::Context;
 use actix_web::web::{Data, Json};
 use actix_web::{delete, get, post, HttpResponse, Responder};
+use anyhow::Context;
 use ethers::abi::{encode, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
 use hex::FromHex;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
-use tiny_keccak::{Hasher, Keccak};
 
+use crate::common_chain_interaction::{
+    CommonChainClient, CommonChainGateway, RequestChainContract, RequestChainData,
+};
 use crate::model::{AppState, InjectKeyInfo, RegisterEnclaveInfo};
-use crate::common_chain_interaction::{CommonChainClient, CommonChainGateway, RequestChainContract,
-    RequestChainData};
 
 #[get("/")]
 async fn index() -> impl Responder {
@@ -22,7 +22,6 @@ async fn index() -> impl Responder {
 
 #[post("/inject-key")]
 async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -> impl Responder {
-
     // let mut gw_contract = app_state.gateway_contract_object.lock().unwrap();
     // let mut jobs_contract = app_state.jobs_contract_object.lock().unwrap();
 
@@ -65,7 +64,6 @@ async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -
     //         .nonce_manager(signer_address),
     // );
 
-
     // app_state.job_contract_object = Some(CommonChainJobs::new(
     //     app_state.job_contract_addr,
     //     http_rpc_client,
@@ -75,8 +73,6 @@ async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -
 
     HttpResponse::Ok().body("Secret key injected successfully")
 }
-
-
 
 #[post("/register")]
 async fn register_enclave(
@@ -124,10 +120,8 @@ async fn register_enclave(
             .nonce_manager(signer_address),
     );
 
-    let gateway_contract = CommonChainGateway::new(
-        app_state.gateway_contract_addr,
-        http_rpc_client.clone(),
-    );
+    let gateway_contract =
+        CommonChainGateway::new(app_state.gateway_contract_addr, http_rpc_client.clone());
 
     for chain in enclave_info.chain_list.clone() {
         let signer_wallet = wallet.clone().with_chain_id(chain);
@@ -152,21 +146,17 @@ async fn register_enclave(
                 .nonce_manager(signer_address),
         );
         // prepare transaction
-        let contract = RequestChainContract::new(
-            contract_address,
-            Arc::new(http_rpc_client),
+        let contract = RequestChainContract::new(contract_address, Arc::new(http_rpc_client));
+        let txn = contract.register_gateway(
+            attestation.clone().into(),
+            app_state.enclave_pub_key.clone().into(),
+            pcr_0.clone().into(),
+            pcr_1.clone().into(),
+            pcr_2.clone().into(),
+            enclave_info.enclave_cpus.into(),
+            enclave_info.enclave_memory.into(),
+            enclave_info.timestamp.into(),
         );
-        let txn = contract
-            .register_gateway(
-                attestation.clone().into(),
-                app_state.enclave_pub_key.clone().into(),
-                pcr_0.clone().into(),
-                pcr_1.clone().into(),
-                pcr_2.clone().into(),
-                enclave_info.enclave_cpus.into(),
-                enclave_info.enclave_memory.into(),
-                enclave_info.timestamp.into(),
-            );
 
         let pending_txn = txn.send().await;
         let Ok(pending_txn) = pending_txn else {
@@ -194,14 +184,23 @@ async fn register_enclave(
     // let mut hasher = Keccak::v256();
     // hasher.update(b"|chain_list|");
     // encode chain list in ethabi encoder
-    let token_list = Token::Array(enclave_info.chain_list.clone().into_iter().map(|x| Token::Uint(x.into())).collect::<Vec<Token>>());
+    let token_list = Token::Array(
+        enclave_info
+            .chain_list
+            .clone()
+            .into_iter()
+            .map(|x| Token::Uint(x.into()))
+            .collect::<Vec<Token>>(),
+    );
     let encoded_chain_ids = encode(&[token_list]);
     let hashed_chain_ids = keccak256(&encoded_chain_ids);
     // hasher.update(&encoded_chain_ids);
     // let mut hash = [0u8; 32];
     // hasher.finalize(&mut hash);
 
-    let sig = app_state.enclave_signer_key.sign_prehash_recoverable(&hashed_chain_ids);
+    let sig = app_state
+        .enclave_signer_key
+        .sign_prehash_recoverable(&hashed_chain_ids);
     let Ok((rs, v)) = sig else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to sign the chain ID list: {}",
@@ -214,20 +213,23 @@ async fn register_enclave(
             .body("Failed to parse the signature into eth bytes");
     };
 
-    let txn = gateway_contract
-        .register_gateway(
-            attestation.into(),
-            app_state.enclave_pub_key.clone().into(),
-            pcr_0.into(),
-            pcr_1.into(),
-            pcr_2.into(),
-            enclave_info.enclave_cpus.into(),
-            enclave_info.enclave_memory.into(),
-            enclave_info.timestamp.into(),
-            enclave_info.chain_list.into_iter().map(|x| U256::from(x)).collect(),
-            signature,
-            enclave_info.stake_amount.into(),
-        );
+    let txn = gateway_contract.register_gateway(
+        attestation.into(),
+        app_state.enclave_pub_key.clone().into(),
+        pcr_0.into(),
+        pcr_1.into(),
+        pcr_2.into(),
+        enclave_info.enclave_cpus.into(),
+        enclave_info.enclave_memory.into(),
+        enclave_info.timestamp.into(),
+        enclave_info
+            .chain_list
+            .into_iter()
+            .map(|x| U256::from(x))
+            .collect(),
+        signature,
+        enclave_info.stake_amount.into(),
+    );
 
     let pending_txn = txn.send().await;
     let Ok(pending_txn) = pending_txn else {
@@ -247,7 +249,11 @@ async fn register_enclave(
     };
 
     *is_registered = true;
-    app_state.chain_list.lock().unwrap().append(&mut chain_list.clone());
+    app_state
+        .chain_list
+        .lock()
+        .unwrap()
+        .append(&mut chain_list.clone());
 
     // Start contract event listner
     let contract_client = Arc::new(
@@ -269,7 +275,9 @@ async fn register_enclave(
     // Listen for new jobs and handles them.
     info!("Starting the contract event listener.");
 
-    tokio::spawn(async move { let _ = contract_client.run().await; });
+    tokio::spawn(async move {
+        let _ = contract_client.run().await;
+    });
 
     HttpResponse::Ok().body(format!(
         "Enclave Node successfully registered on the common chain block {}, hash {}",
@@ -304,13 +312,10 @@ async fn deregister_enclave(app_state: Data<AppState>) -> impl Responder {
             .nonce_manager(signer_address),
     );
 
-    let gateway_contract = CommonChainGateway::new(
-        app_state.gateway_contract_addr,
-        http_rpc_client.clone(),
-    );
+    let gateway_contract =
+        CommonChainGateway::new(app_state.gateway_contract_addr, http_rpc_client.clone());
 
-    let txn = gateway_contract
-        .deregister_gateway(app_state.enclave_pub_key.clone().into());
+    let txn = gateway_contract.deregister_gateway(app_state.enclave_pub_key.clone().into());
     let pending_txn = txn.send().await;
     let Ok(pending_txn) = pending_txn else {
         return HttpResponse::InternalServerError().body(format!(
@@ -346,13 +351,9 @@ async fn deregister_enclave(app_state: Data<AppState>) -> impl Responder {
                 .nonce_manager(signer_address),
         );
 
-        let contract = RequestChainContract::new(
-            chain.contract_address,
-            Arc::new(http_rpc_client),
-        );
+        let contract = RequestChainContract::new(chain.contract_address, Arc::new(http_rpc_client));
 
-        let txn = contract
-            .deregister_gateway(app_state.enclave_pub_key.clone().into());
+        let txn = contract.deregister_gateway(app_state.enclave_pub_key.clone().into());
 
         let pending_txn = txn.send().await;
         let Ok(pending_txn) = pending_txn else {
