@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
-
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use ethers::abi::{decode, Address, ParamType};
+use ethers::abi::{decode, Address, FixedBytes, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
@@ -47,6 +46,7 @@ pub struct CommonChainClient {
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
     pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
     pub request_chain_list: Vec<RequestChainData>,
+    pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,9 +65,15 @@ pub struct RequestChainClient {
 }
 
 #[derive(Debug, Clone)]
+pub enum JobType {
+    JobRelay,
+    JobCancel,
+}
+
+#[derive(Debug, Clone)]
 pub struct Job {
     pub job_id: U256,
-    pub tx_hash: H256,
+    pub tx_hash: FixedBytes,
     pub code_input: Bytes,
     pub user_timout: U256,
     pub starttime: U256,
@@ -75,6 +81,8 @@ pub struct Job {
     pub deposit: Address,
     pub callback_deposit: U256,
     pub req_chain_id: u64,
+    pub job_owner: Address,
+    pub job_type: JobType,
 }
 
 impl CommonChainClient {
@@ -150,13 +158,14 @@ impl CommonChainClient {
             req_chain_clients: HashMap::new(),
             recent_blocks: recent_blocks,
             request_chain_list,
+            active_jobs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
         let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
-        self_clone.tx_to_common_chain(com_chain_rx).await?;
+        self_clone.txns_to_common_chain(com_chain_rx).await?;
         self.handle_all_req_chain_events(req_chain_tx).await?;
         Ok(())
     }
@@ -288,7 +297,7 @@ impl CommonChainClient {
 
         let job = Job {
             job_id: decoded[0].clone().into_uint().unwrap(),
-            tx_hash: TxHash::from_slice(&decoded[1].clone().into_bytes().unwrap()),
+            tx_hash: decoded[1].clone().into_bytes().unwrap(),
             code_input: decoded[2].clone().into_bytes().unwrap().into(),
             user_timout: decoded[3].clone().into_uint().unwrap(),
             starttime: decoded[4].clone().into_uint().unwrap(),
@@ -296,6 +305,8 @@ impl CommonChainClient {
             deposit: decoded[6].clone().into_address().unwrap(),
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
             req_chain_id: req_chain_client.chain_id.clone(),
+            job_owner: log.address,
+            job_type: JobType::JobRelay,
         };
 
         let gateway_address = self
@@ -310,6 +321,13 @@ impl CommonChainClient {
         );
 
         if gateway_address == self.address {
+            // scope for the write lock
+            {
+                self.active_jobs
+                    .write()
+                    .await
+                    .insert(job.job_id, job.clone());
+            }
             tx.send((job, self.clone())).await.unwrap();
         }
     }
@@ -372,16 +390,90 @@ impl CommonChainClient {
         Ok(selected_gateway.address)
     }
 
-    async fn tx_to_common_chain(
+    async fn txns_to_common_chain(
         self: Arc<Self>,
         mut rx: Receiver<(Job, Arc<CommonChainClient>)>,
     ) -> Result<()> {
         while let Some((job, com_chain_client)) = rx.recv().await {
-            info!("Creating a transaction for relayJob");
-            //TODO let signature = sign_response(&self.enclave_signer_key, job.job_id, job.req_chain_id.into(), codehash, code_inputs, deadline, job_owner);
+            match job.job_type {
+                JobType::JobRelay => {
+                    com_chain_client.relay_job_txn(job).await;
+                }
+                JobType::JobCancel => {
+                    com_chain_client.cancel_job(job).await;
+                }
+            }
         }
-
         Ok(())
+    }
+
+    async fn relay_job_txn(self: Arc<Self>, job: Job) {
+        info!("Creating a transaction for relayJob");
+        let signature = sign_response(
+            &self.enclave_signer_key,
+            job.job_id,
+            job.req_chain_id.into(),
+            &job.tx_hash,
+            &job.code_input,
+            job.user_timout.as_u64(),
+            &job.job_owner,
+        )
+        .await
+        .unwrap();
+        let signature = types::Bytes::from(signature.into_bytes());
+        let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
+
+        let txn = self.com_chain_contract.relay_job(
+            signature,
+            job.job_id,
+            job.req_chain_id.into(),
+            tx_hash,
+            job.code_input,
+            job.user_timout,
+            job.job_owner,
+        );
+
+        let pending_txn = txn.send().await;
+        let Ok(pending_txn) = pending_txn else {
+            error!(
+                "Failed to confirm transaction {} for job relay to CommonChain",
+                pending_txn.unwrap_err()
+            );
+            return;
+        };
+
+        let txn_hash = pending_txn.tx_hash();
+        let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+            error!(
+                "Failed to confirm transaction {} for job relay to CommonChain",
+                txn_hash
+            );
+            return;
+        };
+    }
+
+    async fn cancel_job(self: Arc<Self>, job: Job) {
+        todo!("Implement cancel_job_txn")
+        // info!("Creating a transaction for cancelJob");
+        // let txn = self.com_chain_contract.cancel_job(job.job_id);
+
+        // let pending_txn = txn.send().await;
+        // let Ok(pending_txn) = pending_txn else {
+        //     error!(
+        //         "Failed to confirm transaction {} for job cancel to CommonChain",
+        //         pending_txn.unwrap_err()
+        //     );
+        //     return;
+        // };
+
+        // let txn_hash = pending_txn.tx_hash();
+        // let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+        //     error!(
+        //         "Failed to confirm transaction {} for job cancel to CommonChain",
+        //         txn_hash
+        //     );
+        //     return;
+        // };
     }
 }
 
@@ -412,16 +504,19 @@ pub async fn update_block_data(
 
         let timestamp = latest_block_info.unwrap().timestamp.as_u64();
 
-        // Update the 'recent_blocks' map
-        recent_blocks.write().await.insert(
-            timestamp,
-            BlockData {
-                number: latest_block,
+        // scope for the write lock
+        {
+            // Update the 'recent_blocks' map
+            recent_blocks.write().await.insert(
                 timestamp,
-            },
-        );
+                BlockData {
+                    number: latest_block,
+                    timestamp,
+                },
+            );
+        }
 
-        // Prune old entries (more on this below)
+        // Prune old entries
         prune_old_blocks(&recent_blocks).await;
     }
 }

@@ -7,6 +7,7 @@ mod api_impl;
 use actix_web::{App, HttpServer};
 use actix_web::web::Data;
 use anyhow::Context;
+use clap::Parser;
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use k256::ecdsa::SigningKey;
@@ -14,9 +15,8 @@ use log::info;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::fs;
-use clap::Parser;
+use tokio::sync::RwLock;
 
 use crate::common_chain_interaction::update_block_data;
 use crate::common_chain_util::BlockData;
@@ -66,9 +66,9 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         Arc::new(RwLock::new(BTreeMap::new()));
     let recent_blocks_clone = Arc::clone(&recent_blocks);
     let chain_http_provider_clone = chain_http_provider.clone();
-    // tokio::spawn(async move {
-    //     update_block_data(chain_http_provider_clone, &recent_blocks_clone).await;
-    // });
+    tokio::spawn(async move {
+        update_block_data(chain_http_provider_clone, &recent_blocks_clone).await;
+    });
 
     let enclave_pub_key = fs::read(config.enclave_public_key)
         .await
