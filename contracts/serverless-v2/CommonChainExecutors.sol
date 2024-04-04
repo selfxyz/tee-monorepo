@@ -167,15 +167,6 @@ contract CommonChainExecutors is
         uint256 _stakeAmount
     ) external {
         // attestation verification
-        // bytes32 imageId = keccak256(abi.encodePacked(_PCR0, _PCR1, _PCR2));
-        // _verifyKey(
-        //     _attestation, 
-        //     _enclavePubKey, 
-        //     imageId, 
-        //     _enclaveCPUs, 
-        //     _enclaveMemory, 
-        //     _timestampInMilliseconds
-        // );
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
         // signature check
@@ -286,7 +277,7 @@ contract CommonChainExecutors is
     ) internal view returns (address[] memory selectedNodes) {
         uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
         selectedNodes = _selectN(randomizer, _noOfNodesToSelect);
-        require(selectedNodes.length != 0, "NO_EXECUTOR_SELECTED");
+        // require(selectedNodes.length != 0, "NO_EXECUTOR_SELECTED");
     }
 
     function updateOnSubmitOutput(

@@ -174,24 +174,16 @@ contract CommonChainGateways is
         bytes memory _PCR0,
         bytes memory _PCR1,
         bytes memory _PCR2,
-        // uint256 _enclaveCPUs,
-        // uint256 _enclaveMemory,
         uint256 _timestampInMilliseconds,
         uint256[] memory _chainIds,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
         // attestation verification
-        // bytes32 imageId = keccak256(abi.encodePacked(_PCR0, _PCR1, _PCR2));
-        // _verifyKey(
-        //     _attestation,
-        //     _enclavePubKey,
-        //     imageId,
-        //     _enclaveCPUs,
-        //     _enclaveMemory,
-        //     _timestampInMilliseconds
-        // );
-        _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
+        _verifyEnclaveKey(
+            _attestation, 
+            IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds)
+        );
 
         // signature check
         _verifySign(_chainIds, _signature);

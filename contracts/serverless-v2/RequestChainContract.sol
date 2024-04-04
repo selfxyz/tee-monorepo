@@ -228,6 +228,11 @@ contract RequestChainContract is
 
     event JobCancelled(uint256 indexed jobId);
 
+    event JobCallbackDone(
+        uint256 indexed jobId,
+        bool success
+    );
+
     function relayJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
@@ -281,6 +286,8 @@ contract RequestChainContract is
             received: true
         });
 
+        _callBackWithLimit(_jobId, _output);
+
         emit JobResponded(_jobId, _output, _totalTime, _errorCode);
 
         // release escrow
@@ -300,6 +307,19 @@ contract RequestChainContract is
         emit JobCancelled(_jobId);
 
         // release escrow 
+    }
+
+    function _callBackWithLimit(uint256 _jobId, bytes memory _input) internal {
+        // uint start_gas = gasleft();
+        Job memory job = jobs[_jobId];
+        (bool success,) = job.jobOwner.call{gas: (job.callbackDeposit / tx.gasprice)}(
+            abi.encodeWithSignature("oysterResultCall(bytes32,bytes)", _jobId, _input)
+        );
+        // offsetting the gas consumed by wrapping methods, calculated manually by checking callback_cost when deposit is 0
+        // uint callback_cost = (start_gas - gasleft() - MinCallbackGas) * tx.gasprice;
+        // payable(_job.provider).transfer(_job_cost + callback_cost);
+        // payable(_job.sender).transfer(_job.off_chain_deposit - _job_cost + _job.callback_deposit - callback_cost);
+        emit JobCallbackDone(_jobId, success);
     }
 
     //-------------------------------- Job End --------------------------------//

@@ -70,6 +70,7 @@ contract CommonChainJobs is
         IERC20 _token,
         CommonChainGateways _gateways,
         CommonChainExecutors _executors,
+        uint256 _relayBufferTime,
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect
     ) public initializer {
@@ -85,6 +86,7 @@ contract CommonChainJobs is
         token = _token;
         gateways = _gateways;
         executors = _executors;
+        relayBufferTime = _relayBufferTime;
         executionBufferTime = _executionBufferTime;
         noOfNodesToSelect = _noOfNodesToSelect;
     }
@@ -94,6 +96,7 @@ contract CommonChainJobs is
     IERC20 public token;
     CommonChainGateways public gateways;
     CommonChainExecutors public executors;
+    uint256 public relayBufferTime;
     uint256 public executionBufferTime;
     uint256 public noOfNodesToSelect;
 
@@ -120,6 +123,8 @@ contract CommonChainJobs is
         address jobOwner;
         address gatewayOperator;
         uint8 outputCount;
+        uint8 sequenceId;
+        bool isBlacklisted;
     }
 
     // jobId => Job
@@ -146,6 +151,11 @@ contract CommonChainJobs is
         uint8 outputCount
     );
 
+    event JobBlacklisted(
+        uint256 indexed jobId,
+        address indexed gatewayOperator
+    );
+
     function relayJob(
         bytes memory _signature,
         uint256 _jobId,
@@ -153,8 +163,14 @@ contract CommonChainJobs is
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,
+        uint256 _endTimestamp,
+        uint8 _sequenceId,
         address _jobOwner
     ) external {
+        require(block.timestamp < _endTimestamp + relayBufferTime, "RELAY_TIME_OVER");
+        require(!jobs[_jobId].isBlacklisted, "JOB_BLACKLISTED");
+        require(_sequenceId == jobs[_jobId].sequenceId + 1, "INVALID_SEQUENCE_ID");
+        require(jobs[_jobId].execStartTime == 0, "JOB_ALREADY_RELAYED");
         require(gateways.isChainSupported(_reqChainId), "UNSUPPORTED_CHAIN");
 
         // signature check
@@ -172,7 +188,14 @@ contract CommonChainJobs is
 
         gateways.allowOnlyVerified(signer);
 
-        selectedExecutors[_jobId] = executors.selectExecutors(noOfNodesToSelect);
+        address[] memory selectedNodes = executors.selectExecutors(noOfNodesToSelect);
+        // if no executors are selected, then blacklist the job and exit
+        if(selectedNodes.length == 0) {
+            jobs[_jobId].isBlacklisted = true;
+            emit JobBlacklisted(_jobId, _msgSender());
+            return;
+        }
+        selectedExecutors[_jobId] = selectedNodes;
 
         jobs[_jobId] = Job({
             reqChainId: _reqChainId,
@@ -182,7 +205,9 @@ contract CommonChainJobs is
             execStartTime: block.timestamp,
             jobOwner: _jobOwner,
             gatewayOperator: _msgSender(),
-            outputCount: 0
+            outputCount: 0,
+            sequenceId: _sequenceId,
+            isBlacklisted: false
         });
 
         emit JobRelayed(_jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender());
@@ -269,8 +294,15 @@ contract CommonChainJobs is
     function reassignGatewayRelay(
         address _gatewayOperatorOld,
         uint256 _jobId,
-        bytes memory _signature
+        bytes memory _signature,
+        uint8 _sequenceId
     ) external {
+        // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
+
+        require(!jobs[_jobId].isBlacklisted, "JOB_BLACKLISTED");
+        require(_sequenceId == jobs[_jobId].sequenceId + 1 && _sequenceId < 3, "INVALID_SEQUENCE_ID");
+        jobs[_jobId].sequenceId = _sequenceId;
+
         // signature check
         bytes32 digest = keccak256(abi.encode(_jobId, _gatewayOperatorOld));
         address signer = digest.recover(_signature);
