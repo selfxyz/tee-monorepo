@@ -85,7 +85,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create a Appstate
     let app_data = Data::new(AppState {
-        enclave_signer_key: enclave_signer_key,
+        enclave_signer_key,
         wallet: None.into(),
         common_chain_id: config.com_chain_id,
         common_chain_http_url: config.com_chain_http_url,
