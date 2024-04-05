@@ -1,9 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
-use std::error::Error;
-use std::sync::Arc;
-use std::time::Duration;
-
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_recursion::async_recursion;
 use ethers::abi::{decode, Address, FixedBytes, ParamType};
 use ethers::prelude::*;
@@ -13,6 +8,10 @@ use k256::ecdsa::SigningKey;
 use log::{error, info};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::collections::{BTreeMap, HashMap};
+use std::error::Error;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
@@ -189,7 +188,6 @@ impl CommonChainClient {
             let signer = self.signer.clone().with_chain_id(request_chain.chain_id);
             let signer_address = signer.address();
 
-            
             let req_chain_http_client = Provider::<Http>::connect(&request_chain.rpc_url)
                 .await
                 .with_signer(signer)
@@ -283,7 +281,6 @@ impl CommonChainClient {
                 }
                 }
             });
-
         }
 
         Ok(())
@@ -354,20 +351,17 @@ impl CommonChainClient {
         let job_clone = job.clone();
         let tx_clone = tx.clone();
 
-        
         if gateway_address == self.address {
             // scope for the write lock
             {
                 self.active_jobs
-                .write()
-                .await
-                .insert(job.job_id, job.clone());
+                    .write()
+                    .await
+                    .insert(job.job_id, job.clone());
             }
             tx.send((job, self.clone())).await.unwrap();
         } else {
-            self.job_slash_timer(job_clone, tx_clone)
-                .await
-                .unwrap();
+            self.job_slash_timer(job_clone, tx_clone).await.unwrap();
         }
     }
 
@@ -445,8 +439,8 @@ impl CommonChainClient {
             tx,
             job.retry_number,
             Some(gateway_address),
-            )
-            .await;
+        )
+        .await;
 
         Ok(())
     }

@@ -1,14 +1,15 @@
-use std::sync::Arc;
-use std::collections::BTreeMap;
 use bytes::Bytes;
-use ethers::types::Address;
 use ethers::signers::LocalWallet;
+use ethers::types::Address;
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
-use crate::common_chain_util::BlockData;
+
 use crate::common_chain_interaction::RequestChainData;
+use crate::common_chain_util::BlockData;
 
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
@@ -24,7 +25,6 @@ pub struct AppState {
     pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
     pub start_block: u64,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InjectKeyInfo {

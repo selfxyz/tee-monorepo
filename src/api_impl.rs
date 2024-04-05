@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use actix_web::web::{Data, Json};
 use actix_web::{delete, get, post, HttpResponse, Responder};
 use anyhow::Context;
@@ -9,6 +7,7 @@ use ethers::utils::keccak256;
 use hex::FromHex;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
+use std::sync::Arc;
 
 use crate::common_chain_interaction::{
     CommonChainClient, CommonChainGateway, RequestChainContract, RequestChainData,
