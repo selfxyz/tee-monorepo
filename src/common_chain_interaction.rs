@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use async_recursion::async_recursion;
 use ethers::abi::{decode, Address, FixedBytes, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
@@ -184,23 +185,34 @@ impl CommonChainClient {
         info!("Initializing Request Chain Clients for all request chains...");
         let mut req_chain_data = self.request_chain_list.clone();
         let mut request_chain_clients: HashMap<String, Arc<RequestChainClient>> = HashMap::new();
-        while let Some(request_chain) = req_chain_data.pop() {
+        for request_chain in req_chain_data.clone() {
             let signer = self.signer.clone().with_chain_id(request_chain.chain_id);
             let signer_address = signer.address();
 
-            let req_chain_ws_client =
-            Provider::<Ws>::connect_with_reconnects(request_chain.rpc_url.clone(), 5).await.context(
-                "Failed to connect to the request chain websocket provider. Please check the chain url.",
-            )?;
+            
             let req_chain_http_client = Provider::<Http>::connect(&request_chain.rpc_url)
                 .await
                 .with_signer(signer)
                 .nonce_manager(signer_address);
+            info!(
+                "Connected to the request chain provider for chain_id: {}",
+                request_chain.chain_id
+            );
             let contract = RequestChainContract::new(
                 request_chain.contract_address,
                 Arc::new(req_chain_http_client),
             );
+            let req_chain_client = Arc::from(RequestChainClient {
+                chain_id: request_chain.chain_id,
+                contract_address: request_chain.contract_address,
+                rpc_url: request_chain.rpc_url,
+                contract,
+            });
+            request_chain_clients.insert(request_chain.chain_id.to_string(), req_chain_client);
+        }
+        *Arc::make_mut(&mut Arc::from(self.req_chain_clients.clone())) = request_chain_clients;
 
+        while let Some(request_chain) = req_chain_data.pop() {
             let event_filter = Filter::new()
                 .address(request_chain.contract_address)
                 .select(0..)
@@ -212,25 +224,17 @@ impl CommonChainClient {
                 ]);
 
             info!(
-                "Connected to the request chain provider for chain_id: {}",
-                request_chain.chain_id
-            );
-            info!(
                 "Subscribing to events for chain_id: {}",
                 request_chain.chain_id
             );
 
-            let req_chain_client = Arc::from(RequestChainClient {
-                chain_id: request_chain.chain_id,
-                contract_address: request_chain.contract_address,
-                rpc_url: request_chain.rpc_url,
-                contract,
-            });
-
-            let req_chain_client_clone = Arc::clone(&req_chain_client);
+            // let req_chain_client_clone = Arc::clone(&req_chain_client);
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
-
+            let req_chain_ws_client =
+                Provider::<Ws>::connect_with_reconnects(request_chain.rpc_url.clone(), 5).await.context(
+                    "Failed to connect to the request chain websocket provider. Please check the chain url.",
+                )?;
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
                 // register subscription
@@ -253,11 +257,11 @@ impl CommonChainClient {
                         "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                         request_chain.chain_id, log.topics[1]
                     );
-                    let req_chain_client = Arc::clone(&req_chain_client_clone);
+                    // let req_chain_client = Arc::clone(&req_chain_client_clone);
                     let self_clone = Arc::clone(&self_clone);
                     let tx = tx_clone.clone();
                     task::spawn(async move {
-                        self_clone.job_placed_handler(req_chain_client, Some(log), None, tx.clone(),U256::from(0), None).await;
+                        self_clone.job_placed_handler(&request_chain.chain_id.to_string(), Some(log), None, tx.clone(),U256::from(0), None).await;
                     });
                 } else if topics[0] == keccak256("JobCancel(uint256)").into() {
                     info!(
@@ -280,17 +284,15 @@ impl CommonChainClient {
                 }
             });
 
-            request_chain_clients.insert(request_chain.chain_id.to_string(), req_chain_client);
         }
 
-        *Arc::make_mut(&mut Arc::from(self.req_chain_clients.clone())) = request_chain_clients;
         Ok(())
     }
 
     // TODO: Fix this cycle compile error.
     async fn job_placed_handler(
         self: Arc<Self>,
-        req_chain_client: Arc<RequestChainClient>,
+        req_chain_id: &String,
         log_option: Option<Log>,
         job_option: Option<Job>,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
@@ -299,6 +301,7 @@ impl CommonChainClient {
     ) {
         let log: Log;
         let mut job: Job;
+        let req_chain_client = self.req_chain_clients[req_chain_id].clone();
         if job_option.is_none() {
             log = log_option.unwrap();
             let types = vec![
@@ -347,29 +350,28 @@ impl CommonChainClient {
 
         job.gateway_address = Some(gateway_address);
 
-        let self_clone = self.clone();
+        // let self_clone = self.clone();
         let job_clone = job.clone();
         let tx_clone = tx.clone();
 
-        task::spawn(async move {
-            self_clone
-                .job_slash_timer(job_clone, tx_clone)
-                .await
-                .unwrap();
-        });
-
+        
         if gateway_address == self.address {
             // scope for the write lock
             {
                 self.active_jobs
-                    .write()
-                    .await
-                    .insert(job.job_id, job.clone());
+                .write()
+                .await
+                .insert(job.job_id, job.clone());
             }
             tx.send((job, self.clone())).await.unwrap();
+        } else {
+            self.job_slash_timer(job_clone, tx_clone)
+                .await
+                .unwrap();
         }
     }
 
+    #[async_recursion]
     async fn job_slash_timer(
         self: Arc<Self>,
         mut job: Job,
@@ -427,9 +429,7 @@ impl CommonChainClient {
         let mut job_clone = job.clone();
         job_clone.job_type = JobType::SlashGatewayJob;
         let tx_clone = tx.clone();
-        task::spawn(async move {
-            tx_clone.send((job_clone, self_clone)).await.unwrap();
-        });
+        tx_clone.send((job_clone, self_clone)).await.unwrap();
 
         job.retry_number += U256::from(1);
         if job.retry_number >= U256::from(MAX_GATEWAY_RETRIES) {
@@ -438,18 +438,15 @@ impl CommonChainClient {
         }
         job.gateway_address = Some(gateway_address);
 
-        task::spawn(async move {
-            self.clone()
-                .job_placed_handler(
-                    Arc::clone(&self.req_chain_clients[&job.req_chain_id.to_string()]),
-                    None,
-                    Some(job.clone()),
-                    tx,
-                    job.retry_number,
-                    Some(gateway_address),
-                )
-                .await;
-        });
+        self.job_placed_handler(
+            &job.req_chain_id.to_string(),
+            None,
+            Some(job.clone()),
+            tx,
+            job.retry_number,
+            Some(gateway_address),
+            )
+            .await;
 
         Ok(())
     }
