@@ -259,7 +259,22 @@ impl CommonChainClient {
                     let self_clone = Arc::clone(&self_clone);
                     let tx = tx_clone.clone();
                     task::spawn(async move {
-                        self_clone.job_placed_handler(&request_chain.chain_id.to_string(), Some(log), None, tx.clone(),U256::from(0), None).await;
+                        let job = self_clone.clone()
+                            .get_job_from_job_relay_event(
+                                log,
+                                 U256::from(0),
+                                  &request_chain.chain_id.to_string()
+                            )
+                            .await
+                            .context("Failed to decode event")
+                            .unwrap();
+                        self_clone.job_placed_handler(
+                                &request_chain.chain_id.to_string(),
+                                job,
+                                tx.clone(),
+                                None
+                            )
+                            .await;
                     });
                 } else if topics[0] == keccak256("JobCancel(uint256)").into() {
                     info!(
@@ -286,52 +301,53 @@ impl CommonChainClient {
         Ok(())
     }
 
-    // TODO: Fix this cycle compile error.
+    async fn get_job_from_job_relay_event(
+        self: Arc<Self>,
+        log: Log,
+        retry_number: U256,
+        req_chain_id: &String,
+    ) -> Result<Job> {
+        let types = vec![
+            ParamType::Uint(256),
+            ParamType::FixedBytes(32),
+            ParamType::Bytes,
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+        ];
+
+        let decoded = decode(&types, &log.data.0).unwrap();
+
+        let req_chain_client = self.req_chain_clients[req_chain_id].clone();
+
+        Ok(Job {
+            job_id: decoded[0].clone().into_uint().unwrap(),
+            tx_hash: decoded[1].clone().into_bytes().unwrap(),
+            code_input: decoded[2].clone().into_bytes().unwrap().into(),
+            user_timout: decoded[3].clone().into_uint().unwrap(),
+            starttime: decoded[4].clone().into_uint().unwrap(),
+            max_gas_price: decoded[5].clone().into_uint().unwrap(),
+            deposit: decoded[6].clone().into_address().unwrap(),
+            callback_deposit: decoded[7].clone().into_uint().unwrap(),
+            req_chain_id: req_chain_client.chain_id.clone(),
+            job_owner: log.address,
+            job_type: JobType::JobRelay,
+            retry_number,
+            gateway_address: None,
+        })
+    }
+
     async fn job_placed_handler(
         self: Arc<Self>,
         req_chain_id: &String,
-        log_option: Option<Log>,
-        job_option: Option<Job>,
+        job: Job,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
-        retry_number: U256,
         selected_gateway_address: Option<Address>,
     ) {
-        let log: Log;
-        let mut job: Job;
+        let mut job: Job = job.clone();
         let req_chain_client = self.req_chain_clients[req_chain_id].clone();
-        if job_option.is_none() {
-            log = log_option.unwrap();
-            let types = vec![
-                ParamType::Uint(256),
-                ParamType::FixedBytes(32),
-                ParamType::Bytes,
-                ParamType::Uint(256),
-                ParamType::Uint(256),
-                ParamType::Uint(256),
-                ParamType::Uint(256),
-                ParamType::Uint(256),
-            ];
-
-            let decoded = decode(&types, &log.data.0).unwrap();
-
-            job = Job {
-                job_id: decoded[0].clone().into_uint().unwrap(),
-                tx_hash: decoded[1].clone().into_bytes().unwrap(),
-                code_input: decoded[2].clone().into_bytes().unwrap().into(),
-                user_timout: decoded[3].clone().into_uint().unwrap(),
-                starttime: decoded[4].clone().into_uint().unwrap(),
-                max_gas_price: decoded[5].clone().into_uint().unwrap(),
-                deposit: decoded[6].clone().into_address().unwrap(),
-                callback_deposit: decoded[7].clone().into_uint().unwrap(),
-                req_chain_id: req_chain_client.chain_id.clone(),
-                job_owner: log.address,
-                job_type: JobType::JobRelay,
-                retry_number,
-                gateway_address: None,
-            };
-        } else {
-            job = job_option.unwrap();
-        }
 
         let gateway_address: Address;
 
@@ -347,10 +363,6 @@ impl CommonChainClient {
 
         job.gateway_address = Some(gateway_address);
 
-        // let self_clone = self.clone();
-        let job_clone = job.clone();
-        let tx_clone = tx.clone();
-
         if gateway_address == self.address {
             // scope for the write lock
             {
@@ -361,7 +373,7 @@ impl CommonChainClient {
             }
             tx.send((job, self.clone())).await.unwrap();
         } else {
-            self.job_slash_timer(job_clone, tx_clone).await.unwrap();
+            self.job_slash_timer(job.clone(), tx.clone()).await.unwrap();
         }
     }
 
@@ -419,11 +431,13 @@ impl CommonChainClient {
             .context("Failed to select a gateway for the job")?;
 
         // slash the previous gateway
-        let self_clone = self.clone();
-        let mut job_clone = job.clone();
-        job_clone.job_type = JobType::SlashGatewayJob;
-        let tx_clone = tx.clone();
-        tx_clone.send((job_clone, self_clone)).await.unwrap();
+        {
+            let self_clone = self.clone();
+            let mut job_clone = job.clone();
+            job_clone.job_type = JobType::SlashGatewayJob;
+            let tx_clone = tx.clone();
+            tx_clone.send((job_clone, self_clone)).await.unwrap();
+        }
 
         job.retry_number += U256::from(1);
         if job.retry_number >= U256::from(MAX_GATEWAY_RETRIES) {
@@ -434,10 +448,8 @@ impl CommonChainClient {
 
         self.job_placed_handler(
             &job.req_chain_id.to_string(),
-            None,
-            Some(job.clone()),
+            job,
             tx,
-            job.retry_number,
             Some(gateway_address),
         )
         .await;
