@@ -188,21 +188,12 @@ contract RequestChainContract is
         uint256 usdcDeposit;
         uint256 callbackDeposit;
         address jobOwner;
+        bool receivedOutput;
     }
 
     mapping(uint256 => Job) public jobs;
 
     uint256 public jobCount;
-
-    struct JobOutput {
-        bytes output;
-        uint256 totalTime;
-        uint8 errorCode;
-        bool received;
-    }
-
-    // jobId => JobOutput
-    mapping(uint256 => JobOutput) public jobOutputs;
 
     modifier onlyJobOwner(uint256 _jobId) {
         require(jobs[_jobId].jobOwner == _msgSender(), "NOT_JOB_OWNER");
@@ -250,12 +241,14 @@ contract RequestChainContract is
             maxGasPrice: _maxGasPrice,
             usdcDeposit: _usdcDeposit,
             callbackDeposit: _callbackDeposit,
-            jobOwner: _msgSender()
+            jobOwner: _msgSender(),
+            receivedOutput: false
         });
 
         emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit);
     }
 
+    // TODO: pass executorAddress for billing and check 2:1:0 ratio logic for rewards
     function jobResponse(
         bytes memory _signature,
         uint256 _jobId,
@@ -279,14 +272,9 @@ contract RequestChainContract is
 
         _allowOnlyVerified(signer);
 
-        jobOutputs[_jobId] = JobOutput({
-            output: _output,
-            totalTime: _totalTime,
-            errorCode: _errorCode,
-            received: true
-        });
+        jobs[_jobId].receivedOutput = true;
 
-        _callBackWithLimit(_jobId, _output);
+        _callBackWithLimit(_jobId, _output, _errorCode);
 
         emit JobResponded(_jobId, _output, _totalTime, _errorCode);
 
@@ -298,7 +286,7 @@ contract RequestChainContract is
     function jobCancel(
         uint256 _jobId
     ) external onlyJobOwner(_jobId) {
-        require(!jobOutputs[_jobId].received, "JOB_OUTPUT_ALREADY_RECEIVED");
+        require(!jobs[_jobId].receivedOutput, "JOB_OUTPUT_ALREADY_RECEIVED");
 
         // check time case
         require(block.timestamp > jobs[_jobId].startTime + overallTimeout, "OVERALL_TIMEOUT_NOT_OVER");
@@ -309,11 +297,11 @@ contract RequestChainContract is
         // release escrow 
     }
 
-    function _callBackWithLimit(uint256 _jobId, bytes memory _input) internal {
+    function _callBackWithLimit(uint256 _jobId, bytes memory _input, uint8 _errorCode) internal {
         // uint start_gas = gasleft();
         Job memory job = jobs[_jobId];
         (bool success,) = job.jobOwner.call{gas: (job.callbackDeposit / tx.gasprice)}(
-            abi.encodeWithSignature("oysterResultCall(bytes32,bytes)", _jobId, _input)
+            abi.encodeWithSignature("oysterResultCall(bytes32,bytes,uint8)", _jobId, _input, _errorCode)
         );
         // offsetting the gas consumed by wrapping methods, calculated manually by checking callback_cost when deposit is 0
         // uint callback_cost = (start_gas - gasleft() - MinCallbackGas) * tx.gasprice;

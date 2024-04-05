@@ -124,7 +124,7 @@ contract CommonChainJobs is
         address gatewayOperator;
         uint8 outputCount;
         uint8 sequenceId;
-        bool isBlacklisted;
+        bool isResourceUnavailable;
     }
 
     // jobId => Job
@@ -140,7 +140,8 @@ contract CommonChainJobs is
         bytes codeInputs,
         uint256 deadline,
         address jobOwner,
-        address gatewayOperator
+        address gatewayOperator,
+        address[] selectedExecutors
     );
 
     event JobResponded(
@@ -151,8 +152,9 @@ contract CommonChainJobs is
         uint8 outputCount
     );
 
-    event JobBlacklisted(
+    event JobResourceUnavailable(
         uint256 indexed jobId,
+        uint256 indexed chainId,
         address indexed gatewayOperator
     );
 
@@ -163,12 +165,12 @@ contract CommonChainJobs is
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,
-        uint256 _endTimestamp,
+        uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner
     ) external {
-        require(block.timestamp < _endTimestamp + relayBufferTime, "RELAY_TIME_OVER");
-        require(!jobs[_jobId].isBlacklisted, "JOB_BLACKLISTED");
+        require(block.timestamp <= _jobRequestTimestamp + relayBufferTime, "RELAY_TIME_OVER");
+        require(!jobs[_jobId].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
         require(_sequenceId == jobs[_jobId].sequenceId + 1, "INVALID_SEQUENCE_ID");
         require(jobs[_jobId].execStartTime == 0, "JOB_ALREADY_RELAYED");
         require(gateways.isChainSupported(_reqChainId), "UNSUPPORTED_CHAIN");
@@ -181,6 +183,8 @@ contract CommonChainJobs is
                 _codehash,
                 _codeInputs,
                 _deadline,
+                _jobRequestTimestamp,
+                _sequenceId,
                 _jobOwner
             )
         );
@@ -189,10 +193,10 @@ contract CommonChainJobs is
         gateways.allowOnlyVerified(signer);
 
         address[] memory selectedNodes = executors.selectExecutors(noOfNodesToSelect);
-        // if no executors are selected, then blacklist the job and exit
-        if(selectedNodes.length == 0) {
-            jobs[_jobId].isBlacklisted = true;
-            emit JobBlacklisted(_jobId, _msgSender());
+        // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
+        if(selectedNodes.length < noOfNodesToSelect) {
+            jobs[_jobId].isResourceUnavailable = true;
+            emit JobResourceUnavailable(_jobId, _reqChainId, _msgSender());
             return;
         }
         selectedExecutors[_jobId] = selectedNodes;
@@ -207,10 +211,10 @@ contract CommonChainJobs is
             gatewayOperator: _msgSender(),
             outputCount: 0,
             sequenceId: _sequenceId,
-            isBlacklisted: false
+            isResourceUnavailable: false
         });
 
-        emit JobRelayed(_jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender());
+        emit JobRelayed(_jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender(), selectedNodes);
     }
 
     function submitOutput(
@@ -220,6 +224,11 @@ contract CommonChainJobs is
         uint256 _totalTime,
         uint8 _errorCode
     ) external {
+        require(
+            block.timestamp <= jobs[_jobId].execStartTime + jobs[_jobId].deadline + executionBufferTime, 
+            "EXECUTION_TIME_OVER"
+        );
+
         // signature check
         bytes32 digest = keccak256(
             abi.encode(_jobId, _output, _totalTime, _errorCode)
@@ -299,12 +308,12 @@ contract CommonChainJobs is
     ) external {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
 
-        require(!jobs[_jobId].isBlacklisted, "JOB_BLACKLISTED");
+        require(!jobs[_jobId].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
         require(_sequenceId == jobs[_jobId].sequenceId + 1 && _sequenceId < 3, "INVALID_SEQUENCE_ID");
         jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        bytes32 digest = keccak256(abi.encode(_jobId, _gatewayOperatorOld));
+        bytes32 digest = keccak256(abi.encode(_jobId, _gatewayOperatorOld, _sequenceId));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);
