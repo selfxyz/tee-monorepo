@@ -115,6 +115,7 @@ contract CommonChainJobs is
     //-------------------------------- Job start --------------------------------//
 
     struct Job {
+        uint256 jobId;
         uint256 reqChainId;
         bytes32 codehash;
         bytes codeInputs;
@@ -127,15 +128,17 @@ contract CommonChainJobs is
         bool isResourceUnavailable;
     }
 
-    // jobId => Job
+    // jobKey => Job
     mapping(uint256 => Job) public jobs;
 
-    // jobId => executors
+    // jobKey => executors
     mapping(uint256 => address[]) public selectedExecutors;
+    // jobKey => selectedExecutorAddress => hasExecuted
+    mapping(uint256 => mapping(address => bool)) public hasExecutedJob;
 
     event JobRelayed(
         uint256 indexed jobId,
-        uint256 reqChainId,
+        uint256 indexed reqChainId,
         bytes32 codehash,
         bytes codeInputs,
         uint256 deadline,
@@ -146,6 +149,7 @@ contract CommonChainJobs is
 
     event JobResponded(
         uint256 indexed jobId,
+        uint256 indexed reqChainId,
         bytes output,
         uint256 totalTime,
         uint256 errorCode,
@@ -154,9 +158,16 @@ contract CommonChainJobs is
 
     event JobResourceUnavailable(
         uint256 indexed jobId,
-        uint256 indexed chainId,
+        uint256 indexed reqChainId,
         address indexed gatewayOperator
     );
+
+    function getKey(
+        uint256 _jobId,
+        uint256 _reqChainId
+    ) public pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(_jobId, "-", _reqChainId)));
+    }
 
     function relayJob(
         bytes memory _signature,
@@ -169,10 +180,11 @@ contract CommonChainJobs is
         uint8 _sequenceId,
         address _jobOwner
     ) external {
+        uint256 key = getKey(_jobId, _reqChainId);
         require(block.timestamp <= _jobRequestTimestamp + relayBufferTime, "RELAY_TIME_OVER");
-        require(!jobs[_jobId].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
-        require(_sequenceId == jobs[_jobId].sequenceId + 1, "INVALID_SEQUENCE_ID");
-        require(jobs[_jobId].execStartTime == 0, "JOB_ALREADY_RELAYED");
+        require(!jobs[key].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
+        require(_sequenceId == jobs[key].sequenceId + 1, "INVALID_SEQUENCE_ID");
+        require(jobs[key].execStartTime == 0, "JOB_ALREADY_RELAYED");
         require(gateways.isChainSupported(_reqChainId), "UNSUPPORTED_CHAIN");
 
         // signature check
@@ -195,13 +207,14 @@ contract CommonChainJobs is
         address[] memory selectedNodes = executors.selectExecutors(noOfNodesToSelect);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
         if(selectedNodes.length < noOfNodesToSelect) {
-            jobs[_jobId].isResourceUnavailable = true;
+            jobs[key].isResourceUnavailable = true;
             emit JobResourceUnavailable(_jobId, _reqChainId, _msgSender());
             return;
         }
-        selectedExecutors[_jobId] = selectedNodes;
+        selectedExecutors[key] = selectedNodes;
 
-        jobs[_jobId] = Job({
+        jobs[key] = Job({
+            jobId: _jobId,
             reqChainId: _reqChainId,
             codehash: _codehash,
             codeInputs: _codeInputs,
@@ -220,28 +233,32 @@ contract CommonChainJobs is
     function submitOutput(
         bytes memory _signature,
         uint256 _jobId,
+        uint256 _reqChainId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode
     ) external {
+        uint256 key = getKey(_jobId, _reqChainId);
         require(
-            block.timestamp <= jobs[_jobId].execStartTime + jobs[_jobId].deadline + executionBufferTime, 
+            block.timestamp <= jobs[key].execStartTime + jobs[key].deadline + executionBufferTime, 
             "EXECUTION_TIME_OVER"
         );
 
         // signature check
         bytes32 digest = keccak256(
-            abi.encode(_jobId, _output, _totalTime, _errorCode)
+            abi.encode(_jobId, _reqChainId, _output, _totalTime, _errorCode)
         );
         address signer = digest.recover(_signature);
 
         executors.allowOnlyVerified(signer);
 
-        require(isJobExecutor(_jobId, signer), "NOT_SELECTED_EXECUTOR");
+        require(isJobExecutor(_jobId, _reqChainId, signer), "NOT_SELECTED_EXECUTOR");
+        require(!hasExecutedJob[key][signer], "EXECUTOR_ALREADY_SUBMITTED_OUTPUT");
 
         executors.updateOnSubmitOutput(signer);
+        hasExecutedJob[key][signer] = true;
 
-        emit JobResponded(_jobId, _output, _totalTime, _errorCode, ++jobs[_jobId].outputCount);
+        emit JobResponded(_jobId, _reqChainId, _output, _totalTime, _errorCode, ++jobs[key].outputCount);
 
         // cleanup job after 3rd output submitted
 
@@ -251,10 +268,12 @@ contract CommonChainJobs is
 
     function isJobExecutor(
         uint256 _jobId,
+        uint256 _reqChainId,
         address _executor
     ) public view returns (bool) {
-        address[] memory selectedNodes = selectedExecutors[_jobId];
-        uint256 len = selectedExecutors[_jobId].length;
+        uint256 key = getKey(_jobId, _reqChainId);
+        address[] memory selectedNodes = selectedExecutors[key];
+        uint256 len = selectedExecutors[key].length;
         for (uint256 index = 0; index < len; index++) {
             if(selectedNodes[index] == _executor)
                 return true;
@@ -267,58 +286,64 @@ contract CommonChainJobs is
     //-------------------------------- Timeout start --------------------------------//
 
     event SlashedOnExecutionTimeout(
-        uint256 jobId,
+        uint256 indexed jobId,
+        uint256 indexed reqChainId,
         address[] executors
     );
 
     event GatewayReassigned(
-        uint256 jobId,
-        address indexed prevGatewayOperator,
-        address indexed newGatewayOperator
+        uint256 indexed jobId,
+        uint256 indexed reqChainId,
+        address prevGatewayOperator,
+        address newGatewayOperator
     );
 
     function slashOnExecutionTimeout(
-        uint256 _jobId
+        uint256 _jobId,
+        uint256 _reqChainId
     ) external {
+        uint256 key = getKey(_jobId, _reqChainId);
         // check for time
         require(
-            block.timestamp > jobs[_jobId].execStartTime + jobs[_jobId].deadline + executionBufferTime,
+            block.timestamp > jobs[key].execStartTime + jobs[key].deadline + executionBufferTime,
             "DEADLINE_NOT_OVER"
         );
 
-        delete jobs[_jobId];
+        delete jobs[key];
 
         // slash Execution node
 
-        uint256 len = selectedExecutors[_jobId].length;
+        uint256 len = selectedExecutors[key].length;
         for (uint256 index = 0; index < len; index++) {
-            executors.updateOnExecutionTimeoutSlash(selectedExecutors[_jobId][index]);
+            executors.updateOnExecutionTimeoutSlash(selectedExecutors[key][index]);
         }
 
-        emit SlashedOnExecutionTimeout(_jobId, selectedExecutors[_jobId]);
+        emit SlashedOnExecutionTimeout(_jobId, _reqChainId, selectedExecutors[key]);
 
-        delete selectedExecutors[_jobId];
+        delete selectedExecutors[key];
     }
 
     function reassignGatewayRelay(
         address _gatewayOperatorOld,
         uint256 _jobId,
+        uint256 _reqChainId,
         bytes memory _signature,
         uint8 _sequenceId
     ) external {
+        uint256 key = getKey(_jobId, _reqChainId);
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
 
-        require(!jobs[_jobId].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
-        require(_sequenceId == jobs[_jobId].sequenceId + 1 && _sequenceId < 3, "INVALID_SEQUENCE_ID");
-        jobs[_jobId].sequenceId = _sequenceId;
+        require(!jobs[key].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
+        require(_sequenceId == jobs[key].sequenceId + 1 && _sequenceId < 3, "INVALID_SEQUENCE_ID");
+        jobs[key].sequenceId = _sequenceId;
 
         // signature check
-        bytes32 digest = keccak256(abi.encode(_jobId, _gatewayOperatorOld, _sequenceId));
+        bytes32 digest = keccak256(abi.encode(_jobId, _reqChainId, _gatewayOperatorOld, _sequenceId));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);
 
-        emit GatewayReassigned(_jobId, _gatewayOperatorOld, _msgSender());
+        emit GatewayReassigned(_jobId, _reqChainId, _gatewayOperatorOld, _msgSender());
 
         // slash old gateway
     }

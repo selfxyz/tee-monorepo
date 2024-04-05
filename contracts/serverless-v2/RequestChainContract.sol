@@ -75,7 +75,8 @@ contract RequestChainContract is
         IERC20 _token,
         EnclaveImage[] memory _images,
         uint256 _globalMinTimeout,
-        uint256 _globalMaxTimeout
+        uint256 _globalMaxTimeout,
+        uint256 _overallTimeout
     ) public initializer {
         __Context_init();
         __ERC165_init();
@@ -91,6 +92,7 @@ contract RequestChainContract is
         require(_globalMinTimeout < _globalMaxTimeout, "INVALID_GLOBAL_TIMEOUTS");
         globalMinTimeout = _globalMinTimeout;
         globalMaxTimeout = _globalMaxTimeout;
+        overallTimeout = _overallTimeout;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -207,23 +209,21 @@ contract RequestChainContract is
         uint256 userTimeout,
         uint256 maxGasPrice,
         uint256 usdcDeposit,
-        uint256 callbackDeposit
+        uint256 callbackDeposit, 
+        uint256 startTime
     );
 
     event JobResponded(
         uint256 indexed jobId,
         bytes output,
         uint256 totalTime,
-        uint256 errorCode
+        uint256 errorCode,
+        bool success
     );
 
     event JobCancelled(uint256 indexed jobId);
 
-    event JobCallbackDone(
-        uint256 indexed jobId,
-        bool success
-    );
-
+    // TODO: create deposits of USDC and native token
     function relayJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
@@ -245,7 +245,7 @@ contract RequestChainContract is
             receivedOutput: false
         });
 
-        emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit);
+        emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit, block.timestamp);
     }
 
     // TODO: pass executorAddress for billing and check 2:1:0 ratio logic for rewards
@@ -274,9 +274,9 @@ contract RequestChainContract is
 
         jobs[_jobId].receivedOutput = true;
 
-        _callBackWithLimit(_jobId, _output, _errorCode);
+        bool success = _callBackWithLimit(_jobId, _output, _errorCode);
 
-        emit JobResponded(_jobId, _output, _totalTime, _errorCode);
+        emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
 
         // release escrow
 
@@ -297,7 +297,11 @@ contract RequestChainContract is
         // release escrow 
     }
 
-    function _callBackWithLimit(uint256 _jobId, bytes memory _input, uint8 _errorCode) internal {
+    function _callBackWithLimit(
+        uint256 _jobId, 
+        bytes memory _input, 
+        uint8 _errorCode
+    ) internal returns (bool) {
         // uint start_gas = gasleft();
         Job memory job = jobs[_jobId];
         (bool success,) = job.jobOwner.call{gas: (job.callbackDeposit / tx.gasprice)}(
@@ -307,7 +311,7 @@ contract RequestChainContract is
         // uint callback_cost = (start_gas - gasleft() - MinCallbackGas) * tx.gasprice;
         // payable(_job.provider).transfer(_job_cost + callback_cost);
         // payable(_job.sender).transfer(_job.off_chain_deposit - _job_cost + _job.callback_deposit - callback_cost);
-        emit JobCallbackDone(_jobId, success);
+        return success;
     }
 
     //-------------------------------- Job End --------------------------------//

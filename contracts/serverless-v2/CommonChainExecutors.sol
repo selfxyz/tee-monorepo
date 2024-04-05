@@ -159,8 +159,6 @@ contract CommonChainExecutors is
         bytes memory _PCR0,
         bytes memory _PCR1,
         bytes memory _PCR2,
-        // uint256 _enclaveCPUs,
-        // uint256 _enclaveMemory,
         uint256 _timestampInMilliseconds,
         uint256 _jobCapacity,
         bytes memory _signature,
