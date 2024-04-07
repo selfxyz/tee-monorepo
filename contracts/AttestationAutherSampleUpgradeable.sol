@@ -10,7 +10,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./AttestationAutherUpgradeable.sol";
 
-contract AttestationAutherSample is
+contract AttestationAutherSampleUpgradeable is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
