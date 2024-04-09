@@ -76,7 +76,7 @@ pub async fn sign_relay_job_response(
     code_inputs: &Bytes,
     deadline: u64,
     job_owner: &Address,
-    retry_number: U256,
+    retry_number: u8,
 ) -> Option<String> {
     let mut job_id_bytes = [0u8; 32];
     job_id.to_big_endian(&mut job_id_bytes);

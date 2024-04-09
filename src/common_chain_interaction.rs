@@ -23,10 +23,9 @@ use crate::common_chain_util::{
 use crate::constant::{MAX_GATEWAY_RETRIES, REQUEST_RELAY_TIMEOUT};
 use crate::HttpProvider;
 
-abigen!(CommonChainContract, "./CommonChainContract.json",);
-abigen!(CommonChainGateway, "./CommonChainGateway.json",);
+abigen!(CommonChainGatewayContract, "./CommonChainGateway.json",);
 abigen!(RequestChainContract, "./RequestChainContract.json",);
-abigen!(CommonChainJobs, "./CommonChainJobs.json",);
+abigen!(CommonChainJobsContract, "./CommonChainJobs.json",);
 
 #[derive(Debug, Clone)]
 pub struct GatewayData {
@@ -45,8 +44,8 @@ pub struct CommonChainClient {
     pub gateway_contract_addr: H160,
     pub contract_addr: H160,
     pub start_block: u64,
-    pub gateway_contract: CommonChainGateway<HttpProvider>,
-    pub com_chain_contract: CommonChainContract<HttpProvider>,
+    pub gateway_contract: CommonChainGatewayContract<HttpProvider>,
+    pub com_chain_jobs_contract: CommonChainJobsContract<HttpProvider>,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
     pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
     pub request_chain_list: Vec<RequestChainData>,
@@ -87,7 +86,7 @@ pub struct Job {
     pub req_chain_id: u64,
     pub job_owner: Address,
     pub job_type: JobType,
-    pub retry_number: U256,
+    pub retry_number: u8,
     pub gateway_address: Option<Address>,
 }
 
@@ -111,8 +110,10 @@ impl CommonChainClient {
         //     .with_signer(signer.clone())
         //     .nonce_manager(signer_address);
 
-        let gateway_contract =
-            CommonChainGateway::new(gateway_contract_addr.clone(), chain_http_provider.clone());
+        let gateway_contract = CommonChainGatewayContract::new(
+            gateway_contract_addr.clone(),
+            chain_http_provider.clone(),
+        );
         // pub_key_to_address
         // let gateway = gateway_contract
         //     .get_gateway(pub_key_to_address(&enclave_pub_key).unwrap())
@@ -140,8 +141,8 @@ impl CommonChainClient {
         //     status: gateway.3,
         // };
 
-        let com_chain_contract =
-            CommonChainContract::new(contract_addr.clone(), chain_http_provider.clone());
+        let com_chain_jobs_contract =
+            CommonChainJobsContract::new(contract_addr.clone(), chain_http_provider.clone());
 
         info!("Gateway Data fetched. Common Chain Client Initialized");
 
@@ -161,7 +162,7 @@ impl CommonChainClient {
             gateway_contract_addr: *gateway_contract_addr,
             start_block,
             gateway_contract,
-            com_chain_contract,
+            com_chain_jobs_contract,
             req_chain_clients: HashMap::new(),
             recent_blocks,
             request_chain_list,
@@ -262,7 +263,7 @@ impl CommonChainClient {
                         let job = self_clone.clone()
                             .get_job_from_job_relay_event(
                                 log,
-                                 U256::from(0),
+                                 0 as u8,
                                   &request_chain.chain_id.to_string()
                             )
                             .await
@@ -272,7 +273,6 @@ impl CommonChainClient {
                                 &request_chain.chain_id.to_string(),
                                 job,
                                 tx.clone(),
-                                None
                             )
                             .await;
                     });
@@ -304,7 +304,7 @@ impl CommonChainClient {
     async fn get_job_from_job_relay_event(
         self: Arc<Self>,
         log: Log,
-        retry_number: U256,
+        retry_number: u8,
         req_chain_id: &String,
     ) -> Result<Job> {
         let types = vec![
@@ -344,22 +344,17 @@ impl CommonChainClient {
         req_chain_id: &String,
         job: Job,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
-        selected_gateway_address: Option<Address>,
     ) {
         let mut job: Job = job.clone();
         let req_chain_client = self.req_chain_clients[req_chain_id].clone();
 
         let gateway_address: Address;
 
-        if selected_gateway_address.is_none() {
-            gateway_address = self
-                .select_gateway_for_job_relayed(job.clone(), req_chain_client)
-                .await
-                .context("Failed to select a gateway for the job")
-                .unwrap();
-        } else {
-            gateway_address = selected_gateway_address.unwrap();
-        }
+        gateway_address = self
+            .select_gateway_for_job_relayed(job.clone(), req_chain_client)
+            .await
+            .context("Failed to select a gateway for the job")
+            .unwrap();
 
         job.gateway_address = Some(gateway_address);
 
@@ -385,50 +380,36 @@ impl CommonChainClient {
     ) -> Result<()> {
         time::sleep(Duration::from_secs(REQUEST_RELAY_TIMEOUT)).await;
 
-        // check if the JobRelayed event is triggered with the job.job_id
-        let event_filter = Filter::new()
-            .address(self.contract_addr)
-            .select(0..)
-            .topic0(vec![keccak256(
-                "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,uint256)",
-            )])
-            .topic1(job.job_id);
+        let onchain_job = self.com_chain_jobs_contract.jobs(job.job_id).await.unwrap();
 
-        let logs = self.chain_ws_client.get_logs(&event_filter).await.unwrap();
+        let onchain_job: Job = Job {
+            job_id: job.job_id,
+            tx_hash: onchain_job.1.to_vec(),
+            code_input: onchain_job.2,
+            user_timout: onchain_job.3,
+            starttime: onchain_job.4,
+            max_gas_price: U256::zero(),
+            deposit: H160::zero(),
+            callback_deposit: U256::zero(),
+            req_chain_id: onchain_job.0.as_u64(),
+            job_owner: onchain_job.5,
+            job_type: JobType::JobRelay,
+            retry_number: onchain_job.8,
+            gateway_address: Some(onchain_job.6),
+        };
 
-        for log in logs {
-            let decoded = decode(
-                &vec![
-                    ParamType::Uint(256),
-                    ParamType::Uint(256),
-                    ParamType::FixedBytes(32),
-                    ParamType::Bytes,
-                    ParamType::Uint(256),
-                    ParamType::Address,
-                    ParamType::Address,
-                    ParamType::Uint(256),
-                ],
-                &log.data.0,
-            )
-            .unwrap();
-
-            let job_id = decoded[0].clone().into_uint().unwrap();
-            let retry_number = decoded[7].clone().into_uint().unwrap();
-
-            if retry_number == job.retry_number {
-                info!("Job ID: {:?}, JobRelayed event triggered", job_id);
-                return Ok(());
-            }
+        if onchain_job.tx_hash != FixedBytes::default()
+            && onchain_job.code_input != Bytes::default()
+            && onchain_job.user_timout != U256::zero()
+            && onchain_job.starttime != U256::zero()
+            && onchain_job.req_chain_id != 0
+            && onchain_job.job_owner != H160::zero()
+            && onchain_job.gateway_address != Some(H160::zero())
+            && onchain_job.retry_number == job.retry_number
+        {
+            info!("Job ID: {:?}, JobRelayed event triggered", job.job_id);
+            return Ok(());
         }
-
-        // select a new gateway for the job
-        let gateway_address = self
-            .select_gateway_for_job_relayed(
-                job.clone(),
-                Arc::clone(&self.req_chain_clients[&job.req_chain_id.to_string()]),
-            )
-            .await
-            .context("Failed to select a gateway for the job")?;
 
         // slash the previous gateway
         {
@@ -439,20 +420,15 @@ impl CommonChainClient {
             tx_clone.send((job_clone, self_clone)).await.unwrap();
         }
 
-        job.retry_number += U256::from(1);
-        if job.retry_number >= U256::from(MAX_GATEWAY_RETRIES) {
+        job.retry_number += 1;
+        if job.retry_number >= MAX_GATEWAY_RETRIES {
             info!("Job ID: {:?}, Max retries reached", job.job_id);
             return Ok(());
         }
-        job.gateway_address = Some(gateway_address);
+        job.gateway_address = None;
 
-        self.job_placed_handler(
-            &job.req_chain_id.to_string(),
-            job,
-            tx,
-            Some(gateway_address),
-        )
-        .await;
+        self.job_placed_handler(&job.req_chain_id.to_string(), job, tx)
+            .await;
 
         Ok(())
     }
@@ -467,7 +443,7 @@ impl CommonChainClient {
             .context("Failed to get the next block number")?;
 
         // fetch all gateways' using getAllGateways function from the contract
-        let gateways: Vec<common_chain_gateway::Gateway> = self
+        let gateways: Vec<common_chain_gateway_contract::Gateway> = self
             .gateway_contract
             .get_active_gateways_for_req_chain(req_chain_client.chain_id.into())
             .block(next_block_number)
@@ -557,15 +533,16 @@ impl CommonChainClient {
         let signature = types::Bytes::from(signature.into_bytes());
         let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
 
-        let txn = self.com_chain_contract.relay_job(
+        let txn = self.com_chain_jobs_contract.relay_job(
             signature,
             job.job_id,
             job.req_chain_id.into(),
             tx_hash,
             job.code_input,
             job.user_timout,
-            job.job_owner,
+            job.starttime,
             job.retry_number,
+            job.job_owner,
         );
 
         let pending_txn = txn.send().await;
@@ -624,10 +601,11 @@ impl CommonChainClient {
         .unwrap();
         let signature = types::Bytes::from(signature.into_bytes());
 
-        let txn = self.com_chain_contract.reassign_gateway_relay(
+        let txn = self.com_chain_jobs_contract.reassign_gateway_relay(
             job.gateway_address.unwrap(),
             job.job_id,
             signature,
+            job.retry_number,
         );
 
         let pending_txn = txn.send().await;

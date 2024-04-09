@@ -10,7 +10,7 @@ use log::info;
 use std::sync::Arc;
 
 use crate::common_chain_interaction::{
-    CommonChainClient, CommonChainGateway, RequestChainContract, RequestChainData,
+    CommonChainClient, CommonChainGatewayContract, RequestChainContract, RequestChainData,
 };
 use crate::model::{AppState, InjectKeyInfo, RegisterEnclaveInfo};
 
@@ -63,7 +63,7 @@ async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -
     //         .nonce_manager(signer_address),
     // );
 
-    // app_state.job_contract_object = Some(CommonChainJobs::new(
+    // app_state.job_contract_object = Some(CommonChainJobsContractApi::new(
     //     app_state.job_contract_addr,
     //     http_rpc_client,
     // ));
@@ -120,7 +120,7 @@ async fn register_enclave(
     );
 
     let gateway_contract =
-        CommonChainGateway::new(app_state.gateway_contract_addr, http_rpc_client.clone());
+        CommonChainGatewayContract::new(app_state.gateway_contract_addr, http_rpc_client.clone());
 
     for chain in enclave_info.chain_list.clone() {
         let signer_wallet = wallet.clone().with_chain_id(chain);
@@ -152,8 +152,8 @@ async fn register_enclave(
             pcr_0.clone().into(),
             pcr_1.clone().into(),
             pcr_2.clone().into(),
-            enclave_info.enclave_cpus.into(),
-            enclave_info.enclave_memory.into(),
+            // enclave_info.enclave_cpus.into(),
+            // enclave_info.enclave_memory.into(),
             enclave_info.timestamp.into(),
         );
 
@@ -218,8 +218,8 @@ async fn register_enclave(
         pcr_0.into(),
         pcr_1.into(),
         pcr_2.into(),
-        enclave_info.enclave_cpus.into(),
-        enclave_info.enclave_memory.into(),
+        // enclave_info.enclave_cpus.into(),
+        // enclave_info.enclave_memory.into(),
         enclave_info.timestamp.into(),
         enclave_info
             .chain_list
@@ -312,7 +312,7 @@ async fn deregister_enclave(app_state: Data<AppState>) -> impl Responder {
     );
 
     let gateway_contract =
-        CommonChainGateway::new(app_state.gateway_contract_addr, http_rpc_client.clone());
+        CommonChainGatewayContract::new(app_state.gateway_contract_addr, http_rpc_client.clone());
 
     let txn = gateway_contract.deregister_gateway(app_state.enclave_pub_key.clone().into());
     let pending_txn = txn.send().await;
