@@ -84,9 +84,6 @@ pub async fn sign_relay_job_response(
     let mut req_chain_id_bytes = [0u8; 32];
     req_chain_id.to_big_endian(&mut req_chain_id_bytes);
 
-    let mut retry_number_bytes = [0u8; 32];
-    retry_number.to_big_endian(&mut retry_number_bytes);
-
     let mut hasher = Keccak::v256();
     hasher.update(b"|jobId|");
     hasher.update(&job_id_bytes);
@@ -101,7 +98,7 @@ pub async fn sign_relay_job_response(
     hasher.update(b"|jobOwner|");
     hasher.update(job_owner.as_bytes());
     hasher.update(b"|retryNumber|");
-    hasher.update(&retry_number_bytes);
+    hasher.update(&retry_number.to_be_bytes());
 
     let mut hash = [0u8; 32];
     hasher.finalize(&mut hash);
