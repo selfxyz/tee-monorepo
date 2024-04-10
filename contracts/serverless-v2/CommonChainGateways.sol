@@ -117,6 +117,7 @@ contract CommonChainGateways is
     // enclaveAddress => Gateway
     mapping(address => Gateway) public gateways;
 
+    // TODO: to be removed later
     address[] public gatewayAddresses;
 
     modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
@@ -167,6 +168,9 @@ contract CommonChainGateways is
         bytes enclavePubKey,
         uint256 chainId
     );
+
+    error ChainAlreadyExists(uint256 chainId);
+    error ChainNotFound(uint256 chainId);
 
     function registerGateway(
         bytes memory _attestation,
@@ -225,6 +229,7 @@ contract CommonChainGateways is
         return (gateway.operator, gateway.chainIds, gateway.stakeAmount, gateway.status);
     }
 
+    // TODO: to be removed later
     function getActiveGatewaysForReqChain(uint256 _chainId) public view returns (Gateway[] memory) {
         Gateway[] memory _gateways = new Gateway[](gatewayAddresses.length);
 
@@ -344,13 +349,15 @@ contract CommonChainGateways is
     function addChain(
         bytes memory _enclavePubKey,
         uint256 _chainId
-    ) public onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         require(requestChains[_chainId].contractAddress != address(0), "UNSUPPORTED_CHAIN");
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
         for (uint256 index = 0; index < chainIdList.length; index++) {
-            require(chainIdList[index] != _chainId, "CHAIN_ALREADY_EXISTS");
+            // TODO: add chainId in revert
+            if(chainIdList[index] == _chainId)
+                revert ChainAlreadyExists(_chainId);
         }
         gateways[enclaveKey].chainIds.push(_chainId);
 
@@ -374,7 +381,7 @@ contract CommonChainGateways is
     function removeChain(
         bytes memory _enclavePubKey,
         uint256 _chainId
-    ) public onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
         uint256 len = chainIdList.length;
@@ -386,7 +393,8 @@ contract CommonChainGateways is
                 break;
         }
 
-        require(index == len, "CHAIN_NOT_FOUND");
+        if(index != len)
+                revert ChainNotFound(_chainId);
         if (index != len - 1)
             gateways[enclaveKey].chainIds[index] = gateways[enclaveKey].chainIds[len - 1];
 

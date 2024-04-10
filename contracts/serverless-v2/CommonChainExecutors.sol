@@ -119,6 +119,7 @@ contract CommonChainExecutors is
         uint256 activeJobs;
         uint256 stakeAmount;
         bool status;
+        bytes pubKey;
     }
 
     // enclaveKey => Execution node details
@@ -153,6 +154,18 @@ contract CommonChainExecutors is
         uint256 totalAmount
     );
 
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyAdmin returns (bytes32, bool) {
+        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+    }
+
+    function revokeEnclaveImage(bytes32 imageId) external onlyAdmin returns (bool) {
+        return _revokeEnclaveImage(imageId);
+    }
+
     function registerExecutor(
         bytes memory _attestation,
         bytes memory _enclavePubKey,
@@ -182,7 +195,8 @@ contract CommonChainExecutors is
             jobCapacity: _jobCapacity,
             activeJobs: 0,
             stakeAmount: _stakeAmount,
-            status: true
+            status: true,
+            pubKey: _enclavePubKey
         });
 
         // add node to the tree
@@ -199,15 +213,16 @@ contract CommonChainExecutors is
             executors[enclaveKey].operator != address(0),
             "INVALID_ENCLAVE_KEY"
         );
-        require(
-            executors[enclaveKey].activeJobs == 0,
-            "ACTIVE_JOBS_PENDING"
-        );
-        delete executors[enclaveKey];
+        require(executors[enclaveKey].status, "ALREADY_DEREGISTERED");
+        executors[enclaveKey].status = false;
+
+        if(executors[enclaveKey].activeJobs == 0) {
+            delete executors[enclaveKey];
+            _revokeEnclaveKey(_enclavePubKey);
+        }
 
         // remove node from the tree
         _deleteIfPresent(enclaveKey);
-        _revokeEnclaveKey(_enclavePubKey);
 
         emit ExecutorDeregistered(_enclavePubKey);
 
@@ -282,20 +297,31 @@ contract CommonChainExecutors is
         address _executorKey
     ) external onlyJobsContract {
         // add back the node to the tree as now it can accept a new job
-        if(executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
+        if(executors[_executorKey].status && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
 
         executors[_executorKey].activeJobs -= 1;
+
+        if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
+            delete executors[_executorKey];
+            _revokeEnclaveKey(executors[_executorKey].pubKey);
+        }
     }
 
     function updateOnExecutionTimeoutSlash(
         address _executorKey
     ) external onlyJobsContract {
         // add back the node to the tree as now it can accept a new job
-        if(executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
+        if(executors[_executorKey].status && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
         
         executors[_executorKey].activeJobs -= 1;
+
+        // TODO: manage payment and slashing before deleting the executor
+        if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
+            delete executors[_executorKey];
+            _revokeEnclaveKey(executors[_executorKey].pubKey);
+        }
     }
 
     //-------------------------------- JobsContract functions end --------------------------------//

@@ -136,8 +136,6 @@ contract RequestChainContract is
         bytes memory _PCR0,
         bytes memory _PCR1,
         bytes memory _PCR2,
-        // uint256 _enclaveCPUs,
-        // uint256 _enclaveMemory,
         uint256 _timestampInMilliseconds
     ) external {
         // attestation verification

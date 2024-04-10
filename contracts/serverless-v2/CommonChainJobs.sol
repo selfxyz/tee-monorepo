@@ -189,7 +189,7 @@ contract CommonChainJobs is
 
         // signature check
         bytes32 digest = keccak256(
-            abi.encode(
+            abi.encodePacked(
                 _jobId,
                 _reqChainId,
                 _codehash,
@@ -303,6 +303,8 @@ contract CommonChainJobs is
         uint256 _reqChainId
     ) external {
         uint256 key = getKey(_jobId, _reqChainId);
+        require(jobs[key].jobId > 0, "INVALID_JOB");
+
         // check for time
         require(
             block.timestamp > jobs[key].execStartTime + jobs[key].deadline + executionBufferTime,
@@ -315,7 +317,10 @@ contract CommonChainJobs is
 
         uint256 len = selectedExecutors[key].length;
         for (uint256 index = 0; index < len; index++) {
-            executors.updateOnExecutionTimeoutSlash(selectedExecutors[key][index]);
+            address executorKey = selectedExecutors[key][index];
+            require(!hasExecutedJob[key][executorKey], "JOB_ALREADY_EXECUTED");
+            delete hasExecutedJob[key][executorKey];
+            executors.updateOnExecutionTimeoutSlash(executorKey);
         }
 
         emit SlashedOnExecutionTimeout(_jobId, _reqChainId, selectedExecutors[key]);
