@@ -57,6 +57,7 @@ contract AttestationAutherUpgradeable is
     event EnclaveImageRemovedFromFamily(bytes32 indexed imageId, bytes32 family);
     event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
     event EnclaveKeyRevoked(bytes indexed enclavePubKey);
+    event EnclaveKeyRevoked2(address indexed enclaveKey);
     event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
 
     function __AttestationAuther_init_unchained(EnclaveImage[] memory images) internal onlyInitializing {
@@ -146,13 +147,19 @@ contract AttestationAutherUpgradeable is
     }
 
     function _revokeEnclaveKey(bytes memory enclavePubKey) internal virtual returns (bool) {
+        address enclaveKey = _pubKeyToAddress(enclavePubKey);
+        emit EnclaveKeyRevoked(enclavePubKey);
+
+        return _revokeEnclaveKey(enclaveKey);
+    }
+
+    function _revokeEnclaveKey(address enclaveKey) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
         if (!($.verifiedKeys[enclaveKey] != bytes32(0))) return false;
 
         delete $.verifiedKeys[enclaveKey];
-        emit EnclaveKeyRevoked(enclavePubKey);
+        emit EnclaveKeyRevoked2(enclaveKey);
 
         return true;
     }

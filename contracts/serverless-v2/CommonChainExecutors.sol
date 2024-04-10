@@ -119,7 +119,6 @@ contract CommonChainExecutors is
         uint256 activeJobs;
         uint256 stakeAmount;
         bool status;
-        bytes pubKey;
     }
 
     // enclaveKey => Execution node details
@@ -195,8 +194,7 @@ contract CommonChainExecutors is
             jobCapacity: _jobCapacity,
             activeJobs: 0,
             stakeAmount: _stakeAmount,
-            status: true,
-            pubKey: _enclavePubKey
+            status: true
         });
 
         // add node to the tree
@@ -304,7 +302,7 @@ contract CommonChainExecutors is
 
         if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
             delete executors[_executorKey];
-            _revokeEnclaveKey(executors[_executorKey].pubKey);
+            _revokeEnclaveKey(_executorKey);
         }
     }
 
@@ -320,7 +318,7 @@ contract CommonChainExecutors is
         // TODO: manage payment and slashing before deleting the executor
         if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
             delete executors[_executorKey];
-            _revokeEnclaveKey(executors[_executorKey].pubKey);
+            _revokeEnclaveKey(_executorKey);
         }
     }
 
