@@ -11,17 +11,18 @@ use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
 
 use crate::common_chain_gateway_state::GatewayData;
 use crate::common_chain_util::{
-    get_block_number_by_timestamp, get_next_block_number, prune_old_blocks, pub_key_to_address,
-    sign_reassign_gateway_relay_response, sign_relay_job_response, BlockData,
+    pub_key_to_address, sign_reassign_gateway_relay_response, sign_relay_job_response,
 };
-use crate::constant::{MAX_GATEWAY_RETRIES, REQUEST_RELAY_TIMEOUT};
+use crate::constant::{
+    MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
+};
 use crate::HttpProvider;
 
 abigen!(CommonChainGatewayContract, "./CommonChainGateway.json",);
@@ -36,13 +37,14 @@ pub struct CommonChainClient {
     pub chain_ws_client: Provider<Ws>,
     pub gateway_contract_addr: H160,
     pub contract_addr: H160,
-    pub start_block: u64,
     pub gateway_contract: CommonChainGatewayContract<HttpProvider>,
     pub com_chain_jobs_contract: CommonChainJobsContract<HttpProvider>,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
     pub request_chain_list: Vec<RequestChainData>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
+    pub epoch: u64,
+    pub time_interval: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -92,9 +94,10 @@ impl CommonChainClient {
         chain_http_provider: Arc<HttpProvider>,
         gateway_contract_addr: &H160,
         contract_addr: &H160,
-        start_block: u64,
         gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
         request_chain_list: Vec<RequestChainData>,
+        epoch: u64,
+        time_interval: u64,
     ) -> Self {
         info!("Initializing Common Chain Client...");
         // let signer_address = signer.address();
@@ -153,13 +156,14 @@ impl CommonChainClient {
             chain_ws_client,
             contract_addr: *contract_addr,
             gateway_contract_addr: *gateway_contract_addr,
-            start_block,
             gateway_contract,
             com_chain_jobs_contract,
             req_chain_clients: HashMap::new(),
             gateway_epoch_state,
             request_chain_list,
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
+            epoch,
+            time_interval,
         }
     }
 
@@ -431,63 +435,56 @@ impl CommonChainClient {
         job: Job,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
-        todo!()
-        // let next_block_number = get_next_block_number(&self.gateway_epoch_state, job.starttime.as_u64())
-        //     .await
-        //     .context("Failed to get the next block number")?;
+        let current_cycle = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - self.epoch
+            - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
+            / self.time_interval;
 
-        // // fetch all gateways' using getAllGateways function from the contract
-        // let gateways: Vec<common_chain_gateway_contract::Gateway> = self
-        //     .gateway_contract
-        //     .get_active_gateways_for_req_chain(req_chain_client.chain_id.into())
-        //     .block(next_block_number)
-        //     .call()
-        //     .await
-        //     .context("Failed to get all gateways")?;
+        let gateways_data: Vec<GatewayData>;
+        loop {
+            let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
+            if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&current_cycle) {
+                gateways_data = gateway_epoch_state.values().cloned().collect();
+                break;
+            }
+            drop(gateway_epoch_state_guard);
+            time::sleep(Duration::from_secs(30)).await;
+        }
 
-        // // convert Vec<Gateway> to Vec<GatewayData>
-        // let mut gateway_data: Vec<GatewayData> = vec![];
-        // for gateway in gateways {
-        //     let request_chains: Vec<RequestChainData> = vec![];
-        //     gateway_data.push(GatewayData {
-        //         address: gateway.operator,
-        //         request_chains,
-        //         stake_amount: gateway.stake_amount,
-        //         status: gateway.status,
-        //     });
-        // }
+        // create a weighted probability distribution for gateways based on stake amount
+        // For example, if there are 3 gateways with stake amounts 100, 200, 300
+        // then the distribution arrat will be [100, 300, 600]
+        let mut stake_distribution: Vec<u64> = vec![];
+        let mut total_stake: u64 = 0;
+        for gateway_data in gateways_data.iter() {
+            total_stake += gateway_data.stake_amount.as_u64();
+            stake_distribution.push(total_stake);
+        }
 
-        // // create a weighted probability distribution for gateways based on stake amount
-        // // For example, if there are 3 gateways with stake amounts 100, 200, 300
-        // // then the distribution arrat will be [100, 300, 600]
-        // let mut stake_distribution: Vec<u64> = vec![];
-        // let mut total_stake: u64 = 0;
-        // for gateway in gateway_data.iter() {
-        //     total_stake += gateway.stake_amount.as_u64();
-        //     stake_distribution.push(total_stake);
-        // }
+        // random number between 1 to total_stake from the job timestamp as a seed for the weighted random selection.
+        let seed = job.starttime.as_u64();
+        // use this seed in std_rng to generate a random number between 1 to total_stake
+        let mut rng = StdRng::seed_from_u64(seed);
+        let random_number = rng.gen_range(1..=total_stake);
 
-        // // random number between 1 to total_stake from the job timestamp as a seed for the weighted random selection.
-        // let seed = job.starttime.as_u64();
-        // // use this seed in std_rng to generate a random number between 1 to total_stake
-        // let mut rng = StdRng::seed_from_u64(seed);
-        // let random_number = rng.gen_range(1..=total_stake);
+        // select the gateway based on the random number
+        // TODO: Can use binary search on stake_distribution to optimize this.
+        let selected_gateway = gateways_data
+            .iter()
+            .zip(stake_distribution.iter())
+            .find(|(_, stake)| random_number <= **stake)
+            .map(|(gateway, _)| gateway)
+            .context("Failed to select a gateway")?;
 
-        // // select the gateway based on the random number
-        // // TODO: Can use binary search on stake_distribution to optimize this.
-        // let selected_gateway = gateway_data
-        //     .iter()
-        //     .zip(stake_distribution.iter())
-        //     .find(|(_, stake)| random_number <= **stake)
-        //     .map(|(gateway, _)| gateway)
-        //     .context("Failed to select a gateway")?;
+        info!(
+            "Job ID: {:?}, Gateway Address: {:?}",
+            job.job_id, selected_gateway.address
+        );
 
-        // info!(
-        //     "Job ID: {:?}, Gateway Address: {:?}",
-        //     job.job_id, selected_gateway.address
-        // );
-
-        // Ok(selected_gateway.address)
+        Ok(selected_gateway.address)
     }
 
     async fn txns_to_common_chain(
