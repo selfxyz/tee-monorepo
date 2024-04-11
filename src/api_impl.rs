@@ -265,8 +265,10 @@ async fn register_enclave(
             &app_state.gateway_contract_addr,
             &app_state.job_contract_addr,
             app_state.start_block,
-            app_state.recent_blocks.clone(),
+            app_state.gateway_epoch_state.clone(),
             chain_list,
+            app_state.epoch,
+            app_state.time_interval,
         )
         .await,
     );

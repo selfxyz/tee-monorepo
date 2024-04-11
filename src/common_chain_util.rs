@@ -5,11 +5,8 @@ use ethers::types::{Address, U256};
 use ethers::utils::keccak256;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use log::error;
 use tiny_keccak::{Hasher, Keccak};
-use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
 pub struct BlockData {
@@ -17,45 +14,53 @@ pub struct BlockData {
     pub timestamp: u64,
 }
 
-pub async fn prune_old_blocks(recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData>>>) {
-    // Define the cutoff time
-    let oldest_valid_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs()
-        - 120; // 2 minutes data retention
-
-    // scope for the write lock
-    {
-        // Remove entries older than the cutoff time
-        recent_blocks
-            .write()
-            .await
-            .retain(|timestamp, _| timestamp > &oldest_valid_timestamp);
-    }
-}
-
-pub async fn get_next_block_number(
-    recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData>>>,
-    timestamp: u64,
+pub async fn get_block_number_by_timestamp(
+    provider: &Provider<Http>,
+    target_timestamp: u64,
+    from_block_number: u64,
 ) -> Option<u64> {
-    let mut block_number: Option<u64> = None;
-    while block_number.is_none() {
-        // scope for the read lock
-        {
-            let recent_blocks_state = recent_blocks.read().await;
-            for (&_block_timestamp, block_data) in recent_blocks_state.range((
-                std::ops::Bound::Excluded(timestamp),
-                std::ops::Bound::Unbounded,
-            )) {
-                block_number = Some(block_data.number);
+    let mut block_number: u64;
+    if from_block_number == 0 {
+        block_number = provider.get_block_number().await.unwrap().as_u64();
+    } else {
+        block_number = from_block_number;
+    }
+    while block_number > 0 {
+        let block = provider.get_block(block_number).await.unwrap().unwrap();
+        // target_timestamp (the end bound of the interval) is excluded from the search
+        if block.timestamp < U256::from(target_timestamp) {
+            // Fetch the next block to confirm this is the latest block with timestamp < target_timestamp
+            let next_block_number = block_number + 1;
+            let next_block_result = provider.get_block(next_block_number).await;
+
+            match next_block_result {
+                Ok(Some(block)) => {
+                    // next_block exists
+                    if block.timestamp >= U256::from(target_timestamp) {
+                        // The next block's timestamp is greater than or equal to the target timestamp,
+                        // so return the current block number
+                        return Some(block_number);
+                    }
+                    block_number += 1;
+                    continue;
+                }
+                Ok(None) => {
+                    // The next block does not exist
+                    // TODO: Next block does not exist, wait for it.
+                    // For now, return the current block number
+                    return Some(block_number);
+                }
+                Err(_) => {
+                    // There was an error while trying to fetch the block
+                    // TODO: Check what to do in this case
+                    error!("Failed to fetch block number {}", next_block_number);
+                    return None;
+                }
             }
         }
-        // TODO: Use a subsription mechanism to avoid polling for future dev.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        block_number -= 1;
     }
-
-    block_number
+    None
 }
 
 pub fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {

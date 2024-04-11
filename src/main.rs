@@ -1,4 +1,5 @@
 mod api_impl;
+mod common_chain_gateway_state;
 mod common_chain_interaction;
 mod common_chain_util;
 mod config;
@@ -20,8 +21,7 @@ use tokio::fs;
 use tokio::sync::RwLock;
 
 use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
-use crate::common_chain_interaction::update_block_data;
-use crate::common_chain_util::BlockData;
+use crate::common_chain_gateway_state::{gateway_epoch_state_service, GatewayData};
 use crate::config::ConfigManager;
 use crate::model::AppState;
 
@@ -62,13 +62,20 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Connected to the chain provider.");
 
-    // Start the block data updater
-    let recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>> =
-        Arc::new(RwLock::new(BTreeMap::new()));
-    let recent_blocks_clone = Arc::clone(&recent_blocks);
+    // Start the gateway epoch state service
+    let gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>> =
+        &Arc::new(RwLock::new(BTreeMap::new()));
+    let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
     let chain_http_provider_clone = chain_http_provider.clone();
     tokio::spawn(async move {
-        update_block_data(chain_http_provider_clone, &recent_blocks_clone).await;
+        gateway_epoch_state_service(
+            config.gateway_contract_addr,
+            &chain_http_provider_clone,
+            &gateway_epoch_state_clone,
+            config.epoch,
+            config.time_interval,
+        )
+        .await;
     });
 
     let enclave_pub_key = fs::read(config.enclave_public_key)
@@ -95,8 +102,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         chain_list: vec![].into(),
         registered: false.into(),
         enclave_pub_key: enclave_pub_key.into(),
-        recent_blocks: recent_blocks.clone(),
+        gateway_epoch_state: gateway_epoch_state.clone(),
         start_block: config.start_block,
+        epoch: config.epoch,
+        time_interval: config.time_interval,
     });
     // Start a http server
     let server = HttpServer::new(move || {

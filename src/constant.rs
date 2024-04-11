@@ -1,2 +1,4 @@
 pub const REQUEST_RELAY_TIMEOUT: u64 = 15 * 60;
 pub const MAX_GATEWAY_RETRIES: u8 = 2;
+
+pub const GATEWAY_BLOCK_STATES_TO_MAINTAIN: u64 = 5;

@@ -16,6 +16,8 @@ pub struct Config {
     pub start_block: u64,
     pub enclave_secret_key: String,
     pub enclave_public_key: String,
+    pub epoch: u64,
+    pub time_interval: u64,
 }
 
 impl ConfigManager {

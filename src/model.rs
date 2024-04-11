@@ -1,6 +1,5 @@
-use bytes::Bytes;
 use ethers::signers::LocalWallet;
-use ethers::types::Address;
+use ethers::types::{Address, Bytes};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -8,8 +7,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 
+use crate::common_chain_gateway_state::GatewayData;
 use crate::common_chain_interaction::RequestChainData;
-use crate::common_chain_util::BlockData;
 
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
@@ -22,8 +21,10 @@ pub struct AppState {
     pub chain_list: Mutex<Vec<RequestChainData>>,
     pub registered: Mutex<bool>,
     pub enclave_pub_key: Bytes,
-    pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
+    pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
     pub start_block: u64,
+    pub epoch: u64,
+    pub time_interval: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

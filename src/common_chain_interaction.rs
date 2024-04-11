@@ -16,8 +16,9 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
 
+use crate::common_chain_gateway_state::GatewayData;
 use crate::common_chain_util::{
-    get_next_block_number, prune_old_blocks, pub_key_to_address,
+    get_block_number_by_timestamp, get_next_block_number, prune_old_blocks, pub_key_to_address,
     sign_reassign_gateway_relay_response, sign_relay_job_response, BlockData,
 };
 use crate::constant::{MAX_GATEWAY_RETRIES, REQUEST_RELAY_TIMEOUT};
@@ -26,14 +27,6 @@ use crate::HttpProvider;
 abigen!(CommonChainGatewayContract, "./CommonChainGateway.json",);
 abigen!(RequestChainContract, "./RequestChainContract.json",);
 abigen!(CommonChainJobsContract, "./CommonChainJobs.json",);
-
-#[derive(Debug, Clone)]
-pub struct GatewayData {
-    pub address: Address,
-    pub request_chains: Vec<RequestChainData>,
-    pub stake_amount: U256,
-    pub status: bool,
-}
 
 #[derive(Debug, Clone)]
 pub struct CommonChainClient {
@@ -47,7 +40,7 @@ pub struct CommonChainClient {
     pub gateway_contract: CommonChainGatewayContract<HttpProvider>,
     pub com_chain_jobs_contract: CommonChainJobsContract<HttpProvider>,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
-    pub recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
+    pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
     pub request_chain_list: Vec<RequestChainData>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
 }
@@ -100,7 +93,7 @@ impl CommonChainClient {
         gateway_contract_addr: &H160,
         contract_addr: &H160,
         start_block: u64,
-        recent_blocks: Arc<RwLock<BTreeMap<u64, BlockData>>>,
+        gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
         request_chain_list: Vec<RequestChainData>,
     ) -> Self {
         info!("Initializing Common Chain Client...");
@@ -164,7 +157,7 @@ impl CommonChainClient {
             gateway_contract,
             com_chain_jobs_contract,
             req_chain_clients: HashMap::new(),
-            recent_blocks,
+            gateway_epoch_state,
             request_chain_list,
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -438,62 +431,63 @@ impl CommonChainClient {
         job: Job,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
-        let next_block_number = get_next_block_number(&self.recent_blocks, job.starttime.as_u64())
-            .await
-            .context("Failed to get the next block number")?;
+        todo!()
+        // let next_block_number = get_next_block_number(&self.gateway_epoch_state, job.starttime.as_u64())
+        //     .await
+        //     .context("Failed to get the next block number")?;
 
-        // fetch all gateways' using getAllGateways function from the contract
-        let gateways: Vec<common_chain_gateway_contract::Gateway> = self
-            .gateway_contract
-            .get_active_gateways_for_req_chain(req_chain_client.chain_id.into())
-            .block(next_block_number)
-            .call()
-            .await
-            .context("Failed to get all gateways")?;
+        // // fetch all gateways' using getAllGateways function from the contract
+        // let gateways: Vec<common_chain_gateway_contract::Gateway> = self
+        //     .gateway_contract
+        //     .get_active_gateways_for_req_chain(req_chain_client.chain_id.into())
+        //     .block(next_block_number)
+        //     .call()
+        //     .await
+        //     .context("Failed to get all gateways")?;
 
-        // convert Vec<Gateway> to Vec<GatewayData>
-        let mut gateway_data: Vec<GatewayData> = vec![];
-        for gateway in gateways {
-            let request_chains: Vec<RequestChainData> = vec![];
-            gateway_data.push(GatewayData {
-                address: gateway.operator,
-                request_chains,
-                stake_amount: gateway.stake_amount,
-                status: gateway.status,
-            });
-        }
+        // // convert Vec<Gateway> to Vec<GatewayData>
+        // let mut gateway_data: Vec<GatewayData> = vec![];
+        // for gateway in gateways {
+        //     let request_chains: Vec<RequestChainData> = vec![];
+        //     gateway_data.push(GatewayData {
+        //         address: gateway.operator,
+        //         request_chains,
+        //         stake_amount: gateway.stake_amount,
+        //         status: gateway.status,
+        //     });
+        // }
 
-        // create a weighted probability distribution for gateways based on stake amount
-        // For example, if there are 3 gateways with stake amounts 100, 200, 300
-        // then the distribution arrat will be [100, 300, 600]
-        let mut stake_distribution: Vec<u64> = vec![];
-        let mut total_stake: u64 = 0;
-        for gateway in gateway_data.iter() {
-            total_stake += gateway.stake_amount.as_u64();
-            stake_distribution.push(total_stake);
-        }
+        // // create a weighted probability distribution for gateways based on stake amount
+        // // For example, if there are 3 gateways with stake amounts 100, 200, 300
+        // // then the distribution arrat will be [100, 300, 600]
+        // let mut stake_distribution: Vec<u64> = vec![];
+        // let mut total_stake: u64 = 0;
+        // for gateway in gateway_data.iter() {
+        //     total_stake += gateway.stake_amount.as_u64();
+        //     stake_distribution.push(total_stake);
+        // }
 
-        // random number between 1 to total_stake from the job timestamp as a seed for the weighted random selection.
-        let seed = job.starttime.as_u64();
-        // use this seed in std_rng to generate a random number between 1 to total_stake
-        let mut rng = StdRng::seed_from_u64(seed);
-        let random_number = rng.gen_range(1..=total_stake);
+        // // random number between 1 to total_stake from the job timestamp as a seed for the weighted random selection.
+        // let seed = job.starttime.as_u64();
+        // // use this seed in std_rng to generate a random number between 1 to total_stake
+        // let mut rng = StdRng::seed_from_u64(seed);
+        // let random_number = rng.gen_range(1..=total_stake);
 
-        // select the gateway based on the random number
-        // TODO: Can use binary search on stake_distribution to optimize this.
-        let selected_gateway = gateway_data
-            .iter()
-            .zip(stake_distribution.iter())
-            .find(|(_, stake)| random_number <= **stake)
-            .map(|(gateway, _)| gateway)
-            .context("Failed to select a gateway")?;
+        // // select the gateway based on the random number
+        // // TODO: Can use binary search on stake_distribution to optimize this.
+        // let selected_gateway = gateway_data
+        //     .iter()
+        //     .zip(stake_distribution.iter())
+        //     .find(|(_, stake)| random_number <= **stake)
+        //     .map(|(gateway, _)| gateway)
+        //     .context("Failed to select a gateway")?;
 
-        info!(
-            "Job ID: {:?}, Gateway Address: {:?}",
-            job.job_id, selected_gateway.address
-        );
+        // info!(
+        //     "Job ID: {:?}, Gateway Address: {:?}",
+        //     job.job_id, selected_gateway.address
+        // );
 
-        Ok(selected_gateway.address)
+        // Ok(selected_gateway.address)
     }
 
     async fn txns_to_common_chain(
@@ -630,49 +624,5 @@ impl CommonChainClient {
             "Transaction {} confirmed for reassign gateway relay to CommonChain",
             txn_hash
         );
-    }
-}
-
-pub async fn update_block_data(
-    provider: Provider<Http>,
-    recent_blocks: &Arc<RwLock<BTreeMap<u64, BlockData>>>,
-) {
-    let mut interval = time::interval(Duration::from_secs(1));
-
-    loop {
-        interval.tick().await;
-
-        let latest_block = provider
-            .get_block_number()
-            .await
-            .context("Failed to get the latest block number. Please check the chain url.")
-            .unwrap()
-            .as_u64();
-        let latest_block_info = provider
-            .get_block(latest_block)
-            .await
-            .context("Failed to get the latest block information. Please check the chain url.")
-            .unwrap();
-
-        if latest_block_info.is_none() {
-            continue;
-        }
-
-        let timestamp = latest_block_info.unwrap().timestamp.as_u64();
-
-        // scope for the write lock
-        {
-            // Update the 'recent_blocks' map
-            recent_blocks.write().await.insert(
-                timestamp,
-                BlockData {
-                    number: latest_block,
-                    timestamp,
-                },
-            );
-        }
-
-        // Prune old entries
-        prune_old_blocks(&recent_blocks).await;
     }
 }
