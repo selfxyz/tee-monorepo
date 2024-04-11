@@ -443,11 +443,11 @@ impl CommonChainClient {
             - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
             / self.time_interval;
 
-        let gateways_data: Vec<GatewayData>;
+        let all_gateways_data: Vec<GatewayData>;
         loop {
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&current_cycle) {
-                gateways_data = gateway_epoch_state.values().cloned().collect();
+                all_gateways_data = gateway_epoch_state.values().cloned().collect();
                 break;
             }
             drop(gateway_epoch_state_guard);
@@ -459,9 +459,16 @@ impl CommonChainClient {
         // then the distribution arrat will be [100, 300, 600]
         let mut stake_distribution: Vec<u64> = vec![];
         let mut total_stake: u64 = 0;
-        for gateway_data in gateways_data.iter() {
-            total_stake += gateway_data.stake_amount.as_u64();
-            stake_distribution.push(total_stake);
+        let mut gateway_data_of_req_chain: Vec<GatewayData> = vec![];
+        for gateway_data in all_gateways_data.iter() {
+            if gateway_data
+                .req_chain_ids
+                .contains(&U256::from(req_chain_client.chain_id))
+            {
+                gateway_data_of_req_chain.push(gateway_data.clone());
+                total_stake += gateway_data.stake_amount.as_u64();
+                stake_distribution.push(total_stake);
+            }
         }
 
         // random number between 1 to total_stake from the job timestamp as a seed for the weighted random selection.
@@ -472,7 +479,7 @@ impl CommonChainClient {
 
         // select the gateway based on the random number
         // TODO: Can use binary search on stake_distribution to optimize this.
-        let selected_gateway = gateways_data
+        let selected_gateway = gateway_data_of_req_chain
             .iter()
             .zip(stake_distribution.iter())
             .find(|(_, stake)| random_number <= **stake)
