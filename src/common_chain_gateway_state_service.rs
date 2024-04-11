@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tokio::{task, time};
+use tokio::time;
 
 use crate::common_chain_util::get_block_number_by_timestamp;
 use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
@@ -43,18 +43,24 @@ pub async fn gateway_epoch_state_service(
     } else {
         initial_epoch_cycle = 1;
     };
-
-    for cycle_number in initial_epoch_cycle..=current_cycle {
-        generate_gateway_epoch_state_for_cycle(
-            contract_address,
-            provider,
-            gateway_epoch_state,
-            cycle_number,
-            epoch,
-            time_interval,
-        )
-        .await
-        .unwrap();
+    {
+        let contract_address_clone = contract_address.clone();
+        let provider_clone = provider.clone();
+        let gateway_epoch_state_clone = Arc::clone(gateway_epoch_state);
+        tokio::spawn(async move {
+            for cycle_number in initial_epoch_cycle..=current_cycle {
+                generate_gateway_epoch_state_for_cycle(
+                    contract_address_clone,
+                    &provider_clone,
+                    &gateway_epoch_state_clone,
+                    cycle_number,
+                    epoch,
+                    time_interval,
+                )
+                .await
+                .unwrap();
+            }
+        });
     }
 
     let mut cycle_number = current_cycle + 1;
@@ -67,8 +73,6 @@ pub async fn gateway_epoch_state_service(
     if until_epoch > now {
         let sleep_duration = until_epoch - now;
         tokio::time::sleep(sleep_duration).await;
-    } else {
-        // TODO: spawn a thread for the previous cycle(s) and sleep till the next cycle
     }
 
     let mut interval = time::interval(Duration::from_secs(time_interval));
@@ -102,10 +106,21 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     epoch: u64,
     time_interval: u64,
 ) -> Result<()> {
-    let last_added_cycle = {
+    let mut last_added_cycle: Option<u64> = None;
+    let added_cycles: Vec<u64>;
+    // scope for the read lock
+    {
         let gateway_epoch_state_guard = gateway_epoch_state.read().await;
-        gateway_epoch_state_guard.keys().last().cloned()
-    };
+        added_cycles = gateway_epoch_state_guard.keys().cloned().collect();
+    }
+    for cycle in added_cycles.iter().rev() {
+        if *cycle == cycle_number {
+            return Ok(());
+        } else if *cycle < cycle_number {
+            last_added_cycle = Some(cycle.clone());
+        }
+    }
+    drop(added_cycles);
 
     let from_block_number: u64;
 
@@ -254,7 +269,10 @@ async fn prune_old_cycle_states(
     {
         let gateway_epoch_state_guard = gateway_epoch_state.read().await;
         for cycle in gateway_epoch_state_guard.keys() {
-            if current_cycle - cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+            // if a state is older than 1.5 times the number of states to maintain, remove it
+            // chosen a number larger than the number to maintain because in some cases, of delay,
+            // an older state might be used to read and initialize the current state
+            if current_cycle - cycle >= (GATEWAY_BLOCK_STATES_TO_MAINTAIN * 3 / 2) {
                 cycles_to_remove.push(cycle.clone());
             } else {
                 break;
