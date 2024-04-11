@@ -3,6 +3,5 @@
   "com_chain_id": 31337,
   "com_chain_ws_url": "ws://127.0.0.1:8545/",
   "com_chain_http_url": "http://127.0.0.1:8545/",
-  "com_chain_contract_addr": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-  "start_block": 0
+  "com_chain_contract_addr": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
 }

@@ -13,7 +13,6 @@ pub struct Config {
     pub com_chain_http_url: String,
     pub gateway_contract_addr: H160,
     pub job_contract_addr: H160,
-    pub start_block: u64,
     pub enclave_secret_key: String,
     pub enclave_public_key: String,
     pub epoch: u64,

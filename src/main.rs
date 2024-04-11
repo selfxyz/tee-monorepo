@@ -103,7 +103,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         registered: false.into(),
         enclave_pub_key: enclave_pub_key.into(),
         gateway_epoch_state: gateway_epoch_state.clone(),
-        start_block: config.start_block,
         epoch: config.epoch,
         time_interval: config.time_interval,
     });
@@ -133,7 +132,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     //         chain_http_provider,
     //         &config.gateway_contract_addr,
     //         &config.com_chain_contract_addr,
-    //         config.start_block,
     //         &recent_blocks,
     //         config.com_chain_id,
     //     )
