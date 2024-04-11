@@ -394,7 +394,7 @@ contract CommonChainGateways is
         }
 
         if(index != len)
-                revert ChainNotFound(_chainId);
+            revert ChainNotFound(_chainId);
         if (index != len - 1)
             gateways[enclaveKey].chainIds[index] = gateways[enclaveKey].chainIds[len - 1];
 

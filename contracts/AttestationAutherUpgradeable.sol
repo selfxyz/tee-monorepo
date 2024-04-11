@@ -148,9 +148,12 @@ contract AttestationAutherUpgradeable is
 
     function _revokeEnclaveKey(bytes memory enclavePubKey) internal virtual returns (bool) {
         address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        emit EnclaveKeyRevoked(enclavePubKey);
 
-        return _revokeEnclaveKey(enclaveKey);
+        if(!_revokeEnclaveKey(enclaveKey))
+            return false;
+
+        emit EnclaveKeyRevoked(enclavePubKey);
+        return true;
     }
 
     function _revokeEnclaveKey(address enclaveKey) internal virtual returns (bool) {
