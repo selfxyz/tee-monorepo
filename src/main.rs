@@ -1,5 +1,5 @@
 mod api_impl;
-mod common_chain_gateway_state;
+mod common_chain_gateway_state_service;
 mod common_chain_interaction;
 mod common_chain_util;
 mod config;
@@ -21,7 +21,7 @@ use tokio::fs;
 use tokio::sync::RwLock;
 
 use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
-use crate::common_chain_gateway_state::{gateway_epoch_state_service, GatewayData};
+use crate::common_chain_gateway_state_service::{gateway_epoch_state_service, GatewayData};
 use crate::config::ConfigManager;
 use crate::model::AppState;
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 
-use crate::common_chain_gateway_state::GatewayData;
+use crate::common_chain_gateway_state_service::GatewayData;
 use crate::common_chain_interaction::RequestChainData;
 
 pub struct AppState {

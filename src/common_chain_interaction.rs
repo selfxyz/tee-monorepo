@@ -16,7 +16,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
 
-use crate::common_chain_gateway_state::GatewayData;
+use crate::common_chain_gateway_state_service::GatewayData;
 use crate::common_chain_util::{
     pub_key_to_address, sign_reassign_gateway_relay_response, sign_relay_job_response,
 };
