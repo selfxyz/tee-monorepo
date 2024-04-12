@@ -10,10 +10,10 @@ use log::info;
 use std::sync::Arc;
 
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
-use crate::common_chain_interaction::{
-    CommonChainClient, CommonChainGatewayContract, RequestChainContract, RequestChainData,
+use crate::contract_abi::{CommonChainGatewayContract, RequestChainContract};
+use crate::model::{
+    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainData,
 };
-use crate::model::{AppState, InjectKeyInfo, RegisterEnclaveInfo};
 
 #[get("/")]
 async fn index() -> impl Responder {

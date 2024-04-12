@@ -11,12 +11,6 @@ use tiny_keccak::{Hasher, Keccak};
 
 use crate::HttpProvider;
 
-#[derive(Debug, Clone)]
-pub struct BlockData {
-    pub number: u64,
-    pub timestamp: u64,
-}
-
 pub async fn get_block_number_by_timestamp(
     provider: &Arc<HttpProvider>,
     target_timestamp: u64,

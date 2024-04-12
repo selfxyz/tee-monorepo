@@ -4,6 +4,7 @@ mod common_chain_interaction;
 mod common_chain_util;
 mod config;
 mod constant;
+mod contract_abi;
 mod model;
 
 use actix_web::web::Data;
@@ -21,8 +22,7 @@ use tokio::sync::RwLock;
 
 use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
 use crate::common_chain_gateway_state_service::GatewayData;
-use crate::config::ConfigManager;
-use crate::model::AppState;
+use crate::model::{AppState, ConfigManager};
 
 type HttpProvider = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
