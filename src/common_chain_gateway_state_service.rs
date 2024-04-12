@@ -130,6 +130,9 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     epoch: u64,
     time_interval: u64,
 ) -> Result<(), Error> {
+    // last added cycle will be the cycle number which is less than the current cycle number
+    // since this fn is run via spawn,
+    // it is possible that a greater or equal cycle number is already added
     let mut last_added_cycle: Option<u64> = None;
     let added_cycles: Vec<u64>;
     // scope for the read lock
@@ -138,6 +141,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         added_cycles = gateway_epoch_state_guard.keys().cloned().collect();
     }
     for cycle in added_cycles.iter().rev() {
+        // in case this cycle is already added by another thread
         if *cycle == cycle_number {
             return Ok(());
         } else if *cycle < cycle_number {
@@ -169,7 +173,8 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
     let timestamp_to_fetch = epoch + (cycle_number * time_interval);
 
-    // TODO: handle the case when to_block_number is less than from_block_number
+    // to_block_number can be less than from_block_number
+    // in case of no blocks created in this epoch cycle
     let to_block_number =
         get_block_number_by_timestamp(&provider, timestamp_to_fetch, from_block_number).await;
 
@@ -230,6 +235,13 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         {
             let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
             gateway_epoch_state_guard.insert(cycle_number, last_cycle_state_map);
+        }
+
+        // In case where to_block_number < from_block_number, return here
+        // This will happen in the case when no blocks were created in this epoch cycle,
+        // so the state remains the same as the previous state
+        if to_block_number < from_block_number {
+            return Ok(());
         }
     }
 
