@@ -132,7 +132,8 @@ contract CommonChainGateways is
     event GatewayRegistered(
         bytes enclavePubKey,
         address indexed enclaveAddress,
-        address indexed operator
+        address indexed operator,
+        uint256[] chainIds
     );
 
     event GatewayDeregistered(bytes enclavePubKey);
@@ -211,7 +212,7 @@ contract CommonChainGateways is
             status: true
         });
 
-        emit GatewayRegistered(_enclavePubKey, enclaveKey, _msgSender());
+        emit GatewayRegistered(_enclavePubKey, enclaveKey, _msgSender(), _chainIds);
     }
 
     function _verifySign(
