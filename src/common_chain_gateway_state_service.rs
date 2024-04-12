@@ -252,8 +252,6 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .topic0(vec![
             keccak256("GatewayRegistered(bytes,address,address,uint256,uint256[])"),
             keccak256("GatewayDeregistered(bytes)"),
-            keccak256("GatewayStakeAdded(bytes,uint256,uint256)"),
-            keccak256("GatewayStakeRemoved(bytes,uint256,uint256)"),
             keccak256("ChainAdded(bytes,uint256)"),
             keccak256("ChainRemoved(bytes,uint256)"),
         ]);
@@ -279,10 +277,6 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             .await;
         } else if topics[0] == keccak256("GatewayDeregistered(bytes)").into() {
             process_gateway_deregistered_event(log, to_block_number, &gateway_epoch_state).await;
-        } else if topics[0] == keccak256("GatewayStakeAdded(bytes,uint256,uint256)").into() {
-            process_gateway_stake_added_event(log, cycle_number, &gateway_epoch_state).await;
-        } else if topics[0] == keccak256("GatewayStakeRemoved(bytes,uint256,uint256)").into() {
-            process_gateway_stake_removed_event(log, cycle_number, &gateway_epoch_state).await;
         } else if topics[0] == keccak256("ChainAdded(bytes,uint256)").into() {
             process_chain_added_event(log, cycle_number, &gateway_epoch_state).await;
         } else if topics[0] == keccak256("ChainRemoved(bytes,uint256)").into() {
@@ -387,54 +381,6 @@ async fn process_gateway_deregistered_event(
         let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
         if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
             cycle_gateway_state.remove(&enclave_pub_key);
-        }
-    }
-}
-
-async fn process_gateway_stake_added_event(
-    log: Log,
-    cycle: u64,
-    gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
-) {
-    let decoded = decode(
-        &vec![ParamType::Bytes, ParamType::Uint(256), ParamType::Uint(256)],
-        &log.data.0,
-    )
-    .unwrap();
-    let enclave_pub_key: Bytes = decoded[0].clone().into_bytes().unwrap().into();
-    let total_stake_amount = decoded[2].clone().into_uint().unwrap();
-
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
-        if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
-            if let Some(gateway_data) = cycle_gateway_state.get_mut(&enclave_pub_key) {
-                gateway_data.stake_amount = total_stake_amount;
-            }
-        }
-    }
-}
-
-async fn process_gateway_stake_removed_event(
-    log: Log,
-    cycle: u64,
-    gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
-) {
-    let decoded = decode(
-        &vec![ParamType::Bytes, ParamType::Uint(256), ParamType::Uint(256)],
-        &log.data.0,
-    )
-    .unwrap();
-    let enclave_pub_key: Bytes = decoded[0].clone().into_bytes().unwrap().into();
-    let total_stake_amount = decoded[2].clone().into_uint().unwrap();
-
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
-        if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
-            if let Some(gateway_data) = cycle_gateway_state.get_mut(&enclave_pub_key) {
-                gateway_data.stake_amount = total_stake_amount;
-            }
         }
     }
 }
