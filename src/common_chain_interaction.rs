@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_recursion::async_recursion;
 use ethers::abi::{decode, Address, FixedBytes, ParamType};
 use ethers::prelude::*;
@@ -40,7 +40,7 @@ pub struct CommonChainClient {
     pub gateway_contract: CommonChainGatewayContract<HttpProvider>,
     pub com_chain_jobs_contract: CommonChainJobsContract<HttpProvider>,
     pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
-    pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
+    pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_list: Vec<RequestChainData>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
     pub epoch: u64,
@@ -94,7 +94,7 @@ impl CommonChainClient {
         chain_http_provider: Arc<HttpProvider>,
         gateway_contract_addr: &H160,
         contract_addr: &H160,
-        gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
+        gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
         request_chain_list: Vec<RequestChainData>,
         epoch: u64,
         time_interval: u64,
@@ -377,23 +377,32 @@ impl CommonChainClient {
     ) -> Result<()> {
         time::sleep(Duration::from_secs(REQUEST_RELAY_TIMEOUT)).await;
 
-        let onchain_job = self.com_chain_jobs_contract.jobs(job.job_id).await.unwrap();
+        let job_key = U256::from(keccak256(format!("{}-{}", job.job_id, job.req_chain_id)));
+        let onchain_job = self.com_chain_jobs_contract.jobs(job_key).await.unwrap();
 
         let onchain_job: Job = Job {
-            job_id: job.job_id,
-            tx_hash: onchain_job.1.to_vec(),
-            code_input: onchain_job.2,
-            user_timout: onchain_job.3,
-            starttime: onchain_job.4,
+            job_id: onchain_job.0,
+            req_chain_id: onchain_job.1.as_u64(),
+            tx_hash: onchain_job.2.to_vec(),
+            code_input: onchain_job.3,
+            user_timout: onchain_job.4,
+            starttime: onchain_job.5,
             max_gas_price: U256::zero(),
             deposit: H160::zero(),
             callback_deposit: U256::zero(),
-            req_chain_id: onchain_job.0.as_u64(),
-            job_owner: onchain_job.5,
+            job_owner: onchain_job.6,
             job_type: JobType::JobRelay,
-            retry_number: onchain_job.8,
-            gateway_address: Some(onchain_job.6),
+            retry_number: onchain_job.9,
+            gateway_address: Some(onchain_job.7),
         };
+
+        if onchain_job.job_id != job.job_id {
+            error!("Job ID: {:?} not found in the contract", job.job_id);
+            return Err(anyhow!(
+                "Job ID: {:?} not found in the contract",
+                job.job_id
+            ));
+        }
 
         if onchain_job.tx_hash != FixedBytes::default()
             && onchain_job.code_input != Bytes::default()
@@ -602,6 +611,7 @@ impl CommonChainClient {
         let txn = self.com_chain_jobs_contract.reassign_gateway_relay(
             job.gateway_address.unwrap(),
             job.job_id,
+            U256::from(job.req_chain_id),
             signature,
             job.retry_number,
         );

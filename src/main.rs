@@ -63,7 +63,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     info!("Connected to the chain provider.");
 
     // Start the gateway epoch state service
-    let gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>> =
+    let gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
         &Arc::new(RwLock::new(BTreeMap::new()));
     let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
     let chain_http_provider_clone = chain_http_provider.clone();

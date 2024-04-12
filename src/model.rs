@@ -21,7 +21,7 @@ pub struct AppState {
     pub chain_list: Mutex<Vec<RequestChainData>>,
     pub registered: Mutex<bool>,
     pub enclave_pub_key: Bytes,
-    pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Bytes, GatewayData>>>>,
+    pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub epoch: u64,
     pub time_interval: u64,
 }
