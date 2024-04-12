@@ -399,13 +399,18 @@ impl CommonChainClient {
         let random_number = rng.gen_range(1..=total_stake);
 
         // select the gateway based on the random number
-        // TODO: Can use binary search on stake_distribution to optimize this.
-        let selected_gateway = gateway_data_of_req_chain
-            .iter()
-            .zip(stake_distribution.iter())
-            .find(|(_, stake)| random_number <= **stake)
-            .map(|(gateway, _)| gateway)
-            .context("Failed to select a gateway")?;
+        let res = stake_distribution.binary_search_by(|&probe| {
+            if probe < random_number {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+        let index = match res {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+        let selected_gateway = &gateway_data_of_req_chain[index];
 
         info!(
             "Job ID: {:?}, Gateway Address: {:?}",
