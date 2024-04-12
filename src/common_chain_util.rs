@@ -6,7 +6,10 @@ use ethers::utils::keccak256;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::error;
+use std::sync::Arc;
 use tiny_keccak::{Hasher, Keccak};
+
+use crate::HttpProvider;
 
 #[derive(Debug, Clone)]
 pub struct BlockData {
@@ -15,7 +18,7 @@ pub struct BlockData {
 }
 
 pub async fn get_block_number_by_timestamp(
-    provider: &Provider<Http>,
+    provider: &Arc<HttpProvider>,
     target_timestamp: u64,
     from_block_number: u64,
 ) -> Option<u64> {

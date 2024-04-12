@@ -9,6 +9,7 @@ use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
 use std::sync::Arc;
 
+use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::common_chain_interaction::{
     CommonChainClient, CommonChainGatewayContract, RequestChainContract, RequestChainData,
 };
@@ -253,6 +254,26 @@ async fn register_enclave(
         .lock()
         .unwrap()
         .append(&mut chain_list.clone());
+
+    // Start the gateway epoch state service
+    {
+        let gateway_contract_addr_clone = app_state.gateway_contract_addr.clone();
+        let http_rpc_client_clone = http_rpc_client.clone();
+        let gateway_epoch_state_clone = Arc::clone(&app_state.gateway_epoch_state);
+        let epoch_clone = app_state.epoch.clone();
+        let time_interval_clone = app_state.time_interval.clone();
+        tokio::spawn(async move {
+            gateway_epoch_state_service(
+                gateway_contract_addr_clone,
+                &http_rpc_client_clone,
+                gateway_contract,
+                &gateway_epoch_state_clone,
+                epoch_clone,
+                time_interval_clone,
+            )
+            .await;
+        });
+    }
 
     // Start contract event listner
     let contract_client = Arc::new(

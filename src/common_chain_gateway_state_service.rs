@@ -9,8 +9,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time;
 
+use crate::common_chain_interaction::CommonChainGatewayContract;
 use crate::common_chain_util::get_block_number_by_timestamp;
 use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
+use crate::HttpProvider;
 
 #[derive(Debug, Clone)]
 pub struct GatewayData {
@@ -25,7 +27,8 @@ pub struct GatewayData {
 // Initialize the gateway epoch state
 pub async fn gateway_epoch_state_service(
     contract_address: Address,
-    provider: &Provider<Http>,
+    provider: &Arc<HttpProvider>,
+    com_chain_gateway_contract: CommonChainGatewayContract<HttpProvider>,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     epoch: u64,
     time_interval: u64,
@@ -46,13 +49,15 @@ pub async fn gateway_epoch_state_service(
     {
         let contract_address_clone = contract_address.clone();
         let provider_clone = provider.clone();
-        let gateway_epoch_state_clone = Arc::clone(gateway_epoch_state);
+        let com_chain_gateway_contract_clone = com_chain_gateway_contract.clone();
+        let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
         tokio::spawn(async move {
             let mut cycle_number = initial_epoch_cycle;
             while cycle_number <= current_cycle {
                 let success = generate_gateway_epoch_state_for_cycle(
                     contract_address_clone,
                     &provider_clone,
+                    com_chain_gateway_contract_clone.clone(),
                     &gateway_epoch_state_clone,
                     cycle_number,
                     epoch,
@@ -91,12 +96,14 @@ pub async fn gateway_epoch_state_service(
 
         let contract_address_clone = contract_address.clone();
         let provider_clone = provider.clone();
-        let gateway_epoch_state_clone = Arc::clone(gateway_epoch_state);
+        let com_chain_gateway_contract_clone = com_chain_gateway_contract.clone();
+        let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
         tokio::spawn(async move {
             loop {
                 let success = generate_gateway_epoch_state_for_cycle(
                     contract_address_clone,
                     &provider_clone,
+                    com_chain_gateway_contract_clone.clone(),
                     &gateway_epoch_state_clone,
                     cycle_number,
                     epoch,
@@ -124,7 +131,8 @@ pub async fn gateway_epoch_state_service(
 
 pub async fn generate_gateway_epoch_state_for_cycle(
     contract_address: Address,
-    provider: &Provider<Http>,
+    provider: &Arc<HttpProvider>,
+    com_chain_gateway_contract: CommonChainGatewayContract<HttpProvider>,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     cycle_number: u64,
     epoch: u64,
@@ -283,7 +291,39 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         }
     }
 
-    // TODO: fetch the gateways mapping for the updated stakes.
+    // fetch the gateways mapping for the updated stakes.
+    let gateway_addresses: Vec<Address>;
+    // scope for the read lock
+    {
+        gateway_addresses = gateway_epoch_state
+            .read()
+            .await
+            .get(&cycle_number)
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+    }
+
+    for address in gateway_addresses {
+        let (_, stake_amount, _) = com_chain_gateway_contract
+            .gateways(address)
+            .block(BlockId::from(to_block_number))
+            .call()
+            .await
+            .context("Failed to get gateway data")?;
+
+        // scope for the write lock
+        {
+            let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
+            gateway_epoch_state_guard
+                .get_mut(&cycle_number)
+                .unwrap()
+                .get_mut(&address)
+                .unwrap()
+                .stake_amount = stake_amount;
+        }
+    }
 
     Ok(())
 }
