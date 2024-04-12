@@ -44,42 +44,10 @@ impl CommonChainClient {
         time_interval: u64,
     ) -> Self {
         info!("Initializing Common Chain Client...");
-        // let signer_address = signer.address();
-        // let chain_http_client = chain_http_provider
-        //     .clone()
-        //     .with_signer(signer.clone())
-        //     .nonce_manager(signer_address);
-
         let gateway_contract = CommonChainGatewayContract::new(
             gateway_contract_addr.clone(),
             chain_http_provider.clone(),
         );
-        // pub_key_to_address
-        // let gateway = gateway_contract
-        //     .get_gateway(pub_key_to_address(&enclave_pub_key).unwrap())
-        //     .await
-        //     .context("Failed to get gateway data")
-        //     .unwrap();
-
-        // let mut request_chains: Vec<RequestChainData> = vec![];
-        // for chain_id in gateway.1.iter() {
-        //     let (contract_address, rpc_url) = gateway_contract
-        //         .request_chains(chain_id.clone())
-        //         .await
-        //         .context("Failed to get request chain data")
-        //         .unwrap();
-        //     request_chains.push(RequestChainData {
-        //         chain_id: chain_id.clone(),
-        //         contract_address,
-        //         rpc_url,
-        //     });
-        // }
-        // let gateway_data = GatewayData {
-        //     address: gateway.0,
-        //     request_chains: request_chain_list,
-        //     stake_amount: gateway.2,
-        //     status: gateway.3,
-        // };
 
         let com_chain_jobs_contract =
             CommonChainJobsContract::new(contract_addr.clone(), chain_http_provider.clone());
