@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use ethers::abi::{decode, ParamType, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
@@ -48,8 +48,9 @@ pub async fn gateway_epoch_state_service(
         let provider_clone = provider.clone();
         let gateway_epoch_state_clone = Arc::clone(gateway_epoch_state);
         tokio::spawn(async move {
-            for cycle_number in initial_epoch_cycle..=current_cycle {
-                generate_gateway_epoch_state_for_cycle(
+            let mut cycle_number = initial_epoch_cycle;
+            while cycle_number <= current_cycle {
+                let success = generate_gateway_epoch_state_for_cycle(
                     contract_address_clone,
                     &provider_clone,
                     &gateway_epoch_state_clone,
@@ -57,8 +58,16 @@ pub async fn gateway_epoch_state_service(
                     epoch,
                     time_interval,
                 )
-                .await
-                .unwrap();
+                .await;
+
+                if success.is_err() {
+                    error!(
+                        "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
+                        cycle_number, success
+                    );
+                    continue;
+                }
+                cycle_number += 1;
             }
         });
     }
@@ -80,24 +89,39 @@ pub async fn gateway_epoch_state_service(
     loop {
         interval.tick().await;
 
-        generate_gateway_epoch_state_for_cycle(
-            contract_address,
-            provider,
-            gateway_epoch_state,
-            cycle_number,
-            epoch,
-            time_interval,
-        )
-        .await
-        .unwrap();
+        let contract_address_clone = contract_address.clone();
+        let provider_clone = provider.clone();
+        let gateway_epoch_state_clone = Arc::clone(gateway_epoch_state);
+        tokio::spawn(async move {
+            loop {
+                let success = generate_gateway_epoch_state_for_cycle(
+                    contract_address_clone,
+                    &provider_clone,
+                    &gateway_epoch_state_clone,
+                    cycle_number,
+                    epoch,
+                    time_interval,
+                )
+                .await;
 
-        prune_old_cycle_states(gateway_epoch_state, cycle_number).await;
+                if success.is_err() {
+                    error!(
+                        "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
+                        cycle_number, success
+                    );
+                    continue;
+                }
+
+                break;
+            }
+
+            prune_old_cycle_states(&gateway_epoch_state_clone, cycle_number).await;
+        });
 
         cycle_number += 1;
     }
 }
 
-// TODO: if fails, add a retry mechanism
 pub async fn generate_gateway_epoch_state_for_cycle(
     contract_address: Address,
     provider: &Provider<Http>,
@@ -105,7 +129,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     cycle_number: u64,
     epoch: u64,
     time_interval: u64,
-) -> Result<()> {
+) -> Result<(), Error> {
     let mut last_added_cycle: Option<u64> = None;
     let added_cycles: Vec<u64>;
     // scope for the read lock
