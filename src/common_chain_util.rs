@@ -53,8 +53,6 @@ pub async fn get_block_number_by_timestamp(
                         continue 'next_block_check;
                     }
                     Err(_) => {
-                        // There was an error while trying to fetch the block
-                        // TODO: Check what to do in this case
                         error!("Failed to fetch block number {}", next_block_number);
                         return None;
                     }
