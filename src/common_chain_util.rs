@@ -8,7 +8,9 @@ use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::error;
 use std::sync::Arc;
 use tiny_keccak::{Hasher, Keccak};
+use tokio::time;
 
+use crate::constant::WAIT_BEFORE_CHECKING_NEXT_BLOCK;
 use crate::HttpProvider;
 
 pub async fn get_block_number_by_timestamp(
@@ -22,36 +24,40 @@ pub async fn get_block_number_by_timestamp(
     } else {
         block_number = from_block_number;
     }
-    while block_number > 0 {
+    'less_than_block_number: while block_number > 0 {
         let block = provider.get_block(block_number).await.unwrap().unwrap();
         // target_timestamp (the end bound of the interval) is excluded from the search
         if block.timestamp < U256::from(target_timestamp) {
             // Fetch the next block to confirm this is the latest block with timestamp < target_timestamp
             let next_block_number = block_number + 1;
-            let next_block_result = provider.get_block(next_block_number).await;
+            'next_block_check: loop {
+                let next_block_result = provider.get_block(next_block_number).await;
 
-            match next_block_result {
-                Ok(Some(block)) => {
-                    // next_block exists
-                    if block.timestamp >= U256::from(target_timestamp) {
-                        // The next block's timestamp is greater than or equal to the target timestamp,
-                        // so return the current block number
-                        return Some(block_number);
+                match next_block_result {
+                    Ok(Some(block)) => {
+                        // next_block exists
+                        if block.timestamp >= U256::from(target_timestamp) {
+                            // The next block's timestamp is greater than or equal to the target timestamp,
+                            // so return the current block number
+                            return Some(block_number);
+                        }
+                        block_number += 1;
+                        continue 'less_than_block_number;
                     }
-                    block_number += 1;
-                    continue;
-                }
-                Ok(None) => {
-                    // The next block does not exist
-                    // TODO: Next block does not exist, wait for it.
-                    // For now, return the current block number
-                    return Some(block_number);
-                }
-                Err(_) => {
-                    // There was an error while trying to fetch the block
-                    // TODO: Check what to do in this case
-                    error!("Failed to fetch block number {}", next_block_number);
-                    return None;
+                    Ok(None) => {
+                        // The next block does not exist.
+                        // Wait for the next block to be created to be sure that
+                        // the current block_number is the required block_number
+                        time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_NEXT_BLOCK))
+                            .await;
+                        continue 'next_block_check;
+                    }
+                    Err(_) => {
+                        // There was an error while trying to fetch the block
+                        // TODO: Check what to do in this case
+                        error!("Failed to fetch block number {}", next_block_number);
+                        return None;
+                    }
                 }
             }
         }
