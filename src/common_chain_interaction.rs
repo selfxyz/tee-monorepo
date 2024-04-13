@@ -185,15 +185,12 @@ impl CommonChainClient {
                             )
                             .await;
                     });
-                } else if topics[0] == keccak256("JobCancel(uint256)").into() {
+                } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
                     info!(
-                        "Request Chain ID: {:?}, JobCancel jobID: {:?}",
+                        "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
                         request_chain.chain_id, log.topics[1]
                     );
                     let self_clone = Arc::clone(&self_clone);
-                    // TODO: Isn't it better if we also receive the Gateway Address in the event parameters?
-                    // This will help in identifying the gateway for the job and prevent an unnecessary
-                    // write lock to the active_jobs map.
                     task::spawn(async move {
                         self_clone.cancel_job_with_job_id(U256::from_big_endian(log.topics[1].as_fixed_bytes())).await;
                     });
