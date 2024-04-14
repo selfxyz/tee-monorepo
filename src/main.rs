@@ -1,7 +1,7 @@
 mod api_impl;
+mod chain_util;
 mod common_chain_gateway_state_service;
 mod common_chain_interaction;
-mod common_chain_util;
 mod config;
 mod constant;
 mod contract_abi;

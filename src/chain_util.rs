@@ -145,3 +145,39 @@ pub async fn sign_reassign_gateway_relay_response(
 
     Some(hex::encode(rs.to_bytes().append(27 + v.to_byte())))
 }
+
+pub async fn sign_job_response_response(
+    signer_key: &SigningKey,
+    job_id: U256,
+    output: Bytes,
+    total_time: U256,
+    error_code: u8,
+) -> Option<String> {
+    let mut job_id_bytes = [0u8; 32];
+    job_id.to_big_endian(&mut job_id_bytes);
+
+    let mut total_time_bytes = [0u8; 32];
+    total_time.to_big_endian(&mut total_time_bytes);
+
+    let mut hasher = Keccak::v256();
+    hasher.update(b"|jobId|");
+    hasher.update(&job_id_bytes);
+    hasher.update(b"|output|");
+    hasher.update(&output);
+    hasher.update(b"|totalTime|");
+    hasher.update(&total_time_bytes);
+    hasher.update(b"|errorCode|");
+    hasher.update(&error_code.to_be_bytes());
+
+    let mut hash = [0u8; 32];
+    hasher.finalize(&mut hash);
+
+    let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
+        eprintln!("Failed to sign the response: {}", err);
+        err
+    }) else {
+        return None;
+    };
+
+    Some(hex::encode(rs.to_bytes().append(27 + v.to_byte())))
+}

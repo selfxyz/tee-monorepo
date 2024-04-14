@@ -107,9 +107,15 @@ pub struct RequestChainClient {
 }
 
 #[derive(Debug, Clone)]
-pub enum JobType {
+pub enum ComChainJobType {
     JobRelay,
     SlashGatewayJob,
+}
+
+#[derive(Debug, Clone)]
+pub enum ReqChainJobType {
+    JobResponded,
+    SlashGatewayResponse,
 }
 
 #[derive(Debug, Clone)]
@@ -124,7 +130,20 @@ pub struct Job {
     pub callback_deposit: U256,
     pub req_chain_id: u64,
     pub job_owner: Address,
-    pub job_type: JobType,
+    pub job_type: ComChainJobType,
     pub retry_number: u8,
     pub gateway_address: Option<Address>,
+}
+
+#[derive(Debug, Clone)]
+pub struct JobResponse {
+    pub job_id: U256,
+    pub req_chain_id: U256,
+    pub output: Bytes,
+    pub total_time: U256,
+    pub error_code: u8,
+    pub output_count: u8,
+    pub job_type: ReqChainJobType,
+    pub gateway_address: Option<Address>,
+    pub retry_number: u8,
 }

@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time;
 
-use crate::common_chain_util::get_block_number_by_timestamp;
+use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
 use crate::contract_abi::CommonChainGatewayContract;
 use crate::HttpProvider;
