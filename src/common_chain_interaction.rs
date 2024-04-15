@@ -34,6 +34,7 @@ use crate::model::{
 };
 use crate::HttpProvider;
 
+// TODO: convert retry_number to sequence_id and init with 1.
 impl CommonChainClient {
     pub async fn new(
         enclave_signer_key: SigningKey,
@@ -263,6 +264,7 @@ impl CommonChainClient {
             deposit: decoded[6].clone().into_address().unwrap(),
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
             req_chain_id: req_chain_client.chain_id.clone(),
+            // TODO: Remove job_owner
             job_owner: log.address,
             job_type: ComChainJobType::JobRelay,
             retry_number,
@@ -655,7 +657,6 @@ impl CommonChainClient {
                         .context("Failed to decode event")
                         .unwrap();
                     self_clone.job_responded_handler(job_response, tx).await;
-                    // TODO: remove job from active jobs list once txn to req chain is completed
                 });
             } else if topics[0]
                 == keccak256("JobResourceUnavailable(uint256,uint256,address)").into()
@@ -704,11 +705,19 @@ impl CommonChainClient {
         job_response: JobResponse,
         tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
     ) {
+        if job_response.output_count > 1 {
+            info!(
+                "Job ID: {:?}, Multiple outputs received. Ignoring the response.",
+                job_response.job_id
+            );
+            return;
+        }
         let mut job_response: JobResponse = job_response.clone();
         let req_chain_client =
             self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
 
-        // You get the selected gateway address in the event.
+        // TODO: store all_jobs mapping in the CommonChainClient.
+        // Get the gateway_address from the all_jobs list.
         if job_response.gateway_address.unwrap() == self.address {
             let job: Job;
             // scope for the read lock

@@ -259,6 +259,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .from_block(from_block_number)
         .to_block(to_block_number)
         .topic0(vec![
+            // TODO: Update the event bytes.
             keccak256("GatewayRegistered(bytes,address,address,uint256[])"),
             keccak256("GatewayDeregistered(bytes,address)"),
             keccak256("ChainAdded(bytes,address,uint256)"),
