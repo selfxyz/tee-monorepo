@@ -117,7 +117,7 @@ pub enum ComChainJobType {
 #[derive(Debug, Clone)]
 pub enum ReqChainJobType {
     JobResponded,
-    SlashGatewayResponse,
+    // SlashGatewayResponse,
 }
 
 #[derive(Debug, Clone)]

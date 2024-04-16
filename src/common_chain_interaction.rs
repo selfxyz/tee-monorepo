@@ -22,7 +22,6 @@ use crate::chain_util::{
 };
 use crate::constant::{
     MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
-    RESPONSE_RELAY_TIMEOUT,
 };
 use crate::contract_abi::{
     CommonChainGatewayContract, CommonChainJobsContract, RequestChainContract,
@@ -724,8 +723,8 @@ impl CommonChainClient {
             return;
         }
 
-        let req_chain_client =
-            self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
+        // let req_chain_client =
+        //     self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
 
         let job: Option<Job>;
         // scope for the read lock
@@ -910,13 +909,12 @@ impl CommonChainClient {
                     com_chain_client
                         .remove_job_response(job_response.job_key)
                         .await;
-                }
-                ReqChainJobType::SlashGatewayResponse => {
-                    // Currently, slashing is not implemented for the JobResponded event
-                    // com_chain_client
-                    //     .reassign_gateway_response_txn(job_response)
-                    //     .await;
-                }
+                } // Currently, slashing is not implemented for the JobResponded event
+                  // ReqChainJobType::SlashGatewayResponse => {
+                  //     com_chain_client
+                  //         .reassign_gateway_response_txn(job_response)
+                  //         .await;
+                  // }
             }
         }
         Ok(())
