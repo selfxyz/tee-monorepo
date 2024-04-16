@@ -34,7 +34,6 @@ use crate::model::{
 };
 use crate::HttpProvider;
 
-// TODO: convert retry_number to sequence_id and init with 1.
 impl CommonChainClient {
     pub async fn new(
         enclave_signer_key: SigningKey,
