@@ -270,7 +270,6 @@ impl CommonChainClient {
             max_gas_price: decoded[5].clone().into_uint().unwrap(),
             deposit: decoded[6].clone().into_address().unwrap(),
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
-            // TODO: Remove job_owner
             job_owner: log.address,
             job_type: ComChainJobType::JobRelay,
             sequence_number,
