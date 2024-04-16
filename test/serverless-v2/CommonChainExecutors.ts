@@ -62,17 +62,17 @@ describe("CommonChainExecutors - Init", function () {
 	it("deploys with initialization disabled", async function () {
 
 		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
-		const commonChainExecutors = await CommonChainExecutors.deploy(addrs[10], 600);
+		const commonChainExecutors = await CommonChainExecutors.deploy(addrs[10], 600, token);
 
 		expect(await commonChainExecutors.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await commonChainExecutors.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		await expect(
-			commonChainExecutors.__CommonChainExecutors_init(addrs[0], [], token),
+			commonChainExecutors.__CommonChainExecutors_init(addrs[0], []),
 		).to.be.revertedWithCustomError(commonChainExecutors, "InvalidInitialization");
 
 		await expect(
-			commonChainExecutors.__CommonChainExecutors_init(addrs[0], [image1, image2], token),
+			commonChainExecutors.__CommonChainExecutors_init(addrs[0], [image1, image2]),
 		).to.be.revertedWithCustomError(commonChainExecutors, "InvalidInitialization");
 	});
 
@@ -80,11 +80,11 @@ describe("CommonChainExecutors - Init", function () {
 		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
 		const commonChainExecutors = await upgrades.deployProxy(
 			CommonChainExecutors,
-			[addrs[0], [image1], token],
+			[addrs[0], [image1]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainExecutors_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token]
 			},
 		);
 
@@ -104,11 +104,11 @@ describe("CommonChainExecutors - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				CommonChainExecutors,
-				[ZeroAddress, [image1, image2, image3], token],
+				[ZeroAddress, [image1, image2, image3]],
 				{
 					kind: "uups",
 					initializer: "__CommonChainExecutors_init",
-					constructorArgs: [attestationVerifier.target, 600]
+					constructorArgs: [attestationVerifier.target, 600, token]
 				},
 			)
 		).to.be.revertedWith("ZERO_ADDRESS_ADMIN");
@@ -118,11 +118,11 @@ describe("CommonChainExecutors - Init", function () {
 		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
 		const commonChainExecutors = await upgrades.deployProxy(
 			CommonChainExecutors,
-			[addrs[0], [image1, image2, image3], token],
+			[addrs[0], [image1, image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainExecutors_init",
-				constructorArgs: [addrs[10], 600]
+				constructorArgs: [addrs[10], 600, token]
 			},
 		);
 		await upgrades.upgradeProxy(
@@ -130,7 +130,7 @@ describe("CommonChainExecutors - Init", function () {
 			CommonChainExecutors,
 			{
 				kind: "uups",
-				constructorArgs: [addrs[10], 600]
+				constructorArgs: [addrs[10], 600, token]
 			}
 		);
 
@@ -157,18 +157,18 @@ describe("CommonChainExecutors - Init", function () {
 		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
 		const commonChainExecutors = await upgrades.deployProxy(
 			CommonChainExecutors,
-			[addrs[0], [image1, image2, image3], token],
+			[addrs[0], [image1, image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainExecutors_init",
-				constructorArgs: [addrs[10], 600]
+				constructorArgs: [addrs[10], 600, token]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(commonChainExecutors.target, CommonChainExecutors.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [addrs[10], 600],
+				constructorArgs: [addrs[10], 600, token],
 			}),
 		).to.be.revertedWith("only admin");
 	});
@@ -202,11 +202,11 @@ describe("CommonChainExecutors - Verify", function () {
 		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
 		const commonChainExecutorsContract = await upgrades.deployProxy(
 			CommonChainExecutors,
-			[addrs[0], [image2, image3], token],
+			[addrs[0], [image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainExecutors_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token]
 			},
 		);
 		commonChainExecutors = getCommonChainExecutors(commonChainExecutorsContract.target as string, signers[0]);
@@ -256,11 +256,11 @@ describe("CommonChainExecutors - Register executor", function () {
 		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
 		const commonChainExecutorsContract = await upgrades.deployProxy(
 			CommonChainExecutors,
-			[addrs[0], [image2, image3], token.target],
+			[addrs[0], [image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainExecutors_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
 		);
 		commonChainExecutors = getCommonChainExecutors(commonChainExecutorsContract.target as string, signers[0]);
@@ -270,16 +270,10 @@ describe("CommonChainExecutors - Register executor", function () {
 
 	it("can register executor", async function () {
 		const timestamp = await time.latest() * 1000;
-        let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		const message = solidityPacked(
-			["uint256"],
-			[jobCapacity],
-		);
-		const digest = keccak256(message);
-		let sign = wallets[15]._signingKey().signDigest(digest);
-		let signedDigest = joinSignature(sign);
+		let signedDigest = createExecutorSignature(jobCapacity, wallets[15]);
 
 		await expect(commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
 			.to.emit(commonChainExecutors, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image2));
@@ -289,23 +283,91 @@ describe("CommonChainExecutors - Register executor", function () {
 
 	it('can deregister executor', async function () {
 		const timestamp = await time.latest() * 1000;
-        let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		const message = solidityPacked(
-			["uint256"],
-			[jobCapacity],
-		);
-		const digest = keccak256(message);
-		let sign = wallets[15]._signingKey().signDigest(digest);
-		let signedDigest = joinSignature(sign);
+		let signedDigest = createExecutorSignature(jobCapacity, wallets[15]);
 
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
 		await expect(commonChainExecutors.connect(signers[1]).deregisterExecutor(pubkeys[15]))
-			.to.emit(commonChainExecutors, "ExecutorDeregistered").withArgs(pubkeys[15]);
+			.to.emit(commonChainExecutors, "ExecutorDeregistered").withArgs(addrs[15]);
 
 		expect(await commonChainExecutors.getVerifiedKey(addrs[15])).to.equal(ZeroHash);
+	});
+
+});
+
+describe("CommonChainExecutors - Staking", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let token: Pond;
+	let attestationVerifier: AttestationVerifier;
+	let commonChainExecutors: CommonChainExecutors;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		const attestationVerifierContract = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		);
+		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+
+		const Pond = await ethers.getContractFactory("Pond");
+        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        });
+        token = getPond(pondContract.target as string, signers[0]);
+
+		const CommonChainExecutors = await ethers.getContractFactory("CommonChainExecutors");
+		const commonChainExecutorsContract = await upgrades.deployProxy(
+			CommonChainExecutors,
+			[addrs[0], [image2, image3]],
+			{
+				kind: "uups",
+				initializer: "__CommonChainExecutors_init",
+				constructorArgs: [attestationVerifier.target, 600, token.target]
+			},
+		);
+		commonChainExecutors = getCommonChainExecutors(commonChainExecutorsContract.target as string, signers[0]);
+
+		await token.transfer(addrs[1], 100000);
+		await token.connect(signers[1]).approve(commonChainExecutors.target, 10000);
+
+		const timestamp = await time.latest() * 1000;
+        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let jobCapacity = 20, 
+			stakeAmount = 10;
+		let signedDigest = createExecutorSignature(jobCapacity, wallets[15]);
+		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can stake", async function () {
+		let amount = 20;
+		await expect(commonChainExecutors.connect(signers[1]).addExecutorStake(pubkeys[15], amount))
+			.to.emit(commonChainExecutors, "ExecutorStakeAdded");
+		
+		let executor = await commonChainExecutors.executors(addrs[15]);
+		expect(executor.stakeAmount).to.be.eq(30);
+	});
+
+	it("can unstake", async function () {
+		let amount = 10;
+		await expect(commonChainExecutors.connect(signers[1]).removeExecutorStake(pubkeys[15], amount))
+			.to.emit(commonChainExecutors, "ExecutorStakeRemoved");
+		
+		let executor = await commonChainExecutors.executors(addrs[15]);
+		expect(executor.stakeAmount).to.be.eq(0);
 	});
 
 });
@@ -357,6 +419,20 @@ async function createAttestation(
 		PCR2: image.PCR2,
 		timestampInMilliseconds: timestamp,
 	}];
+}
+
+function createExecutorSignature(
+	jobCapacity: number,
+	sourceEnclaveWallet: Wallet
+): string {
+	const message = solidityPacked(
+		["uint256"],
+		[jobCapacity],
+	);
+	const digest = keccak256(message);
+	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
+	let signedDigest = joinSignature(sign);
+	return signedDigest;
 }
 
 function walletForIndex(idx: number): Wallet {

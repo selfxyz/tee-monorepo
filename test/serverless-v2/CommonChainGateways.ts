@@ -60,19 +60,18 @@ describe("CommonChainGateways - Init", function () {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("deploys with initialization disabled", async function () {
-
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
-		const commonChainGateways = await CommonChainGateways.deploy(addrs[10], 600);
+		const commonChainGateways = await CommonChainGateways.deploy(addrs[10], 600, token);
 
 		expect(await commonChainGateways.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await commonChainGateways.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		await expect(
-			commonChainGateways.__CommonChainGateways_init(addrs[0], [], token),
+			commonChainGateways.__CommonChainGateways_init(addrs[0], []),
 		).to.be.revertedWithCustomError(commonChainGateways, "InvalidInitialization");
 
 		await expect(
-			commonChainGateways.__CommonChainGateways_init(addrs[0], [image1, image2], token),
+			commonChainGateways.__CommonChainGateways_init(addrs[0], [image1, image2]),
 		).to.be.revertedWithCustomError(commonChainGateways, "InvalidInitialization");
 	});
 
@@ -80,11 +79,11 @@ describe("CommonChainGateways - Init", function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
 		const commonChainGateways = await upgrades.deployProxy(
 			CommonChainGateways,
-			[addrs[0], [image1], token],
+			[addrs[0], [image1]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token]
 			},
 		);
 
@@ -104,11 +103,11 @@ describe("CommonChainGateways - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				CommonChainGateways,
-				[ZeroAddress, [image1, image2, image3], token],
+				[ZeroAddress, [image1, image2, image3]],
 				{
 					kind: "uups",
 					initializer: "__CommonChainGateways_init",
-					constructorArgs: [attestationVerifier.target, 600]
+					constructorArgs: [attestationVerifier.target, 600, token]
 				},
 			)
 		).to.be.revertedWith("ZERO_ADDRESS_ADMIN");
@@ -118,11 +117,11 @@ describe("CommonChainGateways - Init", function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
 		const commonChainGateways = await upgrades.deployProxy(
 			CommonChainGateways,
-			[addrs[0], [image1, image2, image3], token],
+			[addrs[0], [image1, image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [addrs[10], 600]
+				constructorArgs: [addrs[10], 600, token]
 			},
 		);
 		await upgrades.upgradeProxy(
@@ -130,7 +129,7 @@ describe("CommonChainGateways - Init", function () {
 			CommonChainGateways,
 			{
 				kind: "uups",
-				constructorArgs: [addrs[10], 600]
+				constructorArgs: [addrs[10], 600, token]
 			}
 		);
 
@@ -157,18 +156,18 @@ describe("CommonChainGateways - Init", function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
 		const commonChainGateways = await upgrades.deployProxy(
 			CommonChainGateways,
-			[addrs[0], [image1, image2, image3], token],
+			[addrs[0], [image1, image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [addrs[10], 600]
+				constructorArgs: [addrs[10], 600, token]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(commonChainGateways.target, CommonChainGateways.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [addrs[10], 600],
+				constructorArgs: [addrs[10], 600, token],
 			}),
 		).to.be.revertedWith("only admin");
 	});
@@ -202,11 +201,11 @@ describe("CommonChainGateways - Verify", function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
 		const commonChainGatewaysContract = await upgrades.deployProxy(
 			CommonChainGateways,
-			[addrs[0], [image2, image3], token],
+			[addrs[0], [image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -256,11 +255,11 @@ describe("CommonChainGateways - Global chains", function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
 		const commonChainGatewaysContract = await upgrades.deployProxy(
 			CommonChainGateways,
-			[addrs[0], [image2, image3], token.target],
+			[addrs[0], [image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -326,11 +325,11 @@ describe("CommonChainGateways - Register gateway", function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
 		const commonChainGatewaysContract = await upgrades.deployProxy(
 			CommonChainGateways,
-			[addrs[0], [image2, image3], token.target],
+			[addrs[0], [image2, image3]],
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600]
+				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -350,7 +349,7 @@ describe("CommonChainGateways - Register gateway", function () {
 
 	it("can register gateway", async function () {
 		const timestamp = await time.latest() * 1000;
-		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
 		const message = solidityPacked(
@@ -383,9 +382,90 @@ describe("CommonChainGateways - Register gateway", function () {
 		await commonChainGateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
 		await expect(commonChainGateways.connect(signers[1]).deregisterGateway(pubkeys[15]))
-			.to.emit(commonChainGateways, "GatewayDeregistered").withArgs(pubkeys[15]);
+			.to.emit(commonChainGateways, "GatewayDeregistered").withArgs(addrs[15]);
+	});
 
-		expect(await commonChainGateways.getVerifiedKey(addrs[15])).to.equal(ZeroHash);
+});
+
+describe("CommonChainGateways - Staking", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let token: Pond;
+	let attestationVerifier: AttestationVerifier;
+	let commonChainGateways: CommonChainGateways;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		const attestationVerifierContract = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		);
+		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+
+		const Pond = await ethers.getContractFactory("Pond");
+        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        });
+        token = getPond(pondContract.target as string, signers[0]);
+
+		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
+		const commonChainGatewaysContract = await upgrades.deployProxy(
+			CommonChainGateways,
+			[addrs[0], [image2, image3]],
+			{
+				kind: "uups",
+				initializer: "__CommonChainGateways_init",
+				constructorArgs: [attestationVerifier.target, 600, token.target]
+			},
+		);
+		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
+
+		let chainIds = [1];
+		let reqChains = [
+			{
+				contractAddress: addrs[1],
+				rpcUrl: "https://eth.rpc"
+			}
+		]
+		await commonChainGateways.addChainGlobal(chainIds, reqChains);
+
+		await token.transfer(addrs[1], 100000);
+		await token.connect(signers[1]).approve(commonChainGateways.target, 10000);
+
+		const timestamp = await time.latest() * 1000;
+		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let stakeAmount = 10;
+		let signedDigest = createGatewaySignature(chainIds, wallets[15]);
+		await commonChainGateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can stake", async function () {
+		let amount = 20;
+		await expect(commonChainGateways.connect(signers[1]).addGatewayStake(pubkeys[15], amount))
+			.to.emit(commonChainGateways, "GatewayStakeAdded");
+		
+		let executor = await commonChainGateways.gateways(addrs[15]);
+		expect(executor.stakeAmount).to.be.eq(30);
+	});
+
+	it("can unstake", async function () {
+		let amount = 5;
+		await expect(commonChainGateways.connect(signers[1]).removeGatewayStake(pubkeys[15], amount))
+			.to.emit(commonChainGateways, "GatewayStakeRemoved");
+		
+		let executor = await commonChainGateways.gateways(addrs[15]);
+		expect(executor.stakeAmount).to.be.eq(5);
 	});
 
 });
@@ -437,6 +517,20 @@ async function createAttestation(
 		PCR2: image.PCR2,
 		timestampInMilliseconds: timestamp,
 	}];
+}
+
+function createGatewaySignature(
+	chainIds: number[],
+	sourceEnclaveWallet: Wallet
+): string {
+	const message = solidityPacked(
+		["uint256[]"],
+		[chainIds],
+	);
+	const digest = keccak256(message);
+	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
+	let signedDigest = joinSignature(sign);
+	return signedDigest;
 }
 
 function walletForIndex(idx: number): Wallet {
