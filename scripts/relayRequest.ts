@@ -37,18 +37,18 @@ async function main() {
         ServerlessRelay,
         [
             admin_addr,
-            token_addr,
-            [img],
-            1000,
-            10000,
-            20000
+            [img]
         ],
         {
             initializer : "__RequestChainContract_init",
             kind : "uups",
             constructorArgs : [
                 av_addr,
-                1000
+                1000,
+                token_addr,
+                1000,
+                10000,
+                20000
             ]
         });
     let svls_addr = serverlessrelay.target;
@@ -61,15 +61,15 @@ async function main() {
         CommonChainGateways,
         [
             admin_addr,
-            [img],
-            token_addr
+            [img]
         ],
         {
             initializer : "__CommonChainGateways_init",
             kind : "uups",
             constructorArgs : [
                 av_addr,
-                1000
+                1000,
+                token_addr
             ]
         });
     let gatewaysAddress = gatewaysContract.target;
@@ -82,15 +82,15 @@ async function main() {
         CommonChainExecutors,
         [
             admin_addr,
-            [img],
-            token_addr
+            [img]
         ],
         {
             initializer : "__CommonChainExecutors_init",
             kind : "uups",
             constructorArgs : [
                 av_addr,
-                1000
+                1000,
+                token_addr
             ]
         });
     let executorsAddress = executorsContract.target;
@@ -106,16 +106,18 @@ async function main() {
         CommonChainJobs,
         [
             admin_addr,
-            token_addr,
             gatewaysAddress,
             executorsAddress,
-            relayBufferTime,
-            executionBufferTime,
-            noOfNodesToSelect
         ],
         {
             initializer : "__CommonChainJobs_init",
-            kind : "uups"
+            kind : "uups",
+            constructorArgs: [
+                token_addr,
+                relayBufferTime,
+                executionBufferTime,
+                noOfNodesToSelect
+            ]
         });
     let jobsAddress = jobsContract.target;
     console.log("CommonChainJobs Deployed address: ", jobsAddress);
