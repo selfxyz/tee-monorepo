@@ -263,7 +263,7 @@ impl CommonChainClient {
             .await,
             tx_hash: decoded[1].clone().into_bytes().unwrap(),
             code_input: decoded[2].clone().into_bytes().unwrap().into(),
-            user_timout: decoded[3].clone().into_uint().unwrap(),
+            user_timeout: decoded[3].clone().into_uint().unwrap(),
             starttime: decoded[4].clone().into_uint().unwrap(),
             max_gas_price: decoded[5].clone().into_uint().unwrap(),
             deposit: decoded[6].clone().into_address().unwrap(),
@@ -323,47 +323,73 @@ impl CommonChainClient {
     ) -> Result<()> {
         time::sleep(Duration::from_secs(REQUEST_RELAY_TIMEOUT)).await;
 
-        // TODO: Fetch this from the event logs instead of jobs mapping
-        // because jobs mapping key for the jobId is deleted once job is completed
         // TODO: Issue with event logs -
         // get_logs might not provide the latest logs for the latest block
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
-        let onchain_job = self
-            .com_chain_jobs_contract
-            .jobs(job.job_key)
+        let job_relayed_event_filter = Filter::new()
+            .address(self.contract_addr)
+            .topic0(vec![keccak256(
+                "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
+            )])
+            .topic1(job.job_id)
+            .topic2(U256::from(job.req_chain_id));
+
+        let logs = self
+            .chain_ws_client
+            .get_logs(&job_relayed_event_filter)
             .await
             .unwrap();
 
-        let onchain_job: Job = Job {
-            job_id: onchain_job.0,
-            req_chain_id: onchain_job.1.as_u64(),
-            job_key: get_key_for_job_id(onchain_job.0, onchain_job.1.as_u64()).await,
-            tx_hash: onchain_job.2.to_vec(),
-            code_input: onchain_job.3,
-            user_timout: onchain_job.4,
-            starttime: onchain_job.5,
-            max_gas_price: U256::zero(),
-            deposit: H160::zero(),
-            callback_deposit: U256::zero(),
-            job_owner: onchain_job.6,
-            job_type: ComChainJobType::JobRelay,
-            sequence_number: onchain_job.8,
-            gateway_address: None,
-        };
+        for log in logs {
+            let topics = log.topics.clone();
+            if topics[0]
+                == keccak256(
+                    "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
+                )
+                .into()
+            {
+                let decoded = decode(
+                    &vec![
+                        ParamType::Uint(256),
+                        ParamType::Uint(256),
+                        ParamType::FixedBytes(32),
+                        ParamType::Bytes,
+                        ParamType::Uint(256),
+                        ParamType::Address,
+                        ParamType::Address,
+                        ParamType::Array(Box::new(ParamType::Address)),
+                    ],
+                    &log.data.0,
+                )
+                .unwrap();
 
-        if onchain_job.job_id == job.job_id
-            && onchain_job.tx_hash != FixedBytes::default()
-            && onchain_job.user_timout != U256::zero()
-            && onchain_job.starttime != U256::zero()
-            && onchain_job.req_chain_id != 0
-            && onchain_job.job_owner != H160::zero()
-            && onchain_job.gateway_address != Some(H160::zero())
-            && onchain_job.sequence_number == job.sequence_number
-        {
-            info!("Job ID: {:?}, JobRelayed event triggered", job.job_id);
-            return Ok(());
+                let job_id = decoded[0].clone().into_uint().unwrap();
+                let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
+                let tx_hash = decoded[2].clone().into_bytes().unwrap();
+                let code_input: Vec<u8> = decoded[3].clone().into_bytes().unwrap().into();
+                let user_timeout = decoded[4].clone().into_uint().unwrap();
+                let job_owner = decoded[5].clone().into_address().unwrap();
+                let gateway_operator = decoded[6].clone().into_address().unwrap();
+
+                if job_id == job.job_id
+                    && req_chain_id == job.req_chain_id
+                    && tx_hash == job.tx_hash
+                    && code_input == job.code_input
+                    && user_timeout == job.user_timeout
+                    && job_owner == job.job_owner
+                    && gateway_operator != Address::zero()
+                {
+                    info!(
+                        "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
+                        job.job_id, job_id
+                    );
+                    return Ok(());
+                }
+            }
         }
+
+        info!("Job ID: {:?}, JobRelayed event not triggered", job.job_id);
 
         // slash the previous gateway
         {
@@ -535,7 +561,7 @@ impl CommonChainClient {
             job.req_chain_id.into(),
             &job.tx_hash,
             &job.code_input,
-            job.user_timout.as_u64(),
+            job.user_timeout.as_u64(),
             &job.job_owner,
             job.sequence_number,
         )
@@ -550,7 +576,7 @@ impl CommonChainClient {
             job.req_chain_id.into(),
             tx_hash,
             job.code_input,
-            job.user_timout,
+            job.user_timeout,
             job.starttime,
             job.sequence_number,
             job.job_owner,

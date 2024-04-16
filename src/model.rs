@@ -127,7 +127,7 @@ pub struct Job {
     pub job_key: U256,
     pub tx_hash: FixedBytes,
     pub code_input: Bytes,
-    pub user_timout: U256,
+    pub user_timeout: U256,
     pub starttime: U256,
     pub max_gas_price: U256,
     pub deposit: Address,
