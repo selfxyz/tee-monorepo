@@ -320,6 +320,12 @@ impl CommonChainClient {
     ) -> Result<()> {
         time::sleep(Duration::from_secs(REQUEST_RELAY_TIMEOUT)).await;
 
+        // TODO: Fetch this from the event logs instead of jobs mapping
+        // because jobs mapping key for the jobId is deleted once job is completed
+        // TODO: Issue with event logs -
+        // get_logs might not provide the latest logs for the latest block
+        // SOLUTION 1 - Wait for the next block.
+        //          Problem: Extra time spent here waiting.
         let job_key = U256::from(keccak256(format!("{}-{}", job.job_id, job.req_chain_id)));
         let onchain_job = self.com_chain_jobs_contract.jobs(job_key).await.unwrap();
 
@@ -339,17 +345,8 @@ impl CommonChainClient {
             gateway_address: Some(onchain_job.7),
         };
 
-        if onchain_job.job_id != job.job_id {
-            // TODO: confirm what to do in this case
-            error!("Job ID: {:?} not found in the contract", job.job_id);
-            return Err(anyhow!(
-                "Job ID: {:?} not found in the contract",
-                job.job_id
-            ));
-        }
-
-        if onchain_job.tx_hash != FixedBytes::default()
-            && onchain_job.code_input != Bytes::default()
+        if onchain_job.job_id == job.job_id
+            && onchain_job.tx_hash != FixedBytes::default()
             && onchain_job.user_timout != U256::zero()
             && onchain_job.starttime != U256::zero()
             && onchain_job.req_chain_id != 0
@@ -625,6 +622,7 @@ impl CommonChainClient {
             .address(self.contract_addr)
             .select(0..)
             .topic0(vec![
+                // TODO: Fix - not getting gateway address from the event.
                 keccak256("JobResponded(uint256,uint256,address,bytes,uint256,uint256,uint8)"),
                 keccak256("JobResourceUnavailable(uint256,uint256,address)"),
             ]);
@@ -695,6 +693,7 @@ impl CommonChainClient {
             error_code: decoded[4].clone().into_uint().unwrap().low_u64() as u8,
             output_count: decoded[5].clone().into_uint().unwrap().low_u64() as u8,
             job_type: ReqChainJobType::JobResponded,
+            // Not getting this anymore. Need to fix.
             gateway_address: decoded[6].clone().into_address(),
             retry_number: 0,
         })
@@ -716,8 +715,7 @@ impl CommonChainClient {
         let req_chain_client =
             self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
 
-        // TODO: store all_jobs mapping in the CommonChainClient.
-        // Get the gateway_address from the all_jobs list.
+        // TODO: check job_ids from active jobs instead of getting gateway_address from the event
         if job_response.gateway_address.unwrap() == self.address {
             let job: Job;
             // scope for the read lock
@@ -730,8 +728,9 @@ impl CommonChainClient {
                     .unwrap()
                     .clone();
             }
+            // TODO: Set gateway address to self.address in the job_response
             self.clone().remove_job(job).await;
-        } else if job_response.retry_number > 0 {
+        } else {
             let gateway_address: Address;
             // let seed be absolute difference between (job_id and req_chain_id) + total_time
             let seed = {
