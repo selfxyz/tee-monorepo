@@ -713,7 +713,7 @@ impl CommonChainClient {
 
     async fn job_responded_handler(
         self: Arc<Self>,
-        job_response: JobResponse,
+        mut job_response: JobResponse,
         tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
     ) {
         if job_response.output_count > 1 {
@@ -723,7 +723,7 @@ impl CommonChainClient {
             );
             return;
         }
-        let mut job_response: JobResponse = job_response.clone();
+
         let req_chain_client =
             self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
 
@@ -741,41 +741,43 @@ impl CommonChainClient {
             let job = job.unwrap();
             job_response.gateway_address = job.gateway_address;
             self.clone().remove_job(job).await;
-        } else {
-            let gateway_address: Address;
-            // let seed be absolute difference between (job_id and req_chain_id) + total_time
-            let seed = {
-                let job_id_req_chain_id = match job_response
-                    .job_id
-                    .as_u64()
-                    .checked_sub(job_response.req_chain_id)
-                {
-                    Some(val) => val,
-                    None => job_response.req_chain_id - job_response.job_id.as_u64(),
-                };
-                job_id_req_chain_id + job_response.total_time.as_u64()
-            };
 
-            gateway_address = self
-                .select_gateway_for_job_id(
-                    job_response.job_id.clone(),
-                    seed,
-                    job_response.sequence_number,
-                    req_chain_client,
-                )
-                .await
-                .context("Failed to select a gateway for the job")
-                .unwrap();
+            // Currently, slashing is not implemented for the JobResponded event
+            // } else if job_response.sequence_number > 0 {
+            //     let gateway_address: Address;
+            //     // let seed be absolute difference between (job_id and req_chain_id) + total_time
+            //     let seed = {
+            //         let job_id_req_chain_id = match job_response
+            //             .job_id
+            //             .as_u64()
+            //             .checked_sub(job_response.req_chain_id)
+            //         {
+            //             Some(val) => val,
+            //             None => job_response.req_chain_id - job_response.job_id.as_u64(),
+            //         };
+            //         job_id_req_chain_id + job_response.total_time.as_u64()
+            //     };
 
-            job_response.gateway_address = Some(gateway_address);
-        }
+            //     gateway_address = self
+            //         .select_gateway_for_job_id(
+            //             job_response.job_id.clone(),
+            //             seed,
+            //             job_response.sequence_number,
+            //             req_chain_client,
+            //         )
+            //         .await
+            //         .context("Failed to select a gateway for the job")
+            //         .unwrap();
 
-        if job_response.gateway_address.unwrap() == self.address {
+            //     job_response.gateway_address = Some(gateway_address);
+            // }
+
+            // if job_response.gateway_address.unwrap() == self.address {
             tx.send((job_response, self.clone())).await.unwrap();
-        } else {
-            self.job_responded_slash_timer(job_response.clone(), tx.clone())
-                .await
-                .unwrap();
+            // } else {
+            //     self.job_responded_slash_timer(job_response.clone(), tx.clone())
+            //         .await
+            //         .unwrap();
         }
     }
 
@@ -791,76 +793,78 @@ impl CommonChainClient {
         }
     }
 
-    #[async_recursion]
-    async fn job_responded_slash_timer(
-        self: Arc<Self>,
-        mut job_response: JobResponse,
-        tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
-    ) -> Result<()> {
-        time::sleep(Duration::from_secs(RESPONSE_RELAY_TIMEOUT)).await;
+    // TODO: Discuss with the team about the implementation of slashing for the JobResponded event
+    // Currently, slashing is not implemented for the JobResponded event
+    // #[async_recursion]
+    // async fn job_responded_slash_timer(
+    //     self: Arc<Self>,
+    //     mut job_response: JobResponse,
+    //     tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
+    // ) -> Result<()> {
+    //     time::sleep(Duration::from_secs(RESPONSE_RELAY_TIMEOUT)).await;
 
-        // get request chain client
-        let req_chain_client =
-            self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
+    //     // get request chain client
+    //     let req_chain_client =
+    //         self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
 
-        let onchain_job_response = req_chain_client
-            .contract
-            .jobs(job_response.job_id)
-            .await
-            .unwrap();
+    //     let onchain_job_response = req_chain_client
+    //         .contract
+    //         .jobs(job_response.job_id)
+    //         .await
+    //         .unwrap();
 
-        let output_received: bool = onchain_job_response.8;
-        let onchain_job_response: JobResponse = JobResponse {
-            job_id: job_response.job_id,
-            req_chain_id: job_response.req_chain_id,
-            job_key: get_key_for_job_id(job_response.job_id, job_response.req_chain_id).await,
-            output: Bytes::default().into(),
-            total_time: U256::zero(),
-            error_code: 0,
-            output_count: 0,
-            job_type: ReqChainJobType::JobResponded,
-            gateway_address: Some(onchain_job_response.7),
-            // depending on how the gateway is reassigned, the retry number might be different
-            // can be added to event and a check below in the if condition
-            // if retry number is added to the event,
-            // remove_job_response needs to be updated accordingly
-            sequence_number: 1,
-        };
+    //     let output_received: bool = onchain_job_response.8;
+    //     let onchain_job_response: JobResponse = JobResponse {
+    //         job_id: job_response.job_id,
+    //         req_chain_id: job_response.req_chain_id,
+    //         job_key: get_key_for_job_id(job_response.job_id, job_response.req_chain_id).await,
+    //         output: Bytes::default().into(),
+    //         total_time: U256::zero(),
+    //         error_code: 0,
+    //         output_count: 0,
+    //         job_type: ReqChainJobType::JobResponded,
+    //         gateway_address: Some(onchain_job_response.7),
+    //         // depending on how the gateway is reassigned, the retry number might be different
+    //         // can be added to event and a check below in the if condition
+    //         // if retry number is added to the event,
+    //         // remove_job_response needs to be updated accordingly
+    //         sequence_number: 1,
+    //     };
 
-        if output_received && onchain_job_response.gateway_address.unwrap() != H160::zero() {
-            info!(
-                "Job ID: {:?}, JobResponded event triggered",
-                job_response.job_id
-            );
-            return Ok(());
-        }
+    //     if output_received && onchain_job_response.gateway_address.unwrap() != H160::zero() {
+    //         info!(
+    //             "Job ID: {:?}, JobResponded event triggered",
+    //             job_response.job_id
+    //         );
+    //         return Ok(());
+    //     }
 
-        // TODO: how to slash the gateway now?
-        // The same function used with the JobRelayed event won't work here.
-        // For now, use the same function.
-        {
-            let self_clone = self.clone();
-            let mut job_response_clone = job_response.clone();
-            job_response_clone.job_type = ReqChainJobType::SlashGatewayResponse;
-            let tx_clone = tx.clone();
-            tx_clone
-                .send((job_response_clone, self_clone))
-                .await
-                .unwrap();
-        }
+    //     // TODO: how to slash the gateway now?
+    //     // The same function used with the JobRelayed event won't work here.
+    //     // For now, use the same function.
+    //     {
+    //         let self_clone = self.clone();
+    //         let mut job_response_clone = job_response.clone();
+    //         job_response_clone.job_type = ReqChainJobType::SlashGatewayResponse;
+    //         let tx_clone = tx.clone();
+    //         tx_clone
+    //             .send((job_response_clone, self_clone))
+    //             .await
+    //             .unwrap();
+    //     }
 
-        job_response.sequence_number += 1;
-        if job_response.sequence_number > MAX_GATEWAY_RETRIES {
-            info!("Job ID: {:?}, Max retries reached", job_response.job_id);
-            return Ok(());
-        }
+    //     job_response.sequence_number += 1;
+    //     if job_response.sequence_number > MAX_GATEWAY_RETRIES {
+    //         info!("Job ID: {:?}, Max retries reached", job_response.job_id);
+    //         return Ok(());
+    //     }
 
-        // If gateway is already set, job_responded_handler will reassign the gateway
-        job_response.gateway_address = onchain_job_response.gateway_address;
-        self.job_responded_handler(job_response, tx).await;
+    //     // If gateway is already set, job_responded_handler will reassign the gateway
+    //     job_response.gateway_address = onchain_job_response.gateway_address;
+    //     self.job_responded_handler(job_response, tx).await;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     async fn job_resource_unavailable_handler(self: Arc<Self>, log: Log) {
         let types = vec![
@@ -908,7 +912,7 @@ impl CommonChainClient {
                         .await;
                 }
                 ReqChainJobType::SlashGatewayResponse => {
-                    // TODO: Comfirm how to get the gateway slashed
+                    // Currently, slashing is not implemented for the JobResponded event
                     // com_chain_client
                     //     .reassign_gateway_response_txn(job_response)
                     //     .await;
