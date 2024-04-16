@@ -221,7 +221,6 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                         gateway_data.address.clone(),
                         GatewayData {
                             last_block_number: to_block_number.clone(),
-                            enclave_pub_key: gateway_data.enclave_pub_key.clone(),
                             address: gateway_data.address.clone(),
                             stake_amount: gateway_data.stake_amount.clone(),
                             status: gateway_data.status.clone(),
@@ -250,11 +249,10 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .from_block(from_block_number)
         .to_block(to_block_number)
         .topic0(vec![
-            // TODO: Update the event bytes.
-            keccak256("GatewayRegistered(bytes,address,address,uint256[])"),
-            keccak256("GatewayDeregistered(bytes,address)"),
-            keccak256("ChainAdded(bytes,address,uint256)"),
-            keccak256("ChainRemoved(bytes,address,uint256)"),
+            keccak256("GatewayRegistered(address,address,uint256[])"),
+            keccak256("GatewayDeregistered(address)"),
+            keccak256("ChainAdded(address,uint256)"),
+            keccak256("ChainRemoved(address,uint256)"),
         ]);
 
     let logs = provider
@@ -266,7 +264,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     for log in logs {
         let topics = log.topics.clone();
 
-        if topics[0] == keccak256("GatewayRegistered(bytes,address,address,uint256[])").into() {
+        if topics[0] == keccak256("GatewayRegistered(address,address,uint256[])").into() {
             process_gateway_registered_event(
                 log,
                 cycle_number,
@@ -274,11 +272,11 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 &gateway_epoch_state,
             )
             .await;
-        } else if topics[0] == keccak256("GatewayDeregistered(bytes,address)").into() {
+        } else if topics[0] == keccak256("GatewayDeregistered(address)").into() {
             process_gateway_deregistered_event(log, to_block_number, &gateway_epoch_state).await;
-        } else if topics[0] == keccak256("ChainAdded(bytes,address,uint256)").into() {
+        } else if topics[0] == keccak256("ChainAdded(address,uint256)").into() {
             process_chain_added_event(log, cycle_number, &gateway_epoch_state).await;
-        } else if topics[0] == keccak256("ChainRemoved(bytes,address,uint256)").into() {
+        } else if topics[0] == keccak256("ChainRemoved(address,uint256)").into() {
             process_chain_removed_event(log, cycle_number, &gateway_epoch_state).await;
         }
     }
@@ -357,7 +355,6 @@ async fn process_gateway_registered_event(
 ) {
     let decoded = decode(
         &vec![
-            ParamType::Bytes,
             ParamType::Address,
             ParamType::Address,
             ParamType::Array(Box::new(ParamType::Uint(256))),
@@ -366,11 +363,10 @@ async fn process_gateway_registered_event(
     )
     .unwrap();
 
-    let enclave_pub_key: Bytes = decoded[0].clone().into_bytes().unwrap().into();
-    let address = decoded[1].clone().into_address().unwrap();
+    let address = decoded[0].clone().into_address().unwrap();
     let mut req_chain_ids = BTreeSet::new();
 
-    if let Token::Array(array_tokens) = decoded[3].clone() {
+    if let Token::Array(array_tokens) = decoded[2].clone() {
         for token in array_tokens {
             if let Token::Uint(req_chain_id) = token {
                 req_chain_ids.insert(req_chain_id.clone());
@@ -386,7 +382,6 @@ async fn process_gateway_registered_event(
                 address.clone(),
                 GatewayData {
                     last_block_number: to_block_number,
-                    enclave_pub_key,
                     address,
                     stake_amount: U256::zero(), // gateways call is used to get the stake amount
                     status: true,
@@ -402,8 +397,8 @@ async fn process_gateway_deregistered_event(
     cycle: u64,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
 ) {
-    let decoded = decode(&vec![ParamType::Bytes, ParamType::Address], &log.data.0).unwrap();
-    let address = decoded[1].clone().into_address().unwrap();
+    let decoded = decode(&vec![ParamType::Address], &log.data.0).unwrap();
+    let address = decoded[0].clone().into_address().unwrap();
 
     // scope for the write lock
     {
@@ -424,8 +419,8 @@ async fn process_chain_added_event(
         &log.data.0,
     )
     .unwrap();
-    let address = decoded[1].clone().into_address().unwrap();
-    let chain_id = decoded[2].clone().into_uint().unwrap();
+    let address = decoded[0].clone().into_address().unwrap();
+    let chain_id = decoded[1].clone().into_uint().unwrap();
 
     // scope for the write lock
     {
@@ -448,7 +443,7 @@ async fn process_chain_removed_event(
         &log.data.0,
     )
     .unwrap();
-    let address = decoded[1].clone().into_address().unwrap();
+    let address = decoded[0].clone().into_address().unwrap();
     let chain_id = decoded[1].clone().into_uint().unwrap();
 
     // scope for the write lock

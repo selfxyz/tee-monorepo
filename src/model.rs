@@ -69,7 +69,6 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub struct GatewayData {
     pub last_block_number: u64,
-    pub enclave_pub_key: Bytes,
     pub address: Address,
     pub stake_amount: U256,
     pub status: bool,
