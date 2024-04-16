@@ -189,7 +189,7 @@ impl CommonChainClient {
                         let job = self_clone.clone()
                             .get_job_from_job_relay_event(
                                 log,
-                                 0 as u8,
+                                 1 as u8,
                                   &request_chain.chain_id.to_string()
                             )
                             .await
@@ -236,7 +236,7 @@ impl CommonChainClient {
     async fn get_job_from_job_relay_event(
         self: Arc<Self>,
         log: Log,
-        retry_number: u8,
+        sequence_number: u8,
         req_chain_id: &String,
     ) -> Result<Job> {
         let types = vec![
@@ -267,7 +267,7 @@ impl CommonChainClient {
             // TODO: Remove job_owner
             job_owner: log.address,
             job_type: ComChainJobType::JobRelay,
-            retry_number,
+            sequence_number,
             gateway_address: None,
         })
     }
@@ -287,7 +287,7 @@ impl CommonChainClient {
             .select_gateway_for_job_id(
                 job.job_id.clone(),
                 job.starttime.as_u64(),
-                job.retry_number,
+                job.sequence_number,
                 req_chain_client,
             )
             .await
@@ -341,7 +341,7 @@ impl CommonChainClient {
             callback_deposit: U256::zero(),
             job_owner: onchain_job.6,
             job_type: ComChainJobType::JobRelay,
-            retry_number: onchain_job.9,
+            sequence_number: onchain_job.9,
             gateway_address: Some(onchain_job.7),
         };
 
@@ -352,7 +352,7 @@ impl CommonChainClient {
             && onchain_job.req_chain_id != 0
             && onchain_job.job_owner != H160::zero()
             && onchain_job.gateway_address != Some(H160::zero())
-            && onchain_job.retry_number == job.retry_number
+            && onchain_job.sequence_number == job.sequence_number
         {
             info!("Job ID: {:?}, JobRelayed event triggered", job.job_id);
             return Ok(());
@@ -367,8 +367,8 @@ impl CommonChainClient {
             tx_clone.send((job_clone, self_clone)).await.unwrap();
         }
 
-        job.retry_number += 1;
-        if job.retry_number >= MAX_GATEWAY_RETRIES {
+        job.sequence_number += 1;
+        if job.sequence_number > MAX_GATEWAY_RETRIES {
             info!("Job ID: {:?}, Max retries reached", job.job_id);
             return Ok(());
         }
@@ -429,7 +429,7 @@ impl CommonChainClient {
         // use this seed in std_rng to generate a random number between 1 to total_stake
         // skipping skips numbers from the random number generated
         let mut rng = StdRng::seed_from_u64(seed);
-        for _ in 0..skips {
+        for _ in 0..skips - 1 {
             let _ = rng.gen_range(1..=total_stake);
         }
         let random_number = rng.gen_range(1..=total_stake);
@@ -478,7 +478,7 @@ impl CommonChainClient {
 
         let job_id = decoded[0].clone().into_uint().unwrap();
         let old_gateway = decoded[2].clone().into_address().unwrap();
-        let retry_number = decoded[4].clone().into_uint().unwrap().low_u64() as u8;
+        let sequence_number = decoded[4].clone().into_uint().unwrap().low_u64() as u8;
 
         if old_gateway != self.address {
             return;
@@ -490,7 +490,7 @@ impl CommonChainClient {
             job = self.active_jobs.read().await.get(&job_id).unwrap().clone();
         }
 
-        if job.retry_number != retry_number {
+        if job.sequence_number != sequence_number {
             return;
         }
 
@@ -527,7 +527,7 @@ impl CommonChainClient {
             &job.code_input,
             job.user_timout.as_u64(),
             &job.job_owner,
-            job.retry_number,
+            job.sequence_number,
         )
         .await
         .unwrap();
@@ -542,7 +542,7 @@ impl CommonChainClient {
             job.code_input,
             job.user_timout,
             job.starttime,
-            job.retry_number,
+            job.sequence_number,
             job.job_owner,
         );
 
@@ -586,7 +586,7 @@ impl CommonChainClient {
             job.job_id,
             U256::from(job.req_chain_id),
             signature,
-            job.retry_number,
+            job.sequence_number,
         );
 
         let pending_txn = txn.send().await;
@@ -693,9 +693,9 @@ impl CommonChainClient {
             error_code: decoded[4].clone().into_uint().unwrap().low_u64() as u8,
             output_count: decoded[5].clone().into_uint().unwrap().low_u64() as u8,
             job_type: ReqChainJobType::JobResponded,
-            // Not getting this anymore. Need to fix.
+            // TODO: Not getting this anymore. Need to fix.
             gateway_address: decoded[6].clone().into_address(),
-            retry_number: 0,
+            sequence_number: 0,
         })
     }
 
@@ -749,7 +749,7 @@ impl CommonChainClient {
                 .select_gateway_for_job_id(
                     job_response.job_id.clone(),
                     seed,
-                    job_response.retry_number,
+                    job_response.sequence_number,
                     req_chain_client,
                 )
                 .await
@@ -774,7 +774,7 @@ impl CommonChainClient {
         // In a case where this txn took longer than the REQUEST_RELAY_TIMEOUT, the job might have been retried
         // and the active_jobs list might have the same job_id with a different retry number.
         if active_jobs.contains_key(&job.job_id)
-            && active_jobs[&job.job_id].retry_number == job.retry_number
+            && active_jobs[&job.job_id].sequence_number == job.sequence_number
         {
             active_jobs.remove(&job.job_id);
         }
@@ -812,7 +812,7 @@ impl CommonChainClient {
             // can be added to event and a check below in the if condition
             // if retry number is added to the event,
             // remove_job_response needs to be updated accordingly
-            retry_number: 0,
+            sequence_number: 1,
         };
 
         if output_received && onchain_job_response.gateway_address.unwrap() != H160::zero() {
@@ -837,8 +837,8 @@ impl CommonChainClient {
                 .unwrap();
         }
 
-        job_response.retry_number += 1;
-        if job_response.retry_number >= MAX_GATEWAY_RETRIES {
+        job_response.sequence_number += 1;
+        if job_response.sequence_number > MAX_GATEWAY_RETRIES {
             info!("Job ID: {:?}, Max retries reached", job_response.job_id);
             return Ok(());
         }

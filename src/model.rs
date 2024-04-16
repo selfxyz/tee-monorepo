@@ -131,7 +131,7 @@ pub struct Job {
     pub req_chain_id: u64,
     pub job_owner: Address,
     pub job_type: ComChainJobType,
-    pub retry_number: u8,
+    pub sequence_number: u8,
     pub gateway_address: Option<Address>,
 }
 
@@ -145,5 +145,5 @@ pub struct JobResponse {
     pub output_count: u8,
     pub job_type: ReqChainJobType,
     pub gateway_address: Option<Address>,
-    pub retry_number: u8,
+    pub sequence_number: u8,
 }

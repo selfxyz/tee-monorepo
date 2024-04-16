@@ -82,7 +82,7 @@ pub async fn sign_relay_job_response(
     code_inputs: &Bytes,
     deadline: u64,
     job_owner: &Address,
-    retry_number: u8,
+    sequence_number: u8,
 ) -> Option<String> {
     let mut job_id_bytes = [0u8; 32];
     job_id.to_big_endian(&mut job_id_bytes);
@@ -104,7 +104,7 @@ pub async fn sign_relay_job_response(
     hasher.update(b"|jobOwner|");
     hasher.update(job_owner.as_bytes());
     hasher.update(b"|retryNumber|");
-    hasher.update(&retry_number.to_be_bytes());
+    hasher.update(&sequence_number.to_be_bytes());
 
     let mut hash = [0u8; 32];
     hasher.finalize(&mut hash);
