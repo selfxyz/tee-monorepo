@@ -25,8 +25,20 @@ contract RequestChainContract is
     // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier, 
-        uint256 maxAge
-    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {}
+        uint256 maxAge,
+        IERC20 _token,
+        uint256 _globalMinTimeout,
+        uint256 _globalMaxTimeout,
+        uint256 _overallTimeout
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+        require(address(_token) != address(0), "INVALID_TOKEN");
+        TOKEN = _token;
+
+        require(_globalMinTimeout < _globalMaxTimeout, "INVALID_GLOBAL_TIMEOUTS");
+        GLOBAL_MIN_TIMEOUT = _globalMinTimeout;
+        GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
+        OVERALL_TIMEOUT = _overallTimeout;
+    }
 
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -72,11 +84,7 @@ contract RequestChainContract is
 
     function __RequestChainContract_init(
         address _admin,
-        IERC20 _token,
-        EnclaveImage[] memory _images,
-        uint256 _globalMinTimeout,
-        uint256 _globalMaxTimeout,
-        uint256 _overallTimeout
+        EnclaveImage[] memory _images
     ) public initializer {
         __Context_init();
         __ERC165_init();
@@ -85,50 +93,42 @@ contract RequestChainContract is
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-
-        require(address(_token) != address(0), "INVALID_TOKEN");
-        token = _token;
-
-        require(_globalMinTimeout < _globalMaxTimeout, "INVALID_GLOBAL_TIMEOUTS");
-        globalMinTimeout = _globalMinTimeout;
-        globalMaxTimeout = _globalMaxTimeout;
-        overallTimeout = _overallTimeout;
     }
 
     //-------------------------------- Initializer end --------------------------------//
 
     //-------------------------------- Gateway start --------------------------------//
 
-    IERC20 public token;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public immutable TOKEN;
 
-    uint256 public globalMinTimeout;
-    uint256 public globalMaxTimeout;
-    uint256 public overallTimeout;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable GLOBAL_MIN_TIMEOUT;
 
-    struct Gateway {
-        address operator;
-        bool status;
-    }
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable GLOBAL_MAX_TIMEOUT;
 
-    // enclaveKey => Gateway
-    mapping(address => Gateway) public gateways;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable OVERALL_TIMEOUT;
 
-    modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
-        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(
-            gateways[enclaveKey].operator == _msgSender(),
-            "ONLY_GATEWAY_OPERATOR"
-        );
-        _;
-    }
+    // enclaveKey => Gateway operator
+    mapping(address => address) public gatewayOperators;
+
+    // modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
+    //     address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+    //     require(
+    //         gateways[enclaveKey].operator == _msgSender(),
+    //         "ONLY_GATEWAY_OPERATOR"
+    //     );
+    //     _;
+    // }
 
     event GatewayRegistered(
-        bytes enclavePubKey,
-        address indexed enclaveAddress,
+        address indexed enclaveKey,
         address indexed operator
     );
 
-    event GatewayDeregistered(bytes enclavePubKey);
+    event GatewayDeregistered(address indexed enclaveKey);
 
     function registerGateway(
         bytes memory _attestation,
@@ -139,40 +139,33 @@ contract RequestChainContract is
         uint256 _timestampInMilliseconds
     ) external {
         // attestation verification
-        // bytes32 imageId = keccak256(abi.encodePacked(_PCR0, _PCR1, _PCR2));
-        // _verifyKey(
-        //     _attestation, 
-        //     _enclavePubKey, 
-        //     imageId, 
-        //     _enclaveCPUs, 
-        //     _enclaveMemory, 
-        //     _timestampInMilliseconds
-        // );
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
         
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        gateways[enclaveKey] = Gateway({
-            operator: _msgSender(),
-            status: true
-        });
+        require(gatewayOperators[enclaveKey] == address(0), "GATEWAY_ALREADY_EXISTS");
+        gatewayOperators[enclaveKey] = _msgSender();
 
-        emit GatewayRegistered(_enclavePubKey, enclaveKey, _msgSender());
+        emit GatewayRegistered(enclaveKey, _msgSender());
     }
 
     function deregisterGateway(
         bytes memory _enclavePubKey
-    ) external onlyGatewayOperator(_enclavePubKey) {
+    ) external {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         require(
-            gateways[enclaveKey].operator != address(0),
+            gatewayOperators[enclaveKey] == _msgSender(),
+            "ONLY_GATEWAY_OPERATOR"
+        );
+        require(
+            gatewayOperators[enclaveKey] != address(0),
             "INVALID_ENCLAVE_KEY"
         );
-        delete gateways[enclaveKey];
+        delete gatewayOperators[enclaveKey];
 
         _revokeEnclaveKey(_enclavePubKey);
 
-        emit GatewayDeregistered(_enclavePubKey);
+        emit GatewayDeregistered(enclaveKey);
     }
 
     //-------------------------------- Gateway End --------------------------------//
@@ -181,12 +174,12 @@ contract RequestChainContract is
 
     struct Job {
         bytes32 codehash;
-        bytes codeInputs;
         uint256 userTimeout;
         uint256 startTime;
         uint256 maxGasPrice;
         uint256 usdcDeposit;
         uint256 callbackDeposit;
+        bytes codeInputs;
         address jobOwner;
         bool receivedOutput;
     }
@@ -230,7 +223,7 @@ contract RequestChainContract is
         uint256 _usdcDeposit,
         uint256 _callbackDeposit
     ) external {
-        require(_userTimeout > globalMinTimeout && _userTimeout < globalMaxTimeout, "INVALID_USER_TIMEOUT");
+        require(_userTimeout > GLOBAL_MIN_TIMEOUT && _userTimeout < GLOBAL_MAX_TIMEOUT, "INVALID_USER_TIMEOUT");
         jobs[++jobCount] = Job({
             codehash: _codehash,
             codeInputs: _codeInputs,
@@ -255,11 +248,11 @@ contract RequestChainContract is
         uint8 _errorCode
     ) external {
         // check time case
-        require(block.timestamp <= jobs[_jobId].startTime + overallTimeout, "OVERALL_TIMEOUT_OVER");
+        require(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT, "OVERALL_TIMEOUT_OVER");
 
         // signature check
         bytes32 digest = keccak256(
-            abi.encode(
+            abi.encodePacked(
                 _jobId,
                 _output,
                 _totalTime,
@@ -287,7 +280,7 @@ contract RequestChainContract is
         require(!jobs[_jobId].receivedOutput, "JOB_OUTPUT_ALREADY_RECEIVED");
 
         // check time case
-        require(block.timestamp > jobs[_jobId].startTime + overallTimeout, "OVERALL_TIMEOUT_NOT_OVER");
+        require(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT, "OVERALL_TIMEOUT_NOT_OVER");
 
         delete jobs[_jobId];
         emit JobCancelled(_jobId);

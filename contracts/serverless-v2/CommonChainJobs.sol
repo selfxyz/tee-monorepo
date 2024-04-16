@@ -21,7 +21,18 @@ contract CommonChainJobs is
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
-    constructor() initializer {}
+    constructor(
+        IERC20 _token,
+        uint256 _relayBufferTime,
+        uint256 _executionBufferTime,
+        uint256 _noOfNodesToSelect
+    ) initializer {
+        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
+        TOKEN = _token;
+        RELAY_BUFFER_TIME = _relayBufferTime;
+        EXECUTION_BUFFER_TIME = _executionBufferTime;
+        NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
+    }
 
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -67,12 +78,8 @@ contract CommonChainJobs is
 
     function __CommonChainJobs_init(
         address _admin,
-        IERC20 _token,
         CommonChainGateways _gateways,
-        CommonChainExecutors _executors,
-        uint256 _relayBufferTime,
-        uint256 _executionBufferTime,
-        uint256 _noOfNodesToSelect
+        CommonChainExecutors _executors
     ) public initializer {
         require(_admin != address(0), "ZERO_ADDRESS_ADMIN");
 
@@ -83,22 +90,26 @@ contract CommonChainJobs is
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-        token = _token;
         gateways = _gateways;
         executors = _executors;
-        relayBufferTime = _relayBufferTime;
-        executionBufferTime = _executionBufferTime;
-        noOfNodesToSelect = _noOfNodesToSelect;
     }
 
     //-------------------------------- Initializer end --------------------------------//
 
-    IERC20 public token;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public immutable TOKEN;
+
     CommonChainGateways public gateways;
     CommonChainExecutors public executors;
-    uint256 public relayBufferTime;
-    uint256 public executionBufferTime;
-    uint256 public noOfNodesToSelect;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable RELAY_BUFFER_TIME;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable EXECUTION_BUFFER_TIME;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable NO_OF_NODES_TO_SELECT;
 
     function setGatewaysContract(CommonChainGateways _gateways) external onlyAdmin {
         gateways = _gateways;
@@ -106,10 +117,6 @@ contract CommonChainJobs is
 
     function setExecutorsContract(CommonChainExecutors _executors) external onlyAdmin {
         executors = _executors;
-    }
-
-    function setTokenContract(IERC20 _token) external onlyAdmin {
-        token = _token;
     }
 
     //-------------------------------- Job start --------------------------------//
@@ -122,7 +129,6 @@ contract CommonChainJobs is
         uint256 deadline;
         uint256 execStartTime;
         address jobOwner;
-        address gatewayOperator;
         uint8 outputCount;
         uint8 sequenceId;
         bool isResourceUnavailable;
@@ -152,7 +158,7 @@ contract CommonChainJobs is
         uint256 indexed reqChainId,
         bytes output,
         uint256 totalTime,
-        uint256 errorCode,
+        uint8 errorCode,
         uint8 outputCount
     );
 
@@ -181,7 +187,7 @@ contract CommonChainJobs is
         address _jobOwner
     ) external {
         uint256 key = getKey(_jobId, _reqChainId);
-        require(block.timestamp <= _jobRequestTimestamp + relayBufferTime, "RELAY_TIME_OVER");
+        require(block.timestamp <= _jobRequestTimestamp + RELAY_BUFFER_TIME, "RELAY_TIME_OVER");
         require(!jobs[key].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
         require(_sequenceId == jobs[key].sequenceId + 1, "INVALID_SEQUENCE_ID");
         require(jobs[key].execStartTime == 0, "JOB_ALREADY_RELAYED");
@@ -204,9 +210,9 @@ contract CommonChainJobs is
 
         gateways.allowOnlyVerified(signer);
 
-        address[] memory selectedNodes = executors.selectExecutors(noOfNodesToSelect);
+        address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
-        if(selectedNodes.length < noOfNodesToSelect) {
+        if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             jobs[key].isResourceUnavailable = true;
             emit JobResourceUnavailable(_jobId, _reqChainId, _msgSender());
             return;
@@ -221,7 +227,6 @@ contract CommonChainJobs is
             deadline: _deadline,
             execStartTime: block.timestamp,
             jobOwner: _jobOwner,
-            gatewayOperator: _msgSender(),
             outputCount: 0,
             sequenceId: _sequenceId,
             isResourceUnavailable: false
@@ -240,13 +245,13 @@ contract CommonChainJobs is
     ) external {
         uint256 key = getKey(_jobId, _reqChainId);
         require(
-            block.timestamp <= jobs[key].execStartTime + jobs[key].deadline + executionBufferTime, 
+            block.timestamp <= jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME, 
             "EXECUTION_TIME_OVER"
         );
 
         // signature check
         bytes32 digest = keccak256(
-            abi.encode(_jobId, _reqChainId, _output, _totalTime, _errorCode)
+            abi.encodePacked(_jobId, _reqChainId, _output, _totalTime, _errorCode)
         );
         address signer = digest.recover(_signature);
 
@@ -258,6 +263,7 @@ contract CommonChainJobs is
         executors.updateOnSubmitOutput(signer);
         hasExecutedJob[key][signer] = true;
 
+        // TODO: emit executorKey(signer) also if reqd
         emit JobResponded(_jobId, _reqChainId, _output, _totalTime, _errorCode, ++jobs[key].outputCount);
 
         // cleanup job after 3rd output submitted
@@ -294,8 +300,9 @@ contract CommonChainJobs is
     event GatewayReassigned(
         uint256 indexed jobId,
         uint256 indexed reqChainId,
-        address prevGatewayOperator,
-        address newGatewayOperator
+        address prevGatewayKey,
+        address reporterGateway,
+        uint8 sequenceId
     );
 
     function slashOnExecutionTimeout(
@@ -307,7 +314,7 @@ contract CommonChainJobs is
 
         // check for time
         require(
-            block.timestamp > jobs[key].execStartTime + jobs[key].deadline + executionBufferTime,
+            block.timestamp > jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME,
             "DEADLINE_NOT_OVER"
         );
 
@@ -329,7 +336,7 @@ contract CommonChainJobs is
     }
 
     function reassignGatewayRelay(
-        address _gatewayOperatorOld,
+        address _gatewayKeyOld,
         uint256 _jobId,
         uint256 _reqChainId,
         bytes memory _signature,
@@ -343,15 +350,23 @@ contract CommonChainJobs is
         jobs[key].sequenceId = _sequenceId;
 
         // signature check
-        bytes32 digest = keccak256(abi.encode(_jobId, _reqChainId, _gatewayOperatorOld, _sequenceId));
+        bytes32 digest = keccak256(abi.encodePacked(_jobId, _reqChainId, _gatewayKeyOld, _sequenceId));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);
 
-        emit GatewayReassigned(_jobId, _reqChainId, _gatewayOperatorOld, _msgSender());
+        emit GatewayReassigned(_jobId, _reqChainId, _gatewayKeyOld, _msgSender(), _sequenceId);
 
         // slash old gateway
     }
 
     //-------------------------------- Timeout end --------------------------------//
+
+    function getSelectedExecutors(
+        uint256 _jobId,
+        uint256 _reqChainId
+    ) external view returns (address[] memory) {
+        uint256 key = getKey(_jobId, _reqChainId);
+        return selectedExecutors[key];
+    }
 }

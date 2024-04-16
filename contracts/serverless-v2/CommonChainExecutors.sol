@@ -28,8 +28,12 @@ contract CommonChainExecutors is
     // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier,
-        uint256 maxAge
-    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {}
+        uint256 maxAge,
+        IERC20 _token
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
+        TOKEN = _token;
+    }
 
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -80,11 +84,9 @@ contract CommonChainExecutors is
 
     function __CommonChainExecutors_init(
         address _admin,
-        EnclaveImage[] memory _images,
-        IERC20 _token
+        EnclaveImage[] memory _images
     ) public initializer {
         require(_admin != address(0), "ZERO_ADDRESS_ADMIN");
-        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
 
         __Context_init();
         __ERC165_init();
@@ -94,21 +96,16 @@ contract CommonChainExecutors is
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-
-        token = _token;
     }
 
     //-------------------------------- Initializer end --------------------------------//
 
-    IERC20 public token;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public immutable TOKEN;
     CommonChainJobs public jobs;
 
     function setJobsContract(CommonChainJobs _jobs) external onlyAdmin {
         jobs = _jobs;
-    }
-
-    function setTokenContract(IERC20 _token) external onlyAdmin {
-        token = _token;
     }
 
     //-------------------------------- Executor start --------------------------------//
@@ -134,21 +131,20 @@ contract CommonChainExecutors is
     }
 
     event ExecutorRegistered(
-        bytes enclavePubKey,
-        address indexed enclaveAddress,
+        address indexed enclaveKey,
         address indexed operator
     );
 
-    event ExecutorDeregistered(bytes enclavePubKey);
+    event ExecutorDeregistered(address indexed enclaveKey);
 
     event ExecutorStakeAdded(
-        bytes enclavePubKey,
+        address indexed enclaveKey,
         uint256 addedAmount,
         uint256 totalAmount
     );
 
     event ExecutorStakeRemoved(
-        bytes enclavePubKey,
+        address indexed enclaveKey,
         uint256 removedAmount,
         uint256 totalAmount
     );
@@ -180,15 +176,16 @@ contract CommonChainExecutors is
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
         // signature check
-        bytes32 digest = keccak256(abi.encode(_jobCapacity));
+        bytes32 digest = keccak256(abi.encodePacked(_jobCapacity));
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);
 
         // transfer stake
-        token.safeTransferFrom(_msgSender(), address(this), _stakeAmount);
+        TOKEN.safeTransferFrom(_msgSender(), address(this), _stakeAmount);
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        require(executors[enclaveKey].operator == address(0), "EXECUTOR_ALREADY_EXISTS");
         executors[enclaveKey] = Executor({
             operator: _msgSender(),
             jobCapacity: _jobCapacity,
@@ -200,7 +197,7 @@ contract CommonChainExecutors is
         // add node to the tree
         _insert_unchecked(enclaveKey, uint64(_stakeAmount));
 
-        // emit ExecutorRegistered(_enclavePubKey, enclaveKey, _msgSender());
+        emit ExecutorRegistered(enclaveKey, _msgSender());
     }
 
     function deregisterExecutor(
@@ -222,7 +219,7 @@ contract CommonChainExecutors is
         // remove node from the tree
         _deleteIfPresent(enclaveKey);
 
-        emit ExecutorDeregistered(_enclavePubKey);
+        emit ExecutorDeregistered(enclaveKey);
 
         // return stake amount
     }
@@ -232,7 +229,7 @@ contract CommonChainExecutors is
         uint256 _amount
     ) external onlyExecutorOperator(_enclavePubKey) {
         // transfer stake
-        token.safeTransferFrom(_msgSender(), address(this), _amount);
+        TOKEN.safeTransferFrom(_msgSender(), address(this), _amount);
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         executors[enclaveKey].stakeAmount += _amount;
@@ -241,7 +238,7 @@ contract CommonChainExecutors is
         if(executors[enclaveKey].activeJobs != executors[enclaveKey].jobCapacity)
             _update_unchecked(enclaveKey, uint64(_amount));
 
-        emit ExecutorStakeAdded(_enclavePubKey, _amount, executors[enclaveKey].stakeAmount);
+        emit ExecutorStakeAdded(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
     }
 
     function removeExecutorStake(
@@ -249,7 +246,7 @@ contract CommonChainExecutors is
         uint256 _amount
     ) external onlyExecutorOperator(_enclavePubKey) {
         // transfer stake
-        token.safeTransfer(_msgSender(), _amount);
+        TOKEN.safeTransfer(_msgSender(), _amount);
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         executors[enclaveKey].stakeAmount -= _amount;
@@ -258,7 +255,7 @@ contract CommonChainExecutors is
         if(executors[enclaveKey].activeJobs != executors[enclaveKey].jobCapacity)
             _update_unchecked(enclaveKey, uint64(_amount));
 
-        emit ExecutorStakeRemoved(_enclavePubKey, _amount, executors[enclaveKey].stakeAmount);
+        emit ExecutorStakeRemoved(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
     }
 
     function allowOnlyVerified(address _key) external view {

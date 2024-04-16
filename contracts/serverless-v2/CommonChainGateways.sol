@@ -25,8 +25,12 @@ contract CommonChainGateways is
     // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier,
-        uint256 maxAge
-    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {}
+        uint256 maxAge,
+        IERC20 _token
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
+        TOKEN = _token;
+    }
 
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -72,11 +76,9 @@ contract CommonChainGateways is
 
     function __CommonChainGateways_init(
         address _admin,
-        EnclaveImage[] memory _images,
-        IERC20 _token
+        EnclaveImage[] memory _images
     ) public initializer {
         require(_admin != address(0), "ZERO_ADDRESS_ADMIN");
-        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
 
         __Context_init();
         __ERC165_init();
@@ -85,17 +87,12 @@ contract CommonChainGateways is
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-
-        token = _token;
     }
 
     //-------------------------------- Initializer end --------------------------------//
 
-    IERC20 public token;
-    
-    function setTokenContract(IERC20 _token) external onlyAdmin {
-        token = _token;
-    }
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public immutable TOKEN;
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -111,14 +108,12 @@ contract CommonChainGateways is
         address operator;
         uint256[] chainIds;
         uint256 stakeAmount;
+        uint256 deregisterStartTime;
         bool status;
     }
 
     // enclaveAddress => Gateway
     mapping(address => Gateway) public gateways;
-
-    // TODO: to be removed later
-    address[] public gatewayAddresses;
 
     modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
@@ -130,22 +125,21 @@ contract CommonChainGateways is
     }
 
     event GatewayRegistered(
-        bytes enclavePubKey,
-        address indexed enclaveAddress,
+        address indexed enclaveKey,
         address indexed operator,
         uint256[] chainIds
     );
 
-    event GatewayDeregistered(bytes enclavePubKey);
+    event GatewayDeregistered(address indexed enclaveKey);
 
     event GatewayStakeAdded(
-        bytes enclavePubKey,
+        address indexed enclaveKey,
         uint256 addedAmount,
         uint256 totalAmount
     );
 
     event GatewayStakeRemoved(
-        bytes enclavePubKey,
+        address indexed enclaveKey,
         uint256 removedAmount,
         uint256 totalAmount
     );
@@ -161,12 +155,12 @@ contract CommonChainGateways is
     );
 
     event ChainAdded(
-        bytes enclavePubKey,
+        address indexed enclaveKey,
         uint256 chainId
     );
 
     event ChainRemoved(
-        bytes enclavePubKey,
+        address indexed enclaveKey,
         uint256 chainId
     );
 
@@ -194,25 +188,26 @@ contract CommonChainGateways is
         _verifySign(_chainIds, _signature);
 
         // transfer stake
-        token.safeTransferFrom(_msgSender(), address(this), _stakeAmount);
+        TOKEN.safeTransferFrom(_msgSender(), address(this), _stakeAmount);
         
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        require(gateways[enclaveKey].operator == address(0), "GATEWAY_ALREADY_EXISTS");
+
         for (uint256 index = 0; index < _chainIds.length; index++) {
             require(requestChains[_chainIds[index]].contractAddress != address(0), "UNSUPPORTED_CHAIN");
         }
 
         // check missing for validating chainIds array for multiple same chainIds
-
-        gatewayAddresses.push(enclaveKey);
         
         gateways[enclaveKey] = Gateway({
             operator: _msgSender(),
             chainIds: _chainIds,
             stakeAmount: _stakeAmount,
+            deregisterStartTime: 0,
             status: true
         });
 
-        emit GatewayRegistered(_enclavePubKey, enclaveKey, _msgSender(), _chainIds);
+        emit GatewayRegistered(enclaveKey, _msgSender(), _chainIds);
     }
 
     function _verifySign(
@@ -225,30 +220,6 @@ contract CommonChainGateways is
         _allowOnlyVerified(signer);
     }
 
-    function getGateway(address _address) public view returns (address, uint256[] memory, uint256, bool) {
-        Gateway storage gateway = gateways[_address];
-        return (gateway.operator, gateway.chainIds, gateway.stakeAmount, gateway.status);
-    }
-
-    // TODO: to be removed later
-    function getActiveGatewaysForReqChain(uint256 _chainId) public view returns (Gateway[] memory) {
-        Gateway[] memory _gateways = new Gateway[](gatewayAddresses.length);
-
-        for (uint i = 0; i < gatewayAddresses.length; i++) {
-            if (gateways[gatewayAddresses[i]].status) {
-                uint256[] memory chainIds = gateways[gatewayAddresses[i]].chainIds;
-                for (uint j = 0; j < chainIds.length; j++) {
-                    if (chainIds[j] == _chainId) {
-                        _gateways[i] = gateways[gatewayAddresses[i]];
-                        break;
-                    }
-                }
-            }
-        }
-
-        return _gateways;
-    }
-
     function deregisterGateway(
         bytes memory _enclavePubKey
     ) external onlyGatewayOperator(_enclavePubKey) {
@@ -257,26 +228,13 @@ contract CommonChainGateways is
             gateways[enclaveKey].operator != address(0),
             "INVALID_ENCLAVE_KEY"
         );
-
-        // find enclaveKey in gatewayAddresses and remove it
-        uint256 len = gatewayAddresses.length;
-        uint256 index = 0;
-        for (; index < len; index++) {
-            if (gatewayAddresses[index] == enclaveKey) 
-                break;
-        }
-
-        if (index != len - 1)
-            gatewayAddresses[index] = gatewayAddresses[len - 1];
-
-        gatewayAddresses.pop();
         
         // delete gateway
         delete gateways[enclaveKey];
 
         _revokeEnclaveKey(_enclavePubKey);
 
-        emit GatewayDeregistered(_enclavePubKey);
+        emit GatewayDeregistered(enclaveKey);
 
         // return stake amount
     }
@@ -286,25 +244,26 @@ contract CommonChainGateways is
         uint256 _amount
     ) external onlyGatewayOperator(_enclavePubKey) {
         // transfer stake
-        token.safeTransferFrom(_msgSender(), address(this), _amount);
+        TOKEN.safeTransferFrom(_msgSender(), address(this), _amount);
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         gateways[enclaveKey].stakeAmount += _amount;
 
-        emit GatewayStakeAdded(_enclavePubKey, _amount, gateways[enclaveKey].stakeAmount);
+        emit GatewayStakeAdded(enclaveKey, _amount, gateways[enclaveKey].stakeAmount);
     }
 
+    // TODO: check if the gateway is assigned some job before full stake removal
     function removeGatewayStake(
         bytes memory _enclavePubKey,
         uint256 _amount
     ) external onlyGatewayOperator(_enclavePubKey) {
         // transfer stake
-        token.safeTransfer(_msgSender(), _amount);
+        TOKEN.safeTransfer(_msgSender(), _amount);
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         gateways[enclaveKey].stakeAmount -= _amount;
 
-        emit GatewayStakeRemoved(_enclavePubKey, _amount, gateways[enclaveKey].stakeAmount);
+        emit GatewayStakeRemoved(enclaveKey, _amount, gateways[enclaveKey].stakeAmount);
     }
 
     function addChainGlobal(
@@ -356,13 +315,12 @@ contract CommonChainGateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
         for (uint256 index = 0; index < chainIdList.length; index++) {
-            // TODO: add chainId in revert
             if(chainIdList[index] == _chainId)
                 revert ChainAlreadyExists(_chainId);
         }
         gateways[enclaveKey].chainIds.push(_chainId);
 
-        emit ChainAdded(_enclavePubKey, _chainId);
+        emit ChainAdded(enclaveKey, _chainId);
     }
 
     function removeChains(
@@ -401,7 +359,7 @@ contract CommonChainGateways is
 
         gateways[enclaveKey].chainIds.pop();
 
-        emit ChainRemoved(_enclavePubKey, _chainId);
+        emit ChainRemoved(enclaveKey, _chainId);
     }
 
     function isChainSupported(
