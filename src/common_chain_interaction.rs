@@ -351,8 +351,8 @@ impl CommonChainClient {
             callback_deposit: U256::zero(),
             job_owner: onchain_job.6,
             job_type: ComChainJobType::JobRelay,
-            sequence_number: onchain_job.9,
-            gateway_address: Some(onchain_job.7),
+            sequence_number: onchain_job.8,
+            gateway_address: None,
         };
 
         if onchain_job.job_id == job.job_id
