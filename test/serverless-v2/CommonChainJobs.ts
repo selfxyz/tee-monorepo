@@ -1,8 +1,6 @@
-import { joinSignature } from '@ethersproject/bytes';
-import { Wallet } from '@ethersproject/wallet';
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, ZeroAddress, keccak256, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationVerifier, CommonChainExecutors, CommonChainGateways, CommonChainJobs, Pond } from "../../typechain-types";
 import { AttestationAutherUpgradeable } from "../../typechain-types/contracts/AttestationAutherSample";
@@ -201,7 +199,7 @@ describe("CommonChainJobs - Relay", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
 		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -280,19 +278,19 @@ describe("CommonChainJobs - Relay", function () {
 
 		let jobCapacity = 20, stakeAmount = 10;
 		[signature] = await createAttestation(pubkeys[17], image4, wallets[14], timestamp - 540000);
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[17]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[17]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[17], image4.PCR0, image4.PCR1, image4.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[18], image5, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[18]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[18]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[18], image5.PCR0, image5.PCR1, image5.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[19], image6, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[19]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[19]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[19], image6.PCR0, image6.PCR1, image6.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[20], image7, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[20]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[20]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[20], image7.PCR0, image7.PCR1, image7.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 	});
 
@@ -307,13 +305,7 @@ describe("CommonChainJobs - Relay", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1];
-		const message = solidityPacked(
-			["uint256", "uint256", "bytes32", "bytes", "uint256", "uint256", "uint8", "address"],
-			[jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner],
-		);
-		const digest = keccak256(message);
-		let sign = wallets[15]._signingKey().signDigest(digest);
-		let signedDigest = joinSignature(sign);
+		let signedDigest = await createRelayJobSignature(jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
 
 		let tx = await commonChainJobs.connect(signers[15]).relayJob(signedDigest, jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 		await expect(tx).to.emit(commonChainJobs, "JobRelayed");
@@ -341,7 +333,7 @@ describe("CommonChainJobs - Output", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
 		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -420,19 +412,19 @@ describe("CommonChainJobs - Output", function () {
 
 		let jobCapacity = 20, stakeAmount = 10;
 		[signature] = await createAttestation(pubkeys[17], image4, wallets[14], timestamp - 540000);
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[17]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[17]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[17], image4.PCR0, image4.PCR1, image4.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[18], image5, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[18]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[18]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[18], image5.PCR0, image5.PCR1, image5.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[19], image6, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[19]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[19]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[19], image6.PCR0, image6.PCR1, image6.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		// [signature, attestation] = await createAttestation(pubkeys[20], image7, wallets[14], timestamp - 540000);
-		// signedDigest = createExecutorSignature(jobCapacity, wallets[20]);
+		// signedDigest = await createExecutorSignature(jobCapacity, wallets[20]);
 		// await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[20], image7.PCR0, image7.PCR1, image7.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 		
 		// RELAY JOB
@@ -444,14 +436,8 @@ describe("CommonChainJobs - Output", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1];
-		const message = solidityPacked(
-			["uint256", "uint256", "bytes32", "bytes", "uint256", "uint256", "uint8", "address"],
-			[jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner],
-		);
-		const digest = keccak256(message);
-		let sign = wallets[15]._signingKey().signDigest(digest);
-		signedDigest = joinSignature(sign);
-	
+		signedDigest = await createRelayJobSignature(jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
+
 		await commonChainJobs.connect(signers[15]).relayJob(signedDigest, jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 	});
 
@@ -464,7 +450,7 @@ describe("CommonChainJobs - Output", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[17]);
+		let signedDigest = await createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[17]);
 		let tx = await commonChainJobs.submitOutput(signedDigest, jobId, reqChainId, output, totalTime, errorCode);
 		await expect(tx).to.emit(commonChainJobs, "JobResponded"); 
 	});
@@ -476,7 +462,7 @@ describe("CommonChainJobs - Output", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[17]);
+		let signedDigest = await createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[17]);
 		let tx = await commonChainJobs.submitOutput(signedDigest, jobId, reqChainId, output, totalTime, errorCode);
 		await expect(tx).to.emit(commonChainJobs, "JobResponded"); 
 
@@ -489,7 +475,7 @@ describe("CommonChainJobs - Output", function () {
 			stakeAmount = 10,
 			timestamp = await time.latest() * 1000;
 		let [signature, attestation] = await createAttestation(pubkeys[20], image7, wallets[14], timestamp - 540000);
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[20]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[20]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[20], image7.PCR0, image7.PCR1, image7.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 		
 		let jobId = 1,
@@ -497,7 +483,7 @@ describe("CommonChainJobs - Output", function () {
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
-		signedDigest = createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[20]);
+		signedDigest = await createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[20]);
 		let tx = commonChainJobs.submitOutput(signedDigest, jobId, reqChainId, output, totalTime, errorCode);
 		await expect(tx).to.revertedWith("NOT_SELECTED_EXECUTOR"); 
 	});
@@ -519,7 +505,7 @@ describe("CommonChainJobs - Slashing", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
 		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -598,19 +584,19 @@ describe("CommonChainJobs - Slashing", function () {
 
 		let jobCapacity = 20, stakeAmount = 10;
 		[signature] = await createAttestation(pubkeys[17], image4, wallets[14], timestamp - 540000);
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[17]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[17]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[17], image4.PCR0, image4.PCR1, image4.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[18], image5, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[18]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[18]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[18], image5.PCR0, image5.PCR1, image5.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature, attestation] = await createAttestation(pubkeys[19], image6, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[19]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[19]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[19], image6.PCR0, image6.PCR1, image6.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		// [signature, attestation] = await createAttestation(pubkeys[20], image7, wallets[14], timestamp - 540000);
-		// signedDigest = createExecutorSignature(jobCapacity, wallets[20]);
+		// signedDigest = await createExecutorSignature(jobCapacity, wallets[20]);
 		// await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[20], image7.PCR0, image7.PCR1, image7.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 		
 		// RELAY JOB
@@ -622,13 +608,7 @@ describe("CommonChainJobs - Slashing", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1];
-		const message = solidityPacked(
-			["uint256", "uint256", "bytes32", "bytes", "uint256", "uint256", "uint8", "address"],
-			[jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner],
-		);
-		const digest = keccak256(message);
-		let sign = wallets[15]._signingKey().signDigest(digest);
-		signedDigest = joinSignature(sign);
+		signedDigest = await createRelayJobSignature(jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
 	
 		await commonChainJobs.connect(signers[15]).relayJob(signedDigest, jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 	});
@@ -686,7 +666,7 @@ describe("CommonChainJobs - Reassign Gateway", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
 		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -762,25 +742,25 @@ describe("CommonChainJobs - Reassign Gateway", function () {
 		const timestamp = await time.latest() * 1000,
 			stakeAmount = 10;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let signedDigest = createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
 		await commonChainGateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
 		
 		[signature] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
-		signedDigest = createGatewaySignature(chainIds, wallets[16]);
+		signedDigest = await createGatewaySignature(chainIds, wallets[16]);
 		await commonChainGateways.connect(signers[1]).registerGateway(signature, pubkeys[16], image3.PCR0, image3.PCR1, image3.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
 
 		// REEGISTER EXECUTORS
 		let jobCapacity = 20;
 		[signature] = await createAttestation(pubkeys[17], image4, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[17]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[17]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[17], image4.PCR0, image4.PCR1, image4.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature] = await createAttestation(pubkeys[18], image5, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[18]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[18]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[18], image5.PCR0, image5.PCR1, image5.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		[signature] = await createAttestation(pubkeys[19], image6, wallets[14], timestamp - 540000);
-		signedDigest = createExecutorSignature(jobCapacity, wallets[19]);
+		signedDigest = await createExecutorSignature(jobCapacity, wallets[19]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[19], image6.PCR0, image6.PCR1, image6.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 	});
@@ -793,7 +773,7 @@ describe("CommonChainJobs - Reassign Gateway", function () {
 			gatewayOperatorOld = addrs[15],
 			sequenceId = 1;
 
-		let signedDigest = createReassignGatewaySignature(jobId, reqChainId, gatewayOperatorOld, sequenceId, wallets[16]);
+		let signedDigest = await createReassignGatewaySignature(jobId, reqChainId, gatewayOperatorOld, sequenceId, wallets[16]);
 		let tx = await commonChainJobs.connect(signers[16]).reassignGatewayRelay(gatewayOperatorOld, jobId, reqChainId, signedDigest, sequenceId);
 		await expect(tx).to.emit(commonChainJobs, "GatewayReassigned");
 	});
@@ -804,7 +784,7 @@ describe("CommonChainJobs - Reassign Gateway", function () {
 			gatewayOperatorOld = addrs[15],
 			sequenceId = 2;
 
-		let signedDigest = createReassignGatewaySignature(jobId, reqChainId, gatewayOperatorOld, sequenceId, wallets[16]);
+		let signedDigest = await createReassignGatewaySignature(jobId, reqChainId, gatewayOperatorOld, sequenceId, wallets[16]);
 		let tx = commonChainJobs.connect(signers[16]).reassignGatewayRelay(gatewayOperatorOld, jobId, reqChainId, signedDigest, sequenceId);
 		await expect(tx).to.revertedWith("INVALID_SEQUENCE_ID");
 	});
@@ -844,7 +824,7 @@ async function createAttestation(
 		]
 	}
 
-	const sign = await sourceEnclaveKey._signTypedData(domain, types, {
+	const sign = await sourceEnclaveKey.signTypedData(domain, types, {
 		enclavePubKey: enclaveKey,
 		PCR0: image.PCR0,
 		PCR1: image.PCR1,
@@ -860,71 +840,88 @@ async function createAttestation(
 	}];
 }
 
-function createGatewaySignature(
+async function createGatewaySignature(
 	chainIds: number[],
 	sourceEnclaveWallet: Wallet
-): string {
-	const message = solidityPacked(
-		["uint256[]"],
-		[chainIds],
-	);
-	const digest = keccak256(message);
-	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
-	let signedDigest = joinSignature(sign);
+): Promise<string> {
+	const message = ethers.solidityPackedKeccak256(
+        ["uint256[]"],
+        [chainIds]
+    );
+	const signature = await sourceEnclaveWallet.signingKey.sign(message);
+	let signedDigest = ethers.Signature.from(signature).serialized
 	return signedDigest;
 }
 
-function createExecutorSignature(
+async function createExecutorSignature(
 	jobCapacity: number,
 	sourceEnclaveWallet: Wallet
-): string {
-	const message = solidityPacked(
-		["uint256"],
-		[jobCapacity],
-	);
-	const digest = keccak256(message);
-	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
-	let signedDigest = joinSignature(sign);
+): Promise<string> {
+
+	const message = ethers.solidityPackedKeccak256(
+        ["uint256"],
+		[jobCapacity]
+    );
+	const signature = await sourceEnclaveWallet.signingKey.sign(message);
+	let signedDigest = ethers.Signature.from(signature).serialized
 	return signedDigest;
 }
 
-function createOutputSignature(
+async function createRelayJobSignature(
+	jobId: number,
+	reqChainId: number,
+    codeHash: string,
+	codeInputs: string,
+    deadline: number,
+	jobRequestTimestamp: number,
+	sequenceId: number,
+	jobOwner: string,
+	sourceEnclaveWallet: Wallet
+): Promise<string> {
+	const message = ethers.solidityPackedKeccak256(
+		["uint256", "uint256", "bytes32", "bytes", "uint256", "uint256", "uint8", "address"],
+		[jobId, reqChainId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner]
+	);
+	const signature = await sourceEnclaveWallet.signingKey.sign(message);
+	let signedDigest = ethers.Signature.from(signature).serialized
+	return signedDigest;
+}
+
+async function createOutputSignature(
 	jobId: number,
 	reqChainId: number,
     output: string,
 	totalTime: number,
     errorCode: number,
 	sourceEnclaveWallet: Wallet
-): string {
-	const message = solidityPacked(
-		["uint256", "uint256", "bytes", "uint256", "uint8"],
-		[jobId, reqChainId, output, totalTime, errorCode],
-	);
-	const digest = keccak256(message);
-	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
-	let signedDigest = joinSignature(sign);
+): Promise<string> {
+	const message = ethers.solidityPackedKeccak256(
+        ["uint256", "uint256", "bytes", "uint256", "uint8"],
+		[jobId, reqChainId, output, totalTime, errorCode]
+    );
+	const signature = await sourceEnclaveWallet.signingKey.sign(message);
+	let signedDigest = ethers.Signature.from(signature).serialized
 	return signedDigest;
 }
 
-function createReassignGatewaySignature(
+async function createReassignGatewaySignature(
 	jobId: number,
 	reqChainId: number,
     gatewayOperatorOld: string,
 	sequenceId: number,
 	sourceEnclaveWallet: Wallet
-): string {
-	const message = solidityPacked(
-		["uint256", "uint256", "address", "uint8"],
-		[jobId, reqChainId, gatewayOperatorOld, sequenceId],
-	);
-	const digest = keccak256(message);
-	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
-	let signedDigest = joinSignature(sign);
+): Promise<string> {
+	const message = ethers.solidityPackedKeccak256(
+        ["uint256", "uint256", "address", "uint8"],
+		[jobId, reqChainId, gatewayOperatorOld, sequenceId]
+    );
+	const signature = await sourceEnclaveWallet.signingKey.sign(message);
+	let signedDigest = ethers.Signature.from(signature).serialized
 	return signedDigest;
 }
 
 function walletForIndex(idx: number): Wallet {
-	let wallet = Wallet.fromMnemonic("test test test test test test test test test test test junk", "m/44'/60'/0'/0/" + idx.toString());
+	let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
 
-	return wallet;
+	return new Wallet(wallet.privateKey);
 }

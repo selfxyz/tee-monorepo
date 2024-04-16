@@ -1,9 +1,6 @@
-import { joinSignature } from "@ethersproject/bytes";
-import { parseUnits } from '@ethersproject/units';
-import { Wallet } from '@ethersproject/wallet';
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, ZeroAddress, ZeroHash, keccak256, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationVerifier, CommonChainExecutors, Pond } from "../../typechain-types";
 import { AttestationAutherUpgradeable } from "../../typechain-types/contracts/AttestationAutherSample";
@@ -11,21 +8,21 @@ import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { getAttestationVerifier, getCommonChainExecutors, getPond } from "../../utils/typechainConvertor";
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
-	PCR0: parseUnits("1", 115).toHexString(),
-	PCR1: parseUnits("2", 114).toHexString(),
-	PCR2: parseUnits("3", 114).toHexString(),
+	PCR0: ethers.hexlify(ethers.randomBytes(48)),
+	PCR1: ethers.hexlify(ethers.randomBytes(48)),
+	PCR2: ethers.hexlify(ethers.randomBytes(48))
 };
 
 const image2: AttestationAutherUpgradeable.EnclaveImageStruct = {
-	PCR0: parseUnits("4", 114).toHexString(),
-	PCR1: parseUnits("5", 114).toHexString(),
-	PCR2: parseUnits("6", 114).toHexString(),
+	PCR0: ethers.hexlify(ethers.randomBytes(48)),
+	PCR1: ethers.hexlify(ethers.randomBytes(48)),
+	PCR2: ethers.hexlify(ethers.randomBytes(48))
 };
 
 const image3: AttestationAutherUpgradeable.EnclaveImageStruct = {
-	PCR0: parseUnits("7", 114).toHexString(),
-	PCR1: parseUnits("8", 114).toHexString(),
-	PCR2: parseUnits("9", 114).toHexString(),
+	PCR0: ethers.hexlify(ethers.randomBytes(48)),
+	PCR1: ethers.hexlify(ethers.randomBytes(48)),
+	PCR2: ethers.hexlify(ethers.randomBytes(48))
 };
 
 function getImageId(image: AttestationAutherUpgradeable.EnclaveImageStruct): string {
@@ -44,7 +41,7 @@ describe("CommonChainExecutors - Init", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		const attestationVerifierContract = await upgrades.deployProxy(
@@ -187,7 +184,7 @@ describe("CommonChainExecutors - Verify", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
         wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		const attestationVerifierContract = await upgrades.deployProxy(
@@ -237,7 +234,7 @@ describe("CommonChainExecutors - Register executor", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
         wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		const attestationVerifierContract = await upgrades.deployProxy(
@@ -273,7 +270,7 @@ describe("CommonChainExecutors - Register executor", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
 
 		await expect(commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
 			.to.emit(commonChainExecutors, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image2));
@@ -286,7 +283,7 @@ describe("CommonChainExecutors - Register executor", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
 
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
@@ -311,7 +308,7 @@ describe("CommonChainExecutors - Staking", function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
         wallets = signers.map((_, idx) => walletForIndex(idx));
-		pubkeys = wallets.map((w) => normalize(w.publicKey));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		const attestationVerifierContract = await upgrades.deployProxy(
@@ -346,7 +343,7 @@ describe("CommonChainExecutors - Staking", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 		let jobCapacity = 20, 
 			stakeAmount = 10;
-		let signedDigest = createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
 		await commonChainExecutors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 	});
 
@@ -405,7 +402,7 @@ async function createAttestation(
 		]
 	}
 
-	const sign = await sourceEnclaveKey._signTypedData(domain, types, {
+	const sign = await sourceEnclaveKey.signTypedData(domain, types, {
 		enclavePubKey: enclaveKey,
 		PCR0: image.PCR0,
 		PCR1: image.PCR1,
@@ -421,22 +418,22 @@ async function createAttestation(
 	}];
 }
 
-function createExecutorSignature(
+async function createExecutorSignature(
 	jobCapacity: number,
 	sourceEnclaveWallet: Wallet
-): string {
-	const message = solidityPacked(
-		["uint256"],
-		[jobCapacity],
-	);
-	const digest = keccak256(message);
-	let sign = sourceEnclaveWallet._signingKey().signDigest(digest);
-	let signedDigest = joinSignature(sign);
+): Promise<string> {
+
+	const message = ethers.solidityPackedKeccak256(
+        ["uint256"],
+		[jobCapacity]
+    );
+	const signature = await sourceEnclaveWallet.signingKey.sign(message);
+	let signedDigest = ethers.Signature.from(signature).serialized;
 	return signedDigest;
 }
 
 function walletForIndex(idx: number): Wallet {
-	let wallet = Wallet.fromMnemonic("test test test test test test test test test test test junk", "m/44'/60'/0'/0/" + idx.toString());
+	let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
 
-	return wallet;
+	return new Wallet(wallet.privateKey);
 }
