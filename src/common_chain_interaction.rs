@@ -20,7 +20,6 @@ use crate::chain_util::{
     get_key_for_job_id, pub_key_to_address, sign_job_response_response,
     sign_reassign_gateway_relay_response, sign_relay_job_response,
 };
-use crate::common_chain_gateway_state_service::GatewayData;
 use crate::constant::{
     MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
     RESPONSE_RELAY_TIMEOUT,
@@ -29,8 +28,8 @@ use crate::contract_abi::{
     CommonChainGatewayContract, CommonChainJobsContract, RequestChainContract,
 };
 use crate::model::{
-    ComChainJobType, CommonChainClient, Job, JobResponse, ReqChainJobType, RequestChainClient,
-    RequestChainData,
+    ComChainJobType, CommonChainClient, GatewayData, Job, JobResponse, ReqChainJobType,
+    RequestChainClient, RequestChainData,
 };
 use crate::HttpProvider;
 
@@ -634,8 +633,7 @@ impl CommonChainClient {
             .address(self.contract_addr)
             .select(0..)
             .topic0(vec![
-                // TODO: Fix - not getting gateway address from the event.
-                keccak256("JobResponded(uint256,uint256,address,bytes,uint256,uint256,uint8)"),
+                keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8)"),
                 keccak256("JobResourceUnavailable(uint256,uint256,address)"),
             ]);
 
@@ -650,8 +648,7 @@ impl CommonChainClient {
             let topics = log.topics.clone();
 
             if topics[0]
-                == keccak256("JobResponded(uint256,uint256,address,bytes,uint256,uint256,uint8)")
-                    .into()
+                == keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8)").into()
             {
                 info!(
                     "JobResponded event triggered for job ID: {:?}",
@@ -688,7 +685,6 @@ impl CommonChainClient {
         let types = vec![
             ParamType::Uint(256),
             ParamType::Uint(256),
-            ParamType::Address,
             ParamType::Bytes,
             ParamType::Uint(256),
             ParamType::Uint(8),
@@ -710,8 +706,7 @@ impl CommonChainClient {
             error_code: decoded[4].clone().into_uint().unwrap().low_u64() as u8,
             output_count: decoded[5].clone().into_uint().unwrap().low_u64() as u8,
             job_type: ReqChainJobType::JobResponded,
-            // TODO: Not getting this anymore. Need to fix.
-            gateway_address: decoded[6].clone().into_address(),
+            gateway_address: None,
             sequence_number: 0,
         })
     }
@@ -732,20 +727,19 @@ impl CommonChainClient {
         let req_chain_client =
             self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
 
-        // TODO: check job_ids from active jobs instead of getting gateway_address from the event
-        if job_response.gateway_address.unwrap() == self.address {
-            let job: Job;
-            // scope for the read lock
-            {
-                job = self
-                    .active_jobs
-                    .read()
-                    .await
-                    .get(&job_response.job_key)
-                    .unwrap()
-                    .clone();
-            }
-            // TODO: Set gateway address to self.address in the job_response
+        let job: Option<Job>;
+        // scope for the read lock
+        {
+            job = self
+                .active_jobs
+                .read()
+                .await
+                .get(&job_response.job_key)
+                .cloned();
+        }
+        if job.is_some() {
+            let job = job.unwrap();
+            job_response.gateway_address = job.gateway_address;
             self.clone().remove_job(job).await;
         } else {
             let gateway_address: Address;
@@ -879,24 +873,15 @@ impl CommonChainClient {
 
         let job_id = decoded[0].clone().into_uint().unwrap();
         let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
-        let gateway_address = decoded[2].clone().into_address().unwrap();
 
-        if gateway_address != self.address {
-            return;
-        }
         let job_key = get_key_for_job_id(job_id, req_chain_id).await;
-
         let job: Job;
         // scope for the read lock
         {
             job = self.active_jobs.read().await.get(&job_key).unwrap().clone();
         }
 
-        if job.req_chain_id != req_chain_id {
-            return;
-        }
-
-        if job.gateway_address.unwrap() != gateway_address {
+        if job.gateway_address.unwrap() != self.address {
             return;
         }
 

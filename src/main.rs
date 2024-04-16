@@ -21,8 +21,7 @@ use tokio::fs;
 use tokio::sync::RwLock;
 
 use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
-use crate::common_chain_gateway_state_service::GatewayData;
-use crate::model::{AppState, ConfigManager};
+use crate::model::{AppState, ConfigManager, GatewayData};
 
 type HttpProvider = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
 

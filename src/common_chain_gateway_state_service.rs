@@ -12,17 +12,8 @@ use tokio::time;
 use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
 use crate::contract_abi::CommonChainGatewayContract;
+use crate::model::GatewayData;
 use crate::HttpProvider;
-
-#[derive(Debug, Clone)]
-pub struct GatewayData {
-    pub last_block_number: u64,
-    pub enclave_pub_key: Bytes,
-    pub address: Address,
-    pub stake_amount: U256,
-    pub status: bool,
-    pub req_chain_ids: BTreeSet<U256>,
-}
 
 // Initialize the gateway epoch state
 pub async fn gateway_epoch_state_service(

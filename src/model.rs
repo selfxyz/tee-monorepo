@@ -5,12 +5,11 @@ use ethers::types::{Address, Bytes};
 use ethers::types::{H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 
-use crate::common_chain_gateway_state_service::GatewayData;
 use crate::contract_abi::{
     CommonChainGatewayContract, CommonChainJobsContract, RequestChainContract,
 };
@@ -68,9 +67,13 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockData {
-    pub number: u64,
-    pub timestamp: u64,
+pub struct GatewayData {
+    pub last_block_number: u64,
+    pub enclave_pub_key: Bytes,
+    pub address: Address,
+    pub stake_amount: U256,
+    pub status: bool,
+    pub req_chain_ids: BTreeSet<U256>,
 }
 
 #[derive(Debug, Clone)]
