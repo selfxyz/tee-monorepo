@@ -121,6 +121,8 @@ pub enum ReqChainJobType {
 #[derive(Debug, Clone)]
 pub struct Job {
     pub job_id: U256,
+    pub req_chain_id: u64,
+    pub job_key: U256,
     pub tx_hash: FixedBytes,
     pub code_input: Bytes,
     pub user_timout: U256,
@@ -128,7 +130,6 @@ pub struct Job {
     pub max_gas_price: U256,
     pub deposit: Address,
     pub callback_deposit: U256,
-    pub req_chain_id: u64,
     pub job_owner: Address,
     pub job_type: ComChainJobType,
     pub sequence_number: u8,
@@ -138,7 +139,8 @@ pub struct Job {
 #[derive(Debug, Clone)]
 pub struct JobResponse {
     pub job_id: U256,
-    pub req_chain_id: U256,
+    pub req_chain_id: u64,
+    pub job_key: U256,
     pub output: Bytes,
     pub total_time: U256,
     pub error_code: u8,

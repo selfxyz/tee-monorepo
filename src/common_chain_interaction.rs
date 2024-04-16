@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_recursion::async_recursion;
 use ethers::abi::{decode, Address, FixedBytes, ParamType};
 use ethers::prelude::*;
@@ -17,8 +17,8 @@ use tokio::sync::RwLock;
 use tokio::{task, time};
 
 use crate::chain_util::{
-    pub_key_to_address, sign_job_response_response, sign_reassign_gateway_relay_response,
-    sign_relay_job_response,
+    get_key_for_job_id, pub_key_to_address, sign_job_response_response,
+    sign_reassign_gateway_relay_response, sign_relay_job_response,
 };
 use crate::common_chain_gateway_state_service::GatewayData;
 use crate::constant::{
@@ -78,7 +78,6 @@ impl CommonChainClient {
             req_chain_clients: HashMap::new(),
             gateway_epoch_state,
             request_chain_list,
-            // TODO: can the job_id be same ever? Should it be used as the key?
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
             epoch,
             time_interval,
@@ -208,7 +207,10 @@ impl CommonChainClient {
                     );
                     let self_clone = Arc::clone(&self_clone);
                     task::spawn(async move {
-                        self_clone.cancel_job_with_job_id(U256::from_big_endian(log.topics[1].as_fixed_bytes())).await;
+                        self_clone.cancel_job_with_job_id(
+                            U256::from_big_endian(log.topics[1].as_fixed_bytes()),
+                            request_chain.chain_id
+                        ).await;
                     });
                 } else if topics[0] == keccak256("GatewayReassigned(uint256,uint256,address,address,uint8)").into() {
                     info!(
@@ -255,6 +257,12 @@ impl CommonChainClient {
 
         Ok(Job {
             job_id: decoded[0].clone().into_uint().unwrap(),
+            req_chain_id: req_chain_client.chain_id.clone(),
+            job_key: get_key_for_job_id(
+                decoded[0].clone().into_uint().unwrap(),
+                req_chain_client.chain_id.clone(),
+            )
+            .await,
             tx_hash: decoded[1].clone().into_bytes().unwrap(),
             code_input: decoded[2].clone().into_bytes().unwrap().into(),
             user_timout: decoded[3].clone().into_uint().unwrap(),
@@ -262,7 +270,6 @@ impl CommonChainClient {
             max_gas_price: decoded[5].clone().into_uint().unwrap(),
             deposit: decoded[6].clone().into_address().unwrap(),
             callback_deposit: decoded[7].clone().into_uint().unwrap(),
-            req_chain_id: req_chain_client.chain_id.clone(),
             // TODO: Remove job_owner
             job_owner: log.address,
             job_type: ComChainJobType::JobRelay,
@@ -301,7 +308,7 @@ impl CommonChainClient {
                 self.active_jobs
                     .write()
                     .await
-                    .insert(job.job_id, job.clone());
+                    .insert(job.job_key, job.clone());
             }
             tx.send((job, self.clone())).await.unwrap();
         } else {
@@ -325,12 +332,16 @@ impl CommonChainClient {
         // get_logs might not provide the latest logs for the latest block
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
-        let job_key = U256::from(keccak256(format!("{}-{}", job.job_id, job.req_chain_id)));
-        let onchain_job = self.com_chain_jobs_contract.jobs(job_key).await.unwrap();
+        let onchain_job = self
+            .com_chain_jobs_contract
+            .jobs(job.job_key)
+            .await
+            .unwrap();
 
         let onchain_job: Job = Job {
             job_id: onchain_job.0,
             req_chain_id: onchain_job.1.as_u64(),
+            job_key: get_key_for_job_id(onchain_job.0, onchain_job.1.as_u64()).await,
             tx_hash: onchain_job.2.to_vec(),
             code_input: onchain_job.3,
             user_timout: onchain_job.4,
@@ -455,12 +466,13 @@ impl CommonChainClient {
         Ok(selected_gateway.address)
     }
 
-    async fn cancel_job_with_job_id(self: Arc<Self>, job_id: U256) {
+    async fn cancel_job_with_job_id(self: Arc<Self>, job_id: U256, req_chain_id: u64) {
         info!("Remove the job from the active jobs list");
+        let job_key = get_key_for_job_id(job_id, req_chain_id).await;
 
         // scope for the write lock
         {
-            self.active_jobs.write().await.remove(&job_id);
+            self.active_jobs.write().await.remove(&job_key);
         }
     }
 
@@ -476,6 +488,7 @@ impl CommonChainClient {
         let decoded = decode(&types, &log.data.0).unwrap();
 
         let job_id = decoded[0].clone().into_uint().unwrap();
+        let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
         let old_gateway = decoded[2].clone().into_address().unwrap();
         let sequence_number = decoded[4].clone().into_uint().unwrap().low_u64() as u8;
 
@@ -483,10 +496,11 @@ impl CommonChainClient {
             return;
         }
 
+        let job_key = get_key_for_job_id(job_id, req_chain_id).await;
         let job: Job;
         // scope for the read lock
         {
-            job = self.active_jobs.read().await.get(&job_id).unwrap().clone();
+            job = self.active_jobs.read().await.get(&job_key).unwrap().clone();
         }
 
         if job.sequence_number != sequence_number {
@@ -495,7 +509,7 @@ impl CommonChainClient {
 
         // scope for the write lock
         {
-            self.active_jobs.write().await.remove(&job_id);
+            self.active_jobs.write().await.remove(&job_key);
         }
     }
 
@@ -686,7 +700,12 @@ impl CommonChainClient {
 
         Ok(JobResponse {
             job_id: decoded[0].clone().into_uint().unwrap(),
-            req_chain_id: decoded[1].clone().into_uint().unwrap(),
+            req_chain_id: decoded[1].clone().into_uint().unwrap().low_u64(),
+            job_key: get_key_for_job_id(
+                decoded[0].clone().into_uint().unwrap(),
+                decoded[1].clone().into_uint().unwrap().low_u64(),
+            )
+            .await,
             output: decoded[2].clone().into_bytes().unwrap().into(),
             total_time: decoded[3].clone().into_uint().unwrap(),
             error_code: decoded[4].clone().into_uint().unwrap().low_u64() as u8,
@@ -723,7 +742,7 @@ impl CommonChainClient {
                     .active_jobs
                     .read()
                     .await
-                    .get(&job_response.job_id)
+                    .get(&job_response.job_key)
                     .unwrap()
                     .clone();
             }
@@ -736,10 +755,10 @@ impl CommonChainClient {
                 let job_id_req_chain_id = match job_response
                     .job_id
                     .as_u64()
-                    .checked_sub(job_response.req_chain_id.as_u64())
+                    .checked_sub(job_response.req_chain_id)
                 {
                     Some(val) => val,
-                    None => job_response.req_chain_id.as_u64() - job_response.job_id.as_u64(),
+                    None => job_response.req_chain_id - job_response.job_id.as_u64(),
                 };
                 job_id_req_chain_id + job_response.total_time.as_u64()
             };
@@ -772,10 +791,10 @@ impl CommonChainClient {
         // The retry number check is to make sure we are removing the correct job from the active jobs list
         // In a case where this txn took longer than the REQUEST_RELAY_TIMEOUT, the job might have been retried
         // and the active_jobs list might have the same job_id with a different retry number.
-        if active_jobs.contains_key(&job.job_id)
-            && active_jobs[&job.job_id].sequence_number == job.sequence_number
+        if active_jobs.contains_key(&job.job_key)
+            && active_jobs[&job.job_key].sequence_number == job.sequence_number
         {
-            active_jobs.remove(&job.job_id);
+            active_jobs.remove(&job.job_key);
         }
     }
 
@@ -801,6 +820,7 @@ impl CommonChainClient {
         let onchain_job_response: JobResponse = JobResponse {
             job_id: job_response.job_id,
             req_chain_id: job_response.req_chain_id,
+            job_key: get_key_for_job_id(job_response.job_id, job_response.req_chain_id).await,
             output: Bytes::default().into(),
             total_time: U256::zero(),
             error_code: 0,
@@ -859,20 +879,21 @@ impl CommonChainClient {
         let decoded = decode(&types, &log.data.0).unwrap();
 
         let job_id = decoded[0].clone().into_uint().unwrap();
-        let req_chain_id = decoded[1].clone().into_uint().unwrap();
+        let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
         let gateway_address = decoded[2].clone().into_address().unwrap();
 
         if gateway_address != self.address {
             return;
         }
+        let job_key = get_key_for_job_id(job_id, req_chain_id).await;
 
         let job: Job;
         // scope for the read lock
         {
-            job = self.active_jobs.read().await.get(&job_id).unwrap().clone();
+            job = self.active_jobs.read().await.get(&job_key).unwrap().clone();
         }
 
-        if job.req_chain_id != req_chain_id.as_u64() {
+        if job.req_chain_id != req_chain_id {
             return;
         }
 
@@ -882,7 +903,7 @@ impl CommonChainClient {
 
         // scope for the write lock
         {
-            self.active_jobs.write().await.remove(&job_id);
+            self.active_jobs.write().await.remove(&job_key);
         }
     }
 
@@ -899,7 +920,7 @@ impl CommonChainClient {
                         .job_response_txn(job_response_clone)
                         .await;
                     com_chain_client
-                        .remove_job_response(job_response.job_id)
+                        .remove_job_response(job_response.job_key)
                         .await;
                 }
                 ReqChainJobType::SlashGatewayResponse => {
@@ -962,8 +983,8 @@ impl CommonChainClient {
         );
     }
 
-    async fn remove_job_response(self: Arc<Self>, job_id: U256) {
+    async fn remove_job_response(self: Arc<Self>, job_key: U256) {
         let mut active_jobs = self.active_jobs.write().await;
-        active_jobs.remove(&job_id);
+        active_jobs.remove(&job_key);
     }
 }

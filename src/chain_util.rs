@@ -74,6 +74,12 @@ pub fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
     Ok(Address::from_slice(&addr_bytes))
 }
 
+pub async fn get_key_for_job_id(job_id: U256, req_chain_id: u64) -> U256 {
+    let req_chain_id = U256::from(req_chain_id);
+    let hash = keccak256(format!("{}-{}", job_id, req_chain_id));
+    U256::from_big_endian(&hash)
+}
+
 pub async fn sign_relay_job_response(
     signer_key: &SigningKey,
     job_id: U256,
