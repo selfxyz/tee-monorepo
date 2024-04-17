@@ -26,12 +26,14 @@ contract CommonChainGateways is
     constructor(
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
-        IERC20 _token
+        IERC20 _token,
+        uint256 _deregisterTimeoutDuration
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
         _disableInitializers();
 
         require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
         TOKEN = _token;
+        DEREGISTER_TIMEOUT_DURATION = _deregisterTimeoutDuration;
     }
 
     using SafeERC20 for IERC20;
@@ -78,6 +80,9 @@ contract CommonChainGateways is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable DEREGISTER_TIMEOUT_DURATION;
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -214,14 +219,24 @@ contract CommonChainGateways is
             "INVALID_ENCLAVE_KEY"
         );
         
-        // delete gateway
-        delete gateways[enclaveKey];
-
-        _revokeEnclaveKey(_enclavePubKey);
+        // TODO: add gateway deregister startTime and status false
+        gateways[enclaveKey].status = false;
+        gateways[enclaveKey].deregisterStartTime = block.timestamp;
 
         emit GatewayDeregistered(enclaveKey);
+    }
 
-        // return stake amount
+    function completeDegistration(
+        bytes memory _enclavePubKey
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        require(!gateways[enclaveKey].status, "INVALID_STATUS");
+        require(block.timestamp > gateways[enclaveKey].deregisterStartTime + DEREGISTER_TIMEOUT_DURATION, "DEREGISTER_TIME_PENDING");
+
+        delete gateways[enclaveKey];
+        _revokeEnclaveKey(_enclavePubKey);
+
+        // TODO: return stake amount
     }
 
     function addGatewayStake(
