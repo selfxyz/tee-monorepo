@@ -20,6 +20,11 @@ contract CommonChainGateways is
     UUPSUpgradeable, // public upgrade
     AttestationAutherUpgradeable
 {
+    using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
+
+    error ZeroAddressToken();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
@@ -31,15 +36,15 @@ contract CommonChainGateways is
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
         _disableInitializers();
 
-        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
+        if(address(_token) == address(0))
+            revert ZeroAddressToken();
         TOKEN = _token;
         DEREGISTER_TIMEOUT_DURATION = _deregisterTimeoutDuration;
     }
 
-    using SafeERC20 for IERC20;
-    using ECDSA for bytes32;
-
     //-------------------------------- Overrides start --------------------------------//
+
+    error ZeroAddressAdmin();
 
     function supportsInterface(
         bytes4 interfaceId
@@ -65,7 +70,8 @@ contract CommonChainGateways is
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
-        require(_admin != address(0), "ZERO_ADDRESS_ADMIN");
+        if(_admin == address(0))
+            revert ZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -105,12 +111,12 @@ contract CommonChainGateways is
     // enclaveAddress => Gateway
     mapping(address => Gateway) public gateways;
 
+    error InvalidGatewayOperator();
+
     modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(
-            gateways[enclaveKey].operator == _msgSender(),
-            "ONLY_GATEWAY_OPERATOR"
-        );
+        if(gateways[enclaveKey].operator != _msgSender())
+            revert InvalidGatewayOperator();
         _;
     }
 
@@ -154,7 +160,15 @@ contract CommonChainGateways is
         uint256 chainId
     );
 
+    error GatewayAlreadyExists();
+    error UnsupportedChain();
+    error InvalidEnclaveKey();
+    error InvalidStatus();
+    error DeregisterTimePending();
+    error InvalidLength();
+    error EmptyRequestedChains();
     error ChainAlreadyExists(uint256 chainId);
+    error EmptyChainlist();
     error ChainNotFound(uint256 chainId);
 
     function registerGateway(
@@ -181,10 +195,12 @@ contract CommonChainGateways is
         TOKEN.safeTransferFrom(_msgSender(), address(this), _stakeAmount);
         
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(gateways[enclaveKey].operator == address(0), "GATEWAY_ALREADY_EXISTS");
+        if(gateways[enclaveKey].operator != address(0))
+            revert GatewayAlreadyExists();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            require(requestChains[_chainIds[index]].contractAddress != address(0), "UNSUPPORTED_CHAIN");
+            if(requestChains[_chainIds[index]].contractAddress == address(0))
+                revert UnsupportedChain();
         }
 
         // check missing for validating chainIds array for multiple same chainIds
@@ -214,10 +230,8 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey
     ) external onlyGatewayOperator(_enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(
-            gateways[enclaveKey].operator != address(0),
-            "INVALID_ENCLAVE_KEY"
-        );
+        if(gateways[enclaveKey].operator == address(0))
+            revert InvalidEnclaveKey();
         
         // TODO: add gateway deregister startTime and status false
         gateways[enclaveKey].status = false;
@@ -230,8 +244,10 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey
     ) external onlyGatewayOperator(_enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(!gateways[enclaveKey].status, "INVALID_STATUS");
-        require(block.timestamp > gateways[enclaveKey].deregisterStartTime + DEREGISTER_TIMEOUT_DURATION, "DEREGISTER_TIME_PENDING");
+        if(gateways[enclaveKey].status)
+            revert InvalidStatus();
+        if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + DEREGISTER_TIMEOUT_DURATION)
+            revert DeregisterTimePending();
 
         delete gateways[enclaveKey];
         _revokeEnclaveKey(_enclavePubKey);
@@ -270,7 +286,8 @@ contract CommonChainGateways is
         uint256[] memory _chainIds,
         RequestChain[] memory _requestChains
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_chainIds.length > 0 && _chainIds.length == _requestChains.length, "INVALID_LENGTH");
+        if(_chainIds.length == 0 || _chainIds.length != _requestChains.length)
+            revert InvalidLength();
         for (uint256 index = 0; index < _requestChains.length; index++) {
             RequestChain memory reqChain = _requestChains[index];
             uint256 chainId = _chainIds[index];
@@ -283,7 +300,8 @@ contract CommonChainGateways is
     function removeChainGlobal(
         uint256[] memory _chainIds
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_chainIds.length > 0, "INVALID_LENGTH");
+        if(_chainIds.length == 0)
+            revert InvalidLength();
         for (uint256 index = 0; index < _chainIds.length; index++) {
             uint256 chainId = _chainIds[index];
             delete requestChains[chainId];
@@ -296,7 +314,8 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey,
         uint256[] memory _chainIds
     ) external onlyGatewayOperator(_enclavePubKey) {
-        require(_chainIds.length > 0, "EMPTY_REQ_CHAINS");
+        if(_chainIds.length == 0)
+            revert EmptyRequestedChains();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             addChain(
@@ -310,7 +329,8 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey,
         uint256 _chainId
     ) internal {
-        require(requestChains[_chainId].contractAddress != address(0), "UNSUPPORTED_CHAIN");
+        if(requestChains[_chainId].contractAddress == address(0))
+            revert UnsupportedChain();
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
@@ -327,7 +347,8 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey,
         uint256[] memory _chainIds
     ) external onlyGatewayOperator(_enclavePubKey) {
-        require(_chainIds.length > 0, "EMPTY_REQ_CHAINS");
+        if(_chainIds.length == 0)
+            revert EmptyRequestedChains();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             removeChain(
@@ -344,7 +365,8 @@ contract CommonChainGateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
         uint256 len = chainIdList.length;
-        require(len > 0, "EMPTY_CHAINLIST");
+        if(len == 0)
+            revert EmptyChainlist();
 
         uint256 index = 0;
         for (; index < len; index++) {

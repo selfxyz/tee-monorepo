@@ -18,6 +18,11 @@ contract CommonChainJobs is
     AccessControlUpgradeable, 
     UUPSUpgradeable // public upgrade
 {
+    using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
+
+    error ZeroAddressToken();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
@@ -29,15 +34,13 @@ contract CommonChainJobs is
     ) initializer {
         _disableInitializers();
 
-        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
+        if(address(_token) == address(0))
+            revert ZeroAddressToken();
         TOKEN = _token;
         RELAY_BUFFER_TIME = _relayBufferTime;
         EXECUTION_BUFFER_TIME = _executionBufferTime;
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
     }
-
-    using SafeERC20 for IERC20;
-    using ECDSA for bytes32;
 
     //-------------------------------- Overrides start --------------------------------//
 
@@ -61,12 +64,15 @@ contract CommonChainJobs is
 
     //-------------------------------- Initializer start --------------------------------//
 
+    error ZeroAddressAdmin();
+
     function __CommonChainJobs_init(
         address _admin,
         CommonChainGateways _gateways,
         CommonChainExecutors _executors
     ) public initializer {
-        require(_admin != address(0), "ZERO_ADDRESS_ADMIN");
+        if(_admin == address(0))
+            revert ZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -153,6 +159,15 @@ contract CommonChainJobs is
         address indexed gatewayOperator
     );
 
+    error RelayTimeOver();
+    error JobMarkedEndedAsResourceUnavailable();
+    error InvalidSequenceId();
+    error JobAlreadyRelayed();
+    error UnsupportedChain();
+    error ExecutionTimeOver();
+    error NotSelectedExecutor();
+    error ExecutorAlreadySubmittedOutput();
+
     function getKey(
         uint256 _jobId,
         uint256 _reqChainId
@@ -172,11 +187,16 @@ contract CommonChainJobs is
         address _jobOwner
     ) external {
         uint256 key = getKey(_jobId, _reqChainId);
-        require(block.timestamp <= _jobRequestTimestamp + RELAY_BUFFER_TIME, "RELAY_TIME_OVER");
-        require(!jobs[key].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
-        require(_sequenceId == jobs[key].sequenceId + 1, "INVALID_SEQUENCE_ID");
-        require(jobs[key].execStartTime == 0, "JOB_ALREADY_RELAYED");
-        require(gateways.isChainSupported(_reqChainId), "UNSUPPORTED_CHAIN");
+        if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
+            revert RelayTimeOver();
+        if(jobs[key].isResourceUnavailable)
+            revert JobMarkedEndedAsResourceUnavailable();
+        if(_sequenceId != jobs[key].sequenceId + 1)
+            revert InvalidSequenceId();
+        if(jobs[key].execStartTime != 0)
+            revert JobAlreadyRelayed();
+        if(!gateways.isChainSupported(_reqChainId))
+            revert UnsupportedChain();
 
         // signature check
         bytes32 digest = keccak256(
@@ -229,10 +249,8 @@ contract CommonChainJobs is
         uint8 _errorCode
     ) external {
         uint256 key = getKey(_jobId, _reqChainId);
-        require(
-            block.timestamp <= jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME, 
-            "EXECUTION_TIME_OVER"
-        );
+        if(block.timestamp > jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME)
+            revert ExecutionTimeOver();
 
         // signature check
         bytes32 digest = keccak256(
@@ -242,8 +260,10 @@ contract CommonChainJobs is
 
         executors.allowOnlyVerified(signer);
 
-        require(isJobExecutor(_jobId, _reqChainId, signer), "NOT_SELECTED_EXECUTOR");
-        require(!hasExecutedJob[key][signer], "EXECUTOR_ALREADY_SUBMITTED_OUTPUT");
+        if(!isJobExecutor(_jobId, _reqChainId, signer))
+            revert NotSelectedExecutor();
+        if(hasExecutedJob[key][signer])
+            revert ExecutorAlreadySubmittedOutput();
 
         executors.updateOnSubmitOutput(signer);
         hasExecutedJob[key][signer] = true;
@@ -290,18 +310,21 @@ contract CommonChainJobs is
         uint8 sequenceId
     );
 
+    error InvalidJob();
+    error DeadlineNotOver();
+    error JobAlreadyExecuted();
+
     function slashOnExecutionTimeout(
         uint256 _jobId,
         uint256 _reqChainId
     ) external {
         uint256 key = getKey(_jobId, _reqChainId);
-        require(jobs[key].jobId > 0, "INVALID_JOB");
+        if(jobs[key].jobId == 0)
+            revert InvalidJob();
 
         // check for time
-        require(
-            block.timestamp > jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME,
-            "DEADLINE_NOT_OVER"
-        );
+        if(block.timestamp <= jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME)
+            revert DeadlineNotOver();
 
         delete jobs[key];
 
@@ -310,7 +333,8 @@ contract CommonChainJobs is
         uint256 len = selectedExecutors[key].length;
         for (uint256 index = 0; index < len; index++) {
             address executorKey = selectedExecutors[key][index];
-            require(!hasExecutedJob[key][executorKey], "JOB_ALREADY_EXECUTED");
+            if(hasExecutedJob[key][executorKey])
+                revert JobAlreadyExecuted();
             delete hasExecutedJob[key][executorKey];
             executors.updateOnExecutionTimeoutSlash(executorKey);
         }
@@ -330,8 +354,10 @@ contract CommonChainJobs is
         uint256 key = getKey(_jobId, _reqChainId);
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
 
-        require(!jobs[key].isResourceUnavailable, "JOB_MARKED_ENDED_AS_RESOURCE_UNAVAILABLE");
-        require(_sequenceId == jobs[key].sequenceId + 1 && _sequenceId < 3, "INVALID_SEQUENCE_ID");
+        if(jobs[key].isResourceUnavailable)
+            revert JobMarkedEndedAsResourceUnavailable();
+        if(_sequenceId != jobs[key].sequenceId + 1 || _sequenceId > 2)
+            revert InvalidSequenceId();
         jobs[key].sequenceId = _sequenceId;
 
         // signature check

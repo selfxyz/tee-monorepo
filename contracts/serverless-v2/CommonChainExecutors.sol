@@ -23,6 +23,12 @@ contract CommonChainExecutors is
     AttestationAutherUpgradeable,
     TreeUpgradeable
 {
+    using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
+
+    error ZeroAddressToken();
+    error InvalidJobContract();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
@@ -33,15 +39,14 @@ contract CommonChainExecutors is
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
         _disableInitializers();
 
-        require(address(_token) != address(0), "ZERO_ADDRESS_TOKEN");
+        if(address(_token) == address(0))
+            revert ZeroAddressToken();
         TOKEN = _token;
     }
 
-    using SafeERC20 for IERC20;
-    using ECDSA for bytes32;
-
     modifier onlyJobsContract() {
-        require(_msgSender() == address(jobs), "ONLY_JOBS_CONTRACT");
+        if(_msgSender() != address(jobs))
+            revert InvalidJobContract();
         _;
     }
 
@@ -67,11 +72,14 @@ contract CommonChainExecutors is
 
     //-------------------------------- Initializer start --------------------------------//
 
+    error ZeroAddressAdmin();
+
     function __CommonChainExecutors_init(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
-        require(_admin != address(0), "ZERO_ADDRESS_ADMIN");
+        if(_admin == address(0))
+            revert ZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -106,12 +114,12 @@ contract CommonChainExecutors is
     // enclaveKey => Execution node details
     mapping(address => Executor) public executors;
 
+    error InvalidExecutorOperator();
+
     modifier onlyExecutorOperator(bytes memory _enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(
-            executors[enclaveKey].operator == _msgSender(),
-            "ONLY_EXECUTOR_OPERATOR"
-        );
+        if(executors[enclaveKey].operator != _msgSender())
+            revert InvalidExecutorOperator();
         _;
     }
 
@@ -133,6 +141,10 @@ contract CommonChainExecutors is
         uint256 removedAmount,
         uint256 totalAmount
     );
+
+    error ExecutorAlreadyExists();
+    error InvalidEnclaveKey();
+    error AlreadyDeregistered();
 
     function whitelistEnclaveImage(
         bytes memory PCR0,
@@ -170,7 +182,8 @@ contract CommonChainExecutors is
         TOKEN.safeTransferFrom(_msgSender(), address(this), _stakeAmount);
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(executors[enclaveKey].operator == address(0), "EXECUTOR_ALREADY_EXISTS");
+        if(executors[enclaveKey].operator != address(0))
+            revert ExecutorAlreadyExists();
         executors[enclaveKey] = Executor({
             operator: _msgSender(),
             jobCapacity: _jobCapacity,
@@ -189,11 +202,11 @@ contract CommonChainExecutors is
         bytes memory _enclavePubKey
     ) external onlyExecutorOperator(_enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        require(
-            executors[enclaveKey].operator != address(0),
-            "INVALID_ENCLAVE_KEY"
-        );
-        require(executors[enclaveKey].status, "ALREADY_DEREGISTERED");
+        if(executors[enclaveKey].operator == address(0))
+            revert InvalidEnclaveKey();
+        if(!executors[enclaveKey].status)
+            revert AlreadyDeregistered();
+
         executors[enclaveKey].status = false;
 
         if(executors[enclaveKey].activeJobs == 0) {
