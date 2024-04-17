@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use async_recursion::async_recursion;
-use ethers::abi::{decode, Address, FixedBytes, ParamType};
+use ethers::abi::{decode, Address, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;

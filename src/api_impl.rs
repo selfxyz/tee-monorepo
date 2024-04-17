@@ -88,16 +88,16 @@ async fn register_enclave(
     };
 
     // Convert hexadecimal string into bytes
-    let Ok(attestation) = hex::decode(enclave_info.attestation) else {
+    let Ok(attestation) = hex::decode(&enclave_info.attestation[2..]) else {
         return HttpResponse::BadRequest().body("Invalid format of attestation.");
     };
-    let Ok(pcr_0) = hex::decode(enclave_info.pcr_0) else {
+    let Ok(pcr_0) = hex::decode(&enclave_info.pcr_0[2..]) else {
         return HttpResponse::BadRequest().body("Invalid format of pcr_0.");
     };
-    let Ok(pcr_1) = hex::decode(enclave_info.pcr_1) else {
+    let Ok(pcr_1) = hex::decode(&enclave_info.pcr_1[2..]) else {
         return HttpResponse::BadRequest().body("Invalid format of pcr_1.");
     };
-    let Ok(pcr_2) = hex::decode(enclave_info.pcr_2) else {
+    let Ok(pcr_2) = hex::decode(&enclave_info.pcr_2[2..]) else {
         return HttpResponse::BadRequest().body("Invalid format of pcr_2.");
     };
 
@@ -153,8 +153,6 @@ async fn register_enclave(
             pcr_0.clone().into(),
             pcr_1.clone().into(),
             pcr_2.clone().into(),
-            // enclave_info.enclave_cpus.into(),
-            // enclave_info.enclave_memory.into(),
             enclave_info.timestamp.into(),
         );
 
@@ -219,8 +217,6 @@ async fn register_enclave(
         pcr_0.into(),
         pcr_1.into(),
         pcr_2.into(),
-        // enclave_info.enclave_cpus.into(),
-        // enclave_info.enclave_memory.into(),
         enclave_info.timestamp.into(),
         enclave_info
             .chain_list

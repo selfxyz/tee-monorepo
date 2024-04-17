@@ -42,8 +42,6 @@ pub struct RegisterEnclaveInfo {
     pub pcr_0: String,
     pub pcr_1: String,
     pub pcr_2: String,
-    pub enclave_cpus: usize,
-    pub enclave_memory: usize,
     pub timestamp: usize,
     pub stake_amount: usize,
     pub chain_list: Vec<u64>,
