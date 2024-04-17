@@ -296,7 +296,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     }
 
     for address in gateway_addresses {
-        let (_, stake_amount, _) = com_chain_gateway_contract
+        let (_, stake_amount, _, _) = com_chain_gateway_contract
             .gateways(address)
             .block(BlockId::from(to_block_number))
             .call()
