@@ -33,7 +33,7 @@ contract CommonChainGateways is
         uint256 maxAge,
         IERC20 _token,
         uint256 _deregisterTimeoutDuration
-    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
         if(address(_token) == address(0))

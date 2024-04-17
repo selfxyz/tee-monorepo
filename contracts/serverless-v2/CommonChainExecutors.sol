@@ -36,7 +36,7 @@ contract CommonChainExecutors is
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token
-    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
         if(address(_token) == address(0))

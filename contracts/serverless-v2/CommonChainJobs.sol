@@ -31,7 +31,7 @@ contract CommonChainJobs is
         uint256 _relayBufferTime,
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect
-    ) initializer {
+    ) {
         _disableInitializers();
 
         if(address(_token) == address(0))

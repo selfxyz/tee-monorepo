@@ -36,7 +36,7 @@ contract RequestChainContract is
         uint256 _globalMinTimeout,
         uint256 _globalMaxTimeout,
         uint256 _overallTimeout
-    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
         
         if(address(_token) == address(0))

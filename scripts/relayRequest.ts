@@ -69,7 +69,8 @@ async function main() {
             constructorArgs : [
                 av_addr,
                 1000,
-                token_addr
+                token_addr,
+                1000
             ]
         });
     let gatewaysAddress = gatewaysContract.target;
