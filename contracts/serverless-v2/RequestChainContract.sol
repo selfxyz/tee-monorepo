@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -16,9 +16,9 @@ contract RequestChainContract is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
-    AccessControlEnumerableUpgradeable, // RBAC enumeration
-    AttestationAutherUpgradeable, 
-    UUPSUpgradeable // public upgrade
+    AccessControlUpgradeable,
+    UUPSUpgradeable, // public upgrade
+    AttestationAutherUpgradeable
 {
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
@@ -31,6 +31,8 @@ contract RequestChainContract is
         uint256 _globalMaxTimeout,
         uint256 _overallTimeout
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) initializer {
+        _disableInitializers();
+        
         require(address(_token) != address(0), "INVALID_TOKEN");
         TOKEN = _token;
 
@@ -43,11 +45,6 @@ contract RequestChainContract is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    modifier onlyAdmin() {
-        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), "only admin");
-        _;
-    }
-
     //-------------------------------- Overrides start --------------------------------//
 
     function supportsInterface(
@@ -56,27 +53,15 @@ contract RequestChainContract is
         public
         view
         virtual
-        override(ERC165Upgradeable, AccessControlEnumerableUpgradeable)
+        override(ERC165Upgradeable, AccessControlUpgradeable)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
     }
 
-    function _grantRole(bytes32 role, address account) internal virtual override(AccessControlEnumerableUpgradeable) returns (bool) {
-        return super._grantRole(role, account);
-    }
-
-    function _revokeRole(bytes32 role, address account) internal virtual override(AccessControlEnumerableUpgradeable) returns (bool) {
-        bool res = super._revokeRole(role, account);
-
-        // protect against accidentally removing all admins
-        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 0, "AV:RR-All admins cant be removed");
-        return res;
-    }
-
     function _authorizeUpgrade(
         address /*account*/
-    ) internal view override onlyAdmin {}
+    ) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -86,11 +71,11 @@ contract RequestChainContract is
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
-        __Context_init();
-        __ERC165_init();
-        __AccessControlEnumerable_init();
+        __Context_init_unchained();
+        __ERC165_init_unchained();
+        __AccessControl_init_unchained();
+        __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(_images);
-        __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
