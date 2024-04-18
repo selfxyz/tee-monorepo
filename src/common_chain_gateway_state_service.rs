@@ -380,7 +380,7 @@ async fn process_gateway_registered_event(
     if let Token::Array(array_tokens) = decoded[0].clone() {
         for token in array_tokens {
             if let Token::Uint(req_chain_id) = token {
-                req_chain_ids.insert(req_chain_id.clone());
+                req_chain_ids.insert(U256::from(req_chain_id).as_u64());
             }
         }
     }
@@ -437,7 +437,7 @@ async fn process_chain_added_event(
     }
 
     let decoded = decoded.unwrap();
-    let chain_id = decoded[0].clone().into_uint().unwrap();
+    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
 
     // scope for the write lock
     {
@@ -468,7 +468,7 @@ async fn process_chain_removed_event(
     }
 
     let decoded = decoded.unwrap();
-    let chain_id = decoded[0].clone().into_uint().unwrap();
+    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
 
     // scope for the write lock
     {

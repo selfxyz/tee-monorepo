@@ -434,7 +434,7 @@ impl CommonChainClient {
         for gateway_data in all_gateways_data.iter() {
             if gateway_data
                 .req_chain_ids
-                .contains(&U256::from(req_chain_client.chain_id))
+                .contains(&req_chain_client.chain_id)
             {
                 gateway_data_of_req_chain.push(gateway_data.clone());
                 total_stake += gateway_data.stake_amount.as_u64();
