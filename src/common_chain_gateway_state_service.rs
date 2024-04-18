@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use ethers::abi::{decode, ParamType, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
@@ -145,6 +145,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             return Ok(());
         } else if *cycle < cycle_number {
             last_added_cycle = Some(cycle.clone());
+            break;
         }
     }
     drop(added_cycles);
@@ -157,16 +158,19 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         // scope for the read lock
         {
             // get last added cycle's block number
-            from_block_number = gateway_epoch_state
+            let gateway_cycle_map = gateway_epoch_state
                 .read()
                 .await
                 .get(&last_added_cycle.unwrap())
                 .unwrap()
-                .values()
-                .next()
-                .unwrap()
-                .last_block_number
-                + 1;
+                .clone();
+
+            if gateway_cycle_map.is_empty() {
+                from_block_number = 0;
+            } else {
+                from_block_number =
+                    gateway_cycle_map.values().next().unwrap().last_block_number + 1;
+            }
         }
     }
 
@@ -238,6 +242,10 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         if to_block_number < from_block_number {
             return Ok(());
         }
+    }
+
+    if from_block_number == 0 && to_block_number == 0 {
+        return Ok(()); // no blocks to process
     }
 
     // events are only used to update the gateway state and req_chain_ids, not the stake amount
@@ -357,8 +365,17 @@ async fn process_gateway_registered_event(
             ParamType::Array(Box::new(ParamType::Uint(256))),
         ],
         &log.data.0,
-    )
-    .unwrap();
+    );
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
 
     let address = decoded[0].clone().into_address().unwrap();
     let mut req_chain_ids = BTreeSet::new();
@@ -394,7 +411,17 @@ async fn process_gateway_deregistered_event(
     cycle: u64,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
 ) {
-    let decoded = decode(&vec![ParamType::Address], &log.data.0).unwrap();
+    let decoded = decode(&vec![ParamType::Address], &log.data.0);
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
     let address = decoded[0].clone().into_address().unwrap();
 
     // scope for the write lock
@@ -414,8 +441,17 @@ async fn process_chain_added_event(
     let decoded = decode(
         &vec![ParamType::Bytes, ParamType::Address, ParamType::Uint(256)],
         &log.data.0,
-    )
-    .unwrap();
+    );
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
     let address = decoded[0].clone().into_address().unwrap();
     let chain_id = decoded[1].clone().into_uint().unwrap();
 
@@ -438,8 +474,17 @@ async fn process_chain_removed_event(
     let decoded = decode(
         &vec![ParamType::Bytes, ParamType::Address, ParamType::Uint(256)],
         &log.data.0,
-    )
-    .unwrap();
+    );
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
     let address = decoded[0].clone().into_address().unwrap();
     let chain_id = decoded[1].clone().into_uint().unwrap();
 
