@@ -241,22 +241,19 @@ impl CommonChainClient {
         let decoded = decode(&types, &log.data.0).unwrap();
 
         let req_chain_client = self.req_chain_clients[req_chain_id].clone();
+        let job_id = log.topics[1].into_uint();
 
         Ok(Job {
-            job_id: log.topics[1].into_uint(),
+            job_id,
             req_chain_id: req_chain_client.chain_id.clone(),
-            job_key: get_key_for_job_id(
-                decoded[0].clone().into_uint().unwrap(),
-                req_chain_client.chain_id.clone(),
-            )
-            .await,
-            tx_hash: decoded[1].clone().into_bytes().unwrap(),
-            code_input: decoded[2].clone().into_bytes().unwrap().into(),
-            user_timeout: decoded[3].clone().into_uint().unwrap(),
-            starttime: decoded[4].clone().into_uint().unwrap(),
-            max_gas_price: decoded[5].clone().into_uint().unwrap(),
-            deposit: decoded[6].clone().into_address().unwrap(),
-            callback_deposit: decoded[7].clone().into_uint().unwrap(),
+            job_key: get_key_for_job_id(job_id, req_chain_client.chain_id.clone()).await,
+            tx_hash: decoded[0].clone().into_bytes().unwrap(),
+            code_input: decoded[1].clone().into_bytes().unwrap().into(),
+            user_timeout: decoded[2].clone().into_uint().unwrap(),
+            starttime: decoded[3].clone().into_uint().unwrap(),
+            max_gas_price: decoded[4].clone().into_uint().unwrap(),
+            deposit: decoded[5].clone().into_address().unwrap(),
+            callback_deposit: decoded[6].clone().into_uint().unwrap(),
             job_owner: log.address,
             job_type: ComChainJobType::JobRelay,
             sequence_number,
@@ -340,8 +337,6 @@ impl CommonChainClient {
             {
                 let decoded = decode(
                     &vec![
-                        ParamType::Uint(256),
-                        ParamType::Uint(256),
                         ParamType::FixedBytes(32),
                         ParamType::Bytes,
                         ParamType::Uint(256),
@@ -353,13 +348,13 @@ impl CommonChainClient {
                 )
                 .unwrap();
 
-                let job_id = decoded[0].clone().into_uint().unwrap();
-                let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
-                let tx_hash = decoded[2].clone().into_bytes().unwrap();
-                let code_input: Vec<u8> = decoded[3].clone().into_bytes().unwrap().into();
-                let user_timeout = decoded[4].clone().into_uint().unwrap();
-                let job_owner = decoded[5].clone().into_address().unwrap();
-                let gateway_operator = decoded[6].clone().into_address().unwrap();
+                let job_id = log.topics[1].into_uint();
+                let req_chain_id = log.topics[2].into_uint().low_u64();
+                let tx_hash = decoded[0].clone().into_bytes().unwrap();
+                let code_input: Vec<u8> = decoded[1].clone().into_bytes().unwrap().into();
+                let user_timeout = decoded[2].clone().into_uint().unwrap();
+                let job_owner = decoded[3].clone().into_address().unwrap();
+                let gateway_operator = decoded[4].clone().into_address().unwrap();
 
                 if job_id == job.job_id
                     && req_chain_id == job.req_chain_id
@@ -612,7 +607,7 @@ impl CommonChainClient {
             .topic0(vec![
                 keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8)"),
                 keccak256("JobResourceUnavailable(uint256,uint256,address)"),
-                keccak256("GatewayReassigned(uin256,uin256,address,address,uint8)"),
+                keccak256("GatewayReassigned(uint256,uint256,address,address,uint8)"),
             ]);
 
         let mut stream = self
@@ -629,8 +624,8 @@ impl CommonChainClient {
                 == keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8)").into()
             {
                 info!(
-                    "JobResponded event triggered for job ID: {:?}",
-                    log.topics[1]
+                    "JobResponded event triggered for job ID: {:?}, Request Chain ID: {:?}",
+                    log.topics[1], log.topics[2]
                 );
                 let self_clone = Arc::clone(&self);
                 let tx = tx.clone();
@@ -672,8 +667,6 @@ impl CommonChainClient {
 
     async fn get_job_from_job_responded_event(self: Arc<Self>, log: Log) -> Result<JobResponse> {
         let types = vec![
-            ParamType::Uint(256),
-            ParamType::Uint(256),
             ParamType::Bytes,
             ParamType::Uint(256),
             ParamType::Uint(8),
@@ -681,19 +674,17 @@ impl CommonChainClient {
         ];
 
         let decoded = decode(&types, &log.data.0).unwrap();
+        let job_id = log.topics[1].into_uint();
+        let req_chain_id = log.topics[2].into_uint().low_u64();
 
         Ok(JobResponse {
-            job_id: decoded[0].clone().into_uint().unwrap(),
-            req_chain_id: decoded[1].clone().into_uint().unwrap().low_u64(),
-            job_key: get_key_for_job_id(
-                decoded[0].clone().into_uint().unwrap(),
-                decoded[1].clone().into_uint().unwrap().low_u64(),
-            )
-            .await,
-            output: decoded[2].clone().into_bytes().unwrap().into(),
-            total_time: decoded[3].clone().into_uint().unwrap(),
-            error_code: decoded[4].clone().into_uint().unwrap().low_u64() as u8,
-            output_count: decoded[5].clone().into_uint().unwrap().low_u64() as u8,
+            job_id,
+            req_chain_id,
+            job_key: get_key_for_job_id(job_id, req_chain_id).await,
+            output: decoded[0].clone().into_bytes().unwrap().into(),
+            total_time: decoded[1].clone().into_uint().unwrap(),
+            error_code: decoded[2].clone().into_uint().unwrap().low_u64() as u8,
+            output_count: decoded[3].clone().into_uint().unwrap().low_u64() as u8,
             job_type: ReqChainJobType::JobResponded,
             gateway_address: None,
             sequence_number: 0,
@@ -845,16 +836,8 @@ impl CommonChainClient {
     // }
 
     async fn job_resource_unavailable_handler(self: Arc<Self>, log: Log) {
-        let types = vec![
-            ParamType::Uint(256),
-            ParamType::Uint(256),
-            ParamType::Address,
-        ];
-
-        let decoded = decode(&types, &log.data.0).unwrap();
-
-        let job_id = decoded[0].clone().into_uint().unwrap();
-        let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
+        let job_id = log.topics[1].into_uint();
+        let req_chain_id = log.topics[2].into_uint().low_u64();
 
         let job_key = get_key_for_job_id(job_id, req_chain_id).await;
         let job: Job;
@@ -874,20 +857,14 @@ impl CommonChainClient {
     }
 
     async fn gateway_reassigned_handler(self: Arc<Self>, log: Log) {
-        let types = vec![
-            ParamType::Uint(256),
-            ParamType::Uint(256),
-            ParamType::Address,
-            ParamType::Address,
-            ParamType::Uint(8),
-        ];
+        let types = vec![ParamType::Address, ParamType::Address, ParamType::Uint(8)];
 
         let decoded = decode(&types, &log.data.0).unwrap();
 
-        let job_id = decoded[0].clone().into_uint().unwrap();
-        let req_chain_id = decoded[1].clone().into_uint().unwrap().low_u64();
-        let old_gateway = decoded[2].clone().into_address().unwrap();
-        let sequence_number = decoded[4].clone().into_uint().unwrap().low_u64() as u8;
+        let job_id = log.topics[1].into_uint();
+        let req_chain_id = log.topics[2].into_uint().low_u64();
+        let old_gateway = decoded[0].clone().into_address().unwrap();
+        let sequence_number = decoded[2].clone().into_uint().unwrap().low_u64() as u8;
 
         if old_gateway != self.address {
             return;
