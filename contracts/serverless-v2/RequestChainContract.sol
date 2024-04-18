@@ -164,13 +164,10 @@ contract RequestChainContract is
     //-------------------------------- Job start --------------------------------//
 
     struct Job {
-        bytes32 codehash;
-        uint256 userTimeout;
         uint256 startTime;
         uint256 maxGasPrice;
         uint256 usdcDeposit;
         uint256 callbackDeposit;
-        bytes codeInputs;
         address jobOwner;
         bool receivedOutput;
     }
@@ -226,9 +223,6 @@ contract RequestChainContract is
             revert InvalidUserTimeout();
 
         jobs[++jobCount] = Job({
-            codehash: _codehash,
-            codeInputs: _codeInputs,
-            userTimeout: _userTimeout,
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
             usdcDeposit: _usdcDeposit,

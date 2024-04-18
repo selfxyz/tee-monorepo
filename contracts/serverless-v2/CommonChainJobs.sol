@@ -115,8 +115,6 @@ contract CommonChainJobs is
     struct Job {
         uint256 jobId;
         uint256 reqChainId;
-        bytes32 codehash;
-        bytes codeInputs;
         uint256 deadline;
         uint256 execStartTime;
         address jobOwner;
@@ -227,8 +225,6 @@ contract CommonChainJobs is
         jobs[key] = Job({
             jobId: _jobId,
             reqChainId: _reqChainId,
-            codehash: _codehash,
-            codeInputs: _codeInputs,
             deadline: _deadline,
             execStartTime: block.timestamp,
             jobOwner: _jobOwner,
