@@ -174,7 +174,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
     // to_block_number can be less than from_block_number
     // in case of no blocks created in this epoch cycle
-    let to_block_number =
+    let mut to_block_number =
         get_block_number_by_timestamp(&provider, timestamp_to_fetch, from_block_number).await;
 
     if to_block_number.is_none() {
@@ -182,10 +182,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             "Failed to get block number for timestamp {}",
             timestamp_to_fetch
         );
-        return Err(anyhow!(
-            "Failed to get block number for timestamp {}",
-            timestamp_to_fetch
-        ));
+        to_block_number = Some(from_block_number);
     }
 
     let to_block_number = to_block_number.unwrap();
