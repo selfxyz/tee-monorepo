@@ -358,12 +358,10 @@ async fn process_gateway_registered_event(
     to_block_number: u64,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
 ) {
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
     let decoded = decode(
-        &vec![
-            ParamType::Address,
-            ParamType::Address,
-            ParamType::Array(Box::new(ParamType::Uint(256))),
-        ],
+        &vec![ParamType::Array(Box::new(ParamType::Uint(256)))],
         &log.data.0,
     );
 
@@ -377,10 +375,9 @@ async fn process_gateway_registered_event(
 
     let decoded = decoded.unwrap();
 
-    let address = decoded[0].clone().into_address().unwrap();
     let mut req_chain_ids = BTreeSet::new();
 
-    if let Token::Array(array_tokens) = decoded[2].clone() {
+    if let Token::Array(array_tokens) = decoded[0].clone() {
         for token in array_tokens {
             if let Token::Uint(req_chain_id) = token {
                 req_chain_ids.insert(req_chain_id.clone());
@@ -411,18 +408,7 @@ async fn process_gateway_deregistered_event(
     cycle: u64,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
 ) {
-    let decoded = decode(&vec![ParamType::Address], &log.data.0);
-
-    if decoded.is_err() {
-        error!(
-            "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
-        );
-        return;
-    }
-
-    let decoded = decoded.unwrap();
-    let address = decoded[0].clone().into_address().unwrap();
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
 
     // scope for the write lock
     {
@@ -438,10 +424,9 @@ async fn process_chain_added_event(
     cycle: u64,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
 ) {
-    let decoded = decode(
-        &vec![ParamType::Bytes, ParamType::Address, ParamType::Uint(256)],
-        &log.data.0,
-    );
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
+    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
 
     if decoded.is_err() {
         error!(
@@ -452,8 +437,7 @@ async fn process_chain_added_event(
     }
 
     let decoded = decoded.unwrap();
-    let address = decoded[0].clone().into_address().unwrap();
-    let chain_id = decoded[1].clone().into_uint().unwrap();
+    let chain_id = decoded[0].clone().into_uint().unwrap();
 
     // scope for the write lock
     {
@@ -471,10 +455,9 @@ async fn process_chain_removed_event(
     cycle: u64,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
 ) {
-    let decoded = decode(
-        &vec![ParamType::Bytes, ParamType::Address, ParamType::Uint(256)],
-        &log.data.0,
-    );
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
+    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
 
     if decoded.is_err() {
         error!(
@@ -485,8 +468,7 @@ async fn process_chain_removed_event(
     }
 
     let decoded = decoded.unwrap();
-    let address = decoded[0].clone().into_address().unwrap();
-    let chain_id = decoded[1].clone().into_uint().unwrap();
+    let chain_id = decoded[0].clone().into_uint().unwrap();
 
     // scope for the write lock
     {
