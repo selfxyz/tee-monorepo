@@ -122,7 +122,6 @@ contract RequestChainContract is
 
     error GatewayAlreadyExists();
     error InvalidGatewayOperator();
-    error InvalidEnclaveKey();
 
     function registerGateway(
         bytes memory _attestation,
@@ -150,8 +149,6 @@ contract RequestChainContract is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gatewayOperators[enclaveKey] != _msgSender())
             revert InvalidGatewayOperator();
-        if(gatewayOperators[enclaveKey] == address(0))
-            revert InvalidEnclaveKey();
         delete gatewayOperators[enclaveKey];
 
         _revokeEnclaveKey(_enclavePubKey);
