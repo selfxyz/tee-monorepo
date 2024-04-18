@@ -1,7 +1,7 @@
 use actix_web::web::{Data, Json};
 use actix_web::{delete, get, post, HttpResponse, Responder};
 use anyhow::Context;
-use ethers::abi::{encode, Token};
+use ethers::abi::{encode_packed, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
 use hex::FromHex;
@@ -190,7 +190,7 @@ async fn register_enclave(
             .map(|x| Token::Uint(x.into()))
             .collect::<Vec<Token>>(),
     );
-    let encoded_chain_ids = encode(&[token_list]);
+    let encoded_chain_ids = encode_packed(&[token_list]).unwrap();
     let hashed_chain_ids = keccak256(&encoded_chain_ids);
     // hasher.update(&encoded_chain_ids);
     // let mut hash = [0u8; 32];
