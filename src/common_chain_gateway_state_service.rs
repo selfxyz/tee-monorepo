@@ -191,14 +191,15 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
     let to_block_number = to_block_number.unwrap();
 
-    if last_added_cycle.is_none() {
-        // initialize the gateway epoch state[current_cycle] with empty map
-        // scope for the write lock
-        {
-            let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
-            gateway_epoch_state_guard.insert(cycle_number, BTreeMap::new());
-        }
-    } else {
+    // initialize the gateway epoch state[current_cycle] with empty map if it doesn't exist
+    // scope for the write lock
+    {
+        let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
+        gateway_epoch_state_guard
+            .entry(cycle_number)
+            .or_insert(BTreeMap::new());
+    }
+    if last_added_cycle.is_some() {
         // initialize the gateway epoch state[current_cycle] with the previous cycle state
         let last_cycle_state_map: BTreeMap<Address, GatewayData>;
         // scope for the read lock
