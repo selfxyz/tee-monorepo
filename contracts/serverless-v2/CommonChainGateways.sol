@@ -171,7 +171,9 @@ contract CommonChainGateways is
     error EmptyChainlist();
     error ChainNotFound(uint256 chainId);
 
-    function registerGateway(
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _registerGateway(
         bytes memory _attestation,
         bytes memory _enclavePubKey,
         bytes memory _PCR0,
@@ -181,7 +183,7 @@ contract CommonChainGateways is
         uint256[] memory _chainIds,
         bytes memory _signature,
         uint256 _stakeAmount
-    ) external {
+    ) internal {
         // attestation verification
         _verifyEnclaveKey(
             _attestation, 
@@ -226,9 +228,9 @@ contract CommonChainGateways is
         _allowOnlyVerified(signer);
     }
 
-    function deregisterGateway(
+    function _deregisterGateway(
         bytes memory _enclavePubKey
-    ) external onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].operator == address(0))
             revert InvalidEnclaveKey();
@@ -240,9 +242,9 @@ contract CommonChainGateways is
         emit GatewayDeregistered(enclaveKey);
     }
 
-    function completeDegistration(
+    function _completeDegistration(
         bytes memory _enclavePubKey
-    ) external onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].status)
             revert InvalidStatus();
@@ -255,10 +257,10 @@ contract CommonChainGateways is
         // TODO: return stake amount
     }
 
-    function addGatewayStake(
+    function _addGatewayStake(
         bytes memory _enclavePubKey,
         uint256 _amount
-    ) external onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         // transfer stake
         TOKEN.safeTransferFrom(_msgSender(), address(this), _amount);
 
@@ -269,10 +271,10 @@ contract CommonChainGateways is
     }
 
     // TODO: check if the gateway is assigned some job before full stake removal
-    function removeGatewayStake(
+    function _removeGatewayStake(
         bytes memory _enclavePubKey,
         uint256 _amount
-    ) external onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         // transfer stake
         TOKEN.safeTransfer(_msgSender(), _amount);
 
@@ -282,10 +284,10 @@ contract CommonChainGateways is
         emit GatewayStakeRemoved(enclaveKey, _amount, gateways[enclaveKey].stakeAmount);
     }
 
-    function addChainGlobal(
+    function _addChainGlobal(
         uint256[] memory _chainIds,
         RequestChain[] memory _requestChains
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) internal {
         if(_chainIds.length == 0 || _chainIds.length != _requestChains.length)
             revert InvalidLength();
         for (uint256 index = 0; index < _requestChains.length; index++) {
@@ -297,9 +299,9 @@ contract CommonChainGateways is
         }
     }
 
-    function removeChainGlobal(
+    function _removeChainGlobal(
         uint256[] memory _chainIds
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) internal {
         if(_chainIds.length == 0)
             revert InvalidLength();
         for (uint256 index = 0; index < _chainIds.length; index++) {
@@ -310,22 +312,37 @@ contract CommonChainGateways is
         }
     }
 
-    function addChains(
+    function _addChains(
         bytes memory _enclavePubKey,
         uint256[] memory _chainIds
-    ) external onlyGatewayOperator(_enclavePubKey) {
+    ) internal {
         if(_chainIds.length == 0)
             revert EmptyRequestedChains();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            addChain(
+            _addChain(
                 _enclavePubKey, 
                 _chainIds[index]
             );
         }
     }
 
-    function addChain(
+    function _removeChains(
+        bytes memory _enclavePubKey,
+        uint256[] memory _chainIds
+    ) internal {
+        if(_chainIds.length == 0)
+            revert EmptyRequestedChains();
+
+        for (uint256 index = 0; index < _chainIds.length; index++) {
+            _removeChain(
+                _enclavePubKey, 
+                _chainIds[index]
+            );
+        }
+    }
+
+    function _addChain(
         bytes memory _enclavePubKey,
         uint256 _chainId
     ) internal {
@@ -343,22 +360,7 @@ contract CommonChainGateways is
         emit ChainAdded(enclaveKey, _chainId);
     }
 
-    function removeChains(
-        bytes memory _enclavePubKey,
-        uint256[] memory _chainIds
-    ) external onlyGatewayOperator(_enclavePubKey) {
-        if(_chainIds.length == 0)
-            revert EmptyRequestedChains();
-
-        for (uint256 index = 0; index < _chainIds.length; index++) {
-            removeChain(
-                _enclavePubKey, 
-                _chainIds[index]
-            );
-        }
-    }
-
-    function removeChain(
+    function _removeChain(
         bytes memory _enclavePubKey,
         uint256 _chainId
     ) internal {
@@ -384,6 +386,77 @@ contract CommonChainGateways is
         emit ChainRemoved(enclaveKey, _chainId);
     }
 
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start --------------------------------//
+
+    function registerGateway(
+        bytes memory _attestation,
+        bytes memory _enclavePubKey,
+        bytes memory _PCR0,
+        bytes memory _PCR1,
+        bytes memory _PCR2,
+        uint256 _timestampInMilliseconds,
+        uint256[] memory _chainIds,
+        bytes memory _signature,
+        uint256 _stakeAmount
+    ) external {
+        _registerGateway(_attestation, _enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds, _chainIds, _signature, _stakeAmount);
+    }
+
+    function deregisterGateway(
+        bytes memory _enclavePubKey
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _deregisterGateway(_enclavePubKey);
+    }
+
+    function completeDegistration(
+        bytes memory _enclavePubKey
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _completeDegistration(_enclavePubKey);
+    }
+
+    function addGatewayStake(
+        bytes memory _enclavePubKey,
+        uint256 _amount
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _addGatewayStake(_enclavePubKey, _amount);
+    }
+
+    function removeGatewayStake(
+        bytes memory _enclavePubKey,
+        uint256 _amount
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _removeGatewayStake(_enclavePubKey, _amount);
+    }
+
+    function addChainGlobal(
+        uint256[] memory _chainIds,
+        RequestChain[] memory _requestChains
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addChainGlobal(_chainIds, _requestChains);
+    }
+
+    function removeChainGlobal(
+        uint256[] memory _chainIds
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _removeChainGlobal(_chainIds);
+    }
+
+    function addChains(
+        bytes memory _enclavePubKey,
+        uint256[] memory _chainIds
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _addChains(_enclavePubKey, _chainIds);
+    }
+
+    function removeChains(
+        bytes memory _enclavePubKey,
+        uint256[] memory _chainIds
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _removeChains(_enclavePubKey, _chainIds);
+    }
+
     function isChainSupported(
         uint256 _reqChainId
     ) external view returns (bool) {
@@ -393,6 +466,8 @@ contract CommonChainGateways is
     function allowOnlyVerified(address _key) external view {
         _allowOnlyVerified(_key);
     }
+
+    //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- Gateway end --------------------------------//
 

@@ -166,14 +166,9 @@ contract CommonChainJobs is
     error NotSelectedExecutor();
     error ExecutorAlreadySubmittedOutput();
 
-    function getKey(
-        uint256 _jobId,
-        uint256 _reqChainId
-    ) public pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(_jobId, "-", _reqChainId)));
-    }
+    //-------------------------------- internal functions start --------------------------------//
 
-    function relayJob(
+    function _relayJob(
         bytes memory _signature,
         uint256 _jobId,
         uint256 _reqChainId,
@@ -183,7 +178,7 @@ contract CommonChainJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner
-    ) external {
+    ) internal {
         uint256 key = getKey(_jobId, _reqChainId);
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert RelayTimeOver();
@@ -236,14 +231,14 @@ contract CommonChainJobs is
         emit JobRelayed(_jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender(), selectedNodes);
     }
 
-    function submitOutput(
+    function _submitOutput(
         bytes memory _signature,
         uint256 _jobId,
         uint256 _reqChainId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode
-    ) external {
+    ) internal {
         uint256 key = getKey(_jobId, _reqChainId);
         if(block.timestamp > jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME)
             revert ExecutionTimeOver();
@@ -273,11 +268,11 @@ contract CommonChainJobs is
         // reward ratio - 2:1:0
     }
 
-    function isJobExecutor(
+    function _isJobExecutor(
         uint256 _jobId,
         uint256 _reqChainId,
         address _executor
-    ) public view returns (bool) {
+    ) internal view returns (bool) {
         uint256 key = getKey(_jobId, _reqChainId);
         address[] memory selectedNodes = selectedExecutors[key];
         uint256 len = selectedExecutors[key].length;
@@ -288,7 +283,55 @@ contract CommonChainJobs is
         return false;
     }
 
+    //-------------------------------- internal functions end ----------------------------------//
+
+
+    //-------------------------------- external functions start --------------------------------//
+
+    function getKey(
+        uint256 _jobId,
+        uint256 _reqChainId
+    ) public pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(_jobId, "-", _reqChainId)));
+    }
+
+    function relayJob(
+        bytes memory _signature,
+        uint256 _jobId,
+        uint256 _reqChainId,
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _deadline,
+        uint256 _jobRequestTimestamp,
+        uint8 _sequenceId,
+        address _jobOwner
+    ) external {
+        _relayJob(_signature, _jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
+    }
+
+    function submitOutput(
+        bytes memory _signature,
+        uint256 _jobId,
+        uint256 _reqChainId,
+        bytes memory _output,
+        uint256 _totalTime,
+        uint8 _errorCode
+    ) external {
+        _submitOutput(_signature, _jobId, _reqChainId, _output, _totalTime, _errorCode);
+    }
+
+    function isJobExecutor(
+        uint256 _jobId,
+        uint256 _reqChainId,
+        address _executor
+    ) public view returns (bool) {
+        return _isJobExecutor(_jobId, _reqChainId, _executor);
+    }
+
+    //-------------------------------- external functions end ----------------------------------//
+
     //-------------------------------- Job end --------------------------------//
+
 
     //-------------------------------- Timeout start --------------------------------//
 
@@ -310,10 +353,12 @@ contract CommonChainJobs is
     error DeadlineNotOver();
     error JobAlreadyExecuted();
 
-    function slashOnExecutionTimeout(
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _slashOnExecutionTimeout(
         uint256 _jobId,
         uint256 _reqChainId
-    ) external {
+    ) internal {
         uint256 key = getKey(_jobId, _reqChainId);
         if(jobs[key].jobId == 0)
             revert InvalidJob();
@@ -340,13 +385,13 @@ contract CommonChainJobs is
         delete selectedExecutors[key];
     }
 
-    function reassignGatewayRelay(
+    function _reassignGatewayRelay(
         address _gatewayKeyOld,
         uint256 _jobId,
         uint256 _reqChainId,
         bytes memory _signature,
         uint8 _sequenceId
-    ) external {
+    ) internal {
         uint256 key = getKey(_jobId, _reqChainId);
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
 
@@ -366,6 +411,29 @@ contract CommonChainJobs is
 
         // slash old gateway
     }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start ----------------------------------//
+
+    function slashOnExecutionTimeout(
+        uint256 _jobId,
+        uint256 _reqChainId
+    ) external {
+        _slashOnExecutionTimeout(_jobId, _reqChainId);
+    }
+
+    function reassignGatewayRelay(
+        address _gatewayKeyOld,
+        uint256 _jobId,
+        uint256 _reqChainId,
+        bytes memory _signature,
+        uint8 _sequenceId
+    ) external {
+        _reassignGatewayRelay(_gatewayKeyOld, _jobId, _reqChainId, _signature, _sequenceId);
+    }
+
+    //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- Timeout end --------------------------------//
 

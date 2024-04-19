@@ -146,19 +146,9 @@ contract CommonChainExecutors is
     error InvalidEnclaveKey();
     error AlreadyDeregistered();
 
-    function whitelistEnclaveImage(
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
-        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
-    }
+    //-------------------------------- internal functions start ----------------------------------//
 
-    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveImage(imageId);
-    }
-
-    function registerExecutor(
+    function _registerExecutor(
         bytes memory _attestation,
         bytes memory _enclavePubKey,
         bytes memory _PCR0,
@@ -168,7 +158,7 @@ contract CommonChainExecutors is
         uint256 _jobCapacity,
         bytes memory _signature,
         uint256 _stakeAmount
-    ) external {
+    ) internal {
         // attestation verification
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
@@ -196,11 +186,11 @@ contract CommonChainExecutors is
         _insert_unchecked(enclaveKey, uint64(_stakeAmount));
 
         emit ExecutorRegistered(enclaveKey, _msgSender());
-    }
+    } 
 
-    function deregisterExecutor(
+    function _deregisterExecutor(
         bytes memory _enclavePubKey
-    ) external onlyExecutorOperator(_enclavePubKey) {
+    ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(executors[enclaveKey].operator == address(0))
             revert InvalidEnclaveKey();
@@ -220,12 +210,12 @@ contract CommonChainExecutors is
         emit ExecutorDeregistered(enclaveKey);
 
         // return stake amount
-    }
+    } 
 
-    function addExecutorStake(
+    function _addExecutorStake(
         bytes memory _enclavePubKey,
         uint256 _amount
-    ) external onlyExecutorOperator(_enclavePubKey) {
+    ) internal {
         // transfer stake
         TOKEN.safeTransferFrom(_msgSender(), address(this), _amount);
 
@@ -237,12 +227,12 @@ contract CommonChainExecutors is
             _update_unchecked(enclaveKey, uint64(_amount));
 
         emit ExecutorStakeAdded(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
-    }
+    }  
 
-    function removeExecutorStake(
+    function _removeExecutorStake(
         bytes memory _enclavePubKey,
         uint256 _amount
-    ) external onlyExecutorOperator(_enclavePubKey) {
+    ) internal {
         // transfer stake
         TOKEN.safeTransfer(_msgSender(), _amount);
 
@@ -256,18 +246,73 @@ contract CommonChainExecutors is
         emit ExecutorStakeRemoved(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
     }
 
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start ----------------------------------//
+
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
+        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+    }
+
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveImage(imageId);
+    }
+
+    function registerExecutor(
+        bytes memory _attestation,
+        bytes memory _enclavePubKey,
+        bytes memory _PCR0,
+        bytes memory _PCR1,
+        bytes memory _PCR2,
+        uint256 _timestampInMilliseconds,
+        uint256 _jobCapacity,
+        bytes memory _signature,
+        uint256 _stakeAmount
+    ) external {
+        _registerExecutor(_attestation, _enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds, _jobCapacity, _signature, _stakeAmount);
+    }
+
+    function deregisterExecutor(
+        bytes memory _enclavePubKey
+    ) external onlyExecutorOperator(_enclavePubKey) {
+        _deregisterExecutor(_enclavePubKey);
+    }
+
+    function addExecutorStake(
+        bytes memory _enclavePubKey,
+        uint256 _amount
+    ) external onlyExecutorOperator(_enclavePubKey) {
+        _addExecutorStake(_enclavePubKey, _amount);
+    }
+
+    function removeExecutorStake(
+        bytes memory _enclavePubKey,
+        uint256 _amount
+    ) external onlyExecutorOperator(_enclavePubKey) {
+        _removeExecutorStake(_enclavePubKey, _amount);
+    }
+
     function allowOnlyVerified(address _key) external view {
         _allowOnlyVerified(_key);
     }
 
+    //-------------------------------- external functions end ----------------------------------//
+
     //--------------------------------------- Executor end -----------------------------------------//
+
 
     //-------------------------------- JobsContract functions start --------------------------------//
 
-    function selectExecutors(
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _selectExecutors(
         uint256 _noOfNodesToSelect
-    ) external onlyJobsContract returns (address[] memory selectedNodes) {
-        selectedNodes = _selectExecutors(_noOfNodesToSelect);
+    ) internal returns (address[] memory selectedNodes) {
+        selectedNodes = _selectNodes(_noOfNodesToSelect);
         for (uint256 index = 0; index < selectedNodes.length; index++) {
             address executorKey = selectedNodes[index];
             executors[executorKey].activeJobs += 1;
@@ -278,7 +323,7 @@ contract CommonChainExecutors is
         }
     }
 
-    function _selectExecutors(
+    function _selectNodes(
         uint256 _noOfNodesToSelect
     ) internal view returns (address[] memory selectedNodes) {
         uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
@@ -286,12 +331,9 @@ contract CommonChainExecutors is
         // require(selectedNodes.length != 0, "NO_EXECUTOR_SELECTED");
     }
 
-    // TODO:
-    // if unstake is true, activeJob = 0 then insert and release unstake tokens
-    // if unstake true, active job > 0, then --activeJob
-    function updateOnSubmitOutput(
+    function _updateOnSubmitOutput(
         address _executorKey
-    ) external onlyJobsContract {
+    ) internal {
         // add back the node to the tree as now it can accept a new job
         if(executors[_executorKey].status && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
@@ -304,9 +346,9 @@ contract CommonChainExecutors is
         }
     }
 
-    function updateOnExecutionTimeoutSlash(
+    function _updateOnExecutionTimeoutSlash(
         address _executorKey
-    ) external onlyJobsContract {
+    ) internal {
         // add back the node to the tree as now it can accept a new job
         if(executors[_executorKey].status && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
@@ -319,6 +361,33 @@ contract CommonChainExecutors is
             _revokeEnclaveKey(_executorKey);
         }
     }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start ----------------------------------//
+
+    function selectExecutors(
+        uint256 _noOfNodesToSelect
+    ) external onlyJobsContract returns (address[] memory selectedNodes) {
+        return _selectExecutors(_noOfNodesToSelect);
+    }
+
+    // TODO:
+    // if unstake is true, activeJob = 0 then insert and release unstake tokens
+    // if unstake true, active job > 0, then --activeJob
+    function updateOnSubmitOutput(
+        address _executorKey
+    ) external onlyJobsContract {
+        _updateOnSubmitOutput(_executorKey);
+    }
+
+    function updateOnExecutionTimeoutSlash(
+        address _executorKey
+    ) external onlyJobsContract {
+        _updateOnExecutionTimeoutSlash(_executorKey);
+    }
+
+    //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- JobsContract functions end --------------------------------//
 

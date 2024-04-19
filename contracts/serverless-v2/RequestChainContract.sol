@@ -104,15 +104,6 @@ contract RequestChainContract is
     // enclaveKey => Gateway operator
     mapping(address => address) public gatewayOperators;
 
-    // modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
-    //     address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-    //     require(
-    //         gateways[enclaveKey].operator == _msgSender(),
-    //         "ONLY_GATEWAY_OPERATOR"
-    //     );
-    //     _;
-    // }
-
     event GatewayRegistered(
         address indexed enclaveKey,
         address indexed operator
@@ -123,14 +114,16 @@ contract RequestChainContract is
     error GatewayAlreadyExists();
     error InvalidGatewayOperator();
 
-    function registerGateway(
+    //-------------------------------- internal functions start --------------------------------//
+
+    function _registerGateway(
         bytes memory _attestation,
         bytes memory _enclavePubKey,
         bytes memory _PCR0,
         bytes memory _PCR1,
         bytes memory _PCR2,
         uint256 _timestampInMilliseconds
-    ) external {
+    ) internal {
         // attestation verification
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
@@ -143,9 +136,9 @@ contract RequestChainContract is
         emit GatewayRegistered(enclaveKey, _msgSender());
     }
 
-    function deregisterGateway(
+    function _deregisterGateway(
         bytes memory _enclavePubKey
-    ) external {
+    ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gatewayOperators[enclaveKey] != _msgSender())
             revert InvalidGatewayOperator();
@@ -156,7 +149,31 @@ contract RequestChainContract is
         emit GatewayDeregistered(enclaveKey);
     }
 
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start --------------------------------//
+
+    function registerGateway(
+        bytes memory _attestation,
+        bytes memory _enclavePubKey,
+        bytes memory _PCR0,
+        bytes memory _PCR1,
+        bytes memory _PCR2,
+        uint256 _timestampInMilliseconds
+    ) external {
+        _registerGateway(_attestation, _enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds);
+    }
+
+    function deregisterGateway(
+        bytes memory _enclavePubKey
+    ) external {
+        _deregisterGateway(_enclavePubKey);
+    }
+
+    //-------------------------------- external functions end ---------------------------//
+
     //-------------------------------- Gateway End --------------------------------//
+
 
     //-------------------------------- Job start --------------------------------//
 
@@ -207,15 +224,17 @@ contract RequestChainContract is
     error JobOutputAlreadyReceived();
     error OverallTimeoutNotOver();
 
+    //-------------------------------- internal functions start -------------------------------//
+
     // TODO: create deposits of USDC and native token
-    function relayJob(
+    function _relayJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _userTimeout,
         uint256 _maxGasPrice,
         uint256 _usdcDeposit,
         uint256 _callbackDeposit
-    ) external {
+    ) internal {
         if(_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT)
             revert InvalidUserTimeout();
 
@@ -231,14 +250,13 @@ contract RequestChainContract is
         emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit, block.timestamp);
     }
 
-    // TODO: pass executorAddress for billing and check 2:1:0 ratio logic for rewards
-    function jobResponse(
+    function _jobResponse(
         bytes memory _signature,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode
-    ) external {
+    ) internal {
         // check time case
         if(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert OverallTimeoutOver();
@@ -267,9 +285,9 @@ contract RequestChainContract is
 
     }
 
-    function jobCancel(
+    function _jobCancel(
         uint256 _jobId
-    ) external onlyJobOwner(_jobId) {
+    ) internal {
         if(jobs[_jobId].receivedOutput)
             revert JobOutputAlreadyReceived();
 
@@ -299,6 +317,40 @@ contract RequestChainContract is
         // payable(_job.sender).transfer(_job.off_chain_deposit - _job_cost + _job.callback_deposit - callback_cost);
         return success;
     }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start --------------------------------//
+
+    function relayJob(
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _userTimeout,
+        uint256 _maxGasPrice,
+        uint256 _usdcDeposit,
+        uint256 _callbackDeposit
+    ) external {
+        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit);
+    }
+
+    // TODO: pass executorAddress for billing and check 2:1:0 ratio logic for rewards
+    function jobResponse(
+        bytes memory _signature,
+        uint256 _jobId,
+        bytes memory _output,
+        uint256 _totalTime,
+        uint8 _errorCode
+    ) external {
+        _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode);
+    }
+
+    function jobCancel(
+        uint256 _jobId
+    ) external onlyJobOwner(_jobId) {
+        _jobCancel(_jobId);
+    }
+
+    //-------------------------------- external functions end --------------------------------//
 
     //-------------------------------- Job End --------------------------------//
 
