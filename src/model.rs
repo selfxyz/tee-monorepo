@@ -83,9 +83,9 @@ pub struct CommonChainClient {
     pub contract_addr: H160,
     pub gateway_contract: CommonChainGatewayContract<HttpProvider>,
     pub com_chain_jobs_contract: CommonChainJobsContract<HttpProvider>,
-    pub req_chain_clients: HashMap<String, Arc<RequestChainClient>>,
+    pub req_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-    pub request_chain_list: Vec<RequestChainData>,
+    pub request_chain_list: Vec<u64>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
     pub epoch: u64,
     pub time_interval: u64,
@@ -95,14 +95,14 @@ pub struct CommonChainClient {
 pub struct RequestChainData {
     pub chain_id: u64,
     pub contract_address: Address,
-    pub rpc_url: String,
+    pub http_rpc_url: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct RequestChainClient {
     pub chain_id: u64,
     pub contract_address: Address,
-    pub rpc_url: String,
+    pub ws_rpc_url: String,
     pub contract: RequestChainContract<HttpProvider>,
 }
 
@@ -127,9 +127,6 @@ pub struct Job {
     pub code_input: Bytes,
     pub user_timeout: U256,
     pub starttime: U256,
-    pub max_gas_price: U256,
-    pub deposit: Address,
-    pub callback_deposit: U256,
     pub job_owner: Address,
     pub job_type: ComChainJobType,
     pub sequence_number: u8,

@@ -4,6 +4,7 @@ use ethers::abi::{decode, Address, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
+use hex::FromHex;
 use k256::ecdsa::SigningKey;
 use log::{error, info};
 use rand::rngs::StdRng;
@@ -11,7 +12,7 @@ use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
@@ -24,11 +25,11 @@ use crate::constant::{
     MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::contract_abi::{
-    CommonChainGatewayContract, CommonChainJobsContract, RequestChainContract,
+    CommonChainGatewayContract, CommonChainJobsContract,
 };
 use crate::model::{
     ComChainJobType, CommonChainClient, GatewayData, Job, JobResponse, ReqChainJobType,
-    RequestChainClient, RequestChainData,
+    RequestChainClient,
 };
 use crate::HttpProvider;
 
@@ -42,9 +43,10 @@ impl CommonChainClient {
         gateway_contract_addr: &H160,
         contract_addr: &H160,
         gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-        request_chain_list: Vec<RequestChainData>,
+        request_chain_list: Vec<u64>,
         epoch: u64,
         time_interval: u64,
+        req_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
     ) -> Self {
         info!("Initializing Common Chain Client...");
         let gateway_contract = CommonChainGatewayContract::new(
@@ -73,7 +75,7 @@ impl CommonChainClient {
             gateway_contract_addr: *gateway_contract_addr,
             gateway_contract,
             com_chain_jobs_contract,
-            req_chain_clients: HashMap::new(),
+            req_chain_clients,
             gateway_epoch_state,
             request_chain_list,
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
@@ -86,14 +88,18 @@ impl CommonChainClient {
         // setup for the listening events on Request Chain and calling Common Chain functions
         let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
-        self_clone.txns_to_common_chain(com_chain_rx).await?;
+        tokio::spawn(async move {
+            let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
+        });
         let self_clone = Arc::clone(&self);
         self_clone.handle_all_req_chain_events(req_chain_tx).await?;
 
         // setup for the listening events on Common Chain and calling Request Chain functions
         let (com_chain_tx, req_chain_rx) = channel::<(JobResponse, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
-        self_clone.txns_to_request_chain(req_chain_rx).await?;
+        tokio::spawn(async move {
+            let _ = self_clone.txns_to_request_chain(req_chain_rx).await;
+        });
         self.handle_all_com_chain_events(com_chain_tx).await?;
         Ok(())
     }
@@ -104,36 +110,10 @@ impl CommonChainClient {
     ) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
         let mut req_chain_data = self.request_chain_list.clone();
-        let mut request_chain_clients: HashMap<String, Arc<RequestChainClient>> = HashMap::new();
-        for request_chain in req_chain_data.clone() {
-            let signer = self.signer.clone().with_chain_id(request_chain.chain_id);
-            let signer_address = signer.address();
 
-            let req_chain_http_client = Provider::<Http>::connect(&request_chain.rpc_url)
-                .await
-                .with_signer(signer)
-                .nonce_manager(signer_address);
-            info!(
-                "Connected to the request chain provider for chain_id: {}",
-                request_chain.chain_id
-            );
-            let contract = RequestChainContract::new(
-                request_chain.contract_address,
-                Arc::new(req_chain_http_client),
-            );
-            let req_chain_client = Arc::from(RequestChainClient {
-                chain_id: request_chain.chain_id,
-                contract_address: request_chain.contract_address,
-                rpc_url: request_chain.rpc_url,
-                contract,
-            });
-            request_chain_clients.insert(request_chain.chain_id.to_string(), req_chain_client);
-        }
-        *Arc::make_mut(&mut Arc::from(self.req_chain_clients.clone())) = request_chain_clients;
-
-        while let Some(request_chain) = req_chain_data.pop() {
+        while let Some(chain_id) = req_chain_data.pop() {
             let event_filter = Filter::new()
-                .address(request_chain.contract_address)
+                .address(self.req_chain_clients[&chain_id].contract_address)
                 .select(0..)
                 .topic0(vec![
                     keccak256(
@@ -144,13 +124,13 @@ impl CommonChainClient {
 
             info!(
                 "Subscribing to events for chain_id: {}",
-                request_chain.chain_id
+                chain_id
             );
 
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
             let req_chain_ws_client =
-                Provider::<Ws>::connect_with_reconnects(request_chain.rpc_url.clone(), 5).await.context(
+                Provider::<Ws>::connect_with_reconnects(self.req_chain_clients[&chain_id].ws_rpc_url.clone(), 5).await.context(
                     "Failed to connect to the request chain websocket provider. Please check the chain url.",
                 )?;
             // Spawn a new task for each Request Chain Contract
@@ -161,60 +141,69 @@ impl CommonChainClient {
                     .await
                     .context(format!(
                         "failed to subscribe to events on Request Chain: {}",
-                        request_chain.chain_id
+                        chain_id
                     ))
                     .unwrap();
-
+                
+                println!("Started listening events for Chain [{}]", chain_id);
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
 
                     if topics[0]
-                    == keccak256(
-                        "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,uint256)",
-                    )
-                    .into()
-                {
-                    info!(
-                        "Request Chain ID: {:?}, JobPlace jobID: {:?}",
-                        request_chain.chain_id, log.topics[1]
-                    );
-                    let self_clone = Arc::clone(&self_clone);
-                    let tx = tx_clone.clone();
-                    task::spawn(async move {
-                        let job = self_clone.clone()
-                            .get_job_from_job_relay_event(
-                                log,
-                                 1 as u8,
-                                  &request_chain.chain_id.to_string()
-                            )
-                            .await
-                            .context("Failed to decode event")
-                            .unwrap();
-                        self_clone.job_placed_handler(
-                                &request_chain.chain_id.to_string(),
-                                job,
-                                tx.clone(),
-                            )
-                            .await;
-                    });
-                } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
-                    info!(
-                        "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
-                        request_chain.chain_id, log.topics[1]
-                    );
-                    let self_clone = Arc::clone(&self_clone);
-                    task::spawn(async move {
-                        self_clone.cancel_job_with_job_id(
-                            log.topics[1].into_uint(),
-                            request_chain.chain_id
-                        ).await;
-                    });
-                } else {
-                    error!(
-                        "Request Chain ID: {:?}, Unknown event: {:?}",
-                        request_chain.chain_id, log
-                    );
-                }
+                        == keccak256(
+                            "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,uint256)",
+                        )
+                        .into()
+                    {
+                        info!(
+                            "Request Chain ID: {:?}, JobPlace jobID: {:?}",
+                            chain_id, log.topics[1]
+                        );
+                        println!(
+                            "Request Chain ID: {:?}, JobPlace jobID: {:?}",
+                            chain_id, log.topics[1]
+                        );
+                        let self_clone = Arc::clone(&self_clone);
+                        let tx = tx_clone.clone();
+                        task::spawn(async move {
+                            let job = self_clone.clone()
+                                .get_job_from_job_relay_event(
+                                    log,
+                                    1 as u8,
+                                    chain_id
+                                )
+                                .await
+                                .context("Failed to decode event")
+                                .unwrap();
+                            self_clone.job_placed_handler(
+                                    chain_id,
+                                    job,
+                                    tx.clone(),
+                                )
+                                .await;
+                        });
+                    } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
+                        info!(
+                            "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
+                            chain_id, log.topics[1]
+                        );
+                        println!(
+                            "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
+                            chain_id, log.topics[1]
+                        );
+                        let self_clone = Arc::clone(&self_clone);
+                        task::spawn(async move {
+                            self_clone.cancel_job_with_job_id(
+                                log.topics[1].into_uint(),
+                                chain_id
+                            ).await;
+                        });
+                    } else {
+                        error!(
+                            "Request Chain ID: {:?}, Unknown event: {:?}",
+                            chain_id, log
+                        );
+                    }
                 }
             });
         }
@@ -226,7 +215,7 @@ impl CommonChainClient {
         self: Arc<Self>,
         log: Log,
         sequence_number: u8,
-        req_chain_id: &String,
+        req_chain_id: u64,
     ) -> Result<Job> {
         let types = vec![
             ParamType::FixedBytes(32),
@@ -240,20 +229,17 @@ impl CommonChainClient {
 
         let decoded = decode(&types, &log.data.0).unwrap();
 
-        let req_chain_client = self.req_chain_clients[req_chain_id].clone();
+        let req_chain_client = self.req_chain_clients[&req_chain_id].clone();
         let job_id = log.topics[1].into_uint();
 
         Ok(Job {
             job_id,
             req_chain_id: req_chain_client.chain_id.clone(),
             job_key: get_key_for_job_id(job_id, req_chain_client.chain_id.clone()).await,
-            tx_hash: decoded[0].clone().into_bytes().unwrap(),
+            tx_hash: decoded[0].clone().into_fixed_bytes().unwrap(),
             code_input: decoded[1].clone().into_bytes().unwrap().into(),
             user_timeout: decoded[2].clone().into_uint().unwrap(),
-            starttime: decoded[3].clone().into_uint().unwrap(),
-            max_gas_price: decoded[4].clone().into_uint().unwrap(),
-            deposit: decoded[5].clone().into_address().unwrap(),
-            callback_deposit: decoded[6].clone().into_uint().unwrap(),
+            starttime: decoded[6].clone().into_uint().unwrap(),
             job_owner: log.address,
             job_type: ComChainJobType::JobRelay,
             sequence_number,
@@ -263,12 +249,12 @@ impl CommonChainClient {
 
     async fn job_placed_handler(
         self: Arc<Self>,
-        req_chain_id: &String,
+        req_chain_id: u64,
         job: Job,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
     ) {
         let mut job: Job = job.clone();
-        let req_chain_client = self.req_chain_clients[req_chain_id].clone();
+        let req_chain_client = self.req_chain_clients[&req_chain_id].clone();
 
         let gateway_address: Address;
 
@@ -276,6 +262,7 @@ impl CommonChainClient {
             .select_gateway_for_job_id(
                 job.job_id.clone(),
                 job.starttime.as_u64(),
+                job.starttime.as_u64(), // TODO: Update seed
                 job.sequence_number,
                 req_chain_client,
             )
@@ -391,7 +378,7 @@ impl CommonChainClient {
         }
         job.gateway_address = None;
 
-        self.job_placed_handler(&job.req_chain_id.to_string(), job, tx)
+        self.job_placed_handler(job.req_chain_id, job, tx)
             .await;
 
         Ok(())
@@ -400,21 +387,23 @@ impl CommonChainClient {
     async fn select_gateway_for_job_id(
         &self,
         job_id: U256,
+        job_place_ts: u64,
         seed: u64,
         skips: u8,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
-        let current_cycle = (SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
+        println!("Job start time {}", job_place_ts);
+        let current_cycle = (
+            job_place_ts
             - self.epoch
             - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
             / self.time_interval;
 
         let all_gateways_data: Vec<GatewayData>;
+        println!("Current cycle for job {} is {}", job_id, current_cycle);
         loop {
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
+            println!("Gateway State {:?}", gateway_epoch_state_guard);
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&current_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();
                 break;
@@ -422,6 +411,7 @@ impl CommonChainClient {
             drop(gateway_epoch_state_guard);
 
             // wait for cycle to be created
+            println!("Waiting for cycle state to be created");
             time::sleep(Duration::from_secs(60)).await;
         }
 
@@ -431,6 +421,9 @@ impl CommonChainClient {
         let mut stake_distribution: Vec<u64> = vec![];
         let mut total_stake: u64 = 0;
         let mut gateway_data_of_req_chain: Vec<GatewayData> = vec![];
+        if all_gateways_data.is_empty() {
+            return Err(anyhow::Error::msg("Gateway not registered"));
+        }
         for gateway_data in all_gateways_data.iter() {
             if gateway_data
                 .req_chain_ids
@@ -466,6 +459,11 @@ impl CommonChainClient {
         let selected_gateway = &gateway_data_of_req_chain[index];
 
         info!(
+            "Job ID: {:?}, Gateway Address: {:?}",
+            job_id, selected_gateway.address
+        );
+
+        println!(
             "Job ID: {:?}, Gateway Address: {:?}",
             job_id, selected_gateway.address
         );
@@ -508,13 +506,19 @@ impl CommonChainClient {
             job.req_chain_id.into(),
             &job.tx_hash,
             &job.code_input,
-            job.user_timeout.as_u64(),
+            job.user_timeout,
             &job.job_owner,
             job.sequence_number,
+            job.starttime
         )
         .await
         .unwrap();
-        let signature = types::Bytes::from(signature.into_bytes());
+        let Ok(signature) = types::Bytes::from_hex(signature) else {
+            error!(
+                "Failed to decode signature hex string"
+            );
+            return;
+        };
         let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
 
         let txn = self.com_chain_jobs_contract.relay_job(
@@ -562,7 +566,12 @@ impl CommonChainClient {
         )
         .await
         .unwrap();
-        let signature = types::Bytes::from(signature.into_bytes());
+        let Ok(signature) = types::Bytes::from_hex(signature) else {
+            error!(
+                "Failed to decode signature hex string"
+            );
+            return;
+        };
 
         let txn = self.com_chain_jobs_contract.reassign_gateway_relay(
             job.gateway_address.unwrap(),
@@ -917,7 +926,7 @@ impl CommonChainClient {
         info!("Creating a transaction for jobResponse");
 
         let req_chain_client =
-            self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
+            self.req_chain_clients[&job_response.req_chain_id].clone();
 
         let signature = sign_job_response_response(
             &self.enclave_signer_key,
@@ -928,7 +937,12 @@ impl CommonChainClient {
         )
         .await
         .unwrap();
-        let signature = types::Bytes::from(signature.into_bytes());
+        let Ok(signature) = types::Bytes::from_hex(signature) else {
+            error!(
+                "Failed to decode signature hex string"
+            );
+            return;
+        };
 
         let txn = req_chain_client.contract.job_response(
             signature,

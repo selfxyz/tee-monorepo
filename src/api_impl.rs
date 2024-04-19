@@ -7,12 +7,14 @@ use ethers::utils::keccak256;
 use hex::FromHex;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::contract_abi::{CommonChainGatewayContract, RequestChainContract};
 use crate::model::{
-    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainData,
+    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainClient, RequestChainData
 };
 
 #[get("/")]
@@ -105,6 +107,7 @@ async fn register_enclave(
     let signer_address = signer_wallet.address();
 
     let mut chain_list: Vec<RequestChainData> = vec![];
+    let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
     let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
     let Ok(http_rpc_client) = http_rpc_client else {
@@ -126,16 +129,16 @@ async fn register_enclave(
     for chain in enclave_info.chain_list.clone() {
         let signer_wallet = wallet.clone().with_chain_id(chain);
         // get request chain rpc url
-        let (contract_address, rpc_url) = gateway_contract
+        let (contract_address, http_rpc_url, ws_rpc_url) = gateway_contract
             .request_chains(chain.into())
             .await
             .context("Failed to get request chain data")
             .unwrap();
-        let http_rpc_client = Provider::<Http>::try_connect(rpc_url.as_str()).await;
+        let http_rpc_client = Provider::<Http>::try_connect(http_rpc_url.as_str()).await;
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the http rpc server {}: {}",
-                rpc_url,
+                http_rpc_url,
                 http_rpc_client.unwrap_err()
             ));
         };
@@ -146,7 +149,7 @@ async fn register_enclave(
                 .nonce_manager(signer_address),
         );
         // prepare transaction
-        let contract = RequestChainContract::new(contract_address, Arc::new(http_rpc_client));
+        let contract = RequestChainContract::new(contract_address, http_rpc_client.clone());
         let txn = contract.register_gateway(
             attestation.clone().into(),
             app_state.enclave_pub_key.clone().into(),
@@ -175,8 +178,17 @@ async fn register_enclave(
         chain_list.push(RequestChainData {
             chain_id: chain.into(),
             contract_address,
-            rpc_url: rpc_url.to_string(),
+            http_rpc_url: http_rpc_url.to_string(),
         });
+
+        // Http RPC client for RPC
+        let req_chain_client = Arc::from(RequestChainClient {
+            chain_id: chain,
+            contract_address: contract_address,
+            contract,
+            ws_rpc_url: ws_rpc_url.to_string()
+        });
+        request_chain_clients.insert(chain, req_chain_client);
     }
 
     // let mut hasher = Keccak::v256();
@@ -220,6 +232,7 @@ async fn register_enclave(
         enclave_info.timestamp.into(),
         enclave_info
             .chain_list
+            .clone()
             .into_iter()
             .map(|x| U256::from(x))
             .collect(),
@@ -258,8 +271,10 @@ async fn register_enclave(
         let gateway_epoch_state_clone = Arc::clone(&app_state.gateway_epoch_state);
         let epoch_clone = app_state.epoch.clone();
         let time_interval_clone = app_state.time_interval.clone();
+        let service_start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         tokio::spawn(async move {
             gateway_epoch_state_service(
+                service_start_time,
                 gateway_contract_addr_clone,
                 &http_rpc_client_clone,
                 gateway_contract,
@@ -282,9 +297,10 @@ async fn register_enclave(
             &app_state.gateway_contract_addr,
             &app_state.job_contract_addr,
             app_state.gateway_epoch_state.clone(),
-            chain_list,
+            enclave_info.chain_list,
             app_state.epoch,
             app_state.time_interval,
+            request_chain_clients,
         )
         .await,
     );
@@ -353,11 +369,11 @@ async fn deregister_enclave(app_state: Data<AppState>) -> impl Responder {
     for chain in app_state.chain_list.lock().unwrap().clone() {
         let signer_wallet = signer_wallet.clone().with_chain_id(chain.chain_id);
 
-        let http_rpc_client = Provider::<Http>::try_connect(chain.rpc_url.as_str()).await;
+        let http_rpc_client = Provider::<Http>::try_connect(chain.http_rpc_url.as_str()).await;
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the http rpc server {}: {}",
-                chain.rpc_url,
+                chain.http_rpc_url,
                 http_rpc_client.unwrap_err()
             ));
         };

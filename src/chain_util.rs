@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use ethers::abi::FixedBytes;
+use ethers::abi::{encode_packed, FixedBytes, Token};
 use ethers::prelude::*;
 use ethers::types::{Address, U256};
 use ethers::utils::keccak256;
@@ -7,7 +7,6 @@ use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::error;
 use std::sync::Arc;
-use tiny_keccak::{Hasher, Keccak};
 use tokio::time;
 
 use crate::constant::WAIT_BEFORE_CHECKING_NEXT_BLOCK;
@@ -86,35 +85,27 @@ pub async fn sign_relay_job_response(
     req_chain_id: U256,
     codehash: &FixedBytes,
     code_inputs: &Bytes,
-    deadline: u64,
+    deadline: U256,
     job_owner: &Address,
     sequence_number: u8,
+    job_start_time: U256
 ) -> Option<String> {
-    let mut job_id_bytes = [0u8; 32];
-    job_id.to_big_endian(&mut job_id_bytes);
-
-    let mut req_chain_id_bytes = [0u8; 32];
-    req_chain_id.to_big_endian(&mut req_chain_id_bytes);
-
-    let mut hasher = Keccak::v256();
-    hasher.update(b"|jobId|");
-    hasher.update(&job_id_bytes);
-    hasher.update(b"|chainId|");
-    hasher.update(&req_chain_id_bytes);
-    hasher.update(b"|codehash|");
-    hasher.update(codehash);
-    hasher.update(b"|codeInputs|");
-    hasher.update(code_inputs);
-    hasher.update(b"|deadline|");
-    hasher.update(&deadline.to_be_bytes());
-    hasher.update(b"|jobOwner|");
-    hasher.update(job_owner.as_bytes());
-    hasher.update(b"|retryNumber|");
-    hasher.update(&sequence_number.to_be_bytes());
-
-    let mut hash = [0u8; 32];
-    hasher.finalize(&mut hash);
-
+    let token_list = [
+        Token::Array(vec![
+            Token::Uint(job_id),
+            Token::Uint(req_chain_id),
+        ]),
+        Token::FixedBytes(codehash.clone()),
+        Token::Bytes(code_inputs.to_vec()),
+        Token::Array(vec![
+            Token::Uint(deadline),
+            Token::Uint(job_start_time),
+        ]),
+        Token::FixedBytes(vec![sequence_number]),
+        Token::Address(*job_owner),
+    ];
+    let encoded_args = encode_packed(&token_list).unwrap();
+    let hash = keccak256(&encoded_args);
     let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
         eprintln!("Failed to sign the response: {}", err);
         err
@@ -130,17 +121,28 @@ pub async fn sign_reassign_gateway_relay_response(
     job_id: U256,
     gateway_operator_old: &Address,
 ) -> Option<String> {
-    let mut job_id_bytes = [0u8; 32];
-    job_id.to_big_endian(&mut job_id_bytes);
+    // let mut job_id_bytes = [0u8; 32];
+    // job_id.to_big_endian(&mut job_id_bytes);
 
-    let mut hasher = Keccak::v256();
-    hasher.update(b"|jobId|");
-    hasher.update(&job_id_bytes);
-    hasher.update(b"|gatewayOperatorOld|");
-    hasher.update(gateway_operator_old.as_bytes());
+    // let mut hasher = Keccak::v256();
+    // hasher.update(b"|jobId|");
+    // hasher.update(&job_id_bytes);
+    // hasher.update(b"|gatewayOperatorOld|");
+    // hasher.update(gateway_operator_old.as_bytes());
 
-    let mut hash = [0u8; 32];
-    hasher.finalize(&mut hash);
+    // let mut hash = [0u8; 32];
+    // hasher.finalize(&mut hash);
+
+    let token_list = [
+        Token::Array(vec![Token::Uint(job_id)]),
+        Token::Address(*gateway_operator_old)
+    ];
+
+    println!("Tokens of signature: {:?}", token_list);
+    let encoded_args = encode_packed(&token_list).unwrap();
+    println!("Prehash of digest is {:?}", hex::encode(&encoded_args));
+    let hash = keccak256(&encoded_args);
+    println!("Digest hash for send transaction {:?}", hex::encode(hash));
 
     let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
         eprintln!("Failed to sign the response: {}", err);
@@ -159,24 +161,15 @@ pub async fn sign_job_response_response(
     total_time: U256,
     error_code: u8,
 ) -> Option<String> {
-    let mut job_id_bytes = [0u8; 32];
-    job_id.to_big_endian(&mut job_id_bytes);
+    let token_list = [
+        Token::Array(vec![Token::Uint(job_id)]),
+        Token::Bytes(output.to_vec()),
+        Token::Array(vec![Token::Uint(total_time)]),
+        Token::FixedBytes(vec![error_code])
+    ];
 
-    let mut total_time_bytes = [0u8; 32];
-    total_time.to_big_endian(&mut total_time_bytes);
-
-    let mut hasher = Keccak::v256();
-    hasher.update(b"|jobId|");
-    hasher.update(&job_id_bytes);
-    hasher.update(b"|output|");
-    hasher.update(&output);
-    hasher.update(b"|totalTime|");
-    hasher.update(&total_time_bytes);
-    hasher.update(b"|errorCode|");
-    hasher.update(&error_code.to_be_bytes());
-
-    let mut hash = [0u8; 32];
-    hasher.finalize(&mut hash);
+    let encoded_args = encode_packed(&token_list).unwrap();
+    let hash = keccak256(&encoded_args);
 
     let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
         eprintln!("Failed to sign the response: {}", err);

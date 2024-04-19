@@ -10,13 +10,14 @@ use tokio::sync::RwLock;
 use tokio::time;
 
 use crate::chain_util::get_block_number_by_timestamp;
-use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
+use crate::constant::{GATEWAY_BLOCK_STATES_TO_MAINTAIN, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE};
 use crate::contract_abi::CommonChainGatewayContract;
 use crate::model::GatewayData;
 use crate::HttpProvider;
 
 // Initialize the gateway epoch state
 pub async fn gateway_epoch_state_service(
+    current_time: u64,
     contract_address: Address,
     provider: &Arc<HttpProvider>,
     com_chain_gateway_contract: CommonChainGatewayContract<HttpProvider>,
@@ -24,19 +25,19 @@ pub async fn gateway_epoch_state_service(
     epoch: u64,
     time_interval: u64,
 ) {
-    let current_cycle = (SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        - epoch)
+    println!("Service start time for block listening is {}", current_time);
+    let current_cycle = (
+        current_time
+        - epoch
+        - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
         / time_interval;
-
-    let initial_epoch_cycle: u64;
+        let initial_epoch_cycle: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
         initial_epoch_cycle = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
     } else {
         initial_epoch_cycle = 1;
     };
+    println!("Starting from cycle {}", initial_epoch_cycle);
     {
         let contract_address_clone = contract_address.clone();
         let provider_clone = provider.clone();
@@ -63,6 +64,7 @@ pub async fn gateway_epoch_state_service(
                     );
                     continue;
                 }
+                println!("Epoch state generated for cycle {}", cycle_number);
                 cycle_number += 1;
             }
         });
@@ -110,6 +112,7 @@ pub async fn gateway_epoch_state_service(
                     continue;
                 }
 
+                println!("Epoch state generated for cycle {}", cycle_number);
                 break;
             }
 
@@ -320,7 +323,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 .stake_amount = stake_amount;
         }
     }
-
+    println!("Epoch state generated for cycle {}", cycle_number);
     Ok(())
 }
 
