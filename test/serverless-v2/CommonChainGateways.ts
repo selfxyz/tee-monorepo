@@ -58,7 +58,7 @@ describe("CommonChainGateways - Init", function () {
 
 	it("deploys with initialization disabled", async function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
-		const commonChainGateways = await CommonChainGateways.deploy(addrs[10], 600, token);
+		const commonChainGateways = await CommonChainGateways.deploy(addrs[10], 600, token, 600);
 
 		expect(await commonChainGateways.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await commonChainGateways.ATTESTATION_MAX_AGE()).to.equal(600);
@@ -80,7 +80,7 @@ describe("CommonChainGateways - Init", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token]
+				constructorArgs: [attestationVerifier.target, 600, token, 600]
 			},
 		);
 
@@ -88,7 +88,6 @@ describe("CommonChainGateways - Init", function () {
 		expect(await commonChainGateways.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await commonChainGateways.hasRole(await commonChainGateways.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await commonChainGateways.getRoleMemberCount(await commonChainGateways.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await commonChainGateways.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -97,17 +96,15 @@ describe("CommonChainGateways - Init", function () {
 
 	it("cannot initialize with zero address as admin", async function () {
 		const CommonChainGateways = await ethers.getContractFactory("CommonChainGateways");
-		await expect(
-			upgrades.deployProxy(
-				CommonChainGateways,
-				[ZeroAddress, [image1, image2, image3]],
-				{
-					kind: "uups",
-					initializer: "__CommonChainGateways_init",
-					constructorArgs: [attestationVerifier.target, 600, token]
-				},
-			)
-		).to.be.revertedWith("ZERO_ADDRESS_ADMIN");
+		await expect(upgrades.deployProxy(
+			CommonChainGateways,
+			[ZeroAddress, [image1, image2, image3]],
+			{
+				kind: "uups",
+				initializer: "__CommonChainGateways_init",
+				constructorArgs: [attestationVerifier.target, 600, token, 600]
+			},
+		)).to.be.revertedWithCustomError(CommonChainGateways, "ZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -118,7 +115,7 @@ describe("CommonChainGateways - Init", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [addrs[10], 600, token]
+				constructorArgs: [addrs[10], 600, token, 600]
 			},
 		);
 		await upgrades.upgradeProxy(
@@ -126,7 +123,7 @@ describe("CommonChainGateways - Init", function () {
 			CommonChainGateways,
 			{
 				kind: "uups",
-				constructorArgs: [addrs[10], 600, token]
+				constructorArgs: [addrs[10], 600, token, 600]
 			}
 		);
 
@@ -134,7 +131,6 @@ describe("CommonChainGateways - Init", function () {
 		expect(await commonChainGateways.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await commonChainGateways.hasRole(await commonChainGateways.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await commonChainGateways.getRoleMemberCount(await commonChainGateways.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await commonChainGateways.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -157,16 +153,16 @@ describe("CommonChainGateways - Init", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [addrs[10], 600, token]
+				constructorArgs: [addrs[10], 600, token, 600]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(commonChainGateways.target, CommonChainGateways.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [addrs[10], 600, token],
+				constructorArgs: [addrs[10], 600, token, 600],
 			}),
-		).to.be.revertedWith("only admin");
+		).to.be.revertedWithCustomError(commonChainGateways, "AccessControlUnauthorizedAccount");
 	});
 });
 
@@ -202,7 +198,7 @@ describe("CommonChainGateways - Verify", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token]
+				constructorArgs: [attestationVerifier.target, 600, token, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -256,7 +252,7 @@ describe("CommonChainGateways - Global chains", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -326,7 +322,7 @@ describe("CommonChainGateways - Register gateway", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -408,7 +404,7 @@ describe("CommonChainGateways - Staking", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);

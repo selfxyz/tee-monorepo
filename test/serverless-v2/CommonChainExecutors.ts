@@ -89,7 +89,6 @@ describe("CommonChainExecutors - Init", function () {
 		expect(await commonChainExecutors.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await commonChainExecutors.hasRole(await commonChainExecutors.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await commonChainExecutors.getRoleMemberCount(await commonChainExecutors.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await commonChainExecutors.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -108,7 +107,7 @@ describe("CommonChainExecutors - Init", function () {
 					constructorArgs: [attestationVerifier.target, 600, token]
 				},
 			)
-		).to.be.revertedWith("ZERO_ADDRESS_ADMIN");
+		).to.be.revertedWithCustomError(CommonChainExecutors, "ZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -135,7 +134,6 @@ describe("CommonChainExecutors - Init", function () {
 		expect(await commonChainExecutors.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		expect(await commonChainExecutors.hasRole(await commonChainExecutors.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await commonChainExecutors.getRoleMemberCount(await commonChainExecutors.DEFAULT_ADMIN_ROLE())).to.equal(1);
 		{
 			const { PCR0, PCR1, PCR2 } = await commonChainExecutors.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -167,7 +165,7 @@ describe("CommonChainExecutors - Init", function () {
 				kind: "uups",
 				constructorArgs: [addrs[10], 600, token],
 			}),
-		).to.be.revertedWith("only admin");
+		).to.be.revertedWithCustomError(commonChainExecutors, "AccessControlUnauthorizedAccount");
 	});
 });
 

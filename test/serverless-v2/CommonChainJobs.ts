@@ -96,7 +96,6 @@ describe("CommonChainJobs - Init", function () {
 		);
 
 		expect(await commonChainJobs.hasRole(await commonChainJobs.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await commonChainJobs.getRoleMemberCount(await commonChainJobs.DEFAULT_ADMIN_ROLE())).to.equal(1);
 	});
 
 	it("cannot initialize with zero address as admin", async function () {
@@ -116,7 +115,7 @@ describe("CommonChainJobs - Init", function () {
 					]
 				},
 			)
-		).to.be.revertedWith("ZERO_ADDRESS_ADMIN");
+		).to.be.revertedWithCustomError(CommonChainJobs, "ZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -150,7 +149,6 @@ describe("CommonChainJobs - Init", function () {
 		);
 
 		expect(await commonChainJobs.hasRole(await commonChainJobs.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		expect(await commonChainJobs.getRoleMemberCount(await commonChainJobs.DEFAULT_ADMIN_ROLE())).to.equal(1);
 	});
 
 	it("does not upgrade without admin", async function () {
@@ -180,7 +178,7 @@ describe("CommonChainJobs - Init", function () {
 					3
 				]
 			}),
-		).to.be.revertedWith("only admin");
+		).to.be.revertedWithCustomError(CommonChainJobs, "AccessControlUnauthorizedAccount");
 	});
 });
 
@@ -222,7 +220,7 @@ describe("CommonChainJobs - Relay", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -356,7 +354,7 @@ describe("CommonChainJobs - Output", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -467,7 +465,7 @@ describe("CommonChainJobs - Output", function () {
 		await expect(tx).to.emit(commonChainJobs, "JobResponded"); 
 
 		let tx2 = commonChainJobs.submitOutput(signedDigest, jobId, reqChainId, output, totalTime, errorCode);
-		await expect(tx2).to.revertedWith("EXECUTOR_ALREADY_SUBMITTED_OUTPUT");
+		await expect(tx2).to.revertedWithCustomError(commonChainJobs, "ExecutorAlreadySubmittedOutput");
 	});
 
 	it("cannot submit output from unselected executor node", async function () {
@@ -485,7 +483,7 @@ describe("CommonChainJobs - Output", function () {
 			errorCode = 0;
 		signedDigest = await createOutputSignature(jobId, reqChainId, output, totalTime, errorCode, wallets[20]);
 		let tx = commonChainJobs.submitOutput(signedDigest, jobId, reqChainId, output, totalTime, errorCode);
-		await expect(tx).to.revertedWith("NOT_SELECTED_EXECUTOR"); 
+		await expect(tx).to.revertedWithCustomError(commonChainJobs, "NotSelectedExecutor"); 
 	});
 
 });
@@ -528,7 +526,7 @@ describe("CommonChainJobs - Slashing", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -628,7 +626,7 @@ describe("CommonChainJobs - Slashing", function () {
 		let jobId = 1,
 			reqChainId = 1;
 		let tx = commonChainJobs.slashOnExecutionTimeout(jobId, reqChainId);
-		await expect(tx).to.revertedWith("DEADLINE_NOT_OVER");
+		await expect(tx).to.revertedWithCustomError(commonChainJobs, "DeadlineNotOver");
 	});
 
 	it("cannot slash twice", async function () {
@@ -639,14 +637,14 @@ describe("CommonChainJobs - Slashing", function () {
 		await expect(tx).to.emit(commonChainJobs, "SlashedOnExecutionTimeout");
 
 		let tx2 = commonChainJobs.slashOnExecutionTimeout(jobId, reqChainId);
-		await expect(tx2).to.revertedWith("INVALID_JOB");
+		await expect(tx2).to.revertedWithCustomError(commonChainJobs, "InvalidJob");
 	});
 
 	it("cannot slash non-existing job", async function () {
 		let jobId = 2,
 			reqChainId = 1;
 		let tx = commonChainJobs.slashOnExecutionTimeout(jobId, reqChainId);
-		await expect(tx).to.revertedWith("INVALID_JOB");
+		await expect(tx).to.revertedWithCustomError(commonChainJobs, "InvalidJob");
 	});
 
 });
@@ -689,7 +687,7 @@ describe("CommonChainJobs - Reassign Gateway", function () {
 			{
 				kind: "uups",
 				initializer: "__CommonChainGateways_init",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
 		);
 		commonChainGateways = getCommonChainGateways(commonChainGatewaysContract.target as string, signers[0]);
@@ -786,7 +784,7 @@ describe("CommonChainJobs - Reassign Gateway", function () {
 
 		let signedDigest = await createReassignGatewaySignature(jobId, reqChainId, gatewayOperatorOld, sequenceId, wallets[16]);
 		let tx = commonChainJobs.connect(signers[16]).reassignGatewayRelay(gatewayOperatorOld, jobId, reqChainId, signedDigest, sequenceId);
-		await expect(tx).to.revertedWith("INVALID_SEQUENCE_ID");
+		await expect(tx).to.revertedWithCustomError(commonChainJobs, "InvalidSequenceId");
 	});
 
 });
