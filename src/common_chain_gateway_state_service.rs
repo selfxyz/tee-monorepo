@@ -25,7 +25,6 @@ pub async fn gateway_epoch_state_service(
     epoch: u64,
     time_interval: u64,
 ) {
-    println!("Service start time for block listening is {}", current_time);
     let current_cycle = (
         current_time
         - epoch
@@ -37,7 +36,6 @@ pub async fn gateway_epoch_state_service(
     } else {
         initial_epoch_cycle = 1;
     };
-    println!("Starting from cycle {}", initial_epoch_cycle);
     {
         let contract_address_clone = contract_address.clone();
         let provider_clone = provider.clone();
@@ -64,7 +62,6 @@ pub async fn gateway_epoch_state_service(
                     );
                     continue;
                 }
-                println!("Epoch state generated for cycle {}", cycle_number);
                 cycle_number += 1;
             }
         });
@@ -112,7 +109,6 @@ pub async fn gateway_epoch_state_service(
                     continue;
                 }
 
-                println!("Epoch state generated for cycle {}", cycle_number);
                 break;
             }
 
@@ -323,7 +319,6 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 .stake_amount = stake_amount;
         }
     }
-    println!("Epoch state generated for cycle {}", cycle_number);
     Ok(())
 }
 

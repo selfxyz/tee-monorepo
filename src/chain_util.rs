@@ -138,11 +138,8 @@ pub async fn sign_reassign_gateway_relay_response(
         Token::Address(*gateway_operator_old)
     ];
 
-    println!("Tokens of signature: {:?}", token_list);
     let encoded_args = encode_packed(&token_list).unwrap();
-    println!("Prehash of digest is {:?}", hex::encode(&encoded_args));
     let hash = keccak256(&encoded_args);
-    println!("Digest hash for send transaction {:?}", hex::encode(hash));
 
     let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
         eprintln!("Failed to sign the response: {}", err);

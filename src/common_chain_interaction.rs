@@ -144,8 +144,7 @@ impl CommonChainClient {
                         chain_id
                     ))
                     .unwrap();
-                
-                println!("Started listening events for Chain [{}]", chain_id);
+
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
 
@@ -159,10 +158,7 @@ impl CommonChainClient {
                             "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                             chain_id, log.topics[1]
                         );
-                        println!(
-                            "Request Chain ID: {:?}, JobPlace jobID: {:?}",
-                            chain_id, log.topics[1]
-                        );
+
                         let self_clone = Arc::clone(&self_clone);
                         let tx = tx_clone.clone();
                         task::spawn(async move {
@@ -187,10 +183,7 @@ impl CommonChainClient {
                             "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
                             chain_id, log.topics[1]
                         );
-                        println!(
-                            "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
-                            chain_id, log.topics[1]
-                        );
+
                         let self_clone = Arc::clone(&self_clone);
                         task::spawn(async move {
                             self_clone.cancel_job_with_job_id(
@@ -392,7 +385,6 @@ impl CommonChainClient {
         skips: u8,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
-        println!("Job start time {}", job_place_ts);
         let current_cycle = (
             job_place_ts
             - self.epoch
@@ -400,10 +392,8 @@ impl CommonChainClient {
             / self.time_interval;
 
         let all_gateways_data: Vec<GatewayData>;
-        println!("Current cycle for job {} is {}", job_id, current_cycle);
         loop {
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
-            println!("Gateway State {:?}", gateway_epoch_state_guard);
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&current_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();
                 break;
@@ -411,8 +401,7 @@ impl CommonChainClient {
             drop(gateway_epoch_state_guard);
 
             // wait for cycle to be created
-            println!("Waiting for cycle state to be created");
-            time::sleep(Duration::from_secs(60)).await;
+            time::sleep(Duration::from_secs(5)).await;
         }
 
         // create a weighted probability distribution for gateways based on stake amount
@@ -463,10 +452,6 @@ impl CommonChainClient {
             job_id, selected_gateway.address
         );
 
-        println!(
-            "Job ID: {:?}, Gateway Address: {:?}",
-            job_id, selected_gateway.address
-        );
 
         Ok(selected_gateway.address)
     }
