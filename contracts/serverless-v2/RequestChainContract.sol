@@ -72,10 +72,15 @@ contract RequestChainContract is
 
     //-------------------------------- Initializer start --------------------------------//
 
+    error ZeroAddressAdmin();
+
     function __RequestChainContract_init(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
+        if(_admin == address(0))
+            revert ZeroAddressAdmin();
+
         __Context_init_unchained();
         __ERC165_init_unchained();
         __AccessControl_init_unchained();
@@ -83,6 +88,8 @@ contract RequestChainContract is
         __AttestationAuther_init_unchained(_images);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+
+        jobCount = block.chainid << 192;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -183,7 +190,6 @@ contract RequestChainContract is
         uint256 usdcDeposit;
         uint256 callbackDeposit;
         address jobOwner;
-        bool receivedOutput;
     }
 
     mapping(uint256 => Job) public jobs;
@@ -220,6 +226,7 @@ contract RequestChainContract is
     event JobCancelled(uint256 indexed jobId);
 
     error InvalidUserTimeout();
+    error JobNotExists();
     error OverallTimeoutOver();
     error JobOutputAlreadyReceived();
     error OverallTimeoutNotOver();
@@ -238,13 +245,15 @@ contract RequestChainContract is
         if(_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT)
             revert InvalidUserTimeout();
 
+        if (jobCount + 1 == (block.chainid + 1) << 192)
+            jobCount = block.chainid << 192;
+
         jobs[++jobCount] = Job({
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
             usdcDeposit: _usdcDeposit,
             callbackDeposit: _callbackDeposit,
-            jobOwner: _msgSender(),
-            receivedOutput: false
+            jobOwner: _msgSender()
         });
 
         emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit, block.timestamp);
@@ -257,6 +266,9 @@ contract RequestChainContract is
         uint256 _totalTime,
         uint8 _errorCode
     ) internal {
+        if(jobs[_jobId].jobOwner == address(0))
+            revert JobNotExists();
+
         // check time case
         if(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert OverallTimeoutOver();
@@ -274,23 +286,18 @@ contract RequestChainContract is
 
         _allowOnlyVerified(signer);
 
-        jobs[_jobId].receivedOutput = true;
-
         bool success = _callBackWithLimit(_jobId, _output, _errorCode);
 
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
 
-        // release escrow
+        // TODO: release escrow
 
-
+        delete jobs[_jobId];
     }
 
     function _jobCancel(
         uint256 _jobId
     ) internal {
-        if(jobs[_jobId].receivedOutput)
-            revert JobOutputAlreadyReceived();
-
         // check time case
         if(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert OverallTimeoutNotOver();
@@ -309,7 +316,7 @@ contract RequestChainContract is
         // uint start_gas = gasleft();
         Job memory job = jobs[_jobId];
         (bool success,) = job.jobOwner.call{gas: (job.callbackDeposit / tx.gasprice)}(
-            abi.encodeWithSignature("oysterResultCall(bytes32,bytes,uint8)", _jobId, _input, _errorCode)
+            abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8)", _jobId, _input, _errorCode)
         );
         // offsetting the gas consumed by wrapping methods, calculated manually by checking callback_cost when deposit is 0
         // uint callback_cost = (start_gas - gasleft() - MinCallbackGas) * tx.gasprice;

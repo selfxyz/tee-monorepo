@@ -114,7 +114,6 @@ contract CommonChainJobs is
 
     struct Job {
         uint256 jobId;
-        uint256 reqChainId;
         uint256 deadline;
         uint256 execStartTime;
         address jobOwner;
@@ -133,7 +132,6 @@ contract CommonChainJobs is
 
     event JobRelayed(
         uint256 indexed jobId,
-        uint256 indexed reqChainId,
         bytes32 codehash,
         bytes codeInputs,
         uint256 deadline,
@@ -144,7 +142,6 @@ contract CommonChainJobs is
 
     event JobResponded(
         uint256 indexed jobId,
-        uint256 indexed reqChainId,
         bytes output,
         uint256 totalTime,
         uint8 errorCode,
@@ -153,7 +150,6 @@ contract CommonChainJobs is
 
     event JobResourceUnavailable(
         uint256 indexed jobId,
-        uint256 indexed reqChainId,
         address indexed gatewayOperator
     );
 
@@ -171,7 +167,6 @@ contract CommonChainJobs is
     function _relayJob(
         bytes memory _signature,
         uint256 _jobId,
-        uint256 _reqChainId,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,
@@ -179,23 +174,24 @@ contract CommonChainJobs is
         uint8 _sequenceId,
         address _jobOwner
     ) internal {
-        uint256 key = getKey(_jobId, _reqChainId);
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert RelayTimeOver();
-        if(jobs[key].isResourceUnavailable)
+        if(jobs[_jobId].isResourceUnavailable)
             revert JobMarkedEndedAsResourceUnavailable();
-        if(_sequenceId != jobs[key].sequenceId + 1)
+        if(_sequenceId != jobs[_jobId].sequenceId + 1)
             revert InvalidSequenceId();
-        if(jobs[key].execStartTime != 0)
+        if(jobs[_jobId].execStartTime != 0)
             revert JobAlreadyRelayed();
-        if(!gateways.isChainSupported(_reqChainId))
+        
+        // first 64 bits represent chainId
+        uint256 reqChainId = _jobId >> 192;
+        if(!gateways.isChainSupported(reqChainId))
             revert UnsupportedChain();
 
         // signature check
         bytes32 digest = keccak256(
             abi.encodePacked(
                 _jobId,
-                _reqChainId,
                 _codehash,
                 _codeInputs,
                 _deadline,
@@ -211,15 +207,14 @@ contract CommonChainJobs is
         address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
-            jobs[key].isResourceUnavailable = true;
-            emit JobResourceUnavailable(_jobId, _reqChainId, _msgSender());
+            jobs[_jobId].isResourceUnavailable = true;
+            emit JobResourceUnavailable(_jobId, _msgSender());
             return;
         }
-        selectedExecutors[key] = selectedNodes;
+        selectedExecutors[_jobId] = selectedNodes;
 
-        jobs[key] = Job({
+        jobs[_jobId] = Job({
             jobId: _jobId,
-            reqChainId: _reqChainId,
             deadline: _deadline,
             execStartTime: block.timestamp,
             jobOwner: _jobOwner,
@@ -228,39 +223,37 @@ contract CommonChainJobs is
             isResourceUnavailable: false
         });
 
-        emit JobRelayed(_jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender(), selectedNodes);
+        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender(), selectedNodes);
     }
 
     function _submitOutput(
         bytes memory _signature,
         uint256 _jobId,
-        uint256 _reqChainId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode
     ) internal {
-        uint256 key = getKey(_jobId, _reqChainId);
-        if(block.timestamp > jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME)
+        if(block.timestamp > jobs[_jobId].execStartTime + jobs[_jobId].deadline + EXECUTION_BUFFER_TIME)
             revert ExecutionTimeOver();
 
         // signature check
         bytes32 digest = keccak256(
-            abi.encodePacked(_jobId, _reqChainId, _output, _totalTime, _errorCode)
+            abi.encodePacked(_jobId, _output, _totalTime, _errorCode)
         );
         address signer = digest.recover(_signature);
 
         executors.allowOnlyVerified(signer);
 
-        if(!isJobExecutor(_jobId, _reqChainId, signer))
+        if(!isJobExecutor(_jobId, signer))
             revert NotSelectedExecutor();
-        if(hasExecutedJob[key][signer])
+        if(hasExecutedJob[_jobId][signer])
             revert ExecutorAlreadySubmittedOutput();
 
         executors.updateOnSubmitOutput(signer);
-        hasExecutedJob[key][signer] = true;
+        hasExecutedJob[_jobId][signer] = true;
 
         // TODO: emit executorKey(signer) also if reqd
-        emit JobResponded(_jobId, _reqChainId, _output, _totalTime, _errorCode, ++jobs[key].outputCount);
+        emit JobResponded(_jobId, _output, _totalTime, _errorCode, ++jobs[_jobId].outputCount);
 
         // cleanup job after 3rd output submitted
 
@@ -270,12 +263,10 @@ contract CommonChainJobs is
 
     function _isJobExecutor(
         uint256 _jobId,
-        uint256 _reqChainId,
         address _executor
     ) internal view returns (bool) {
-        uint256 key = getKey(_jobId, _reqChainId);
-        address[] memory selectedNodes = selectedExecutors[key];
-        uint256 len = selectedExecutors[key].length;
+        address[] memory selectedNodes = selectedExecutors[_jobId];
+        uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
             if(selectedNodes[index] == _executor)
                 return true;
@@ -288,17 +279,9 @@ contract CommonChainJobs is
 
     //-------------------------------- external functions start --------------------------------//
 
-    function getKey(
-        uint256 _jobId,
-        uint256 _reqChainId
-    ) public pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(_jobId, "-", _reqChainId)));
-    }
-
     function relayJob(
         bytes memory _signature,
         uint256 _jobId,
-        uint256 _reqChainId,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,
@@ -306,26 +289,24 @@ contract CommonChainJobs is
         uint8 _sequenceId,
         address _jobOwner
     ) external {
-        _relayJob(_signature, _jobId, _reqChainId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
+        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
     }
 
     function submitOutput(
         bytes memory _signature,
         uint256 _jobId,
-        uint256 _reqChainId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode
     ) external {
-        _submitOutput(_signature, _jobId, _reqChainId, _output, _totalTime, _errorCode);
+        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode);
     }
 
     function isJobExecutor(
         uint256 _jobId,
-        uint256 _reqChainId,
         address _executor
     ) public view returns (bool) {
-        return _isJobExecutor(_jobId, _reqChainId, _executor);
+        return _isJobExecutor(_jobId, _executor);
     }
 
     //-------------------------------- external functions end ----------------------------------//
@@ -337,13 +318,11 @@ contract CommonChainJobs is
 
     event SlashedOnExecutionTimeout(
         uint256 indexed jobId,
-        uint256 indexed reqChainId,
         address[] executors
     );
 
     event GatewayReassigned(
         uint256 indexed jobId,
-        uint256 indexed reqChainId,
         address prevGatewayKey,
         address reporterGateway,
         uint8 sequenceId
@@ -355,59 +334,59 @@ contract CommonChainJobs is
 
     //-------------------------------- internal functions start ----------------------------------//
 
+    // TODO: active jobs cannot be updated if deadlineover and 2 of the executor nodes haven't submitted response
     function _slashOnExecutionTimeout(
-        uint256 _jobId,
-        uint256 _reqChainId
+        uint256 _jobId
     ) internal {
-        uint256 key = getKey(_jobId, _reqChainId);
-        if(jobs[key].jobId == 0)
+        if(jobs[_jobId].jobId == 0)
             revert InvalidJob();
 
         // check for time
-        if(block.timestamp <= jobs[key].execStartTime + jobs[key].deadline + EXECUTION_BUFFER_TIME)
+        if(block.timestamp <= jobs[_jobId].execStartTime + jobs[_jobId].deadline + EXECUTION_BUFFER_TIME)
             revert DeadlineNotOver();
 
-        delete jobs[key];
+        delete jobs[_jobId];
 
         // slash Execution node
 
-        uint256 len = selectedExecutors[key].length;
+        uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            address executorKey = selectedExecutors[key][index];
-            if(hasExecutedJob[key][executorKey])
+            address executorKey = selectedExecutors[_jobId][index];
+            if(hasExecutedJob[_jobId][executorKey])
                 revert JobAlreadyExecuted();
-            delete hasExecutedJob[key][executorKey];
+            delete hasExecutedJob[_jobId][executorKey];
             executors.updateOnExecutionTimeoutSlash(executorKey);
         }
 
-        emit SlashedOnExecutionTimeout(_jobId, _reqChainId, selectedExecutors[key]);
+        emit SlashedOnExecutionTimeout(_jobId, selectedExecutors[_jobId]);
 
-        delete selectedExecutors[key];
+        delete selectedExecutors[_jobId];
     }
 
     function _reassignGatewayRelay(
         address _gatewayKeyOld,
         uint256 _jobId,
-        uint256 _reqChainId,
         bytes memory _signature,
         uint8 _sequenceId
     ) internal {
-        uint256 key = getKey(_jobId, _reqChainId);
+        // TODO: add _jobRequestTimestamp in sign to prevent replay attack
+        // if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
+        //     revert RelayTimeOver();
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
 
-        if(jobs[key].isResourceUnavailable)
+        if(jobs[_jobId].isResourceUnavailable)
             revert JobMarkedEndedAsResourceUnavailable();
-        if(_sequenceId != jobs[key].sequenceId + 1 || _sequenceId > 2)
+        if(_sequenceId != jobs[_jobId].sequenceId + 1 || _sequenceId > 2)
             revert InvalidSequenceId();
-        jobs[key].sequenceId = _sequenceId;
+        jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        bytes32 digest = keccak256(abi.encodePacked(_jobId, _reqChainId, _gatewayKeyOld, _sequenceId));
+        bytes32 digest = keccak256(abi.encodePacked(_jobId, _gatewayKeyOld, _sequenceId));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);
 
-        emit GatewayReassigned(_jobId, _reqChainId, _gatewayKeyOld, _msgSender(), _sequenceId);
+        emit GatewayReassigned(_jobId, _gatewayKeyOld, _msgSender(), _sequenceId);
 
         // slash old gateway
     }
@@ -417,20 +396,18 @@ contract CommonChainJobs is
     //-------------------------------- external functions start ----------------------------------//
 
     function slashOnExecutionTimeout(
-        uint256 _jobId,
-        uint256 _reqChainId
+        uint256 _jobId
     ) external {
-        _slashOnExecutionTimeout(_jobId, _reqChainId);
+        _slashOnExecutionTimeout(_jobId);
     }
 
     function reassignGatewayRelay(
         address _gatewayKeyOld,
         uint256 _jobId,
-        uint256 _reqChainId,
         bytes memory _signature,
         uint8 _sequenceId
     ) external {
-        _reassignGatewayRelay(_gatewayKeyOld, _jobId, _reqChainId, _signature, _sequenceId);
+        _reassignGatewayRelay(_gatewayKeyOld, _jobId, _signature, _sequenceId);
     }
 
     //-------------------------------- external functions end ----------------------------------//
@@ -438,10 +415,8 @@ contract CommonChainJobs is
     //-------------------------------- Timeout end --------------------------------//
 
     function getSelectedExecutors(
-        uint256 _jobId,
-        uint256 _reqChainId
+        uint256 _jobId
     ) external view returns (address[] memory) {
-        uint256 key = getKey(_jobId, _reqChainId);
-        return selectedExecutors[key];
+        return selectedExecutors[_jobId];
     }
 }
