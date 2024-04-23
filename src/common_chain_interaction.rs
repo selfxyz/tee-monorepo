@@ -393,6 +393,7 @@ impl CommonChainClient {
 
         let all_gateways_data: Vec<GatewayData>;
         loop {
+            // TODO: end this loop after certain retries or condition.
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&current_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();

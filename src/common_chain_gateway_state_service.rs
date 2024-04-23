@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use tokio::time;
 
 use crate::chain_util::get_block_number_by_timestamp;
-use crate::constant::{GATEWAY_BLOCK_STATES_TO_MAINTAIN, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE};
+use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
 use crate::contract_abi::CommonChainGatewayContract;
 use crate::model::GatewayData;
 use crate::HttpProvider;
@@ -27,10 +27,9 @@ pub async fn gateway_epoch_state_service(
 ) {
     let current_cycle = (
         current_time
-        - epoch
-        - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
+        - epoch)
         / time_interval;
-        let initial_epoch_cycle: u64;
+    let initial_epoch_cycle: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
         initial_epoch_cycle = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
     } else {
