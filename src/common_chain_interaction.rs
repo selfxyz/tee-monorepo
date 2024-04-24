@@ -12,7 +12,7 @@ use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::{task, time};
@@ -22,11 +22,10 @@ use crate::chain_util::{
     sign_reassign_gateway_relay_response, sign_relay_job_response,
 };
 use crate::constant::{
-    MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE,
+    REQUEST_RELAY_TIMEOUT, WAIT_BEFORE_CHECKING_STATE,
 };
-use crate::contract_abi::{
-    CommonChainGatewayContract, CommonChainJobsContract,
-};
+use crate::contract_abi::{CommonChainGatewayContract, CommonChainJobsContract};
 use crate::model::{
     ComChainJobType, CommonChainClient, GatewayData, Job, JobResponse, ReqChainJobType,
     RequestChainClient,
@@ -122,10 +121,7 @@ impl CommonChainClient {
                     keccak256("JobCancelled(bytes32)"),
                 ]);
 
-            info!(
-                "Subscribing to events for chain_id: {}",
-                chain_id
-            );
+            info!("Subscribing to events for chain_id: {}", chain_id);
 
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
@@ -371,8 +367,7 @@ impl CommonChainClient {
         }
         job.gateway_address = None;
 
-        self.job_placed_handler(job.req_chain_id, job, tx)
-            .await;
+        self.job_placed_handler(job.req_chain_id, job, tx).await;
 
         Ok(())
     }
@@ -385,24 +380,33 @@ impl CommonChainClient {
         skips: u8,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
-        let current_cycle = (
-            job_place_ts
-            - self.epoch
-            - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
-            / self.time_interval;
+        let job_cycle =
+            (job_place_ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
 
         let all_gateways_data: Vec<GatewayData>;
         loop {
-            // TODO: end this loop after certain retries or condition.
+            let current_cycle = (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                - self.epoch
+                - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
+                / self.time_interval;
+
+            if current_cycle - job_cycle > GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+                return Err(anyhow::Error::msg(
+                    "Job is older than the maintained block states",
+                ));
+            }
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
-            if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&current_cycle) {
+            if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&job_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();
                 break;
             }
             drop(gateway_epoch_state_guard);
 
             // wait for cycle to be created
-            time::sleep(Duration::from_secs(5)).await;
+            time::sleep(Duration::from_secs(WAIT_BEFORE_CHECKING_STATE)).await;
         }
 
         // create a weighted probability distribution for gateways based on stake amount
@@ -412,7 +416,7 @@ impl CommonChainClient {
         let mut total_stake: u64 = 0;
         let mut gateway_data_of_req_chain: Vec<GatewayData> = vec![];
         if all_gateways_data.is_empty() {
-            return Err(anyhow::Error::msg("Gateway not registered"));
+            return Err(anyhow::Error::msg("No Gateways Registered"));
         }
         for gateway_data in all_gateways_data.iter() {
             if gateway_data
@@ -452,7 +456,6 @@ impl CommonChainClient {
             "Job ID: {:?}, Gateway Address: {:?}",
             job_id, selected_gateway.address
         );
-
 
         Ok(selected_gateway.address)
     }
@@ -495,14 +498,12 @@ impl CommonChainClient {
             job.user_timeout,
             &job.job_owner,
             job.sequence_number,
-            job.starttime
+            job.starttime,
         )
         .await
         .unwrap();
         let Ok(signature) = types::Bytes::from_hex(signature) else {
-            error!(
-                "Failed to decode signature hex string"
-            );
+            error!("Failed to decode signature hex string");
             return;
         };
         let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
@@ -553,9 +554,7 @@ impl CommonChainClient {
         .await
         .unwrap();
         let Ok(signature) = types::Bytes::from_hex(signature) else {
-            error!(
-                "Failed to decode signature hex string"
-            );
+            error!("Failed to decode signature hex string");
             return;
         };
 
@@ -911,8 +910,7 @@ impl CommonChainClient {
     async fn job_response_txn(self: Arc<Self>, job_response: JobResponse) {
         info!("Creating a transaction for jobResponse");
 
-        let req_chain_client =
-            self.req_chain_clients[&job_response.req_chain_id].clone();
+        let req_chain_client = self.req_chain_clients[&job_response.req_chain_id].clone();
 
         let signature = sign_job_response_response(
             &self.enclave_signer_key,
@@ -924,9 +922,7 @@ impl CommonChainClient {
         .await
         .unwrap();
         let Ok(signature) = types::Bytes::from_hex(signature) else {
-            error!(
-                "Failed to decode signature hex string"
-            );
+            error!("Failed to decode signature hex string");
             return;
         };
 
