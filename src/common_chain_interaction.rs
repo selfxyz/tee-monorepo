@@ -393,7 +393,7 @@ impl CommonChainClient {
                 - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
 
-            if current_cycle - job_cycle > GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+            if current_cycle - job_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
                 return Err(anyhow::Error::msg(
                     "Job is older than the maintained block states",
                 ));

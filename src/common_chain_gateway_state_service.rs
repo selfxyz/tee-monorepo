@@ -25,10 +25,7 @@ pub async fn gateway_epoch_state_service(
     epoch: u64,
     time_interval: u64,
 ) {
-    let current_cycle = (
-        current_time
-        - epoch)
-        / time_interval;
+    let current_cycle = (current_time - epoch) / time_interval;
     let initial_epoch_cycle: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
         initial_epoch_cycle = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
@@ -40,30 +37,40 @@ pub async fn gateway_epoch_state_service(
         let provider_clone = provider.clone();
         let com_chain_gateway_contract_clone = com_chain_gateway_contract.clone();
         let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
-        tokio::spawn(async move {
-            let mut cycle_number = initial_epoch_cycle;
-            while cycle_number <= current_cycle {
-                let success = generate_gateway_epoch_state_for_cycle(
-                    contract_address_clone,
-                    &provider_clone,
-                    com_chain_gateway_contract_clone.clone(),
-                    &gateway_epoch_state_clone,
-                    cycle_number,
-                    epoch,
-                    time_interval,
-                )
-                .await;
 
-                if success.is_err() {
-                    error!(
-                        "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
-                        cycle_number, success
-                    );
-                    continue;
-                }
+        let mut cycle_number = initial_epoch_cycle;
+        while cycle_number <= current_cycle {
+            let current_cycle = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs()
+                - epoch / time_interval;
+
+            if current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
                 cycle_number += 1;
+                continue;
             }
-        });
+
+            let success = generate_gateway_epoch_state_for_cycle(
+                contract_address_clone,
+                &provider_clone,
+                com_chain_gateway_contract_clone.clone(),
+                &gateway_epoch_state_clone,
+                cycle_number,
+                epoch,
+                time_interval,
+            )
+            .await;
+
+            if success.is_err() {
+                error!(
+                    "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
+                    cycle_number, success
+                );
+                continue;
+            }
+            cycle_number += 1;
+        }
     }
 
     let mut cycle_number = current_cycle + 1;
@@ -83,36 +90,42 @@ pub async fn gateway_epoch_state_service(
     loop {
         interval.tick().await;
 
-        let contract_address_clone = contract_address.clone();
-        let provider_clone = provider.clone();
-        let com_chain_gateway_contract_clone = com_chain_gateway_contract.clone();
-        let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
-        tokio::spawn(async move {
-            loop {
-                let success = generate_gateway_epoch_state_for_cycle(
-                    contract_address_clone,
-                    &provider_clone,
-                    com_chain_gateway_contract_clone.clone(),
-                    &gateway_epoch_state_clone,
-                    cycle_number,
-                    epoch,
-                    time_interval,
-                )
-                .await;
+        loop {
+            let current_cycle = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs()
+                - epoch / time_interval;
 
-                if success.is_err() {
-                    error!(
-                        "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
-                        cycle_number, success
-                    );
-                    continue;
-                }
-
-                break;
+            if current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+                cycle_number += 1;
+                continue;
             }
 
-            prune_old_cycle_states(&gateway_epoch_state_clone, cycle_number).await;
-        });
+            let success = generate_gateway_epoch_state_for_cycle(
+                contract_address.clone(),
+                &provider.clone(),
+                com_chain_gateway_contract.clone(),
+                &gateway_epoch_state,
+                cycle_number,
+                epoch,
+                time_interval,
+            )
+            .await;
+
+            if success.is_err() {
+                error!(
+                    "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
+                    cycle_number,
+                    success.err().unwrap()
+                );
+                continue;
+            }
+
+            break;
+        }
+
+        prune_old_cycle_states(&gateway_epoch_state, epoch, time_interval).await;
 
         cycle_number += 1;
     }
@@ -199,7 +212,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     }
     if last_added_cycle.is_some() {
         // initialize the gateway epoch state[current_cycle] with the previous cycle state
-        let last_cycle_state_map: BTreeMap<Address, GatewayData>;
+        let mut last_cycle_state_map: BTreeMap<Address, GatewayData>;
         // scope for the read lock
         {
             last_cycle_state_map = gateway_epoch_state
@@ -210,25 +223,10 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 .clone();
         }
         // update the last block number of the gateway data
-        for gateway_data in last_cycle_state_map.values() {
-            // scope for the write lock
-            {
-                let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
-                gateway_epoch_state_guard
-                    .get_mut(&cycle_number)
-                    .unwrap()
-                    .insert(
-                        gateway_data.address.clone(),
-                        GatewayData {
-                            last_block_number: to_block_number.clone(),
-                            address: gateway_data.address.clone(),
-                            stake_amount: gateway_data.stake_amount.clone(),
-                            status: gateway_data.status.clone(),
-                            req_chain_ids: gateway_data.req_chain_ids.clone(),
-                        },
-                    );
-            }
+        for (_, gateway_data) in last_cycle_state_map.iter_mut() {
+            gateway_data.last_block_number = to_block_number;
         }
+
         // scope for the write lock
         {
             let mut gateway_epoch_state_guard = gateway_epoch_state.write().await;
@@ -323,8 +321,14 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
 async fn prune_old_cycle_states(
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-    current_cycle: u64,
+    epoch: u64,
+    time_interval: u64,
 ) {
+    let current_cycle = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
+        - epoch / time_interval;
     let mut cycles_to_remove = vec![];
 
     // scope for the read lock

@@ -88,19 +88,13 @@ pub async fn sign_relay_job_response(
     deadline: U256,
     job_owner: &Address,
     sequence_number: u8,
-    job_start_time: U256
+    job_start_time: U256,
 ) -> Option<String> {
     let token_list = [
-        Token::Array(vec![
-            Token::Uint(job_id),
-            Token::Uint(req_chain_id),
-        ]),
+        Token::Array(vec![Token::Uint(job_id), Token::Uint(req_chain_id)]),
         Token::FixedBytes(codehash.clone()),
         Token::Bytes(code_inputs.to_vec()),
-        Token::Array(vec![
-            Token::Uint(deadline),
-            Token::Uint(job_start_time),
-        ]),
+        Token::Array(vec![Token::Uint(deadline), Token::Uint(job_start_time)]),
         Token::FixedBytes(vec![sequence_number]),
         Token::Address(*job_owner),
     ];
@@ -135,7 +129,7 @@ pub async fn sign_reassign_gateway_relay_response(
 
     let token_list = [
         Token::Array(vec![Token::Uint(job_id)]),
-        Token::Address(*gateway_operator_old)
+        Token::Address(*gateway_operator_old),
     ];
 
     let encoded_args = encode_packed(&token_list).unwrap();
@@ -162,7 +156,7 @@ pub async fn sign_job_response_response(
         Token::Array(vec![Token::Uint(job_id)]),
         Token::Bytes(output.to_vec()),
         Token::Array(vec![Token::Uint(total_time)]),
-        Token::FixedBytes(vec![error_code])
+        Token::FixedBytes(vec![error_code]),
     ];
 
     let encoded_args = encode_packed(&token_list).unwrap();

@@ -14,7 +14,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::contract_abi::{CommonChainGatewayContract, RequestChainContract};
 use crate::model::{
-    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainClient, RequestChainData
+    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainClient,
+    RequestChainData,
 };
 
 #[get("/")]
@@ -186,7 +187,7 @@ async fn register_enclave(
             chain_id: chain,
             contract_address: contract_address,
             contract,
-            ws_rpc_url: ws_rpc_url.to_string()
+            ws_rpc_url: ws_rpc_url.to_string(),
         });
         request_chain_clients.insert(chain, req_chain_client);
     }
@@ -271,7 +272,10 @@ async fn register_enclave(
         let gateway_epoch_state_clone = Arc::clone(&app_state.gateway_epoch_state);
         let epoch_clone = app_state.epoch.clone();
         let time_interval_clone = app_state.time_interval.clone();
-        let service_start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let service_start_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         tokio::spawn(async move {
             gateway_epoch_state_service(
                 service_start_time,
