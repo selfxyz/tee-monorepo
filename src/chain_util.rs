@@ -115,18 +115,6 @@ pub async fn sign_reassign_gateway_relay_response(
     job_id: U256,
     gateway_operator_old: &Address,
 ) -> Option<String> {
-    // let mut job_id_bytes = [0u8; 32];
-    // job_id.to_big_endian(&mut job_id_bytes);
-
-    // let mut hasher = Keccak::v256();
-    // hasher.update(b"|jobId|");
-    // hasher.update(&job_id_bytes);
-    // hasher.update(b"|gatewayOperatorOld|");
-    // hasher.update(gateway_operator_old.as_bytes());
-
-    // let mut hash = [0u8; 32];
-    // hasher.finalize(&mut hash);
-
     let token_list = [
         Token::Array(vec![Token::Uint(job_id)]),
         Token::Address(*gateway_operator_old),
