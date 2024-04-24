@@ -191,7 +191,7 @@ contract CommonChainExecutors is
         _insert_unchecked(enclaveKey, uint64(_stakeAmount));
 
         emit ExecutorRegistered(enclaveKey, _msgSender());
-    } 
+    }
 
     function _deregisterExecutor(
         bytes memory _enclavePubKey
@@ -216,7 +216,7 @@ contract CommonChainExecutors is
 
         emit ExecutorDeregistered(enclaveKey);
 
-    } 
+    }
 
     function _addExecutorStake(
         bytes memory _enclavePubKey,
@@ -233,7 +233,7 @@ contract CommonChainExecutors is
             _update_unchecked(enclaveKey, uint64(executors[enclaveKey].stakeAmount));
 
         emit ExecutorStakeAdded(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
-    }  
+    }
 
     function _removeExecutorStake(
         bytes memory _enclavePubKey,
@@ -252,6 +252,7 @@ contract CommonChainExecutors is
         else {
             executors[enclaveKey].unstakeStatus = true;
             executors[enclaveKey].unstakeAmount += _amount;
+            _deleteIfPresent(enclaveKey);
         }
         
         // TODO: manage this event within if-else block
@@ -346,48 +347,42 @@ contract CommonChainExecutors is
     function _updateOnSubmitOutput(
         address _executorKey
     ) internal {
-        // add back the node to the tree as now it can accept a new job
-        if(executors[_executorKey].status && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
-            _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
-
-        executors[_executorKey].activeJobs -= 1;
-
-        // if user has initiated unstake then release tokens only if no jobs are pending
-        if(executors[_executorKey].unstakeStatus && executors[_executorKey].activeJobs == 0) {
-            uint256 amount = executors[_executorKey].stakeAmount < executors[_executorKey].unstakeAmount ? executors[_executorKey].stakeAmount : executors[_executorKey].unstakeAmount;
-            executors[_executorKey].stakeAmount -= amount;
-            TOKEN.safeTransfer(_msgSender(), amount);
-            executors[_executorKey].unstakeAmount = 0;
-            // update in tree only if the user has not initiated deregistration
-            if(executors[_executorKey].status)
-                _update_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
-        }
-
-        if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
-            delete executors[_executorKey];
-            _revokeEnclaveKey(_executorKey);
-        }
+        _preUpdate(_executorKey);
+        _postUpdate(_executorKey);
     }
 
     function _updateOnExecutionTimeoutSlash(
         address _executorKey,
         bool _hasExecutedJob
     ) internal {
+        _preUpdate(_executorKey);
+
+        // TODO: slash executor if failed to perform the job
+        if(!_hasExecutedJob) {}
+
+        _postUpdate(_executorKey);
+    }
+
+    function _preUpdate(
+        address _executorKey
+    ) internal {
         // add back the node to the tree as now it can accept a new job
-        if(executors[_executorKey].status && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
+        if(executors[_executorKey].status && !executors[_executorKey].unstakeStatus && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
         
         executors[_executorKey].activeJobs -= 1;
+    }
 
-        // TODO: slash executor is failed to perform the job
-        if(!_hasExecutedJob) {}
-
+    function _postUpdate(
+        address _executorKey
+    ) internal {
         // if user has initiated unstake then release tokens only if no jobs are pending
         if(executors[_executorKey].unstakeStatus && executors[_executorKey].activeJobs == 0) {
             uint256 amount = executors[_executorKey].stakeAmount < executors[_executorKey].unstakeAmount ? executors[_executorKey].stakeAmount : executors[_executorKey].unstakeAmount;
             executors[_executorKey].stakeAmount -= amount;
             TOKEN.safeTransfer(executors[_executorKey].operator, amount);
             executors[_executorKey].unstakeAmount = 0;
+            executors[_executorKey].unstakeStatus = false;
             // update in tree only if the user has not initiated deregistration
             if(executors[_executorKey].status)
                 _update_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));

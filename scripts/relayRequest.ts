@@ -126,13 +126,7 @@ async function main() {
     await executorsContract.setJobsContract(jobsAddress);
 }
 
-async function getErrorSelectors() {
-    const contract =  await ethers.getContractFactory("CommonChainGateways");
-    const iface = contract.interface;
-    console.log("selector: ", iface.parseError("0x38c4ac16"));
-}
-
-getErrorSelectors()
+main()
     .then(() => process.exit(0))
     .catch((error) => {
         console.error(error);

@@ -318,7 +318,7 @@ contract CommonChainJobs is
 
     event SlashedOnExecutionTimeout(
         uint256 indexed jobId,
-        address[] executors
+        address indexed executor
     );
 
     event GatewayReassigned(
@@ -352,10 +352,11 @@ contract CommonChainJobs is
         for (uint256 index = 0; index < len; index++) {
             address executorKey = selectedExecutors[_jobId][index];
             executors.updateOnExecutionTimeoutSlash(executorKey, hasExecutedJob[_jobId][executorKey]);
+            if(!hasExecutedJob[_jobId][executorKey])
+                emit SlashedOnExecutionTimeout(_jobId, executorKey);
             delete hasExecutedJob[_jobId][executorKey];
         }
 
-        emit SlashedOnExecutionTimeout(_jobId, selectedExecutors[_jobId]);
 
         delete selectedExecutors[_jobId];
     }

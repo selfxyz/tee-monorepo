@@ -32,14 +32,14 @@ contract CommonChainGateways is
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token,
-        uint256 _timeoutDuration
+        uint256 _deregisterOrUnstakeTimeout
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
         if(address(_token) == address(0))
             revert ZeroAddressToken();
         TOKEN = _token;
-        TIMEOUT_DURATION = _timeoutDuration;
+        DEREGISTER_OR_UNSTAKE_TIMEOUT = _deregisterOrUnstakeTimeout;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -88,7 +88,7 @@ contract CommonChainGateways is
     IERC20 public immutable TOKEN;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable TIMEOUT_DURATION;
+    uint256 public immutable DEREGISTER_OR_UNSTAKE_TIMEOUT;
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -169,6 +169,7 @@ contract CommonChainGateways is
     error UnsupportedChain();
     error InvalidEnclaveKey();
     error InvalidStatus();
+    error GatewayDeregisterNotInitiated();
     error DeregisterTimePending();
     error GatewayDeregisterAlreadyInitiated();
     error GatewayStakeRemoveAlreadyInitiated();
@@ -260,7 +261,9 @@ contract CommonChainGateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].status)
             revert InvalidStatus();
-        if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + TIMEOUT_DURATION)
+        if(gateways[enclaveKey].deregisterStartTime == 0)
+            revert GatewayDeregisterNotInitiated();
+        if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
             revert DeregisterTimePending();
 
         // TODO: return stake amount
@@ -312,7 +315,7 @@ contract CommonChainGateways is
             revert InvalidStatus();
         if(gateways[enclaveKey].deregisterStartTime > 0)
             revert GatewayDeregisterAlreadyInitiated();
-        if(block.timestamp <= gateways[enclaveKey].unstakeStartTime + TIMEOUT_DURATION)
+        if(block.timestamp <= gateways[enclaveKey].unstakeStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
             revert UnstakeTimePending();
 
         _amount = _amount < gateways[enclaveKey].stakeAmount ? _amount : gateways[enclaveKey].stakeAmount;
@@ -324,9 +327,7 @@ contract CommonChainGateways is
 
         gateways[enclaveKey].stakeAmount -= _amount;
         gateways[enclaveKey].unstakeStartTime = 0;
-        // update status only if deregistration hasn't been started
-        if(gateways[enclaveKey].deregisterStartTime == 0)
-            gateways[enclaveKey].status = true;
+        gateways[enclaveKey].status = true;
 
         emit GatewayStakeRemoved(enclaveKey, _amount, gateways[enclaveKey].stakeAmount);
     }

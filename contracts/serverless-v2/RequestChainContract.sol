@@ -196,14 +196,6 @@ contract RequestChainContract is
 
     uint256 public jobCount;
 
-    error InvalidJobOwner();
-
-    modifier onlyJobOwner(uint256 _jobId) {
-        if(jobs[_jobId].jobOwner != _msgSender())
-            revert InvalidJobOwner();
-        _;
-    }
-
     event JobRelayed(
         uint256 indexed jobId,
         bytes32 codehash,
@@ -228,7 +220,7 @@ contract RequestChainContract is
     error InvalidUserTimeout();
     error JobNotExists();
     error OverallTimeoutOver();
-    error JobOutputAlreadyReceived();
+    error InvalidJobOwner();
     error OverallTimeoutNotOver();
 
     //-------------------------------- internal functions start -------------------------------//
@@ -298,6 +290,9 @@ contract RequestChainContract is
     function _jobCancel(
         uint256 _jobId
     ) internal {
+        if(jobs[_jobId].jobOwner != _msgSender())
+            revert InvalidJobOwner();
+            
         // check time case
         if(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert OverallTimeoutNotOver();
@@ -353,7 +348,7 @@ contract RequestChainContract is
 
     function jobCancel(
         uint256 _jobId
-    ) external onlyJobOwner(_jobId) {
+    ) external {
         _jobCancel(_jobId);
     }
 
