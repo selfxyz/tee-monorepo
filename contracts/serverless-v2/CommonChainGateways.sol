@@ -32,14 +32,14 @@ contract CommonChainGateways is
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token,
-        uint256 _deregisterTimeoutDuration
+        uint256 _timeoutDuration
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
         if(address(_token) == address(0))
             revert ZeroAddressToken();
         TOKEN = _token;
-        DEREGISTER_TIMEOUT_DURATION = _deregisterTimeoutDuration;
+        TIMEOUT_DURATION = _timeoutDuration;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -88,7 +88,7 @@ contract CommonChainGateways is
     IERC20 public immutable TOKEN;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable DEREGISTER_TIMEOUT_DURATION;
+    uint256 public immutable TIMEOUT_DURATION;
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -106,6 +106,7 @@ contract CommonChainGateways is
         uint256 stakeAmount;
         uint256 deregisterStartTime;
         bool status;
+        uint256 unstakeStartTime;
     }
 
     // enclaveAddress => Gateway
@@ -128,11 +129,15 @@ contract CommonChainGateways is
 
     event GatewayDeregistered(address indexed enclaveKey);
 
+    event GatewayDeregisterCompleted(address indexed enclaveKey);
+
     event GatewayStakeAdded(
         address indexed enclaveKey,
         uint256 addedAmount,
         uint256 totalAmount
     );
+
+    event GatewayStakeRemoveInitiated(address indexed enclaveKey);
 
     event GatewayStakeRemoved(
         address indexed enclaveKey,
@@ -165,6 +170,10 @@ contract CommonChainGateways is
     error InvalidEnclaveKey();
     error InvalidStatus();
     error DeregisterTimePending();
+    error GatewayDeregisterAlreadyInitiated();
+    error GatewayStakeRemoveAlreadyInitiated();
+    error UnstakeTimePending();
+    error InvalidAmount();
     error InvalidLength();
     error EmptyRequestedChains();
     error ChainAlreadyExists(uint256 chainId);
@@ -212,7 +221,8 @@ contract CommonChainGateways is
             chainIds: _chainIds,
             stakeAmount: _stakeAmount,
             deregisterStartTime: 0,
-            status: true
+            status: true,
+            unstakeStartTime: 0
         });
 
         emit GatewayRegistered(enclaveKey, _msgSender(), _chainIds);
@@ -234,8 +244,10 @@ contract CommonChainGateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].operator == address(0))
             revert InvalidEnclaveKey();
-        
-        // TODO: add gateway deregister startTime and status false
+        // TODO: cannot call deregister initiate again
+        if(gateways[enclaveKey].deregisterStartTime > 0)
+            revert GatewayDeregisterAlreadyInitiated();
+
         gateways[enclaveKey].status = false;
         gateways[enclaveKey].deregisterStartTime = block.timestamp;
 
@@ -248,13 +260,16 @@ contract CommonChainGateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].status)
             revert InvalidStatus();
-        if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + DEREGISTER_TIMEOUT_DURATION)
+        if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + TIMEOUT_DURATION)
             revert DeregisterTimePending();
+
+        // TODO: return stake amount
+        TOKEN.safeTransfer(_msgSender(), gateways[enclaveKey].stakeAmount);
 
         delete gateways[enclaveKey];
         _revokeEnclaveKey(_enclavePubKey);
 
-        // TODO: return stake amount
+        emit GatewayDeregisterCompleted(enclaveKey);
     }
 
     function _addGatewayStake(
@@ -272,14 +287,46 @@ contract CommonChainGateways is
 
     // TODO: check if the gateway is assigned some job before full stake removal
     function _removeGatewayStake(
+        bytes memory _enclavePubKey
+    ) internal {
+        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        // TODO: cannot remove stake if deregister initiated already
+        if(gateways[enclaveKey].deregisterStartTime > 0)
+            revert GatewayDeregisterAlreadyInitiated();
+        if(gateways[enclaveKey].unstakeStartTime > 0)
+            revert GatewayStakeRemoveAlreadyInitiated();
+
+        gateways[enclaveKey].status = false;
+        gateways[enclaveKey].unstakeStartTime = block.timestamp;
+
+        emit GatewayStakeRemoveInitiated(enclaveKey);
+    }
+
+    // TODO: if initiated unstake, and then deregister....then complete unstake shouldn't be allowed
+    function _completeRemoveGatewayStake(
         bytes memory _enclavePubKey,
         uint256 _amount
     ) internal {
+        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        if(gateways[enclaveKey].status)
+            revert InvalidStatus();
+        if(gateways[enclaveKey].deregisterStartTime > 0)
+            revert GatewayDeregisterAlreadyInitiated();
+        if(block.timestamp <= gateways[enclaveKey].unstakeStartTime + TIMEOUT_DURATION)
+            revert UnstakeTimePending();
+
+        _amount = _amount < gateways[enclaveKey].stakeAmount ? _amount : gateways[enclaveKey].stakeAmount;
+        if(_amount == 0)
+            revert InvalidAmount();
+
         // transfer stake
         TOKEN.safeTransfer(_msgSender(), _amount);
 
-        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         gateways[enclaveKey].stakeAmount -= _amount;
+        gateways[enclaveKey].unstakeStartTime = 0;
+        // update status only if deregistration hasn't been started
+        if(gateways[enclaveKey].deregisterStartTime == 0)
+            gateways[enclaveKey].status = true;
 
         emit GatewayStakeRemoved(enclaveKey, _amount, gateways[enclaveKey].stakeAmount);
     }
@@ -424,10 +471,16 @@ contract CommonChainGateways is
     }
 
     function removeGatewayStake(
+        bytes memory _enclavePubKey
+    ) external onlyGatewayOperator(_enclavePubKey) {
+        _removeGatewayStake(_enclavePubKey);
+    }
+
+    function completeRemoveGatewayStake(
         bytes memory _enclavePubKey,
         uint256 _amount
     ) external onlyGatewayOperator(_enclavePubKey) {
-        _removeGatewayStake(_enclavePubKey, _amount);
+        _completeRemoveGatewayStake(_enclavePubKey, _amount);
     }
 
     function addChainGlobal(

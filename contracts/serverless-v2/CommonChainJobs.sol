@@ -330,7 +330,6 @@ contract CommonChainJobs is
 
     error InvalidJob();
     error DeadlineNotOver();
-    error JobAlreadyExecuted();
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -352,10 +351,8 @@ contract CommonChainJobs is
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
             address executorKey = selectedExecutors[_jobId][index];
-            if(hasExecutedJob[_jobId][executorKey])
-                revert JobAlreadyExecuted();
+            executors.updateOnExecutionTimeoutSlash(executorKey, hasExecutedJob[_jobId][executorKey]);
             delete hasExecutedJob[_jobId][executorKey];
-            executors.updateOnExecutionTimeoutSlash(executorKey);
         }
 
         emit SlashedOnExecutionTimeout(_jobId, selectedExecutors[_jobId]);
@@ -367,12 +364,13 @@ contract CommonChainJobs is
         address _gatewayKeyOld,
         uint256 _jobId,
         bytes memory _signature,
-        uint8 _sequenceId
+        uint8 _sequenceId,
+        uint256 _jobRequestTimestamp
     ) internal {
-        // TODO: add _jobRequestTimestamp in sign to prevent replay attack
-        // if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
-        //     revert RelayTimeOver();
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
+        // TODO: add _jobRequestTimestamp in sign to prevent replay attack
+        if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
+            revert RelayTimeOver();
 
         if(jobs[_jobId].isResourceUnavailable)
             revert JobMarkedEndedAsResourceUnavailable();
@@ -381,7 +379,7 @@ contract CommonChainJobs is
         jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        bytes32 digest = keccak256(abi.encodePacked(_jobId, _gatewayKeyOld, _sequenceId));
+        bytes32 digest = keccak256(abi.encodePacked(_jobId, _gatewayKeyOld, _sequenceId, _jobRequestTimestamp));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);
@@ -405,9 +403,10 @@ contract CommonChainJobs is
         address _gatewayKeyOld,
         uint256 _jobId,
         bytes memory _signature,
-        uint8 _sequenceId
+        uint8 _sequenceId,
+        uint256 _jobRequestTimestamp
     ) external {
-        _reassignGatewayRelay(_gatewayKeyOld, _jobId, _signature, _sequenceId);
+        _reassignGatewayRelay(_gatewayKeyOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp);
     }
 
     //-------------------------------- external functions end ----------------------------------//
