@@ -63,8 +63,6 @@ pub async fn gateway_epoch_state_service(
             )
             .await;
 
-            info!("Generated gateway epoch state for cycle {}", cycle_number);
-
             if success.is_err() {
                 error!(
                     "Failed to generate gateway epoch state for cycle {} - Error: {:?}",
@@ -317,6 +315,8 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 .stake_amount = stake_amount;
         }
     }
+
+    info!("Generated gateway epoch state for cycle {}", cycle_number);
     Ok(())
 }
 
@@ -325,11 +325,12 @@ async fn prune_old_cycle_states(
     epoch: u64,
     time_interval: u64,
 ) {
-    let current_cycle = SystemTime::now()
+    let current_cycle = (SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs()
-        - epoch / time_interval;
+        - epoch)
+        / time_interval;
     let mut cycles_to_remove = vec![];
 
     // scope for the read lock
