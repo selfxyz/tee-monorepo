@@ -138,10 +138,15 @@ contract CommonChainExecutors is
         uint256 totalAmount
     );
 
+    event ExecutorStakeRemoveInitiated(
+        address indexed enclaveKey,
+        uint256 amount
+    );
+
     event ExecutorStakeRemoved(
         address indexed enclaveKey,
         uint256 removedAmount,
-        uint256 totalAmount
+        uint256 remainingStakedAmount
     );
 
     error ExecutorAlreadyExists();
@@ -215,7 +220,6 @@ contract CommonChainExecutors is
         _deleteIfPresent(enclaveKey);
 
         emit ExecutorDeregistered(enclaveKey);
-
     }
 
     function _addExecutorStake(
@@ -248,15 +252,17 @@ contract CommonChainExecutors is
             TOKEN.safeTransfer(_msgSender(), _amount);
             // update the value in tree only if the node exists in the tree
             _update_unchecked(enclaveKey, uint64(executors[enclaveKey].stakeAmount));
+            // TODO: manage this event within if-else block
+            emit ExecutorStakeRemoved(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
         }
         else {
             executors[enclaveKey].unstakeStatus = true;
             executors[enclaveKey].unstakeAmount += _amount;
             _deleteIfPresent(enclaveKey);
+            //TODO: initiated
+            emit ExecutorStakeRemoveInitiated(enclaveKey, _amount);
         }
         
-        // TODO: manage this event within if-else block
-        emit ExecutorStakeRemoved(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -347,23 +353,20 @@ contract CommonChainExecutors is
     function _updateOnSubmitOutput(
         address _executorKey
     ) internal {
-        _preUpdate(_executorKey);
-        _postUpdate(_executorKey);
+        _postJobUpdate(_executorKey);
     }
 
     function _updateOnExecutionTimeoutSlash(
         address _executorKey,
         bool _hasExecutedJob
     ) internal {
-        _preUpdate(_executorKey);
-
         // TODO: slash executor if failed to perform the job
         if(!_hasExecutedJob) {}
 
-        _postUpdate(_executorKey);
+        _postJobUpdate(_executorKey);
     }
 
-    function _preUpdate(
+    function _postJobUpdate(
         address _executorKey
     ) internal {
         // add back the node to the tree as now it can accept a new job
@@ -371,11 +374,7 @@ contract CommonChainExecutors is
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
         
         executors[_executorKey].activeJobs -= 1;
-    }
 
-    function _postUpdate(
-        address _executorKey
-    ) internal {
         // if user has initiated unstake then release tokens only if no jobs are pending
         if(executors[_executorKey].unstakeStatus && executors[_executorKey].activeJobs == 0) {
             uint256 amount = executors[_executorKey].stakeAmount < executors[_executorKey].unstakeAmount ? executors[_executorKey].stakeAmount : executors[_executorKey].unstakeAmount;
@@ -383,6 +382,10 @@ contract CommonChainExecutors is
             TOKEN.safeTransfer(executors[_executorKey].operator, amount);
             executors[_executorKey].unstakeAmount = 0;
             executors[_executorKey].unstakeStatus = false;
+            
+            emit ExecutorStakeRemoved(_executorKey, amount, executors[_executorKey].stakeAmount);
+
+            // TODO: unstaking completed event
             // update in tree only if the user has not initiated deregistration
             if(executors[_executorKey].status)
                 _update_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
