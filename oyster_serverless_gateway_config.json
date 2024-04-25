@@ -6,6 +6,6 @@
   "job_contract_addr": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
   "enclave_secret_key": "./enclave_secret_key",
   "enclave_public_key": "./enclave_public_key",
-  "epoch": 1712620800,
+  "epoch": 1713433800,
   "time_interval": 20
 }

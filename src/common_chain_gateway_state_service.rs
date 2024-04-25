@@ -2,7 +2,7 @@ use anyhow::{Context, Error, Result};
 use ethers::abi::{decode, ParamType, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
-use log::error;
+use log::{error, info};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -40,13 +40,14 @@ pub async fn gateway_epoch_state_service(
 
         let mut cycle_number = initial_epoch_cycle;
         while cycle_number <= current_cycle {
-            let current_cycle = SystemTime::now()
+            let _current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs()
-                - epoch / time_interval;
+                - epoch)
+                / time_interval;
 
-            if current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+            if _current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
                 cycle_number += 1;
                 continue;
             }
@@ -61,6 +62,8 @@ pub async fn gateway_epoch_state_service(
                 time_interval,
             )
             .await;
+
+            info!("Generated gateway epoch state for cycle {}", cycle_number);
 
             if success.is_err() {
                 error!(
@@ -91,11 +94,12 @@ pub async fn gateway_epoch_state_service(
         interval.tick().await;
 
         loop {
-            let current_cycle = SystemTime::now()
+            let current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs()
-                - epoch / time_interval;
+                - epoch)
+                / time_interval;
 
             if current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
                 cycle_number += 1;
@@ -151,10 +155,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         added_cycles = gateway_epoch_state_guard.keys().cloned().collect();
     }
     for cycle in added_cycles.iter().rev() {
-        // in case this cycle is already added by another thread
-        if *cycle == cycle_number {
-            return Ok(());
-        } else if *cycle < cycle_number {
+        if *cycle < cycle_number {
             last_added_cycle = Some(cycle.clone());
             break;
         }

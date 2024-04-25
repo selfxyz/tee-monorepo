@@ -5,11 +5,11 @@ use ethers::types::{Address, U256};
 use ethers::utils::keccak256;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
-use log::error;
+use log::{error, info};
 use std::sync::Arc;
 use tokio::time;
 
-use crate::constant::WAIT_BEFORE_CHECKING_NEXT_BLOCK;
+use crate::constant::WAIT_BEFORE_CHECKING_BLOCK;
 use crate::HttpProvider;
 
 pub async fn get_block_number_by_timestamp(
@@ -17,11 +17,25 @@ pub async fn get_block_number_by_timestamp(
     target_timestamp: u64,
     from_block_number: u64,
 ) -> Option<u64> {
-    let mut block_number: u64;
+    let mut block_number: u64 = from_block_number;
     if from_block_number == 0 {
-        block_number = provider.get_block_number().await.unwrap().as_u64();
-    } else {
-        block_number = from_block_number;
+        for _ in 0..20 {
+            let get_block_number_result = provider.get_block_number().await;
+
+            if get_block_number_result.is_err() {
+                error!(
+                    "Failed to fetch block number. Error: {:#?}",
+                    get_block_number_result.err()
+                );
+                info!("Waiting for the first block to be mined...");
+                time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                continue;
+            }
+
+            block_number = get_block_number_result.unwrap().as_u64();
+
+            break;
+        }
     }
     'less_than_block_number: while block_number > 0 {
         let block = provider.get_block(block_number).await.unwrap().unwrap();
@@ -47,8 +61,7 @@ pub async fn get_block_number_by_timestamp(
                         // The next block does not exist.
                         // Wait for the next block to be created to be sure that
                         // the current block_number is the required block_number
-                        time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_NEXT_BLOCK))
-                            .await;
+                        time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
                         continue 'next_block_check;
                     }
                     Err(_) => {
