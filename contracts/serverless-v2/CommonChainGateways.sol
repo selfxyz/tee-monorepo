@@ -95,7 +95,8 @@ contract CommonChainGateways is
 
     struct RequestChain {
         address contractAddress;
-        string rpcUrl;
+        string httpRpcUrl;
+        string wsRpcUrl;
     }
 
     mapping(uint256 => RequestChain) public requestChains;
@@ -148,7 +149,8 @@ contract CommonChainGateways is
     event ChainAddedGlobal(
         uint256 chainId,
         address contractAddress,
-        string rpcUrl
+        string httpRpcUrl,
+        string wsRpcUrl
     );
 
     event ChainRemovedGlobal(
@@ -343,7 +345,7 @@ contract CommonChainGateways is
             uint256 chainId = _chainIds[index];
             requestChains[chainId] = reqChain;
 
-            emit ChainAddedGlobal(chainId, reqChain.contractAddress, reqChain.rpcUrl);
+            emit ChainAddedGlobal(chainId, reqChain.contractAddress, reqChain.httpRpcUrl, reqChain.wsRpcUrl);
         }
     }
 
