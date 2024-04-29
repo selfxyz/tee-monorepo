@@ -161,7 +161,8 @@ async fn register_enclave(
         let pending_txn = txn.send().await;
         let Ok(pending_txn) = pending_txn else {
             return HttpResponse::InternalServerError().body(format!(
-                "Failed to send transaction for registering the enclave node: {}",
+                "Failed to send transaction for registering the enclave on request chain {}: {}",
+                chain,
                 pending_txn.unwrap_err()
             ));
         };
@@ -242,7 +243,7 @@ async fn register_enclave(
     let pending_txn = txn.send().await;
     let Ok(pending_txn) = pending_txn else {
         return HttpResponse::InternalServerError().body(format!(
-            "Failed to send transaction for registering the enclave node: {}",
+            "Failed to send transaction for registering the enclave on Common chain: {}",
             pending_txn.unwrap_err()
         ));
     };

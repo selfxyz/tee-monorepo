@@ -161,6 +161,7 @@ impl CommonChainClient {
                         chain_id
                     ))
                     .unwrap();
+                println!("Started listening events for Chain [{}]", chain_id);
 
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
@@ -172,6 +173,10 @@ impl CommonChainClient {
                         .into()
                     {
                         info!(
+                            "Request Chain ID: {:?}, JobPlace jobID: {:?}",
+                            chain_id, log.topics[1]
+                        );
+                        println!(
                             "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                             chain_id, log.topics[1]
                         );
@@ -196,6 +201,10 @@ impl CommonChainClient {
                         });
                     } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
                         info!(
+                            "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
+                            chain_id, log.topics[1]
+                        );
+                        println!(
                             "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
                             chain_id, log.topics[1]
                         );
@@ -408,27 +417,33 @@ impl CommonChainClient {
             (job_place_ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
 
         let all_gateways_data: Vec<GatewayData>;
+        println!("Current cycle for job {} is {} and timestamp {}", job_id, job_cycle, job_place_ts);
+
         {
-            let current_cycle = (SystemTime::now()
+            let ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_secs()
+                .as_secs();
+            let current_cycle = (
+                ts
                 - self.epoch
                 - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
-
+            println!("Job[{}] Selection Current Cycle {}, timestamp {}", job_id, current_cycle, ts);
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + job_cycle {
                 return Err(anyhow::Error::msg(
                     "Job is older than the maintained block states",
                 ));
             }
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().unwrap();
+            println!("Gateway State {:?}", gateway_epoch_state_guard);
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&job_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();
                 // break;
             } else{
+                println!("Callback registered for job {}, cycle {}", job_id, job_cycle);
                 let mut waitlist_handle = self.gateway_epoch_state_waitlist.write().unwrap();
-                waitlist_handle.entry(job_cycle).and_modify(|jobs| jobs.push(job)).or_insert(vec![]);
+                waitlist_handle.entry(job_cycle).and_modify(|jobs| jobs.push(job.clone())).or_insert(vec![job]);
                 return Ok(Address::zero()); //veegee
             }
             // drop(gateway_epoch_state_guard);
@@ -481,6 +496,10 @@ impl CommonChainClient {
         let selected_gateway = &gateway_data_of_req_chain[index];
 
         info!(
+            "Job ID: {:?}, Gateway Address: {:?}",
+            job_id, selected_gateway.address
+        );
+        println!(
             "Job ID: {:?}, Gateway Address: {:?}",
             job_id, selected_gateway.address
         );

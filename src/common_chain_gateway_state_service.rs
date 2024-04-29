@@ -30,6 +30,7 @@ pub async fn gateway_epoch_state_service(
     } else {
         initial_epoch_cycle = 1;
     };
+    println!("Starting from cycle {}", initial_epoch_cycle);
     {
         let contract_address_clone = common_chain_client.gateway_contract_addr.clone();
         let provider_clone = provider.clone();
@@ -80,6 +81,7 @@ pub async fn gateway_epoch_state_service(
                     });
                 }
             }
+            println!("Epoch state generated for cycle {}", cycle_number);
             cycle_number += 1;
         }
     }
@@ -135,16 +137,20 @@ pub async fn gateway_epoch_state_service(
             }
             {
                 let mut waitlist_handle = common_chain_client.gateway_epoch_state_waitlist.write().unwrap();
+                println!("waitlist {:?}", waitlist_handle);
                 if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
+                    println!("Calling Callbacks");
                     let common_chain_client_clone = common_chain_client.clone();
                     let tx_clone = tx.clone();
                     tokio::spawn(async move {
                         for job in job_list {
+                            println!("Callback for Job {}", job.job_id);
                             let _ = common_chain_client_clone.clone().job_placed_handler(job, tx_clone.clone()).await; //TODO check return value
                         }
                     });
                 }
             }
+            println!("Epoch state generated for cycle {}", cycle_number);
             break;
         }
         // veegee
@@ -209,8 +215,8 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
     // to_block_number can be less than from_block_number
     // in case of no blocks created in this epoch cycle
-    let mut to_block_number = get_block_number_by_timestamp(&provider, timestamp_to_fetch).await;
-
+    let mut to_block_number =
+        get_block_number_by_timestamp(&provider, timestamp_to_fetch).await;
     if to_block_number.is_none() {
         error!(
             "Failed to get block number for timestamp {}",
