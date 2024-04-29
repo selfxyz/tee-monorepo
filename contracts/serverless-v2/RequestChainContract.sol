@@ -200,7 +200,7 @@ contract RequestChainContract is
         uint256 indexed jobId,
         bytes32 codehash,
         bytes codeInputs,
-        uint256 userTimeout,
+        uint256 userTimeout,    // in milliseconds
         uint256 maxGasPrice,
         uint256 usdcDeposit,
         uint256 callbackDeposit, 
@@ -229,12 +229,12 @@ contract RequestChainContract is
     function _relayJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _userTimeout,
+        uint256 _userTimeout,   // in milliseconds
         uint256 _maxGasPrice,
         uint256 _usdcDeposit,
         uint256 _callbackDeposit
     ) internal {
-        if(_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT)
+        if(_userTimeout <= (GLOBAL_MIN_TIMEOUT * 1000) || _userTimeout >= (GLOBAL_MAX_TIMEOUT * 1000))
             revert InvalidUserTimeout();
 
         if (jobCount + 1 == (block.chainid + 1) << 192)
@@ -331,7 +331,7 @@ contract RequestChainContract is
         uint256 _maxGasPrice,
         uint256 _usdcDeposit,
         uint256 _callbackDeposit
-    ) external {
+    ) external payable {
         _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, _usdcDeposit, _callbackDeposit);
     }
 

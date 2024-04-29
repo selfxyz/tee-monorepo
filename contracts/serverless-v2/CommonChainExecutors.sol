@@ -150,7 +150,6 @@ contract CommonChainExecutors is
     );
 
     error ExecutorAlreadyExists();
-    error InvalidEnclaveKey();
     error AlreadyDeregistered();
     error InvalidAmount();
 
@@ -202,8 +201,6 @@ contract CommonChainExecutors is
         bytes memory _enclavePubKey
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        if(executors[enclaveKey].operator == address(0))
-            revert InvalidEnclaveKey();
         if(!executors[enclaveKey].status)
             revert AlreadyDeregistered();
 
@@ -226,6 +223,8 @@ contract CommonChainExecutors is
         bytes memory _enclavePubKey,
         uint256 _amount
     ) internal {
+        if(_amount == 0)
+            revert InvalidAmount();
         // transfer stake
         TOKEN.safeTransferFrom(_msgSender(), address(this), _amount);
 
@@ -392,6 +391,8 @@ contract CommonChainExecutors is
         }
         
         if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
+            // return stake amount
+            TOKEN.safeTransfer(executors[_executorKey].operator, executors[_executorKey].stakeAmount);
             delete executors[_executorKey];
             _revokeEnclaveKey(_executorKey);
         }

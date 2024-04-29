@@ -114,7 +114,7 @@ contract CommonChainJobs is
 
     struct Job {
         uint256 jobId;
-        uint256 deadline;
+        uint256 deadline;   // in milliseconds
         uint256 execStartTime;
         address jobOwner;
         uint8 outputCount;
@@ -134,7 +134,7 @@ contract CommonChainJobs is
         uint256 indexed jobId,
         bytes32 codehash,
         bytes codeInputs,
-        uint256 deadline,
+        uint256 deadline,   // in milliseconds
         address jobOwner,
         address gatewayOperator,
         address[] selectedExecutors
@@ -169,7 +169,7 @@ contract CommonChainJobs is
         uint256 _jobId,
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _deadline,
+        uint256 _deadline,  // in milliseconds
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner
@@ -178,10 +178,10 @@ contract CommonChainJobs is
             revert RelayTimeOver();
         if(jobs[_jobId].isResourceUnavailable)
             revert JobMarkedEndedAsResourceUnavailable();
-        if(_sequenceId != jobs[_jobId].sequenceId + 1)
-            revert InvalidSequenceId();
         if(jobs[_jobId].execStartTime != 0)
             revert JobAlreadyRelayed();
+        if(_sequenceId != jobs[_jobId].sequenceId + 1)
+            revert InvalidSequenceId();
         
         // first 64 bits represent chainId
         uint256 reqChainId = _jobId >> 192;
@@ -233,7 +233,7 @@ contract CommonChainJobs is
         uint256 _totalTime,
         uint8 _errorCode
     ) internal {
-        if(block.timestamp > jobs[_jobId].execStartTime + jobs[_jobId].deadline + EXECUTION_BUFFER_TIME)
+        if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert ExecutionTimeOver();
 
         // signature check
@@ -284,7 +284,7 @@ contract CommonChainJobs is
         uint256 _jobId,
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _deadline,
+        uint256 _deadline,  // in milliseconds
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner
@@ -341,7 +341,7 @@ contract CommonChainJobs is
             revert InvalidJob();
 
         // check for time
-        if(block.timestamp <= jobs[_jobId].execStartTime + jobs[_jobId].deadline + EXECUTION_BUFFER_TIME)
+        if((block.timestamp * 1000) <= (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert DeadlineNotOver();
 
         delete jobs[_jobId];

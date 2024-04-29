@@ -169,7 +169,6 @@ contract CommonChainGateways is
 
     error GatewayAlreadyExists();
     error UnsupportedChain();
-    error InvalidEnclaveKey();
     error InvalidStatus();
     error GatewayDeregisterNotInitiated();
     error DeregisterTimePending();
@@ -245,8 +244,6 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        if(gateways[enclaveKey].operator == address(0))
-            revert InvalidEnclaveKey();
         // TODO: cannot call deregister initiate again
         if(gateways[enclaveKey].deregisterStartTime > 0)
             revert GatewayDeregisterAlreadyInitiated();
@@ -261,8 +258,8 @@ contract CommonChainGateways is
         bytes memory _enclavePubKey
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        if(gateways[enclaveKey].status)
-            revert InvalidStatus();
+        // if(gateways[enclaveKey].status)
+        //     revert InvalidStatus();
         if(gateways[enclaveKey].deregisterStartTime == 0)
             revert GatewayDeregisterNotInitiated();
         if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
@@ -426,7 +423,7 @@ contract CommonChainGateways is
                 break;
         }
 
-        if(index != len)
+        if(index == len)
             revert ChainNotFound(_chainId);
         if (index != len - 1)
             gateways[enclaveKey].chainIds[index] = gateways[enclaveKey].chainIds[len - 1];
@@ -521,6 +518,12 @@ contract CommonChainGateways is
 
     function allowOnlyVerified(address _key) external view {
         _allowOnlyVerified(_key);
+    }
+
+    function getGatewayChainIds(
+        address _enclaveKey
+    ) external view returns (uint256[] memory) {
+        return gateways[_enclaveKey].chainIds;
     }
 
     //-------------------------------- external functions end ----------------------------------//
