@@ -12,6 +12,10 @@ import {
   CommonChainExecutors,
   CommonChainJobs,
   CommonChainJobs__factory,
+  RequestChainContract,
+  RequestChainContract__factory,
+  User,
+  User__factory,
 } from "../typechain-types";
 
 
@@ -37,4 +41,12 @@ export function getCommonChainExecutors(contractAddress: string, signer: Signer)
 
 export function getCommonChainJobs(contractAddress: string, signer: Signer): CommonChainJobs {
   return new CommonChainJobs__factory(signer).attach(contractAddress) as CommonChainJobs;
+}
+
+export function getRequestChainContract(contractAddress: string, signer: Signer): RequestChainContract {
+  return new RequestChainContract__factory(signer).attach(contractAddress) as RequestChainContract;
+}
+
+export function getUser(contractAddress: string, signer: Signer): User {
+  return new User__factory(signer).attach(contractAddress) as User;
 }
