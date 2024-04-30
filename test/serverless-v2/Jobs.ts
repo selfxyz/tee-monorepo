@@ -49,11 +49,11 @@ const image7: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR2: ethers.hexlify(ethers.randomBytes(48)),
 };
 
-describe.only("Jobs - Init", function () {
+describe("Jobs - Init", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: string;
-	let commonChainGateway: string;
+	let gateway: string;
 	let executors: string;
 
 	before(async function () {
@@ -61,7 +61,7 @@ describe.only("Jobs - Init", function () {
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
 		token = addrs[1];
-		commonChainGateway = addrs[1];
+		gateway = addrs[1];
 		executors = addrs[1];
 	});
 
@@ -73,7 +73,7 @@ describe.only("Jobs - Init", function () {
 		const jobs = await Jobs.deploy(token, 100, 100, 3);
 
 		await expect(
-			jobs.initialize(addrs[0], commonChainGateway, executors),
+			jobs.initialize(addrs[0], gateway, executors),
 		).to.be.revertedWithCustomError(jobs, "InvalidInitialization");
 	});
 
@@ -81,7 +81,7 @@ describe.only("Jobs - Init", function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
 		const jobs = await upgrades.deployProxy(
 			Jobs,
-			[addrs[0], commonChainGateway, executors],
+			[addrs[0], gateway, executors],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -102,7 +102,7 @@ describe.only("Jobs - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				Jobs,
-				[ZeroAddress, commonChainGateway, executors],
+				[ZeroAddress, gateway, executors],
 				{
 					kind: "uups",
 					initializer: "initialize",
@@ -121,7 +121,7 @@ describe.only("Jobs - Init", function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
 		const jobs = await upgrades.deployProxy(
 			Jobs,
-			[addrs[0], commonChainGateway, executors],
+			[addrs[0], gateway, executors],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -154,7 +154,7 @@ describe.only("Jobs - Init", function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
 		const jobs = await upgrades.deployProxy(
 			Jobs,
-			[addrs[0], commonChainGateway, executors],
+			[addrs[0], gateway, executors],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -184,7 +184,7 @@ describe.only("Jobs - Init", function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
 		const jobsContract = await upgrades.deployProxy(
 			Jobs,
-			[addrs[0], commonChainGateway, executors],
+			[addrs[0], gateway, executors],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -207,7 +207,7 @@ describe.only("Jobs - Init", function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
 		const jobsContract = await upgrades.deployProxy(
 			Jobs,
-			[addrs[0], commonChainGateway, executors],
+			[addrs[0], gateway, executors],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -227,7 +227,7 @@ describe.only("Jobs - Init", function () {
 	});
 });
 
-describe.only("Jobs - Relay", function () {
+describe("Jobs - Relay", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
@@ -519,7 +519,7 @@ describe.only("Jobs - Relay", function () {
 	});
 });
 
-describe.only("Jobs - Output", function () {
+describe("Jobs - Output", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
@@ -738,7 +738,7 @@ describe.only("Jobs - Output", function () {
 
 });
 
-describe.only("Jobs - Slashing", function () {
+describe("Jobs - Slashing", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
@@ -925,7 +925,7 @@ describe.only("Jobs - Slashing", function () {
 
 });
 
-describe.only("Jobs - Reassign Gateway", function () {
+describe("Jobs - Reassign Gateway", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
