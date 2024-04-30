@@ -146,8 +146,7 @@ contract AttestationVerifier is
         return true;
     }
 
-    function _revokeEnclaveKey(bytes memory enclavePubKey) internal returns (bool) {
-        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+    function _revokeEnclaveKey(address enclaveAddress) internal returns (bool) {
         if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
         delete verifiedKeys[enclaveAddress];
@@ -175,8 +174,8 @@ contract AttestationVerifier is
         return _whitelistEnclaveKey(enclavePubKey, imageId);
     }
 
-    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveKey(enclavePubKey);
+    function revokeEnclaveKey(address enclaveAddress) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveKey(enclaveAddress);
     }
 
     //-------------------------------- Admin methods end --------------------------------//
