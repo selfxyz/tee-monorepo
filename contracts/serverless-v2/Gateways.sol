@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
-contract CommonChainGateways is
+contract Gateways is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
@@ -66,7 +66,7 @@ contract CommonChainGateways is
 
     //-------------------------------- Initializer start --------------------------------//
 
-    function __CommonChainGateways_init(
+    function initialize(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
@@ -269,7 +269,7 @@ contract CommonChainGateways is
         TOKEN.safeTransfer(_msgSender(), gateways[enclaveKey].stakeAmount);
 
         delete gateways[enclaveKey];
-        _revokeEnclaveKey(_enclavePubKey);
+        _revokeEnclaveKey(enclaveKey);
 
         emit GatewayDeregisterCompleted(enclaveKey);
     }

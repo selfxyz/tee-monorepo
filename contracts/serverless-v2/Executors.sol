@@ -11,10 +11,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
 import "./tree/TreeUpgradeable.sol";
-import "./CommonChainJobs.sol";
+import "./Jobs.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
-contract CommonChainExecutors is
+contract Executors is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
@@ -74,7 +74,7 @@ contract CommonChainExecutors is
 
     error ZeroAddressAdmin();
 
-    function __CommonChainExecutors_init(
+    function initialize(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
@@ -95,9 +95,9 @@ contract CommonChainExecutors is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
-    CommonChainJobs public jobs;
+    Jobs public jobs;
 
-    function setJobsContract(CommonChainJobs _jobs) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setJobsContract(Jobs _jobs) external onlyRole(DEFAULT_ADMIN_ROLE) {
         jobs = _jobs;
     }
 
@@ -210,7 +210,7 @@ contract CommonChainExecutors is
             // return stake amount
             TOKEN.safeTransfer(_msgSender(), executors[enclaveKey].stakeAmount);
             delete executors[enclaveKey];
-            _revokeEnclaveKey(_enclavePubKey);
+            _revokeEnclaveKey(enclaveKey);
         }
 
         // remove node from the tree

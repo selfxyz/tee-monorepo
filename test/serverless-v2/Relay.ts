@@ -2,10 +2,9 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationVerifier, Pond, RequestChainContract, User } from "../../typechain-types";
-import { AttestationAutherUpgradeable } from "../../typechain-types/contracts/AttestationAutherSample";
+import { AttestationAutherUpgradeable, AttestationVerifier, Pond, Relay, User } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { getAttestationVerifier, getPond, getRequestChainContract, getUser } from '../../utils/typechainConvertor';
+import { getAttestationVerifier, getPond, getRelay, getUser } from '../../utils/typechainConvertor';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -29,7 +28,7 @@ function getImageId(image: AttestationAutherUpgradeable.EnclaveImageStruct): str
 	return keccak256(solidityPacked(["bytes", "bytes", "bytes"], [image.PCR0, image.PCR1, image.PCR2]));
 }
 
-describe("RequestChainContract - Init", function () {
+describe("Relay - Init", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let attestationVerifier: string;
@@ -47,22 +46,22 @@ describe("RequestChainContract - Init", function () {
 
 	it("deploys with initialization disabled", async function () {
 
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContract = await RequestChainContract.deploy(attestationVerifier, 500, token, 100, 500, 1000);
+		const Relay = await ethers.getContractFactory("Relay");
+		const relay = await Relay.deploy(attestationVerifier, 500, token, 100, 500, 1000);
 
 		await expect(
-			requestChainContract.__RequestChainContract_init(addrs[0], [image1]),
-		).to.be.revertedWithCustomError(RequestChainContract, "InvalidInitialization");
+			relay.initialize(addrs[0], [image1]),
+		).to.be.revertedWithCustomError(Relay, "InvalidInitialization");
 	});
 
 	it("deploys as proxy and initializes", async function () {
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relay = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier, 
 					100,
@@ -74,18 +73,18 @@ describe("RequestChainContract - Init", function () {
 			},
 		);
 
-		expect(await requestChainContract.hasRole(await requestChainContract.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
+		expect(await relay.hasRole(await relay.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 	});
 
 	it("cannot initialize with zero address as admin", async function () {
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
+		const Relay = await ethers.getContractFactory("Relay");
 		await expect(
 			upgrades.deployProxy(
-				RequestChainContract,
+				Relay,
 				[ZeroAddress, [image1]],
 				{
 					kind: "uups",
-					initializer: "__RequestChainContract_init",
+					initializer: "initialize",
 					constructorArgs: [
 						attestationVerifier,
 						500,
@@ -96,17 +95,17 @@ describe("RequestChainContract - Init", function () {
 					]
 				},
 			)
-		).to.be.revertedWithCustomError(RequestChainContract, "ZeroAddressAdmin");
+		).to.be.revertedWithCustomError(Relay, "ZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relay = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier,
 					100,
@@ -118,8 +117,8 @@ describe("RequestChainContract - Init", function () {
 			},
 		);
 		await upgrades.upgradeProxy(
-			requestChainContract.target,
-			RequestChainContract,
+			relay.target,
+			Relay,
 			{
 				kind: "uups",
 				constructorArgs: [
@@ -133,17 +132,17 @@ describe("RequestChainContract - Init", function () {
 			}
 		);
 
-		expect(await requestChainContract.hasRole(await requestChainContract.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
+		expect(await relay.hasRole(await relay.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 	});
 
 	it("does not upgrade without admin", async function () {
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relay = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier,
 					100,
@@ -156,7 +155,7 @@ describe("RequestChainContract - Init", function () {
 		);
 
 		await expect(
-			upgrades.upgradeProxy(requestChainContract.target, RequestChainContract.connect(signers[1]), {
+			upgrades.upgradeProxy(relay.target, Relay.connect(signers[1]), {
 				kind: "uups",
 				constructorArgs: [
 					attestationVerifier,
@@ -167,18 +166,18 @@ describe("RequestChainContract - Init", function () {
 					1000
 				]
 			}),
-		).to.be.revertedWithCustomError(RequestChainContract, "AccessControlUnauthorizedAccount");
+		).to.be.revertedWithCustomError(Relay, "AccessControlUnauthorizedAccount");
 	});
 });
 
-describe("RequestChainContract - Register gateway", function () {
+describe("Relay - Register gateway", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let token: Pond;
 	let attestationVerifier: AttestationVerifier;
-	let requestChainContract: RequestChainContract;
+	let relay: Relay;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -200,13 +199,13 @@ describe("RequestChainContract - Register gateway", function () {
         });
         token = getPond(pondContract.target as string, signers[0]);
 
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContractContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relayContract = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1, image2]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier.target, 
 					600, 
@@ -217,7 +216,7 @@ describe("RequestChainContract - Register gateway", function () {
 				]
 			},
 		);
-		requestChainContract = getRequestChainContract(requestChainContractContract.target as string, signers[0]);
+		relay = getRelay(relayContract.target as string, signers[0]);
 
 	});
 
@@ -227,52 +226,52 @@ describe("RequestChainContract - Register gateway", function () {
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await expect(requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
-			.to.emit(requestChainContract, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
-		expect(await requestChainContract.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
+		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
+			.to.emit(relay, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
+		expect(await relay.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
 	});
 
 	it("cannot register gateway with same enclaveKey twice", async function () {
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await expect(requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
-			.to.emit(requestChainContract, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
+		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
+			.to.emit(relay, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
 
-		await expect(requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
-			.to.revertedWithCustomError(requestChainContract, "GatewayAlreadyExists");
+		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
+			.to.revertedWithCustomError(relay, "GatewayAlreadyExists");
 	});
 
 	it('can deregister gateway', async function () {
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 
-		await expect(requestChainContract.connect(signers[1]).deregisterGateway(pubkeys[15]))
-			.to.emit(requestChainContract, "GatewayDeregistered").withArgs(addrs[15]);
+		await expect(relay.connect(signers[1]).deregisterGateway(pubkeys[15]))
+			.to.emit(relay, "GatewayDeregistered").withArgs(addrs[15]);
 	});
 
 	it('cannot deregister gateway without gateway operator', async function () {
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 
-		await expect(requestChainContract.connect(signers[2]).deregisterGateway(pubkeys[15]))
-			.to.revertedWithCustomError(requestChainContract, "InvalidGatewayOperator");
+		await expect(relay.connect(signers[2]).deregisterGateway(pubkeys[15]))
+			.to.revertedWithCustomError(relay, "InvalidGatewayOperator");
 	});
 
 });
 
-describe("RequestChainContract - Relay Job", function () {
+describe("Relay - Relay Job", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
-	let requestChainContract: RequestChainContract;
+	let relay: Relay;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -294,13 +293,13 @@ describe("RequestChainContract - Relay Job", function () {
 		);
 		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
 
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContractContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relayContract = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1, image2]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier.target,
 					600,
@@ -311,12 +310,12 @@ describe("RequestChainContract - Relay Job", function () {
 				]
 			},
 		);
-		requestChainContract = getRequestChainContract(requestChainContractContract.target as string, signers[0]);
+		relay = getRelay(relayContract.target as string, signers[0]);
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -328,11 +327,11 @@ describe("RequestChainContract - Relay Job", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 100,
 			callbackDeposit = 100;
-		let tx = await requestChainContract.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
-		await expect(tx).to.emit(requestChainContract, "JobRelayed");
+		let tx = await relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
+		await expect(tx).to.emit(relay, "JobRelayed");
 
-		let key = await requestChainContract.jobCount();
-		let job = await requestChainContract.jobs(key);
+		let key = await relay.jobCount();
+		let job = await relay.jobs(key);
 
 		expect(job.jobOwner).to.eq(addrs[15]);
 	});
@@ -344,19 +343,19 @@ describe("RequestChainContract - Relay Job", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 100,
 			callbackDeposit = 100;
-		let tx = requestChainContract.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
-		await expect(tx).to.revertedWithCustomError(requestChainContract, "InvalidUserTimeout");
+		let tx = relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
+		await expect(tx).to.revertedWithCustomError(relay, "InvalidUserTimeout");
 	});
 });
 
-describe("RequestChainContract - Job Response", function () {
+describe("Relay - Job Response", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
-	let requestChainContract: RequestChainContract;
+	let relay: Relay;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -378,13 +377,13 @@ describe("RequestChainContract - Job Response", function () {
 		);
 		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
 
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContractContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relayContract = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1, image2]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier.target,
 					600,
@@ -395,12 +394,12 @@ describe("RequestChainContract - Job Response", function () {
 				]
 			},
 		);
-		requestChainContract = getRequestChainContract(requestChainContractContract.target as string, signers[0]);
+		relay = getRelay(relayContract.target as string, signers[0]);
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 	
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
@@ -408,70 +407,70 @@ describe("RequestChainContract - Job Response", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 100,
 			callbackDeposit = 100;
-		await requestChainContract.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
+		await relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
 		
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can submit response", async function () {
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 		
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = requestChainContract.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(requestChainContract, "JobResponded"); 
+		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.emit(relay, "JobResponded"); 
 	});
 
 	it("cannot submit response twice", async function () {
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 		
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = requestChainContract.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(requestChainContract, "JobResponded"); 
+		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.emit(relay, "JobResponded"); 
 
-		let tx2 = requestChainContract.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx2).to.revertedWithCustomError(requestChainContract, "JobNotExists");
+		let tx2 = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx2).to.revertedWithCustomError(relay, "JobNotExists");
 	});
 
 	it("cannot submit output from unverified gateway", async function () {
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 		
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[16]);
-		let tx = requestChainContract.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.revertedWithCustomError(requestChainContract, "AttestationAutherKeyNotVerified"); 
+		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified"); 
 	});
 
 	it("cannot submit response after overall timeout if over", async function () {
 		await time.increase(1100);
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 		
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = requestChainContract.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.revertedWithCustomError(requestChainContract, "OverallTimeoutOver"); 
+		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.revertedWithCustomError(relay, "OverallTimeoutOver"); 
 	});
 
 });
 
-describe("RequestChainContract - Job Cancel", function () {
+describe("Relay - Job Cancel", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
-	let requestChainContract: RequestChainContract;
+	let relay: Relay;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -493,13 +492,13 @@ describe("RequestChainContract - Job Cancel", function () {
 		);
 		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
 
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContractContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relayContract = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1, image2]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier.target,
 					600,
@@ -510,12 +509,12 @@ describe("RequestChainContract - Job Cancel", function () {
 				]
 			},
 		);
-		requestChainContract = getRequestChainContract(requestChainContractContract.target as string, signers[0]);
+		relay = getRelay(relayContract.target as string, signers[0]);
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 	
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
@@ -523,67 +522,67 @@ describe("RequestChainContract - Job Cancel", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 100,
 			callbackDeposit = 100;
-		await requestChainContract.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
+		await relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
 		
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("cannot cancel after job response", async function () {
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 		
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
 		await expect(
-			requestChainContract.jobResponse(signedDigest, jobId, output, totalTime, errorCode)
-		).to.emit(requestChainContract, "JobResponded"); 
+			relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode)
+		).to.emit(relay, "JobResponded"); 
 
 		await expect(
-			requestChainContract.connect(signers[15]).jobCancel(jobId)
-		).to.be.revertedWithCustomError(requestChainContract, "InvalidJobOwner");
+			relay.connect(signers[15]).jobCancel(jobId)
+		).to.be.revertedWithCustomError(relay, "InvalidJobOwner");
 	});
 
 	it("cannot cancel before overall timeout", async function () {
-		let jobId: any = await requestChainContract.jobCount();
+		let jobId: any = await relay.jobCount();
 
 		await expect(
-			requestChainContract.connect(signers[15]).jobCancel(jobId)
-		).to.revertedWithCustomError(requestChainContract, "OverallTimeoutNotOver");
+			relay.connect(signers[15]).jobCancel(jobId)
+		).to.revertedWithCustomError(relay, "OverallTimeoutNotOver");
 	});
 
 	it("cannot cancel from other any other account except job owner", async function () {
-		let jobId: any = await requestChainContract.jobCount();
+		let jobId: any = await relay.jobCount();
 		await time.increase(1100);
 
 		await expect(
-			requestChainContract.jobCancel(jobId)
-		).to.revertedWithCustomError(requestChainContract, "InvalidJobOwner");
+			relay.jobCancel(jobId)
+		).to.revertedWithCustomError(relay, "InvalidJobOwner");
 	});
 
 	it("can cancel from job owner account after overall timeout", async function () {
-		let jobId: any = await requestChainContract.jobCount();
+		let jobId: any = await relay.jobCount();
 		await time.increase(1100);
 
 		await expect(
-			requestChainContract.connect(signers[15]).jobCancel(jobId)
-		).to.emit(requestChainContract, "JobCancelled").withArgs(jobId);
+			relay.connect(signers[15]).jobCancel(jobId)
+		).to.emit(relay, "JobCancelled").withArgs(jobId);
 
-		let job = await requestChainContract.jobs(jobId);
+		let job = await relay.jobs(jobId);
 		expect(job.jobOwner).to.eq(ZeroAddress);
 	});
 
 });
 
-describe("RequestChainContract - Job sent by User contract", function () {
+describe("Relay - Job sent by User contract", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
-	let requestChainContract: RequestChainContract;
+	let relay: Relay;
 	let user: User;
 
 	before(async function () {
@@ -606,13 +605,13 @@ describe("RequestChainContract - Job sent by User contract", function () {
 		);
 		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
 
-		const RequestChainContract = await ethers.getContractFactory("RequestChainContract");
-		const requestChainContractContract = await upgrades.deployProxy(
-			RequestChainContract,
+		const Relay = await ethers.getContractFactory("Relay");
+		const relayContract = await upgrades.deployProxy(
+			Relay,
 			[addrs[0], [image1, image2]],
 			{
 				kind: "uups",
-				initializer: "__RequestChainContract_init",
+				initializer: "initialize",
 				constructorArgs: [
 					attestationVerifier.target,
 					600,
@@ -623,15 +622,15 @@ describe("RequestChainContract - Job sent by User contract", function () {
 				]
 			},
 		);
-		requestChainContract = getRequestChainContract(requestChainContractContract.target as string, signers[0]);
+		relay = getRelay(relayContract.target as string, signers[0]);
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await requestChainContract.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 	
 		const User = await ethers.getContractFactory("User");
-		const userContract = await User.deploy(requestChainContract);
+		const userContract = await User.deploy(relay);
 		user = getUser(userContract.target as string, signers[0]);		
 	});
 
@@ -649,14 +648,14 @@ describe("RequestChainContract - Job sent by User contract", function () {
 			{value: callbackDeposit}
 		);
 
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 		
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = requestChainContract.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(user, "CalledBack").and.to.emit(requestChainContract, "JobResponded");
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.emit(user, "CalledBack").and.to.emit(relay, "JobResponded");
 	});
 
 	it("can submit response but fails to execute callback due to less callbackDeposit", async function () {
@@ -671,14 +670,14 @@ describe("RequestChainContract - Job sent by User contract", function () {
 			{value: callbackDeposit}
 		);
 
-		let jobId: any = await requestChainContract.jobCount(),
+		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
 
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = requestChainContract.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(requestChainContract, "JobResponded").and.to.not.emit(user, "CalledBack");
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.emit(relay, "JobResponded").and.to.not.emit(user, "CalledBack");
 	});
 
 });

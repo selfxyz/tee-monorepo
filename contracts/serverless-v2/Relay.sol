@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
-contract RequestChainContract is
+contract Relay is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
@@ -74,7 +74,7 @@ contract RequestChainContract is
 
     error ZeroAddressAdmin();
 
-    function __RequestChainContract_init(
+    function initialize(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
@@ -151,7 +151,7 @@ contract RequestChainContract is
             revert InvalidGatewayOperator();
         delete gatewayOperators[enclaveKey];
 
-        _revokeEnclaveKey(_enclavePubKey);
+        _revokeEnclaveKey(enclaveKey);
 
         emit GatewayDeregistered(enclaveKey);
     }

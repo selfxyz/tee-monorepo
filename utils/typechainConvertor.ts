@@ -6,14 +6,14 @@ import {
   AttestationVerifier,
   AttestationAutherUpgradeable__factory,
   AttestationAutherUpgradeable,
-  CommonChainGateways__factory,
-  CommonChainGateways,
-  CommonChainExecutors__factory,
-  CommonChainExecutors,
-  CommonChainJobs,
-  CommonChainJobs__factory,
-  RequestChainContract,
-  RequestChainContract__factory,
+  Gateways__factory,
+  Gateways,
+  Executors__factory,
+  Executors,
+  Jobs,
+  Jobs__factory,
+  Relay,
+  Relay__factory,
   User,
   User__factory,
 } from "../typechain-types";
@@ -31,20 +31,20 @@ export function getAttestationAutherUpgradeable(contractAddress: string, signer:
   return new AttestationAutherUpgradeable__factory(signer).attach(contractAddress) as AttestationAutherUpgradeable;
 }
 
-export function getCommonChainGateways(contractAddress: string, signer: Signer): CommonChainGateways {
-  return new CommonChainGateways__factory(signer).attach(contractAddress) as CommonChainGateways;
+export function getGateways(contractAddress: string, signer: Signer): Gateways {
+  return new Gateways__factory(signer).attach(contractAddress) as Gateways;
 }
 
-export function getCommonChainExecutors(contractAddress: string, signer: Signer): CommonChainExecutors {
-  return new CommonChainExecutors__factory(signer).attach(contractAddress) as CommonChainExecutors;
+export function getExecutors(contractAddress: string, signer: Signer): Executors {
+  return new Executors__factory(signer).attach(contractAddress) as Executors;
 }
 
-export function getCommonChainJobs(contractAddress: string, signer: Signer): CommonChainJobs {
-  return new CommonChainJobs__factory(signer).attach(contractAddress) as CommonChainJobs;
+export function getJobs(contractAddress: string, signer: Signer): Jobs {
+  return new Jobs__factory(signer).attach(contractAddress) as Jobs;
 }
 
-export function getRequestChainContract(contractAddress: string, signer: Signer): RequestChainContract {
-  return new RequestChainContract__factory(signer).attach(contractAddress) as RequestChainContract;
+export function getRelay(contractAddress: string, signer: Signer): Relay {
+  return new Relay__factory(signer).attach(contractAddress) as Relay;
 }
 
 export function getUser(contractAddress: string, signer: Signer): User {

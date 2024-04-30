@@ -8,10 +8,10 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./CommonChainExecutors.sol";
-import "./CommonChainGateways.sol";
+import "./Executors.sol";
+import "./Gateways.sol";
 
-contract CommonChainJobs is
+contract Jobs is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
@@ -66,10 +66,10 @@ contract CommonChainJobs is
 
     error ZeroAddressAdmin();
 
-    function __CommonChainJobs_init(
+    function initialize(
         address _admin,
-        CommonChainGateways _gateways,
-        CommonChainExecutors _executors
+        Gateways _gateways,
+        Executors _executors
     ) public initializer {
         if(_admin == address(0))
             revert ZeroAddressAdmin();
@@ -90,8 +90,8 @@ contract CommonChainJobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
 
-    CommonChainGateways public gateways;
-    CommonChainExecutors public executors;
+    Gateways public gateways;
+    Executors public executors;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable RELAY_BUFFER_TIME;
@@ -102,11 +102,11 @@ contract CommonChainJobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable NO_OF_NODES_TO_SELECT;
 
-    function setGatewaysContract(CommonChainGateways _gateways) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setGatewaysContract(Gateways _gateways) external onlyRole(DEFAULT_ADMIN_ROLE) {
         gateways = _gateways;
     }
 
-    function setExecutorsContract(CommonChainExecutors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
         executors = _executors;
     }
 
