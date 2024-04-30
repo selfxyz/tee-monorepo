@@ -85,9 +85,10 @@ pub async fn get_block_number_by_timestamp(
                 block_rate_per_second = count / (latest_block_timestamp - block.timestamp.as_u64());
                 info!("Block rate per second: {}", block_rate_per_second);
                 count = 0;
+                latest_block_timestamp = 0;
 
                 block_number = block_number
-                    - ((block.timestamp.as_u64() - target_timestamp) / block_rate_per_second)
+                    - ((block.timestamp.as_u64() - target_timestamp) * block_rate_per_second)
                     + 1;
             }
         }
