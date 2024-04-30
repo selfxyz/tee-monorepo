@@ -523,7 +523,7 @@ describe("AttestationAutherSampleUpgradeable - Whitelist enclave", function() {
 		expect(await attestationAutherSample.getVerifiedKey(addrs[15])).to.equal(ethers.ZeroHash);
 
 		await expect(attestationAutherSample.whitelistEnclaveKey(pubkeys[15], getImageId(image1)))
-			.to.emit(attestationAutherSample, "EnclaveKeyWhitelisted").withArgs(pubkeys[15], getImageId(image1));
+			.to.emit(attestationAutherSample, "EnclaveKeyWhitelisted").withArgs(addrs[15], getImageId(image1), pubkeys[15]);
 		expect(await attestationAutherSample.getVerifiedKey(addrs[15])).to.equal(getImageId(image1));
 	});
 
@@ -536,7 +536,7 @@ describe("AttestationAutherSampleUpgradeable - Whitelist enclave", function() {
 
 		expect(await attestationAutherSample.whitelistEnclaveKey.staticCall(pubkeys[15], getImageId(image1))).to.be.true;
 		await expect(attestationAutherSample.whitelistEnclaveKey(pubkeys[15], getImageId(image1)))
-			.to.emit(attestationAutherSample, "EnclaveKeyWhitelisted").withArgs(pubkeys[15], getImageId(image1));
+			.to.emit(attestationAutherSample, "EnclaveKeyWhitelisted").withArgs(addrs[15], getImageId(image1), pubkeys[15]);
 		expect(await attestationAutherSample.getVerifiedKey(addrs[15])).to.equal(getImageId(image1));
 
 		expect(await attestationAutherSample.whitelistEnclaveKey.staticCall(pubkeys[15], getImageId(image1))).to.be.false;
@@ -570,22 +570,22 @@ describe("AttestationAutherSampleUpgradeable - Revoke enclave", function() {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("non admin cannot revoke enclave", async function() {
-		await expect(attestationAutherSample.connect(signers[1]).revokeEnclaveKey(pubkeys[14])).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+		await expect(attestationAutherSample.connect(signers[1]).revokeEnclaveKey(addrs[14])).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
 	});
 
 	it("admin can revoke enclave", async function() {
 		await attestationAutherSample.whitelistEnclaveKey(pubkeys[14], getImageId(image2));
 		expect(await attestationAutherSample.getVerifiedKey(addrs[14])).to.equal(getImageId(image2));
 
-		expect(await attestationAutherSample.revokeEnclaveKey.staticCall(pubkeys[14])).to.be.true;
-		await expect(attestationAutherSample.revokeEnclaveKey(pubkeys[14]))
-			.to.emit(attestationAutherSample, "EnclaveKeyRevoked").withArgs(pubkeys[14]);
+		expect(await attestationAutherSample.revokeEnclaveKey.staticCall(addrs[14])).to.be.true;
+		await expect(attestationAutherSample.revokeEnclaveKey(addrs[14]))
+			.to.emit(attestationAutherSample, "EnclaveKeyRevoked").withArgs(addrs[14]);
 		expect(await attestationAutherSample.getVerifiedKey(addrs[14])).to.equal(ethers.ZeroHash);
 	});
 
 	it("admin can revoke unwhitelisted enclave", async function() {
-		expect(await attestationAutherSample.revokeEnclaveKey.staticCall(pubkeys[15])).to.be.false;
-		await expect(attestationAutherSample.revokeEnclaveKey(pubkeys[14]))
+		expect(await attestationAutherSample.revokeEnclaveKey.staticCall(addrs[15])).to.be.false;
+		await expect(attestationAutherSample.revokeEnclaveKey(addrs[14]))
 			.to.not.emit(attestationAutherSample, "EnclaveKeyRevoked");
 	});
 });
@@ -628,7 +628,7 @@ describe("AttestationAutherSampleUpgradeable - Verify enclave key", function() {
 
 		expect(await attestationAutherSample.connect(signers[1]).verifyEnclaveKey.staticCall(signature, attestation)).to.be.true;
 		await expect(attestationAutherSample.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-			.to.emit(attestationAutherSample, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image3));
+			.to.emit(attestationAutherSample, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image3), pubkeys[15]);
 		expect(await attestationAutherSample.getVerifiedKey(addrs[15])).to.equal(getImageId(image3));
 	});
 
@@ -680,7 +680,7 @@ describe("AttestationAutherSampleUpgradeable - Verify enclave key", function() {
 
 		expect(await attestationAutherSample.connect(signers[1]).verifyEnclaveKey.staticCall(signature, attestation)).to.be.true;
 		await expect(attestationAutherSample.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-			.to.emit(attestationAutherSample, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image3));
+			.to.emit(attestationAutherSample, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image3), pubkeys[15]);
 		expect(await attestationAutherSample.getVerifiedKey(addrs[15])).to.equal(getImageId(image3));
 
 		expect(await attestationAutherSample.connect(signers[1]).verifyEnclaveKey.staticCall(signature, attestation)).to.be.false;
@@ -700,7 +700,7 @@ describe("AttestationAutherSampleUpgradeable - Verify enclave key", function() {
 		const timestamp = await time.latest() * 1000;
 		let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 540000);
 
-		await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
+		await attestationVerifier.revokeEnclaveKey(addrs[14]);
 
 		await expect(attestationAutherSample.connect(signers[1]).verifyEnclaveKey(signature, attestation))
 			.to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
@@ -789,7 +789,7 @@ describe("AttestationAutherSampleUpgradeable - Safe verify with params", functio
 	it("cannot verify with revoked key", async function() {
 		let signature = await createSignature("testmsg", wallets[15]);
 
-		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+		await attestationAutherSample.revokeEnclaveKey(addrs[15]);
 
 		await expect(attestationAutherSample.connect(signers[1]).verify(
 			signature, "testmsg",
@@ -869,7 +869,7 @@ describe("AttestationAutherSampleUpgradeable - Verify with family", function() {
 	it("cannot verify with revoked key", async function() {
 		let signature = await createSignature("testmsg", wallets[15]);
 
-		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+		await attestationAutherSample.revokeEnclaveKey(addrs[15]);
 
 		await expect(attestationAutherSample.connect(signers[1]).verify(
 			signature, "testmsg",
@@ -911,7 +911,7 @@ describe("AttestationAutherSampleUpgradeable - Verify with family", function() {
 	it("cannot verify family with revoked key", async function() {
 		let signature = await createSignature("testmsg", wallets[15]);
 
-		await attestationAutherSample.revokeEnclaveKey(pubkeys[15]);
+		await attestationAutherSample.revokeEnclaveKey(addrs[15]);
 
 		await expect(attestationAutherSample.connect(signers[1]).verifyFamily(
 			signature, "testmsg", THIRD_FAMILY,
