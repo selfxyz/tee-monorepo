@@ -188,7 +188,7 @@ contract AttestationVerifier is
 
     function _verifyEnclaveKey(
         bytes memory signature,
-        IAttestationVerifier.Attestation memory attestation
+        Attestation memory attestation
     ) internal returns (bool) {
         if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
             revert AttestationVerifierAttestationTooOld();
