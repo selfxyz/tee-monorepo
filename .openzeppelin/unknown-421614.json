@@ -2,15 +2,15 @@
   "manifestVersion": "3.2",
   "proxies": [
     {
-      "address": "0x9cD510D5CE75eb2AcB3F1C97a8f53DbD66ca1167",
-      "txHash": "0xf662b88a7945a79ebfbd54b67e04d639ce6335be8b477fc380ee38d37d0b1924",
+      "address": "0x63EEf1576b477Aa60Bfd7300B2C85b887639Ac1b",
+      "txHash": "0x09a1ed3c3b948aee4e22b17a7da711699eaebad04acc7b161a4ed0c0c295ea41",
       "kind": "uups"
     }
   ],
   "impls": {
-    "c5b60ebafcab55c50689bc4e6625726ea87f436171d8714361c6d934b99eca96": {
-      "address": "0x9e457bCDBa57754cFD6eEF8486621D167Fff220A",
-      "txHash": "0x47ad1bce6aa2f11eedb6267aa0fffbb397edf2c01a8ea7d8fb33eb237d706e5c",
+    "900895489dc9ec06a2a640a19a550937d3e72c53c890bad23d9b4f690134d949": {
+      "address": "0x3b3266cfa5cac075220BD115902D3C923476EC8a",
+      "txHash": "0x0aab70030596c27d14c74221b24e6a54c7c6c3bdb6bf7f2657b740a6c654fd4f",
       "layout": {
         "solcVersion": "0.8.25",
         "storage": [
@@ -26,7 +26,7 @@
             "label": "whitelistedImages",
             "offset": 0,
             "slot": "500",
-            "type": "t_mapping(t_bytes32,t_struct(EnclaveImage)4259_storage)",
+            "type": "t_mapping(t_bytes32,t_struct(EnclaveImage)6065_storage)",
             "contract": "AttestationVerifier",
             "src": "contracts/AttestationVerifier.sol:82"
           },
@@ -136,11 +136,11 @@
             "label": "mapping(address => bytes32)",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_bytes32,t_struct(EnclaveImage)4259_storage)": {
+          "t_mapping(t_bytes32,t_struct(EnclaveImage)6065_storage)": {
             "label": "mapping(bytes32 => struct AttestationVerifier.EnclaveImage)",
             "numberOfBytes": "32"
           },
-          "t_struct(EnclaveImage)4259_storage": {
+          "t_struct(EnclaveImage)6065_storage": {
             "label": "struct AttestationVerifier.EnclaveImage",
             "members": [
               {
