@@ -97,9 +97,9 @@ contract AttestationVerifier is
 
     event EnclaveImageWhitelisted(bytes32 indexed imageId, bytes PCR0, bytes PCR1, bytes PCR2);
     event EnclaveImageRevoked(bytes32 indexed imageId);
-    event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
-    event EnclaveKeyRevoked(bytes indexed enclavePubKey);
-    event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
+    event EnclaveKeyWhitelisted(address indexed enclaveAddress, bytes32 indexed imageId, bytes enclavePubKey);
+    event EnclaveKeyRevoked(address indexed enclaveAddress);
+    event EnclaveKeyVerified(address indexed enclaveAddress, bytes32 indexed imageId, bytes enclavePubKey);
 
     function _pubKeyToAddress(bytes memory pubKey) internal pure returns (address) {
         if (!(pubKey.length == 64)) revert AttestationVerifierPubkeyLengthInvalid();
@@ -141,7 +141,7 @@ contract AttestationVerifier is
         if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
         verifiedKeys[enclaveAddress] = imageId;
-        emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
+        emit EnclaveKeyWhitelisted(enclaveAddress, imageId, enclavePubKey);
 
         return true;
     }
@@ -151,7 +151,7 @@ contract AttestationVerifier is
         if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
         delete verifiedKeys[enclaveAddress];
-        emit EnclaveKeyRevoked(enclavePubKey);
+        emit EnclaveKeyRevoked(enclaveAddress);
 
         return true;
     }
@@ -202,7 +202,7 @@ contract AttestationVerifier is
         if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
         verifiedKeys[enclaveAddress] = imageId;
-        emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
+        emit EnclaveKeyVerified(enclaveAddress, imageId, attestation.enclavePubKey);
 
         return true;
     }
