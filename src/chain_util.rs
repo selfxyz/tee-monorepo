@@ -82,8 +82,7 @@ pub async fn get_block_number_by_timestamp(
             }
             // Calculate the block rate per second using the last 15 blocks
             if count > 15 {
-                block_rate_per_second =
-                    (latest_block_timestamp - block.timestamp.as_u64()) / count as u64;
+                block_rate_per_second = count / (latest_block_timestamp - block.timestamp.as_u64());
                 info!("Block rate per second: {}", block_rate_per_second);
                 count = 0;
 
