@@ -1,0 +1,205 @@
+{
+  "manifestVersion": "3.2",
+  "proxies": [
+    {
+      "address": "0x63EEf1576b477Aa60Bfd7300B2C85b887639Ac1b",
+      "txHash": "0x09a1ed3c3b948aee4e22b17a7da711699eaebad04acc7b161a4ed0c0c295ea41",
+      "kind": "uups"
+    }
+  ],
+  "impls": {
+    "900895489dc9ec06a2a640a19a550937d3e72c53c890bad23d9b4f690134d949": {
+      "address": "0x3b3266cfa5cac075220BD115902D3C923476EC8a",
+      "txHash": "0x0aab70030596c27d14c74221b24e6a54c7c6c3bdb6bf7f2657b740a6c654fd4f",
+      "layout": {
+        "solcVersion": "0.8.25",
+        "storage": [
+          {
+            "label": "__gap_0",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_array(t_uint256)500_storage",
+            "contract": "AttestationVerifier",
+            "src": "contracts/AttestationVerifier.sol:22"
+          },
+          {
+            "label": "whitelistedImages",
+            "offset": 0,
+            "slot": "500",
+            "type": "t_mapping(t_bytes32,t_struct(EnclaveImage)6065_storage)",
+            "contract": "AttestationVerifier",
+            "src": "contracts/AttestationVerifier.sol:82"
+          },
+          {
+            "label": "verifiedKeys",
+            "offset": 0,
+            "slot": "501",
+            "type": "t_mapping(t_address,t_bytes32)",
+            "contract": "AttestationVerifier",
+            "src": "contracts/AttestationVerifier.sol:84"
+          },
+          {
+            "label": "__gap_1",
+            "offset": 0,
+            "slot": "502",
+            "type": "t_array(t_uint256)48_storage",
+            "contract": "AttestationVerifier",
+            "src": "contracts/AttestationVerifier.sol:86"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(RoleData)25_storage)": {
+            "label": "mapping(bytes32 => struct AccessControlUpgradeable.RoleData)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(AccessControlStorage)34_storage": {
+            "label": "struct AccessControlUpgradeable.AccessControlStorage",
+            "members": [
+              {
+                "label": "_roles",
+                "type": "t_mapping(t_bytes32,t_struct(RoleData)25_storage)",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(InitializableStorage)93_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(RoleData)25_storage": {
+            "label": "struct AccessControlUpgradeable.RoleData",
+            "members": [
+              {
+                "label": "hasRole",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "adminRole",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_uint256)48_storage": {
+            "label": "uint256[48]",
+            "numberOfBytes": "1536"
+          },
+          "t_array(t_uint256)500_storage": {
+            "label": "uint256[500]",
+            "numberOfBytes": "16000"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bytes32)": {
+            "label": "mapping(address => bytes32)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(EnclaveImage)6065_storage)": {
+            "label": "mapping(bytes32 => struct AttestationVerifier.EnclaveImage)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EnclaveImage)6065_storage": {
+            "label": "struct AttestationVerifier.EnclaveImage",
+            "members": [
+              {
+                "label": "PCR0",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "PCR1",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "PCR2",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.AccessControl": [
+            {
+              "contract": "AccessControlUpgradeable",
+              "label": "_roles",
+              "type": "t_mapping(t_bytes32,t_struct(RoleData)25_storage)",
+              "src": "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol:61",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
