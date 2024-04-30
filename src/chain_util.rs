@@ -15,28 +15,33 @@ use crate::HttpProvider;
 pub async fn get_block_number_by_timestamp(
     provider: &Arc<HttpProvider>,
     target_timestamp: u64,
-    from_block_number: u64,
 ) -> Option<u64> {
-    let mut block_number: u64 = from_block_number;
-    if from_block_number == 0 {
-        for _ in 0..20 {
-            let get_block_number_result = provider.get_block_number().await;
+    let mut block_number: u64 = 0;
+    for _ in 0..20 {
+        let get_block_number_result = provider.get_block_number().await;
 
-            if get_block_number_result.is_err() {
-                error!(
-                    "Failed to fetch block number. Error: {:#?}",
-                    get_block_number_result.err()
-                );
-                info!("Waiting for the first block to be mined...");
-                time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
-                continue;
-            }
-
-            block_number = get_block_number_result.unwrap().as_u64();
-
-            break;
+        if get_block_number_result.is_err() {
+            error!(
+                "Failed to fetch block number. Error: {:#?}",
+                get_block_number_result.err()
+            );
+            time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            continue;
         }
+
+        block_number = get_block_number_result.unwrap().as_u64();
+        break;
     }
+
+    if block_number == 0 {
+        error!("Failed to fetch block number");
+        return None;
+    }
+
+    let mut count = 0;
+    let mut block_rate_per_second: u64;
+    let mut latest_block_timestamp = 0;
+
     'less_than_block_number: while block_number > 0 {
         let block = provider.get_block(block_number).await.unwrap().unwrap();
         // target_timestamp (the end bound of the interval) is excluded from the search
@@ -69,6 +74,22 @@ pub async fn get_block_number_by_timestamp(
                         return None;
                     }
                 }
+            }
+        } else {
+            count += 1;
+            if latest_block_timestamp == 0 {
+                latest_block_timestamp = block.timestamp.as_u64();
+            }
+            // Calculate the block rate per second using the last 15 blocks
+            if count > 15 {
+                block_rate_per_second =
+                    (latest_block_timestamp - block.timestamp.as_u64()) / count as u64;
+                info!("Block rate per second: {}", block_rate_per_second);
+                count = 0;
+
+                block_number = block_number
+                    - ((block.timestamp.as_u64() - target_timestamp) / block_rate_per_second)
+                    + 1;
             }
         }
         block_number -= 1;
