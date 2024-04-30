@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::Mutex;
-use tokio::sync::RwLock;
+use std::sync::RwLock;
 
 use crate::contract_abi::{
     CommonChainGatewayContract, CommonChainJobsContract, RequestChainContract,
@@ -89,6 +89,7 @@ pub struct CommonChainClient {
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
     pub epoch: u64,
     pub time_interval: u64,
+    pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
 }
 
 #[derive(Debug, Clone)]

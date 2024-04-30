@@ -7,15 +7,13 @@ use ethers::utils::keccak256;
 use hex::FromHex;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
+use std::sync::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::contract_abi::{CommonChainGatewayContract, RequestChainContract};
 use crate::model::{
-    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainClient,
-    RequestChainData,
+    AppState, CommonChainClient, InjectKeyInfo, Job, RegisterEnclaveInfo, RequestChainClient, RequestChainData
 };
 
 #[get("/")]
@@ -265,30 +263,7 @@ async fn register_enclave(
         .unwrap()
         .append(&mut chain_list.clone());
 
-    // Start the gateway epoch state service
-    {
-        let gateway_contract_addr_clone = app_state.gateway_contract_addr.clone();
-        let http_rpc_client_clone = http_rpc_client.clone();
-        let gateway_epoch_state_clone = Arc::clone(&app_state.gateway_epoch_state);
-        let epoch_clone = app_state.epoch.clone();
-        let time_interval_clone = app_state.time_interval.clone();
-        let service_start_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        tokio::spawn(async move {
-            gateway_epoch_state_service(
-                service_start_time,
-                gateway_contract_addr_clone,
-                &http_rpc_client_clone,
-                gateway_contract,
-                &gateway_epoch_state_clone,
-                epoch_clone,
-                time_interval_clone,
-            )
-            .await;
-        });
-    }
+    let gateway_state_epoch_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>> = Arc::new(RwLock::new(HashMap::new()));
 
     // Start contract event listner
     let contract_client = Arc::new(
@@ -297,7 +272,7 @@ async fn register_enclave(
             app_state.enclave_pub_key.clone().into(),
             signer_wallet,
             &app_state.common_chain_ws_url,
-            http_rpc_client,
+            http_rpc_client.clone(),
             &app_state.gateway_contract_addr,
             &app_state.job_contract_addr,
             app_state.gateway_epoch_state.clone(),
@@ -305,6 +280,7 @@ async fn register_enclave(
             app_state.epoch,
             app_state.time_interval,
             request_chain_clients,
+            gateway_state_epoch_waitlist,
         )
         .await,
     );
@@ -313,7 +289,7 @@ async fn register_enclave(
     info!("Starting the contract event listener.");
 
     tokio::spawn(async move {
-        let _ = contract_client.run().await;
+        let _ = contract_client.run(http_rpc_client).await;
     });
 
     HttpResponse::Ok().body(format!(
