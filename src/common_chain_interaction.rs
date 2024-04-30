@@ -247,6 +247,7 @@ impl CommonChainClient {
 
         let gateway_address: Address;
 
+        // TODO: Handle error case, when job is older than the maintained block states
         gateway_address = self
             .select_gateway_for_job_id(
                 job.job_id.clone(),
@@ -393,7 +394,7 @@ impl CommonChainClient {
                 - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
 
-            if current_cycle - job_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+            if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + job_cycle {
                 return Err(anyhow::Error::msg(
                     "Job is older than the maintained block states",
                 ));
@@ -835,6 +836,7 @@ impl CommonChainClient {
 
         let job_key = get_key_for_job_id(job_id, req_chain_id).await;
         let job: Job;
+        // TODO: Handle error case, when job is older than the maintained block states
         // scope for the read lock
         {
             job = self.active_jobs.read().await.get(&job_key).unwrap().clone();
