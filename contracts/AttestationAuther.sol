@@ -57,12 +57,12 @@ contract AttestationAuther {
     event EnclaveImageAddedToFamily(bytes32 indexed imageId, bytes32 family);
     /// @notice Emitted when enclave image `imageId` is removed from `family`.
     event EnclaveImageRemovedFromFamily(bytes32 indexed imageId, bytes32 family);
-    /// @notice Emitted when enclave key `enclavePubKey` is whitelisted against enclave image `imageId`.
-    event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
-    /// @notice Emitted when enclave key `enclavePubKey` is revoked.
-    event EnclaveKeyRevoked(bytes indexed enclavePubKey);
-    /// @notice Emitted when enclave key `enclavePubKey` is verified against enclave image `imageId`.
-    event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
+    /// @notice Emitted when enclave key `enclaveAddress` is whitelisted against enclave image `imageId`.
+    event EnclaveKeyWhitelisted(address indexed enclaveAddress, bytes32 indexed imageId, bytes enclavePubKey);
+    /// @notice Emitted when enclave key `enclaveAddress` is revoked.
+    event EnclaveKeyRevoked(address indexed enclaveAddress);
+    /// @notice Emitted when enclave key `enclaveAddress` is verified against enclave image `imageId`.
+    event EnclaveKeyVerified(address indexed enclaveAddress, bytes32 indexed imageId, bytes enclavePubKey);
 
     // constructors cannot be overloaded, avoid taking images or families entirely
     // constructors of inheriting contracts can set them up explicitly using the functions below
@@ -177,7 +177,7 @@ contract AttestationAuther {
         if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
         verifiedKeys[enclaveAddress] = imageId;
-        emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
+        emit EnclaveKeyWhitelisted(enclaveAddress, imageId, enclavePubKey);
 
         return true;
     }
@@ -191,7 +191,7 @@ contract AttestationAuther {
         if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
         delete verifiedKeys[enclaveAddress];
-        emit EnclaveKeyRevoked(enclavePubKey);
+        emit EnclaveKeyRevoked(enclaveAddress);
 
         return true;
     }
@@ -216,7 +216,7 @@ contract AttestationAuther {
         if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
         verifiedKeys[enclaveAddress] = imageId;
-        emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
+        emit EnclaveKeyVerified(enclaveAddress, imageId, attestation.enclavePubKey);
 
         return true;
     }
