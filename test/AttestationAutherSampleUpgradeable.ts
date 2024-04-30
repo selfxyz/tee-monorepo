@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationVerifier, AttestationAutherUpgradeable, AttestationAutherSample } from "../typechain-types";
+import { AttestationVerifier, AttestationAutherUpgradeable, AttestationAutherSampleUpgradeable } from "../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../utils/testSuite";
 import { keccak256, solidityPacked } from "ethers";
 import { testERC165 } from "./helpers/erc165";
@@ -35,7 +35,7 @@ const FIRST_FAMILY = ethers.id("FIRST_FAMILY");
 const SECOND_FAMILY = ethers.id("SECOND_FAMILY");
 const THIRD_FAMILY = ethers.id("THIRD_FAMILY");
 
-describe("AttestationAutherSample - Init", function() {
+describe("AttestationAutherSampleUpgradeable - Init", function() {
 	let signers: Signer[];
 	let addrs: string[];
 
@@ -46,39 +46,60 @@ describe("AttestationAutherSample - Init", function() {
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-	it("deploys", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
+	it("deploys with initialization disabled", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600);
 
 		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
-		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
+
+		await expect(
+			attestationAutherSample.initialize([], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initialize([image1, image2], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initializeWithFamilies([], [], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
+
+		await expect(
+			attestationAutherSample.initializeWithFamilies([image1, image2], [FIRST_FAMILY, SECOND_FAMILY], addrs[0]),
+		).to.be.revertedWithCustomError(attestationAutherSample, "InvalidInitialization");
 	});
 
-	it("deploys and initializes", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
-		await attestationAutherSample.initialize([image1]);
+	it("deploys as proxy and initializes", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		);
 
 		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
-		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 
+		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 		{
 			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
 		}
 	});
 
-	it("deploys and initializes with multiple images", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
-		await attestationAutherSample.initialize([image1, image2, image3]);
+	it("deploys as proxy and initializes with multiple images", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		);
 
 		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
-		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 
+		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 		{
 			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -94,22 +115,82 @@ describe("AttestationAutherSample - Init", function() {
 	});
 
 	it("cannot initialize with no whitelisted images", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
 		await expect(
-			attestationAutherSample.initialize([])
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600] },
+			)
 		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleNoImageProvided");
 	});
 
-	it("deploys and initializes with families", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
-		await attestationAutherSample.initializeWithFamilies([image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY]);
+	it("cannot initialize with zero address as admin", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], ethers.ZeroAddress],
+				{ kind: "uups", constructorArgs: [addrs[10], 600] },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleInvalidAdmin");
+	});
+
+	it("upgrades", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		);
+		await upgrades.upgradeProxy(await attestationAutherSample.getAddress(), AttestationAutherSample, { kind: "uups", constructorArgs: [addrs[10], 600] });
 
 		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
 		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
-		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 
+		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
+		}
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image2));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image2);
+		}
+		{
+			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image3));
+			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image3);
+		}
+	});
+
+	it("does not upgrade without admin", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		);
+
+		await expect(
+			upgrades.upgradeProxy(await attestationAutherSample.getAddress(), AttestationAutherSample.connect(signers[1]), {
+				kind: "uups",
+				constructorArgs: [addrs[10], 600],
+			}),
+		).to.be.revertedWithCustomError(attestationAutherSample, "AccessControlUnauthorizedAccount");
+	});
+
+	it("deploys as proxy and initializes with families", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+		);
+
+		expect(await attestationAutherSample.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
+		expect(await attestationAutherSample.ATTESTATION_MAX_AGE()).to.equal(600);
+
+		expect(await attestationAutherSample.hasRole(await attestationAutherSample.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 		{
 			const { PCR0, PCR1, PCR2 } = await attestationAutherSample.getWhitelistedImage(getImageId(image1));
 			expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -134,28 +215,48 @@ describe("AttestationAutherSample - Init", function() {
 	});
 
 	it("cannot initialize with families with no whitelisted images", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
 		await expect(
-			attestationAutherSample.initializeWithFamilies([], [])
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[], [], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
 		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleNoImageProvided");
 	});
 
-	it("cannot initialize with families with mismatched lengths", async function() {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
+	it("cannot initialize with families with zero address as admin", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
 		await expect(
-			attestationAutherSample.initializeWithFamilies([image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY])
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], [FIRST_FAMILY, SECOND_FAMILY, THIRD_FAMILY], ethers.ZeroAddress],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
+		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherSampleInvalidAdmin");
+	});
+
+	it("cannot initialize with families with mismatched lengths", async function() {
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		await expect(
+			upgrades.deployProxy(
+				AttestationAutherSample,
+				[[image1, image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+				{ kind: "uups", constructorArgs: [addrs[10], 600], initializer: "initializeWithFamilies" },
+			)
 		).to.be.revertedWithCustomError(AttestationAutherSample, "AttestationAutherMismatchedLengths");
 	});
 });
 
 testERC165(
-	"AttestationAutherSample - ERC165",
+	"AttestationAutherSampleUpgradeable - ERC165",
 	async function(_signers: Signer[], addrs: string[]) {
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
-		await attestationAutherSample.initialize([image1, image2, image3]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		const attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2, image3], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		);
 		return attestationAutherSample;
 	},
 	{
@@ -169,25 +270,31 @@ testERC165(
 	},
 );
 
-testAdminRole("AttestationAutherSample - Admin", async function(_signers: Signer[], addrs: string[]) {
-	const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-	const attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]);
-	await attestationAutherSample.initialize([image1, image2, image3]);
+testAdminRole("AttestationAutherSampleUpgradeable - Admin", async function(_signers: Signer[], addrs: string[]) {
+	const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+	const attestationAutherSample = await upgrades.deployProxy(
+		AttestationAutherSample,
+		[[image1, image2, image3], addrs[0]],
+		{ kind: "uups", constructorArgs: [addrs[10], 600] },
+	);
 	return attestationAutherSample;
 });
 
-describe("AttestationAutherSample - Whitelist image", function() {
+describe("AttestationAutherSampleUpgradeable - Whitelist image", function() {
 	let signers: Signer[];
 	let addrs: string[];
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 
 	before(async function() {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image1, image2]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -236,18 +343,21 @@ describe("AttestationAutherSample - Whitelist image", function() {
 	});
 });
 
-describe("AttestationAutherSample - Revoke image", function() {
+describe("AttestationAutherSampleUpgradeable - Revoke image", function() {
 	let signers: Signer[];
 	let addrs: string[];
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 
 	before(async function() {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image1, image2]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -278,19 +388,22 @@ describe("AttestationAutherSample - Revoke image", function() {
 	});
 });
 
-describe("AttestationAutherSample - Add image to family", function() {
+describe("AttestationAutherSampleUpgradeable - Add image to family", function() {
 	let signers: Signer[];
 	let addrs: string[];
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 	const TEST_FAMILY = ethers.id("TEST_FAMILY");
 
 	before(async function() {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image1, image2]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -324,19 +437,22 @@ describe("AttestationAutherSample - Add image to family", function() {
 	});
 });
 
-describe("AttestationAutherSample - Remove image from family", function() {
+describe("AttestationAutherSampleUpgradeable - Remove image from family", function() {
 	let signers: Signer[];
 	let addrs: string[];
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 	const TEST_FAMILY = ethers.id("TEST_FAMILY");
 
 	before(async function() {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image1, image2]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -375,13 +491,13 @@ describe("AttestationAutherSample - Remove image from family", function() {
 	});
 });
 
-describe("AttestationAutherSample - Whitelist enclave", function() {
+describe("AttestationAutherSampleUpgradeable - Whitelist enclave", function() {
 	let signers: Signer[];
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
 
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 
 	before(async function() {
 		signers = await ethers.getSigners();
@@ -389,9 +505,12 @@ describe("AttestationAutherSample - Whitelist enclave", function() {
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image1, image2]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -426,13 +545,13 @@ describe("AttestationAutherSample - Whitelist enclave", function() {
 	});
 });
 
-describe("AttestationAutherSample - Revoke enclave", function() {
+describe("AttestationAutherSampleUpgradeable - Revoke enclave", function() {
 	let signers: Signer[];
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
 
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 
 	before(async function() {
 		signers = await ethers.getSigners();
@@ -440,9 +559,12 @@ describe("AttestationAutherSample - Revoke enclave", function() {
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(addrs[10], 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image1, image2]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image1, image2], addrs[0]],
+			{ kind: "uups", constructorArgs: [addrs[10], 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -468,13 +590,13 @@ describe("AttestationAutherSample - Revoke enclave", function() {
 	});
 });
 
-describe("AttestationAutherSample - Verify enclave key", function() {
+describe("AttestationAutherSampleUpgradeable - Verify enclave key", function() {
 	let signers: Signer[];
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
 
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 	let attestationVerifier: AttestationVerifier;
 
 	before(async function() {
@@ -490,9 +612,12 @@ describe("AttestationAutherSample - Verify enclave key", function() {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(await attestationVerifier.getAddress(), 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image2, image3]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image2, image3], addrs[0]],
+			{ kind: "uups", constructorArgs: [await attestationVerifier.getAddress(), 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -602,13 +727,13 @@ describe("AttestationAutherSample - Verify enclave key", function() {
 	});
 });
 
-describe("AttestationAutherSample - Safe verify with params", function() {
+describe("AttestationAutherSampleUpgradeable - Safe verify with params", function() {
 	let signers: Signer[];
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
 
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 	let attestationVerifier: AttestationVerifier;
 
 	before(async function() {
@@ -624,9 +749,12 @@ describe("AttestationAutherSample - Safe verify with params", function() {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(await attestationVerifier.getAddress(), 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initialize([image2, image3]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image2, image3], addrs[0]],
+			{ kind: "uups", constructorArgs: [await attestationVerifier.getAddress(), 600] },
+		) as unknown as AttestationAutherSampleUpgradeable;
 
 		const timestamp = await time.latest() * 1000;
 		let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 540000);
@@ -679,13 +807,13 @@ describe("AttestationAutherSample - Safe verify with params", function() {
 	});
 });
 
-describe("AttestationAutherSample - Verify with family", function() {
+describe("AttestationAutherSampleUpgradeable - Verify with family", function() {
 	let signers: Signer[];
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
 
-	let attestationAutherSample: AttestationAutherSample;
+	let attestationAutherSample: AttestationAutherSampleUpgradeable;
 	let attestationVerifier: AttestationVerifier;
 
 	before(async function() {
@@ -701,9 +829,12 @@ describe("AttestationAutherSample - Verify with family", function() {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSample");
-		attestationAutherSample = await AttestationAutherSample.deploy(await attestationVerifier.getAddress(), 600, addrs[0]) as unknown as AttestationAutherSample;
-		await attestationAutherSample.initializeWithFamilies([image2, image3], [SECOND_FAMILY, THIRD_FAMILY]);
+		const AttestationAutherSample = await ethers.getContractFactory("AttestationAutherSampleUpgradeable");
+		attestationAutherSample = await upgrades.deployProxy(
+			AttestationAutherSample,
+			[[image2, image3], [SECOND_FAMILY, THIRD_FAMILY], addrs[0]],
+			{ kind: "uups", constructorArgs: [await attestationVerifier.getAddress(), 600], initializer: "initializeWithFamilies" },
+		) as unknown as AttestationAutherSampleUpgradeable;
 
 		const timestamp = await time.latest() * 1000;
 		let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 540000);

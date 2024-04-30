@@ -3,53 +3,79 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
-import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./AttestationAuther.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "./AttestationAutherUpgradeable.sol";
 
-contract AttestationAutherSample is
-    Context, // _msgSender, _msgData
-    ERC165, // supportsInterface
-    AccessControl, // RBAC
-    AttestationAuther // auther
+contract AttestationAutherSampleUpgradeable is
+    Initializable, // initializer
+    ContextUpgradeable, // _msgSender, _msgData
+    ERC165Upgradeable, // supportsInterface
+    AccessControlUpgradeable, // RBAC
+    UUPSUpgradeable, // public upgrade
+    AttestationAutherUpgradeable // auther
 {
+    // in case we add more contracts in the inheritance chain
+    uint256[500] private __gap_0;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    // disable all initializers and reinitializers
+    // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier,
-        uint256 maxAge,
-        address admin
-    ) AttestationAuther(attestationVerifier, maxAge) {
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        uint256 maxAge
+    ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
+        _disableInitializers();
     }
 
     //-------------------------------- Overrides start --------------------------------//
 
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(ERC165, AccessControl) returns (bool) {
+    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
+
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
     //-------------------------------- Initializer start --------------------------------//
 
     error AttestationAutherSampleNoImageProvided();
+    error AttestationAutherSampleInvalidAdmin();
 
-    function initialize(EnclaveImage[] memory images) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function initialize(EnclaveImage[] memory images, address _admin) external initializer {
         if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
+        if (!(_admin != address(0))) revert AttestationAutherSampleInvalidAdmin();
 
-        __AttestationAuther_constructor(images);
+        __Context_init_unchained();
+        __ERC165_init_unchained();
+        __AccessControl_init_unchained();
+        __UUPSUpgradeable_init_unchained();
+        __AttestationAuther_init_unchained(images);
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     function initializeWithFamilies(
         EnclaveImage[] memory images,
-        bytes32[] memory families
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        bytes32[] memory families,
+        address _admin
+    ) external initializer {
         if (!(images.length != 0)) revert AttestationAutherSampleNoImageProvided();
+        if (!(_admin != address(0))) revert AttestationAutherSampleInvalidAdmin();
 
-        __AttestationAuther_constructor(images, families);
+        __Context_init_unchained();
+        __ERC165_init_unchained();
+        __AccessControl_init_unchained();
+        __UUPSUpgradeable_init_unchained();
+        __AttestationAuther_init_unchained(images, families);
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     //-------------------------------- Initializer start --------------------------------//
