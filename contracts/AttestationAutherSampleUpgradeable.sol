@@ -101,8 +101,8 @@ contract AttestationAutherSampleUpgradeable is
         return _whitelistEnclaveKey(enclavePubKey, imageId);
     }
 
-    function revokeEnclaveKey(bytes memory enclavePubKey) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveKey(enclavePubKey);
+    function revokeEnclaveKey(address enclaveAddress) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveKey(enclaveAddress);
     }
 
     function addEnclaveImageToFamily(

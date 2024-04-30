@@ -85,12 +85,12 @@ contract AttestationAutherUpgradeable is
     event EnclaveImageAddedToFamily(bytes32 indexed imageId, bytes32 family);
     /// @notice Emitted when enclave image `imageId` is removed from `family`.
     event EnclaveImageRemovedFromFamily(bytes32 indexed imageId, bytes32 family);
-    /// @notice Emitted when enclave key `enclavePubKey` is whitelisted against enclave image `imageId`.
-    event EnclaveKeyWhitelisted(bytes indexed enclavePubKey, bytes32 indexed imageId);
-    /// @notice Emitted when enclave key `enclavePubKey` is revoked.
-    event EnclaveKeyRevoked(bytes indexed enclavePubKey);
-    /// @notice Emitted when enclave key `enclavePubKey` is verified against enclave image `imageId`.
-    event EnclaveKeyVerified(bytes indexed enclavePubKey, bytes32 indexed imageId);
+    /// @notice Emitted when enclave key `enclaveAddress` is whitelisted against enclave image `imageId`.
+    event EnclaveKeyWhitelisted(address indexed enclaveAddress, bytes32 indexed imageId, bytes enclavePubKey);
+    /// @notice Emitted when enclave key `enclaveAddress` is revoked.
+    event EnclaveKeyRevoked(address indexed enclaveAddress);
+    /// @notice Emitted when enclave key `enclaveAddress` is verified against enclave image `imageId`.
+    event EnclaveKeyVerified(address indexed enclaveAddress, bytes32 indexed imageId, bytes enclavePubKey);
 
     /// @notice Initializes the contract by whitelisting the provided enclave images.
     /// @param images Enclave images to be whitelisted.
@@ -201,27 +201,26 @@ contract AttestationAutherUpgradeable is
 
         if (!($.whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
 
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!($.verifiedKeys[enclaveKey] == bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+        if (!($.verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
-        $.verifiedKeys[enclaveKey] = imageId;
-        emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
+        $.verifiedKeys[enclaveAddress] = imageId;
+        emit EnclaveKeyWhitelisted(enclaveAddress, imageId, enclavePubKey);
 
         return true;
     }
 
     /// @notice Revoke an enclave key.
     /// May emit a `EnclaveKeyRevoked` event.
-    /// @param enclavePubKey Enclave key to be revoked.
+    /// @param enclaveAddress Enclave whose key is to be revoked.
     /// @return true if the key was freshly revoked, false otherwise.
-    function _revokeEnclaveKey(bytes memory enclavePubKey) internal virtual returns (bool) {
+    function _revokeEnclaveKey(address enclaveAddress) internal virtual returns (bool) {
         AttestationAutherStorage storage $ = _getAttestationAutherStorage();
 
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!($.verifiedKeys[enclaveKey] != bytes32(0))) return false;
+        if (!($.verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
-        delete $.verifiedKeys[enclaveKey];
-        emit EnclaveKeyRevoked(enclavePubKey);
+        delete $.verifiedKeys[enclaveAddress];
+        emit EnclaveKeyRevoked(enclaveAddress);
 
         return true;
     }
@@ -244,11 +243,11 @@ contract AttestationAutherUpgradeable is
 
         ATTESTATION_VERIFIER.verify(signature, attestation);
 
-        address enclaveKey = _pubKeyToAddress(attestation.enclavePubKey);
-        if (!($.verifiedKeys[enclaveKey] == bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(attestation.enclavePubKey);
+        if (!($.verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
-        $.verifiedKeys[enclaveKey] = imageId;
-        emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
+        $.verifiedKeys[enclaveAddress] = imageId;
+        emit EnclaveKeyVerified(enclaveAddress, imageId, attestation.enclavePubKey);
 
         return true;
     }

@@ -215,7 +215,7 @@ testAdminRole("AttestationVerifier - Admin", async function(signers: Signer[], a
     return attestationVerifier;
 });
 
-describe("AttestationVerifier - Whitelist image", function() {
+describe("AttestationVerifier - Whitelist enclave image", function() {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -239,11 +239,11 @@ describe("AttestationVerifier - Whitelist image", function() {
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-    it("non admin cannot whitelist image", async function() {
+    it("non admin cannot whitelist enclave image", async function() {
         await expect(attestationVerifier.connect(signers[1]).whitelistEnclaveImage(image3.PCR0, image3.PCR1, image3.PCR2)).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
-    it("admin can whitelist image", async function() {
+    it("admin can whitelist enclave image", async function() {
         {
             const { PCR0, PCR1, PCR2 } = await attestationVerifier.whitelistedImages(getImageId(image3));
             expect([PCR0, PCR1, PCR2]).to.deep.equal(["0x", "0x", "0x"]);
@@ -258,17 +258,17 @@ describe("AttestationVerifier - Whitelist image", function() {
         }
     });
 
-    it("admin cannot whitelist image with empty PCRs", async function() {
+    it("admin cannot whitelist enclave image with empty PCRs", async function() {
         await expect(attestationVerifier.whitelistEnclaveImage("0x", "0x", "0x")).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierPCRsInvalid");
     });
 
-    it("admin cannot whitelist image with invalid PCRs", async function() {
+    it("admin cannot whitelist enclave image with invalid PCRs", async function() {
         await expect(attestationVerifier.whitelistEnclaveImage("0x1111111111", image3.PCR1, image3.PCR2)).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierPCRsInvalid");
         await expect(attestationVerifier.whitelistEnclaveImage(image3.PCR0, "0x1111111111", image3.PCR2)).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierPCRsInvalid");
         await expect(attestationVerifier.whitelistEnclaveImage(image3.PCR0, image3.PCR1, "0x1111111111")).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierPCRsInvalid");
     });
 
-    it("admin can rewhitelist image", async function() {
+    it("admin can rewhitelist enclave image", async function() {
         expect(await attestationVerifier.whitelistEnclaveImage.staticCall(image3.PCR0, image3.PCR1, image3.PCR2)).to.deep.equal([getImageId(image3), true]);
         await expect(attestationVerifier.whitelistEnclaveImage(image3.PCR0, image3.PCR1, image3.PCR2))
             .to.emit(attestationVerifier, "EnclaveImageWhitelisted").withArgs(getImageId(image3), image3.PCR0, image3.PCR1, image3.PCR2);
@@ -283,7 +283,7 @@ describe("AttestationVerifier - Whitelist image", function() {
     });
 });
 
-describe("AttestationVerifier - Revoke image", function() {
+describe("AttestationVerifier - Revoke enclave image", function() {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -307,11 +307,11 @@ describe("AttestationVerifier - Revoke image", function() {
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-    it("non admin cannot revoke image", async function() {
+    it("non admin cannot revoke enclave image", async function() {
         await expect(attestationVerifier.connect(signers[1]).revokeEnclaveImage(getImageId(image1))).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
-    it("admin can revoke image", async function() {
+    it("admin can revoke enclave image", async function() {
         {
             const { PCR0, PCR1, PCR2 } = await attestationVerifier.whitelistedImages(getImageId(image1));
             expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -326,14 +326,14 @@ describe("AttestationVerifier - Revoke image", function() {
         }
     });
 
-    it("admin can revoke unwhitelisted image", async function() {
+    it("admin can revoke unwhitelisted enclave image", async function() {
         expect(await attestationVerifier.revokeEnclaveImage.staticCall(getImageId(image3))).to.be.false;
         await expect(attestationVerifier.revokeEnclaveImage(getImageId(image3)))
             .to.not.emit(attestationVerifier, "EnclaveImageRevoked");
     });
 });
 
-describe("AttestationVerifier - Whitelist enclave", function() {
+describe("AttestationVerifier - Whitelist enclave key", function() {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -357,29 +357,29 @@ describe("AttestationVerifier - Whitelist enclave", function() {
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-    it("non admin cannot whitelist enclave", async function() {
+    it("non admin cannot whitelist enclave key", async function() {
         await expect(attestationVerifier.connect(signers[1]).whitelistEnclaveKey(pubkeys[15], getImageId(image1))).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
-    it("admin can whitelist enclave", async function() {
+    it("admin can whitelist enclave key", async function() {
         expect(await attestationVerifier.verifiedKeys(addrs[15])).to.equal(ethers.ZeroHash);
 
         expect(await attestationVerifier.whitelistEnclaveKey.staticCall(pubkeys[15], getImageId(image1))).to.be.true;
         await expect(attestationVerifier.whitelistEnclaveKey(pubkeys[15], getImageId(image1)))
-            .to.emit(attestationVerifier, "EnclaveKeyWhitelisted").withArgs(pubkeys[15], getImageId(image1));
+            .to.emit(attestationVerifier, "EnclaveKeyWhitelisted").withArgs(addrs[15], getImageId(image1), pubkeys[15]);
         expect(await attestationVerifier.verifiedKeys(addrs[15])).to.equal(getImageId(image1));
     });
 
-    it("admin cannot whitelist enclave with unwhitelisted image", async function() {
+    it("admin cannot whitelist enclave key with unwhitelisted enclave image", async function() {
         await expect(attestationVerifier.whitelistEnclaveKey(pubkeys[15], getImageId(image3))).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierImageNotWhitelisted");
     });
 
-    it("admin can rewhitelist enclave", async function() {
+    it("admin can rewhitelist enclave key", async function() {
         expect(await attestationVerifier.verifiedKeys(addrs[15])).to.equal(ethers.ZeroHash);
 
         expect(await attestationVerifier.whitelistEnclaveKey.staticCall(pubkeys[15], getImageId(image1))).to.be.true;
         await expect(attestationVerifier.whitelistEnclaveKey(pubkeys[15], getImageId(image1)))
-            .to.emit(attestationVerifier, "EnclaveKeyWhitelisted").withArgs(pubkeys[15], getImageId(image1));
+            .to.emit(attestationVerifier, "EnclaveKeyWhitelisted").withArgs(addrs[15], getImageId(image1), pubkeys[15]);
         expect(await attestationVerifier.verifiedKeys(addrs[15])).to.equal(getImageId(image1));
 
         expect(await attestationVerifier.whitelistEnclaveKey.staticCall(pubkeys[15], getImageId(image1))).to.be.false;
@@ -388,7 +388,7 @@ describe("AttestationVerifier - Whitelist enclave", function() {
     });
 });
 
-describe("AttestationVerifier - Revoke enclave", function() {
+describe("AttestationVerifier - Revoke enclave key", function() {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -412,22 +412,22 @@ describe("AttestationVerifier - Revoke enclave", function() {
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-    it("non admin cannot revoke enclave", async function() {
-        await expect(attestationVerifier.connect(signers[1]).revokeEnclaveKey(pubkeys[14])).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
+    it("non admin cannot revoke enclave key", async function() {
+        await expect(attestationVerifier.connect(signers[1]).revokeEnclaveKey(addrs[14])).to.be.revertedWithCustomError(attestationVerifier, "AccessControlUnauthorizedAccount");
     });
 
-    it("admin can revoke enclave", async function() {
+    it("admin can revoke enclave key", async function() {
         expect(await attestationVerifier.verifiedKeys(addrs[14])).to.equal(getImageId(image2));
 
-        expect(await attestationVerifier.revokeEnclaveKey.staticCall(pubkeys[14])).to.be.true;
-        await expect(attestationVerifier.revokeEnclaveKey(pubkeys[14]))
-            .to.emit(attestationVerifier, "EnclaveKeyRevoked").withArgs(pubkeys[14]);
+        expect(await attestationVerifier.revokeEnclaveKey.staticCall(addrs[14])).to.be.true;
+        await expect(attestationVerifier.revokeEnclaveKey(addrs[14]))
+            .to.emit(attestationVerifier, "EnclaveKeyRevoked").withArgs(addrs[14]);
         expect(await attestationVerifier.verifiedKeys(addrs[14])).to.equal(ethers.ZeroHash);
     });
 
-    it("admin cannot revoke unwhitelisted enclave", async function() {
-        expect(await attestationVerifier.revokeEnclaveKey.staticCall(pubkeys[15])).to.be.false;
-        await expect(attestationVerifier.revokeEnclaveKey(pubkeys[15]))
+    it("admin cannot revoke unwhitelisted enclave key", async function() {
+        expect(await attestationVerifier.revokeEnclaveKey.staticCall(addrs[15])).to.be.false;
+        await expect(attestationVerifier.revokeEnclaveKey(addrs[15]))
             .to.not.emit(attestationVerifier, "EnclaveKeyRevoked");
     });
 });
@@ -462,7 +462,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
         expect(await attestationVerifier.connect(signers[1]).verifyEnclaveKey.staticCall(signature, attestation)).to.be.true;
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-            .to.emit(attestationVerifier, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image1));
+            .to.emit(attestationVerifier, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image1), pubkeys[15]);
         expect(await attestationVerifier.verifiedKeys(addrs[15])).to.equal(getImageId(image1));
     });
 
@@ -500,7 +500,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierPubkeyLengthInvalid");
     });
 
-    it("cannot verify enclave key with unwhitelisted image", async function() {
+    it("cannot verify enclave key with unwhitelisted enclave image", async function() {
         const timestamp = await time.latest() * 1000;
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], timestamp - 240000);
 
@@ -514,7 +514,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
 
         expect(await attestationVerifier.connect(signers[1]).verifyEnclaveKey.staticCall(signature, attestation)).to.be.true;
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, attestation))
-            .to.emit(attestationVerifier, "EnclaveKeyVerified").withArgs(pubkeys[15], getImageId(image1));
+            .to.emit(attestationVerifier, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image1), pubkeys[15]);
         expect(await attestationVerifier.verifiedKeys(addrs[15])).to.equal(getImageId(image1));
 
         expect(await attestationVerifier.connect(signers[1]).verifyEnclaveKey.staticCall(signature, attestation)).to.be.false;
@@ -522,7 +522,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
             .to.not.emit(attestationVerifier, "EnclaveKeyVerified");
     });
 
-    it("cannot verify enclave key with unwhitelisted key", async function() {
+    it("cannot verify enclave key with unwhitelisted enclave key", async function() {
         const timestamp = await time.latest() * 1000;
         let [signature, attestation] = await createAttestation(pubkeys[15], image1, wallets[16], timestamp - 240000);
 
@@ -530,17 +530,17 @@ describe("AttestationVerifier - Verify enclave key", function() {
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify enclave key with revoked key", async function() {
+    it("cannot verify enclave key with revoked enclave key", async function() {
         const timestamp = await time.latest() * 1000;
         let [signature, attestation] = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
-        await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
+        await attestationVerifier.revokeEnclaveKey(addrs[14]);
 
         await expect(attestationVerifier.connect(signers[1]).verifyEnclaveKey(signature, attestation))
             .to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify enclave key with revoked image", async function() {
+    it("cannot verify enclave key with revoked enclave image", async function() {
         const timestamp = await time.latest() * 1000;
         let [signature, attestation] = await createAttestation(pubkeys[15], image1, wallets[14], timestamp - 240000);
 
@@ -551,7 +551,7 @@ describe("AttestationVerifier - Verify enclave key", function() {
     });
 });
 
-describe("AttestationVerifier - Safe verify with params", function() {
+describe("AttestationVerifier - Verify with params", function() {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -606,7 +606,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify with unwhitelisted key", async function() {
+    it("cannot verify with unwhitelisted enclave key", async function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[16], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
@@ -614,17 +614,17 @@ describe("AttestationVerifier - Safe verify with params", function() {
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify with revoked key", async function() {
+    it("cannot verify with revoked enclave key", async function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
-        await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
+        await attestationVerifier.revokeEnclaveKey(addrs[14]);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes,(bytes,bytes,bytes,bytes,uint256))'](
             signature, attestation,
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify with revoked image", async function() {
+    it("cannot verify with revoked enclave image", async function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await attestationVerifier.revokeEnclaveImage(getImageId(image2));
@@ -635,7 +635,7 @@ describe("AttestationVerifier - Safe verify with params", function() {
     });
 });
 
-describe("AttestationVerifier - Safe verify with bytes", function() {
+describe("AttestationVerifier - Verify with bytes", function() {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -711,7 +711,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify with unwhitelisted key", async function() {
+    it("cannot verify with unwhitelisted enclave key", async function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[16], 300000);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
@@ -722,10 +722,10 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify with revoked key", async function() {
+    it("cannot verify with revoked enclave key", async function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
-        await attestationVerifier.revokeEnclaveKey(pubkeys[14]);
+        await attestationVerifier.revokeEnclaveKey(addrs[14]);
 
         await expect(attestationVerifier.connect(signers[1])['verify(bytes)'](
             ethers.AbiCoder.defaultAbiCoder().encode(
@@ -735,7 +735,7 @@ describe("AttestationVerifier - Safe verify with bytes", function() {
         )).to.be.revertedWithCustomError(attestationVerifier, "AttestationVerifierKeyNotVerified");
     });
 
-    it("cannot verify with revoked image", async function() {
+    it("cannot verify with revoked enclave image", async function() {
         let [signature, attestation] = await createAttestation(pubkeys[15], image3, wallets[14], 300000);
 
         await attestationVerifier.revokeEnclaveImage(getImageId(image2));
