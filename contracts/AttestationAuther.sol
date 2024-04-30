@@ -184,10 +184,9 @@ contract AttestationAuther {
 
     /// @notice Revoke an enclave key.
     /// May emit a `EnclaveKeyRevoked` event.
-    /// @param enclavePubKey Enclave key to be revoked.
+    /// @param enclaveAddress Enclave whose key is to be revoked.
     /// @return true if the key was freshly revoked, false otherwise.
-    function _revokeEnclaveKey(bytes memory enclavePubKey) internal virtual returns (bool) {
-        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+    function _revokeEnclaveKey(address enclaveAddress) internal virtual returns (bool) {
         if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
         delete verifiedKeys[enclaveAddress];
