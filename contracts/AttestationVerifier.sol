@@ -80,7 +80,7 @@ contract AttestationVerifier is
 
     // ImageId -> image details
     mapping(bytes32 => EnclaveImage) public whitelistedImages;
-    // enclaveKey -> ImageId
+    // enclaveAddress -> ImageId
     mapping(address => bytes32) public verifiedKeys;
 
     uint256[48] private __gap_1;
@@ -137,20 +137,20 @@ contract AttestationVerifier is
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal returns (bool) {
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationVerifierImageNotWhitelisted();
 
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!(verifiedKeys[enclaveKey] == bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+        if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
-        verifiedKeys[enclaveKey] = imageId;
+        verifiedKeys[enclaveAddress] = imageId;
         emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
 
         return true;
     }
 
     function _revokeEnclaveKey(bytes memory enclavePubKey) internal returns (bool) {
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!(verifiedKeys[enclaveKey] != bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+        if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
-        delete verifiedKeys[enclaveKey];
+        delete verifiedKeys[enclaveAddress];
         emit EnclaveKeyRevoked(enclavePubKey);
 
         return true;
@@ -198,10 +198,10 @@ contract AttestationVerifier is
 
         _verify(signature, attestation);
 
-        address enclaveKey = pubKeyToAddress(attestation.enclavePubKey);
-        if (!(verifiedKeys[enclaveKey] == bytes32(0))) return false;
+        address enclaveAddress = pubKeyToAddress(attestation.enclavePubKey);
+        if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
-        verifiedKeys[enclaveKey] = imageId;
+        verifiedKeys[enclaveAddress] = imageId;
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
 
         return true;
