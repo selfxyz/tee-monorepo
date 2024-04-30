@@ -173,10 +173,10 @@ contract AttestationAuther {
     function _whitelistEnclaveKey(bytes memory enclavePubKey, bytes32 imageId) internal virtual returns (bool) {
         if (!(whitelistedImages[imageId].PCR0.length != 0)) revert AttestationAutherImageNotWhitelisted();
 
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!(verifiedKeys[enclaveKey] == bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+        if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
-        verifiedKeys[enclaveKey] = imageId;
+        verifiedKeys[enclaveAddress] = imageId;
         emit EnclaveKeyWhitelisted(enclavePubKey, imageId);
 
         return true;
@@ -187,10 +187,10 @@ contract AttestationAuther {
     /// @param enclavePubKey Enclave key to be revoked.
     /// @return true if the key was freshly revoked, false otherwise.
     function _revokeEnclaveKey(bytes memory enclavePubKey) internal virtual returns (bool) {
-        address enclaveKey = _pubKeyToAddress(enclavePubKey);
-        if (!(verifiedKeys[enclaveKey] != bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
+        if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
 
-        delete verifiedKeys[enclaveKey];
+        delete verifiedKeys[enclaveAddress];
         emit EnclaveKeyRevoked(enclavePubKey);
 
         return true;
@@ -212,10 +212,10 @@ contract AttestationAuther {
 
         ATTESTATION_VERIFIER.verify(signature, attestation);
 
-        address enclaveKey = _pubKeyToAddress(attestation.enclavePubKey);
-        if (!(verifiedKeys[enclaveKey] == bytes32(0))) return false;
+        address enclaveAddress = _pubKeyToAddress(attestation.enclavePubKey);
+        if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
 
-        verifiedKeys[enclaveKey] = imageId;
+        verifiedKeys[enclaveAddress] = imageId;
         emit EnclaveKeyVerified(attestation.enclavePubKey, imageId);
 
         return true;
