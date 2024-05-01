@@ -3,8 +3,6 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "./Errors.sol";
-
 
 /// @dev Contract implements an upgradeable version of tree which stores
 /// elements in order of insertion. When a element is added, it is added
@@ -39,6 +37,8 @@ contract TreeUpgradeable is Initializable {
     // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.Tree")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant TreeStorageLocation = 0x425ae037969053bfe8be40daa3fbac6dc5dd18b4cbe23752b95cbe4c4aa29c00;
 
+    error InvalidInitState();
+
     function _getTreeStorage() private pure returns (TreeStorage storage $) {
         assembly {
             $.slot := TreeStorageLocation
@@ -53,7 +53,8 @@ contract TreeUpgradeable is Initializable {
     /// Node indexes start from 1.
     function _init_tree() private {
         TreeStorage storage $ = _getTreeStorage();
-        require($.nodes.length == 0, Errors.INVALID_INIT_STATE);
+        if($.nodes.length != 0)
+            revert InvalidInitState();
         // root starts from index 1
         $.nodes.push(Node(0, 0, 0));
     }
