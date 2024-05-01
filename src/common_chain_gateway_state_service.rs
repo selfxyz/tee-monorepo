@@ -27,6 +27,7 @@ pub async fn gateway_epoch_state_service(
 ) {
     let current_cycle = (current_time - epoch) / time_interval;
     let initial_epoch_cycle: u64;
+    let mut cycle_number: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
         initial_epoch_cycle = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
     } else {
@@ -38,7 +39,7 @@ pub async fn gateway_epoch_state_service(
         let com_chain_gateway_contract_clone = com_chain_gateway_contract.clone();
         let gateway_epoch_state_clone = Arc::clone(&gateway_epoch_state);
 
-        let mut cycle_number = initial_epoch_cycle;
+        cycle_number = initial_epoch_cycle;
         while cycle_number <= current_cycle {
             let _current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -73,7 +74,6 @@ pub async fn gateway_epoch_state_service(
         }
     }
 
-    let mut cycle_number = current_cycle + 1;
     let last_cycle_timestamp = epoch + (current_cycle * time_interval);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -99,8 +99,7 @@ pub async fn gateway_epoch_state_service(
                 / time_interval;
 
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
-                cycle_number += 1;
-                continue;
+                cycle_number = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
@@ -123,7 +122,17 @@ pub async fn gateway_epoch_state_service(
                 continue;
             }
 
-            break;
+            let _current_cycle = (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs()
+                - epoch)
+                / time_interval;
+
+            if cycle_number == _current_cycle {
+                break;
+            }
+            cycle_number += 1;
         }
 
         prune_old_cycle_states(&gateway_epoch_state, epoch, time_interval).await;
