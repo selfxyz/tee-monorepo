@@ -48,8 +48,7 @@ pub async fn gateway_epoch_state_service(
                 / time_interval;
 
             if _current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
-                cycle_number += 1;
-                continue;
+                cycle_number = _current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
