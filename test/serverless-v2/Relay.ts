@@ -419,9 +419,9 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(relay, "JobResponded"); 
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		await expect(tx).to.emit(relay, "JobResponded");
 	});
 
 	it("cannot submit response twice", async function () {
@@ -430,11 +430,11 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
 		await expect(tx).to.emit(relay, "JobResponded"); 
 
-		let tx2 = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let tx2 = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
 		await expect(tx2).to.revertedWithCustomError(relay, "JobNotExists");
 	});
 
@@ -444,8 +444,8 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[16]);
-		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[16]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
 		await expect(tx).to.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified"); 
 	});
 
@@ -456,8 +456,8 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
 		await expect(tx).to.revertedWithCustomError(relay, "OverallTimeoutOver"); 
 	});
 
@@ -534,9 +534,9 @@ describe("Relay - Job Cancel", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
 		await expect(
-			relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode)
+			relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode)
 		).to.emit(relay, "JobResponded"); 
 
 		await expect(
@@ -653,7 +653,7 @@ describe("Relay - Job sent by User contract", function () {
 			totalTime = 100,
 			errorCode = 0;
 		
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
 		await expect(tx).to.emit(user, "CalledBack").and.to.emit(relay, "JobResponded");
 	});
@@ -675,7 +675,7 @@ describe("Relay - Job sent by User contract", function () {
 			totalTime = 100,
 			errorCode = 0;
 
-		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, wallets[15]);
+		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
 		await expect(tx).to.emit(relay, "JobResponded").and.to.not.emit(user, "CalledBack");
 	});
@@ -732,19 +732,38 @@ async function createAttestation(
 }
 
 async function createJobResponseSignature(
+	operator: string,
 	jobId: number,
     output: string,
 	totalTime: number,
     errorCode: number,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
-	const message = ethers.solidityPackedKeccak256(
-        ["uint256", "bytes", "uint256", "uint8"],
-		[jobId, output, totalTime, errorCode]
-    );
-	const signature = await sourceEnclaveWallet.signingKey.sign(message);
-	let signedDigest = ethers.Signature.from(signature).serialized
-	return signedDigest;
+	const domain = {
+		name: 'marlin.oyster.Relay',
+		version: '1'
+	};
+
+	const types = {
+		JobResponse: [
+			{ name: 'operator', type: 'address' },
+			{ name: 'jobId', type: 'uint256' },
+			{ name: 'output', type: 'bytes' },
+			{ name: 'totalTime', type: 'uint256' },
+			{ name: 'errorCode', type: 'uint8' }
+		]
+	};
+
+	const value = {
+		operator,
+		jobId,
+		output,
+		totalTime,
+		errorCode
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
 }
 
 function walletForIndex(idx: number): Wallet {

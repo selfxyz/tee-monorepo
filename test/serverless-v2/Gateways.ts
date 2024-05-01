@@ -390,7 +390,7 @@ describe("Gateways - Global chains", function () {
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let stakeAmount = 10;
-		let signedDigest = await createGatewaySignature([1], wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], [1], wallets[15]);
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, stakeAmount);
 	});
 
@@ -520,7 +520,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await expect(gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0))
 			.to.emit(gateways, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image2), pubkeys[15]);
@@ -533,7 +533,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
@@ -546,7 +546,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1, 2];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await expect(gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, 0))
 			.to.be.revertedWithCustomError(gateways, "UnsupportedChain");
@@ -557,7 +557,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
@@ -570,7 +570,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
@@ -585,7 +585,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
@@ -598,7 +598,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 		await gateways.connect(signers[1]).deregisterGateway(pubkeys[15]);
@@ -612,7 +612,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
@@ -630,7 +630,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		let stakeAmount = 10;
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, stakeAmount);
@@ -654,7 +654,7 @@ describe("Gateways - Register gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let chainIds = [1];
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
@@ -725,7 +725,7 @@ describe("Gateways - Staking", function () {
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let stakeAmount = 10;
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
 	});
 
@@ -871,16 +871,29 @@ async function createAttestation(
 }
 
 async function createGatewaySignature(
+	operator: string,
 	chainIds: number[],
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
-	const message = ethers.solidityPackedKeccak256(
-        ["uint256[]"],
-        [chainIds]
-    );
-	const signature = await sourceEnclaveWallet.signingKey.sign(message);
-	let signedDigest = ethers.Signature.from(signature).serialized;
-	return signedDigest;
+	const domain = {
+		name: 'marlin.oyster.Gateways',
+		version: '1',
+	};
+
+	const types = {
+		Register: [
+			{ name: 'operator', type: 'address' },
+			{ name: 'chainIds', type: 'uint256[]' }
+		]
+	};
+
+	const value = {
+		operator,
+		chainIds
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
 }
 
 function walletForIndex(idx: number): Wallet {

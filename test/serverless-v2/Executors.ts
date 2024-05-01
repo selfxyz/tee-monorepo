@@ -293,7 +293,7 @@ describe("Executors - Register executor", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
 
 		await expect(executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
 			.to.emit(executors, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image2), pubkeys[15]);
@@ -305,7 +305,7 @@ describe("Executors - Register executor", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
 		executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
 		await expect(executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
@@ -317,7 +317,7 @@ describe("Executors - Register executor", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
 
 		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
@@ -377,14 +377,14 @@ describe("Executors - Register executor", function () {
 		let timestamp = await time.latest() * 1000,
 			stakeAmount = 10;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
 		
 		timestamp = await time.latest() * 1000;
         [signature] = await createAttestation(pubkeys[16], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		signedDigest = await createExecutorSignature(jobCapacity, wallets[16]);
+		signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[16]);
 		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[16], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
@@ -394,8 +394,8 @@ describe("Executors - Register executor", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1];
-		signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
-		await jobs.connect(signers[15]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
+		signedDigest = await createRelayJobSignature(addrs[1], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
+		await jobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 
 		await expect(executors.connect(signers[1]).deregisterExecutor(pubkeys[16]))
 			.to.emit(executors, "ExecutorDeregistered").withArgs(addrs[16]);
@@ -409,7 +409,7 @@ describe("Executors - Register executor", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
 
 		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
@@ -466,14 +466,14 @@ describe("Executors - Register executor", function () {
 		let timestamp = await time.latest() * 1000,
 			stakeAmount = 10;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(chainIds, wallets[15]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
 		
 		timestamp = await time.latest() * 1000;
         [signature] = await createAttestation(pubkeys[16], image2, wallets[14], timestamp - 540000);
 
 		let jobCapacity = 20;
-		signedDigest = await createExecutorSignature(jobCapacity, wallets[16]);
+		signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[16]);
 		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[16], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
@@ -483,8 +483,8 @@ describe("Executors - Register executor", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1];
-		signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
-		await jobs.connect(signers[15]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
+		signedDigest = await createRelayJobSignature(addrs[0], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
+		await jobs.relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 
 		await executors.connect(signers[1]).deregisterExecutor(pubkeys[16]);
 
@@ -542,7 +542,7 @@ describe("Executors - Staking", function () {
         let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 		let jobCapacity = 20, 
 			stakeAmount = 10;
-		let signedDigest = await createExecutorSignature(jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
 		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
 	});
 
@@ -643,7 +643,7 @@ describe("Executors - Staking", function () {
 		let timestamp = await time.latest() * 1000,
 			stakeAmount = 10;
 		let [signature] = await createAttestation(pubkeys[16], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(chainIds, wallets[16]);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[16]);
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[16], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
 		
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
@@ -653,7 +653,7 @@ describe("Executors - Staking", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1];
-		signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[16]);
+		signedDigest = await createRelayJobSignature(addrs[0], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[16]);
 		await jobs.relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 
 		let amount = 5;
@@ -717,33 +717,59 @@ async function createAttestation(
 }
 
 async function createExecutorSignature(
+	operator: string,
 	jobCapacity: number,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
+	const domain = {
+		name: 'marlin.oyster.Executors',
+		version: '1',
+	};
 
-	const message = ethers.solidityPackedKeccak256(
-        ["uint256"],
-		[jobCapacity]
-    );
-	const signature = await sourceEnclaveWallet.signingKey.sign(message);
-	let signedDigest = ethers.Signature.from(signature).serialized;
-	return signedDigest;
+	const types = {
+		Register: [
+			{ name: 'operator', type: 'address' },
+			{ name: 'jobCapacity', type: 'uint256' }
+		]
+	};
+
+	const value = {
+		operator,
+		jobCapacity
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
 }
 
 async function createGatewaySignature(
+	operator: string,
 	chainIds: number[],
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
-	const message = ethers.solidityPackedKeccak256(
-        ["uint256[]"],
-        [chainIds]
-    );
-	const signature = await sourceEnclaveWallet.signingKey.sign(message);
-	let signedDigest = ethers.Signature.from(signature).serialized
-	return signedDigest;
+	const domain = {
+		name: 'marlin.oyster.Gateways',
+		version: '1',
+	};
+
+	const types = {
+		Register: [
+			{ name: 'operator', type: 'address' },
+			{ name: 'chainIds', type: 'uint256[]' }
+		]
+	};
+
+	const value = {
+		operator,
+		chainIds
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
 }
 
 async function createRelayJobSignature(
+	operator: string,
 	jobId: number,
     codeHash: string,
 	codeInputs: string,
@@ -753,13 +779,37 @@ async function createRelayJobSignature(
 	jobOwner: string,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
-	const message = ethers.solidityPackedKeccak256(
-		["uint256", "bytes32", "bytes", "uint256", "uint256", "uint8", "address"],
-		[jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner]
-	);
-	const signature = await sourceEnclaveWallet.signingKey.sign(message);
-	let signedDigest = ethers.Signature.from(signature).serialized
-	return signedDigest;
+	const domain = {
+		name: 'marlin.oyster.Jobs',
+		version: '1',
+	};
+
+	const types = {
+		RelayJob: [
+			{ name: 'operator', type: 'address' },
+			{ name: 'jobId', type: 'uint256' },
+			{ name: 'codeHash', type: 'bytes32' },
+			{ name: 'codeInputs', type: 'bytes' },
+			{ name: 'deadline', type: 'uint256' },
+			{ name: 'jobRequestTimestamp', type: 'uint256' },
+			{ name: 'sequenceId', type: 'uint8' },
+			{ name: 'jobOwner', type: 'address' }
+		]
+	};
+
+	const value = {
+		operator,
+		jobId, 
+		codeHash, 
+		codeInputs, 
+		deadline, 
+		jobRequestTimestamp, 
+		sequenceId, 
+		jobOwner
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
 }
 
 function walletForIndex(idx: number): Wallet {
