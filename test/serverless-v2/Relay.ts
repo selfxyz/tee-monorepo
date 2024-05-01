@@ -2,9 +2,8 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Pond, Relay, User } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Pond, Relay, UserSample } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { getAttestationVerifier, getPond, getRelay, getUser } from '../../utils/typechainConvertor';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -95,7 +94,7 @@ describe("Relay - Init", function () {
 					]
 				},
 			)
-		).to.be.revertedWithCustomError(Relay, "ZeroAddressAdmin");
+		).to.be.revertedWithCustomError(Relay, "RelayZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -186,21 +185,19 @@ describe("Relay - Register gateway", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Relay = await ethers.getContractFactory("Relay");
-		const relayContract = await upgrades.deployProxy(
+		relay = await upgrades.deployProxy(
 			Relay,
 			[addrs[0], [image1, image2]],
 			{
@@ -215,8 +212,7 @@ describe("Relay - Register gateway", function () {
 					1000
 				]
 			},
-		);
-		relay = getRelay(relayContract.target as string, signers[0]);
+		) as unknown as Relay;
 
 	});
 
@@ -239,7 +235,7 @@ describe("Relay - Register gateway", function () {
 			.to.emit(relay, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
 
 		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
-			.to.revertedWithCustomError(relay, "GatewayAlreadyExists");
+			.to.revertedWithCustomError(relay, "RelayGatewayAlreadyExists");
 	});
 
 	it('can deregister gateway', async function () {
@@ -259,7 +255,7 @@ describe("Relay - Register gateway", function () {
 		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 
 		await expect(relay.connect(signers[2]).deregisterGateway(pubkeys[15]))
-			.to.revertedWithCustomError(relay, "InvalidGatewayOperator");
+			.to.revertedWithCustomError(relay, "RelayInvalidGatewayOperator");
 	});
 
 });
@@ -280,21 +276,19 @@ describe("Relay - Relay Job", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Relay = await ethers.getContractFactory("Relay");
-		const relayContract = await upgrades.deployProxy(
+		relay = await upgrades.deployProxy(
 			Relay,
 			[addrs[0], [image1, image2]],
 			{
@@ -309,8 +303,7 @@ describe("Relay - Relay Job", function () {
 					1000
 				]
 			},
-		);
-		relay = getRelay(relayContract.target as string, signers[0]);
+		) as unknown as Relay;
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
@@ -344,7 +337,7 @@ describe("Relay - Relay Job", function () {
 			usdcDeposit = 100,
 			callbackDeposit = 100;
 		let tx = relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
-		await expect(tx).to.revertedWithCustomError(relay, "InvalidUserTimeout");
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
 	});
 });
 
@@ -364,21 +357,19 @@ describe("Relay - Job Response", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Relay = await ethers.getContractFactory("Relay");
-		const relayContract = await upgrades.deployProxy(
+		relay = await upgrades.deployProxy(
 			Relay,
 			[addrs[0], [image1, image2]],
 			{
@@ -393,8 +384,7 @@ describe("Relay - Job Response", function () {
 					1000
 				]
 			},
-		);
-		relay = getRelay(relayContract.target as string, signers[0]);
+		) as unknown as Relay;
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
@@ -435,7 +425,7 @@ describe("Relay - Job Response", function () {
 		await expect(tx).to.emit(relay, "JobResponded"); 
 
 		let tx2 = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx2).to.revertedWithCustomError(relay, "JobNotExists");
+		await expect(tx2).to.revertedWithCustomError(relay, "RelayJobNotExists");
 	});
 
 	it("cannot submit output from unverified gateway", async function () {
@@ -458,7 +448,7 @@ describe("Relay - Job Response", function () {
 		
 		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.revertedWithCustomError(relay, "OverallTimeoutOver"); 
+		await expect(tx).to.revertedWithCustomError(relay, "RelayOverallTimeoutOver"); 
 	});
 
 });
@@ -479,21 +469,19 @@ describe("Relay - Job Cancel", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Relay = await ethers.getContractFactory("Relay");
-		const relayContract = await upgrades.deployProxy(
+		relay = await upgrades.deployProxy(
 			Relay,
 			[addrs[0], [image1, image2]],
 			{
@@ -508,8 +496,7 @@ describe("Relay - Job Cancel", function () {
 					1000
 				]
 			},
-		);
-		relay = getRelay(relayContract.target as string, signers[0]);
+		) as unknown as Relay;
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
@@ -541,7 +528,7 @@ describe("Relay - Job Cancel", function () {
 
 		await expect(
 			relay.connect(signers[15]).jobCancel(jobId)
-		).to.be.revertedWithCustomError(relay, "InvalidJobOwner");
+		).to.be.revertedWithCustomError(relay, "RelayInvalidJobOwner");
 	});
 
 	it("cannot cancel before overall timeout", async function () {
@@ -549,7 +536,7 @@ describe("Relay - Job Cancel", function () {
 
 		await expect(
 			relay.connect(signers[15]).jobCancel(jobId)
-		).to.revertedWithCustomError(relay, "OverallTimeoutNotOver");
+		).to.revertedWithCustomError(relay, "RelayOverallTimeoutNotOver");
 	});
 
 	it("cannot cancel from other any other account except job owner", async function () {
@@ -558,7 +545,7 @@ describe("Relay - Job Cancel", function () {
 
 		await expect(
 			relay.jobCancel(jobId)
-		).to.revertedWithCustomError(relay, "InvalidJobOwner");
+		).to.revertedWithCustomError(relay, "RelayInvalidJobOwner");
 	});
 
 	it("can cancel from job owner account after overall timeout", async function () {
@@ -575,7 +562,7 @@ describe("Relay - Job Cancel", function () {
 
 });
 
-describe("Relay - Job sent by User contract", function () {
+describe("Relay - Job sent by UserSample contract", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let token: Pond;
@@ -583,7 +570,7 @@ describe("Relay - Job sent by User contract", function () {
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
 	let relay: Relay;
-	let user: User;
+	let userSample: UserSample;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -592,21 +579,19 @@ describe("Relay - Job sent by User contract", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Relay = await ethers.getContractFactory("Relay");
-		const relayContract = await upgrades.deployProxy(
+		relay = await upgrades.deployProxy(
 			Relay,
 			[addrs[0], [image1, image2]],
 			{
@@ -621,17 +606,15 @@ describe("Relay - Job sent by User contract", function () {
 					1000
 				]
 			},
-		);
-		relay = getRelay(relayContract.target as string, signers[0]);
+		) as unknown as Relay;
 
 		const timestamp = await time.latest() * 1000;
 		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
 		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
 	
-		const User = await ethers.getContractFactory("User");
-		const userContract = await User.deploy(relay);
-		user = getUser(userContract.target as string, signers[0]);		
+		const UserSample = await ethers.getContractFactory("UserSample");
+		userSample = await UserSample.deploy(relay) as unknown as UserSample;	
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -643,7 +626,7 @@ describe("Relay - Job sent by User contract", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 100,
 			callbackDeposit = parseUnits("1");	// 1 eth
-		await user.relayJob(
+		await userSample.relayJob(
 			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, 
 			{value: callbackDeposit}
 		);
@@ -655,7 +638,7 @@ describe("Relay - Job sent by User contract", function () {
 		
 		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(user, "CalledBack").and.to.emit(relay, "JobResponded");
+		await expect(tx).to.emit(userSample, "CalledBack").and.to.emit(relay, "JobResponded");
 	});
 
 	it("can submit response but fails to execute callback due to less callbackDeposit", async function () {
@@ -665,7 +648,7 @@ describe("Relay - Job sent by User contract", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 100,
 			callbackDeposit = 1;	// 1 wei
-		await user.relayJob(
+		await userSample.relayJob(
 			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, 
 			{value: callbackDeposit}
 		);
@@ -677,7 +660,7 @@ describe("Relay - Job sent by User contract", function () {
 
 		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(relay, "JobResponded").and.to.not.emit(user, "CalledBack");
+		await expect(tx).to.emit(relay, "JobResponded").and.to.not.emit(userSample, "CalledBack");
 	});
 
 });

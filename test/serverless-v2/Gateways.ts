@@ -4,7 +4,6 @@ import { BytesLike, Signer, ZeroAddress, ZeroHash, keccak256, solidityPacked, Wa
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Gateways, Pond } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { getAttestationVerifier, getGateways, getPond } from "../../utils/typechainConvertor";
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -43,12 +42,11 @@ describe("Gateways - Init", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[13]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		token = addrs[1];
 	});
@@ -103,7 +101,7 @@ describe("Gateways - Init", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token, 600]
 			},
-		)).to.be.revertedWithCustomError(Gateways, "ZeroAddressAdmin");
+		)).to.be.revertedWithCustomError(Gateways, "GatewaysZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -181,17 +179,16 @@ describe("Gateways - Verify", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		token = addrs[1];
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -199,8 +196,7 @@ describe("Gateways - Verify", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -231,21 +227,19 @@ describe("Gateways - Global chains", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -253,8 +247,7 @@ describe("Gateways - Global chains", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 	});
 
@@ -292,11 +285,11 @@ describe("Gateways - Global chains", function () {
 		let chainIds: any = [];
 		let reqChains: any = [];
 		await expect(gateways.addChainGlobal(chainIds, reqChains))
-			.to.be.revertedWithCustomError(gateways, "InvalidLength");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidLength");
 
 		chainIds = [1];
 		await expect(gateways.addChainGlobal(chainIds, reqChains))
-			.to.be.revertedWithCustomError(gateways, "InvalidLength");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidLength");
 	});
 
 	it("can remove global chain", async function () {
@@ -317,7 +310,7 @@ describe("Gateways - Global chains", function () {
 	it("cannot execute remove global chain with empty chain array", async function () {
 		let chainIds: any = [];
 		await expect(gateways.removeChainGlobal(chainIds))
-			.to.be.revertedWithCustomError(gateways, "InvalidLength");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidLength");
 	});
 
 });
@@ -343,21 +336,19 @@ describe("Gateways - Global chains", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -365,8 +356,7 @@ describe("Gateways - Global chains", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		let chainIds = [1, 56];
 		reqChains = [
@@ -409,25 +399,25 @@ describe("Gateways - Global chains", function () {
 	it("cannot add chains without gateway operator", async function () {
 		let chainIds = [56];
 		await expect(gateways.addChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 	});
 
 	it("cannot execute add chains with empty chain array", async function () {
 		let chainIds: any = [];
 		await expect(gateways.connect(signers[1]).addChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "EmptyRequestedChains");
+			.to.be.revertedWithCustomError(gateways, "GatewaysEmptyRequestedChains");
 	});
 
 	it("cannot add chains that are not supported globally", async function () {
 		let chainIds = [137];
 		await expect(gateways.connect(signers[1]).addChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "UnsupportedChain");
+			.to.be.revertedWithCustomError(gateways, "GatewaysUnsupportedChain");
 	});
 
 	it("cannot add chains that already exists", async function () {
 		let chainIds = [1];
 		await expect(gateways.connect(signers[1]).addChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "ChainAlreadyExists").withArgs(1);
+			.to.be.revertedWithCustomError(gateways, "GatewaysChainAlreadyExists").withArgs(1);
 	});
 
 
@@ -443,19 +433,19 @@ describe("Gateways - Global chains", function () {
 	it("cannot remove chain without gateway operator", async function () {
 		let chainIds = [1];
 		await expect(gateways.removeChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 	});
 
 	it("cannot execute remove chains with empty chain array", async function () {
 		let chainIds: any = [];
 		await expect(gateways.connect(signers[1]).removeChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "EmptyRequestedChains");
+			.to.be.revertedWithCustomError(gateways, "GatewaysEmptyRequestedChains");
 	});
 
 	it("cannot remove chain that hasn't been added", async function () {
 		let chainIds = [56];
 		await expect(gateways.connect(signers[1]).removeChains(pubkeys[15], chainIds))
-			.to.be.revertedWithCustomError(gateways, "ChainNotFound").withArgs(56);
+			.to.be.revertedWithCustomError(gateways, "GatewaysChainNotFound").withArgs(56);
 	});
 
 });
@@ -476,21 +466,19 @@ describe("Gateways - Register gateway", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -498,8 +486,7 @@ describe("Gateways - Register gateway", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		let chainIds = [1];
 		let reqChains = [
@@ -538,7 +525,7 @@ describe("Gateways - Register gateway", function () {
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
 		await expect(gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0))
-			.to.be.revertedWithCustomError(gateways, "GatewayAlreadyExists");
+			.to.be.revertedWithCustomError(gateways, "GatewaysGatewayAlreadyExists");
 	});
 
 	it("cannot register gateway with chain id not added globally", async function () {
@@ -549,7 +536,7 @@ describe("Gateways - Register gateway", function () {
 		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
 
 		await expect(gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, 0))
-			.to.be.revertedWithCustomError(gateways, "UnsupportedChain");
+			.to.be.revertedWithCustomError(gateways, "GatewaysUnsupportedChain");
 	});
 
 	it('cannot complete deregister gateway without initiating deregistration', async function () {
@@ -562,7 +549,7 @@ describe("Gateways - Register gateway", function () {
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
 		await expect(gateways.connect(signers[1]).completeDegistration(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewayDeregisterNotInitiated");
+			.to.be.revertedWithCustomError(gateways, "GatewaysDeregisterNotInitiated");
 	});
 
 	it('can initiate deregister gateway', async function () {
@@ -590,7 +577,7 @@ describe("Gateways - Register gateway", function () {
 		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, [1], signedDigest, 0);
 
 		await expect(gateways.connect(signers[0]).deregisterGateway(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 	});
 
 	it('cannot initiate deregister twice', async function () {
@@ -604,7 +591,7 @@ describe("Gateways - Register gateway", function () {
 		await gateways.connect(signers[1]).deregisterGateway(pubkeys[15]);
 
 		await expect(gateways.connect(signers[1]).deregisterGateway(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewayDeregisterAlreadyInitiated");
+			.to.be.revertedWithCustomError(gateways, "GatewaysDeregisterAlreadyInitiated");
 	});
 
 	it('cannot complete deregister gateway before timeout', async function () {
@@ -619,7 +606,7 @@ describe("Gateways - Register gateway", function () {
 		await gateways.connect(signers[1]).deregisterGateway(pubkeys[15]);
 
 		await expect(gateways.connect(signers[1]).completeDegistration(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "DeregisterTimePending");
+			.to.be.revertedWithCustomError(gateways, "GatewaysDeregisterTimePending");
 	});
 
 	it('can complete deregister gateway', async function () {
@@ -662,7 +649,7 @@ describe("Gateways - Register gateway", function () {
 
 		await time.increase(700);
 		await expect(gateways.connect(signers[0]).completeDegistration(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 	});
 
 });
@@ -683,21 +670,19 @@ describe("Gateways - Staking", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -705,8 +690,7 @@ describe("Gateways - Staking", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		let chainIds = [1];
 		let reqChains = [
@@ -734,7 +718,7 @@ describe("Gateways - Staking", function () {
 	it("cannot stake without gateway operator", async function () {
 		let amount = 20;
 		await expect(gateways.connect(signers[0]).addGatewayStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 	});
 
 	it("can stake", async function () {
@@ -759,32 +743,32 @@ describe("Gateways - Staking", function () {
 		await gateways.connect(signers[1]).deregisterGateway(pubkeys[15]);
 
 		await expect(gateways.connect(signers[1]).removeGatewayStake(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewayDeregisterAlreadyInitiated");
+			.to.be.revertedWithCustomError(gateways, "GatewaysDeregisterAlreadyInitiated");
 	});
 
 	it("cannot initiate unstake twice", async function () {
 		await gateways.connect(signers[1]).removeGatewayStake(pubkeys[15]);
 
 		await expect(gateways.connect(signers[1]).removeGatewayStake(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewayStakeRemoveAlreadyInitiated");
+			.to.be.revertedWithCustomError(gateways, "GatewaysStakeRemoveAlreadyInitiated");
 	});
 
 	it("cannot initiate unstake without gateway operator", async function () {
 		await expect(gateways.connect(signers[0]).removeGatewayStake(pubkeys[15]))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 		
 	});
 
 	it("cannot complete unstake without initiating unstake", async function () {
 		await expect(gateways.connect(signers[1]).completeRemoveGatewayStake(pubkeys[15], 10))
-			.to.be.revertedWithCustomError(gateways, "InvalidStatus");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidStatus");
 	});
 
 	it("cannot complete unstake before timeout", async function () {
 		await gateways.connect(signers[1]).removeGatewayStake(pubkeys[15]);
 
 		await expect(gateways.connect(signers[1]).completeRemoveGatewayStake(pubkeys[15], 10))
-			.to.be.revertedWithCustomError(gateways, "UnstakeTimePending");
+			.to.be.revertedWithCustomError(gateways, "GatewaysUnstakeTimePending");
 	});
 
 	it("cannot complete unstake with zero amount", async function () {
@@ -792,7 +776,7 @@ describe("Gateways - Staking", function () {
 
 		await time.increase(700);
 		await expect(gateways.connect(signers[1]).completeRemoveGatewayStake(pubkeys[15], 0))
-			.to.be.revertedWithCustomError(gateways, "InvalidAmount");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidAmount");
 	});
 
 	it("cannot complete unstake without gateway operator", async function () {
@@ -800,7 +784,7 @@ describe("Gateways - Staking", function () {
 
 		await time.increase(700);
 		await expect(gateways.connect(signers[0]).completeRemoveGatewayStake(pubkeys[15], 5))
-			.to.be.revertedWithCustomError(gateways, "InvalidGatewayOperator");
+			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGatewayOperator");
 		
 	});
 

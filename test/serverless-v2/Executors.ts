@@ -2,9 +2,8 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Pond } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Gateways, Jobs, Pond } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { getAttestationVerifier, getExecutors, getGateways, getJobs, getPond } from "../../utils/typechainConvertor";
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -43,12 +42,11 @@ describe("Executors - Init", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[13]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		token = addrs[1];
 	});
@@ -106,7 +104,7 @@ describe("Executors - Init", function () {
 					constructorArgs: [attestationVerifier.target, 600, token]
 				},
 			)
-		).to.be.revertedWithCustomError(Executors, "ZeroAddressAdmin");
+		).to.be.revertedWithCustomError(Executors, "ExecutorsZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -184,17 +182,16 @@ describe("Executors - Verify", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		token = addrs[1];
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image2, image3]],
 			{
@@ -202,8 +199,7 @@ describe("Executors - Verify", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -260,21 +256,19 @@ describe("Executors - Register executor", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image2, image3]],
 			{
@@ -282,8 +276,7 @@ describe("Executors - Register executor", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -309,7 +302,7 @@ describe("Executors - Register executor", function () {
 		executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
 		await expect(executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
-			.to.revertedWithCustomError(executors, "ExecutorAlreadyExists");
+			.to.revertedWithCustomError(executors, "ExecutorsExecutorAlreadyExists");
 	});
 
 	it('can deregister executor without active jobs', async function () {
@@ -330,7 +323,7 @@ describe("Executors - Register executor", function () {
 
 	it('can deregister executor with active jobs', async function () {
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		let gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -338,11 +331,10 @@ describe("Executors - Register executor", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		let gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		let jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -355,8 +347,7 @@ describe("Executors - Register executor", function () {
 					1
 				]
 			},
-		);
-		let jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 
@@ -414,12 +405,12 @@ describe("Executors - Register executor", function () {
 		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
 		await expect(executors.deregisterExecutor(pubkeys[15]))
-			.to.revertedWithCustomError(executors, "InvalidExecutorOperator");
+			.to.revertedWithCustomError(executors, "ExecutorsInvalidExecutorOperator");
 	});
 
 	it('cannot deregister executor twice', async function () {
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		let gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -427,11 +418,10 @@ describe("Executors - Register executor", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		let gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		let jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -444,8 +434,7 @@ describe("Executors - Register executor", function () {
 					1
 				]
 			},
-		);
-		let jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 
@@ -489,7 +478,7 @@ describe("Executors - Register executor", function () {
 		await executors.connect(signers[1]).deregisterExecutor(pubkeys[16]);
 
 		await expect(executors.connect(signers[1]).deregisterExecutor(pubkeys[16]))
-			.to.revertedWithCustomError(executors, "AlreadyDeregistered");
+			.to.revertedWithCustomError(executors, "ExecutorsAlreadyDeregistered");
 	});
 
 });
@@ -510,21 +499,19 @@ describe("Executors - Staking", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Pond = await ethers.getContractFactory("Pond");
-        const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
-        });
-        token = getPond(pondContract.target as string, signers[0]);
+        }) as unknown as Pond;
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image2, image3]],
 			{
@@ -532,8 +519,7 @@ describe("Executors - Staking", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 
 		await token.transfer(addrs[1], 100000);
 		await token.connect(signers[1]).approve(executors.target, 10000);
@@ -562,13 +548,13 @@ describe("Executors - Staking", function () {
 	it("cannot stake zero amount", async function () {
 		let amount = 0;
 		await expect(executors.connect(signers[1]).addExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "InvalidAmount");
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidAmount");
 	});
 
 	it("cannot stake without executor operator", async function () {
 		let amount = 20;
 		await expect(executors.addExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "InvalidExecutorOperator");
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidExecutorOperator");
 	});
 
 	it("can unstake if no active jobs", async function () {
@@ -585,18 +571,18 @@ describe("Executors - Staking", function () {
 	it("cannot unstake zero amount", async function () {
 		let amount = 0;
 		await expect(executors.connect(signers[1]).removeExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "InvalidAmount");
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidAmount");
 	});
 
 	it("cannot unstake without executor operator", async function () {
 		let amount = 10;
 		await expect(executors.removeExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "InvalidExecutorOperator");
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidExecutorOperator");
 	});
 
 	it('can unstake with active jobs', async function () {
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		let gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -604,11 +590,10 @@ describe("Executors - Staking", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		let gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		let jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -621,8 +606,7 @@ describe("Executors - Staking", function () {
 					1
 				]
 			},
-		);
-		let jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 

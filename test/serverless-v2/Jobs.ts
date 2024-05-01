@@ -4,8 +4,6 @@ import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } fro
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Gateways, Jobs, Pond } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { getAttestationVerifier, getExecutors, getGateways, getJobs, getPond } from '../../utils/typechainConvertor';
-
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -114,7 +112,7 @@ describe("Jobs - Init", function () {
 					]
 				},
 			)
-		).to.be.revertedWithCustomError(Jobs, "ZeroAddressAdmin");
+		).to.be.revertedWithCustomError(Jobs, "JobsZeroAddressAdmin");
 	});
 
 	it("upgrades", async function () {
@@ -182,7 +180,7 @@ describe("Jobs - Init", function () {
 
 	it("can set gateway contract only with admin role", async function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		const jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateway, executors],
 			{
@@ -195,8 +193,7 @@ describe("Jobs - Init", function () {
 					3
 				]
 			},
-		);
-		const jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 		
 		await expect(jobs.connect(signers[1]).setGatewaysContract(addrs[1]))
 			.to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
@@ -205,7 +202,7 @@ describe("Jobs - Init", function () {
 
 	it("can set executor contract only with admin role", async function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		const jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateway, executors],
 			{
@@ -218,8 +215,7 @@ describe("Jobs - Init", function () {
 					3
 				]
 			},
-		);
-		const jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 		
 		await expect(jobs.connect(signers[1]).setExecutorsContract(addrs[1]))
 			.to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
@@ -245,21 +241,19 @@ describe("Jobs - Relay", function () {0
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -267,11 +261,10 @@ describe("Jobs - Relay", function () {0
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image4, image5, image6, image7]],
 			{
@@ -279,11 +272,10 @@ describe("Jobs - Relay", function () {0
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -296,8 +288,7 @@ describe("Jobs - Relay", function () {0
 					3
 				]
 			},
-		);
-		jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 
@@ -378,7 +369,7 @@ describe("Jobs - Relay", function () {0
 
 		await time.increase(1000);
 		await expect(jobs.connect(signers[15]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner))
-			.to.be.revertedWithCustomError(jobs, "RelayTimeOver");
+			.to.be.revertedWithCustomError(jobs, "JobsRelayTimeOver");
 	});
 
 	it("cannot relay job with wrong sequence id", async function () {
@@ -392,7 +383,7 @@ describe("Jobs - Relay", function () {0
 		let signedDigest = await createRelayJobSignature(addrs[1], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
 
 		await expect(jobs.connect(signers[15]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner))
-			.to.be.revertedWithCustomError(jobs, "InvalidSequenceId");
+			.to.be.revertedWithCustomError(jobs, "JobsInvalidSequenceId");
 	});
 
 	it("cannot relay a job twice with same job id", async function () {
@@ -407,7 +398,7 @@ describe("Jobs - Relay", function () {0
 		await jobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
 
 		await expect(jobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner))
-			.to.be.revertedWithCustomError(jobs, "JobAlreadyRelayed");
+			.to.be.revertedWithCustomError(jobs, "JobsJobAlreadyRelayed");
 	});
 
 	it("cannot relay job with unsupported chain id", async function () {
@@ -421,7 +412,7 @@ describe("Jobs - Relay", function () {0
 		let signedDigest = await createRelayJobSignature(addrs[1], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
 
 		await expect(jobs.connect(signers[15]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner))
-			.to.be.revertedWithCustomError(jobs, "UnsupportedChain");
+			.to.be.revertedWithCustomError(jobs, "JobsUnsupportedChain");
 	});
 
 	it("cannot relay job when a minimum no. of executor nodes are not available", async function () {
@@ -461,7 +452,7 @@ describe("Jobs - Relay", function () {0
 
 		// relay again
 		await expect(jobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner))
-			.to.be.revertedWithCustomError(jobs, "JobMarkedEndedAsResourceUnavailable");
+			.to.be.revertedWithCustomError(jobs, "JobsJobMarkedEndedAsResourceUnavailable");
 	});
 
 	it("cannot relay job after all the executors are fully occupied", async function () {
@@ -537,21 +528,19 @@ describe("Jobs - Output", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -559,11 +548,10 @@ describe("Jobs - Output", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image4, image5, image6, image7]],
 			{
@@ -571,11 +559,10 @@ describe("Jobs - Output", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -588,8 +575,7 @@ describe("Jobs - Output", function () {
 					3
 				]
 			},
-		);
-		jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 
@@ -665,7 +651,7 @@ describe("Jobs - Output", function () {
 		let signedDigest = await createOutputSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[17]);
 
 		await expect(jobs.submitOutput(signedDigest, jobId, output, totalTime, errorCode))
-			.to.be.revertedWithCustomError(jobs, "ExecutionTimeOver"); 
+			.to.be.revertedWithCustomError(jobs, "JobsExecutionTimeOver"); 
 	});
 
 	it("cannot submit output twice", async function () {
@@ -679,7 +665,7 @@ describe("Jobs - Output", function () {
 		await expect(tx).to.emit(jobs, "JobResponded"); 
 
 		let tx2 = jobs.connect(signers[1]).submitOutput(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx2).to.revertedWithCustomError(jobs, "ExecutorAlreadySubmittedOutput");
+		await expect(tx2).to.revertedWithCustomError(jobs, "JobsExecutorAlreadySubmittedOutput");
 	});
 
 	it("cannot submit output from unselected executor node", async function () {
@@ -696,7 +682,7 @@ describe("Jobs - Output", function () {
 			errorCode = 0;
 		signedDigest = await createOutputSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[20]);
 		let tx = jobs.connect(signers[1]).submitOutput(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.revertedWithCustomError(jobs, "NotSelectedExecutor"); 
+		await expect(tx).to.revertedWithCustomError(jobs, "JobsNotSelectedExecutor"); 
 	});
 
 	it("can submit output after executor initiates unstake", async function () {
@@ -756,21 +742,19 @@ describe("Jobs - Slashing", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -778,11 +762,10 @@ describe("Jobs - Slashing", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image4, image5, image6, image7]],
 			{
@@ -790,11 +773,10 @@ describe("Jobs - Slashing", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -807,8 +789,7 @@ describe("Jobs - Slashing", function () {
 					3
 				]
 			},
-		);
-		jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 
@@ -873,13 +854,13 @@ describe("Jobs - Slashing", function () {
 	it("cannot slash non-existing job", async function () {
 		let jobId = 2;
 		let tx = jobs.slashOnExecutionTimeout(jobId);
-		await expect(tx).to.revertedWithCustomError(jobs, "InvalidJob");
+		await expect(tx).to.revertedWithCustomError(jobs, "JobsInvalidJob");
 	});
 
 	it("cannot slash before deadline over", async function () {
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1);
 		let tx = jobs.slashOnExecutionTimeout(jobId);
-		await expect(tx).to.revertedWithCustomError(jobs, "DeadlineNotOver");
+		await expect(tx).to.revertedWithCustomError(jobs, "JobsDeadlineNotOver");
 	});
 
 	it("cannot slash twice", async function () {
@@ -889,7 +870,7 @@ describe("Jobs - Slashing", function () {
 		await expect(tx).to.emit(jobs, "SlashedOnExecutionTimeout");
 
 		let tx2 = jobs.slashOnExecutionTimeout(jobId);
-		await expect(tx2).to.revertedWithCustomError(jobs, "InvalidJob");
+		await expect(tx2).to.revertedWithCustomError(jobs, "JobsInvalidJob");
 	});
 
 	it("can slash after executor initiates unstake", async function () {
@@ -943,21 +924,19 @@ describe("Jobs - Reassign Gateway", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		const pondContract = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
-		});
-		token = getPond(pondContract.target as string, signers[0]);
+		}) as unknown as Pond;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
-		const attestationVerifierContract = await upgrades.deployProxy(
+		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
-		);
-		attestationVerifier = getAttestationVerifier(attestationVerifierContract.target as string, signers[0]);
+		) as unknown as AttestationVerifier;
 
 		const Gateways = await ethers.getContractFactory("Gateways");
-		const gatewaysContract = await upgrades.deployProxy(
+		gateways = await upgrades.deployProxy(
 			Gateways,
 			[addrs[0], [image2, image3]],
 			{
@@ -965,11 +944,10 @@ describe("Jobs - Reassign Gateway", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
 			},
-		);
-		gateways = getGateways(gatewaysContract.target as string, signers[0]);
+		) as unknown as Gateways;
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executorsContract = await upgrades.deployProxy(
+		executors = await upgrades.deployProxy(
 			Executors,
 			[addrs[0], [image4, image5, image6, image7]],
 			{
@@ -977,11 +955,10 @@ describe("Jobs - Reassign Gateway", function () {
 				initializer: "initialize",
 				constructorArgs: [attestationVerifier.target, 600, token.target]
 			},
-		);
-		executors = getExecutors(executorsContract.target as string, signers[0]);
+		) as unknown as Executors;
 
 		const Jobs = await ethers.getContractFactory("Jobs");
-		const jobsContract = await upgrades.deployProxy(
+		jobs = await upgrades.deployProxy(
 			Jobs,
 			[addrs[0], gateways.target, executors.target],
 			{
@@ -994,8 +971,7 @@ describe("Jobs - Reassign Gateway", function () {
 					3
 				]
 			},
-		);
-		jobs = getJobs(jobsContract.target as string, signers[0]);
+		) as unknown as Jobs;
 
 		await executors.setJobsContract(jobs.target);
 
@@ -1061,7 +1037,7 @@ describe("Jobs - Reassign Gateway", function () {
 
 		let signedDigest = await createReassignGatewaySignature(addrs[1], jobId, gatewayKeyOld, sequenceId, jobRequestTimestamp, wallets[16]);
 		let tx = jobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp);
-		await expect(tx).to.revertedWithCustomError(jobs, "InvalidSequenceId");
+		await expect(tx).to.revertedWithCustomError(jobs, "JobsInvalidSequenceId");
 	});
 
 	it("cannot reassign after relay time is over", async function () {
@@ -1074,7 +1050,7 @@ describe("Jobs - Reassign Gateway", function () {
 		
 		await time.increase(1000);
 		let tx = jobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp);
-		await expect(tx).to.revertedWithCustomError(jobs, "RelayTimeOver");
+		await expect(tx).to.revertedWithCustomError(jobs, "JobsRelayTimeOver");
 	});
 
 	it("cannot reassign new gateway if job is marked as ended due to unavailable executors", async function () {
@@ -1098,7 +1074,7 @@ describe("Jobs - Reassign Gateway", function () {
 		
 		// reassign new gateway
 		await expect(jobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp))
-			.to.be.revertedWithCustomError(jobs, "JobMarkedEndedAsResourceUnavailable");
+			.to.be.revertedWithCustomError(jobs, "JobsJobMarkedEndedAsResourceUnavailable");
 	});
 
 });
