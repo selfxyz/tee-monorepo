@@ -130,6 +130,24 @@ contract Jobs is
     // jobKey => selectedExecutorAddress => hasExecuted
     mapping(uint256 => mapping(address => bool)) public hasExecutedJob;
 
+    bytes32 private constant DOMAIN_SEPARATOR = 
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.Jobs"),
+                keccak256("1")
+            )
+        );
+    
+    bytes32 private constant RELAY_JOB_TYPEHASH = 
+        keccak256("RelayJob(address operator,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner)");
+
+    bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
+        keccak256("SubmitOutput(address operator,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
+
+    bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
+        keccak256("ReassignGateway(address operator,uint256 jobId,address gatewayKeyOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
+
     event JobRelayed(
         uint256 indexed jobId,
         bytes32 codehash,
@@ -189,17 +207,20 @@ contract Jobs is
             revert UnsupportedChain();
 
         // signature check
-        bytes32 digest = keccak256(
-            abi.encodePacked(
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                RELAY_JOB_TYPEHASH,
+                _msgSender(),
                 _jobId,
                 _codehash,
-                _codeInputs,
+                keccak256(_codeInputs),
                 _deadline,
                 _jobRequestTimestamp,
                 _sequenceId,
                 _jobOwner
             )
         );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);
@@ -237,9 +258,17 @@ contract Jobs is
             revert ExecutionTimeOver();
 
         // signature check
-        bytes32 digest = keccak256(
-            abi.encodePacked(_jobId, _output, _totalTime, _errorCode)
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                SUBMIT_OUTPUT_TYPEHASH,
+                _msgSender(),
+                _jobId,
+                keccak256(_output),
+                _totalTime,
+                _errorCode
+            )
         );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         executors.allowOnlyVerified(signer);
@@ -380,7 +409,17 @@ contract Jobs is
         jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        bytes32 digest = keccak256(abi.encodePacked(_jobId, _gatewayKeyOld, _sequenceId, _jobRequestTimestamp));
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                REASSIGN_GATEWAY_TYPEHASH,
+                _msgSender(),
+                _jobId,
+                _gatewayKeyOld,
+                _sequenceId,
+                _jobRequestTimestamp
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         gateways.allowOnlyVerified(signer);

@@ -196,6 +196,18 @@ contract Relay is
 
     uint256 public jobCount;
 
+    bytes32 private constant DOMAIN_SEPARATOR = 
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.Relay"),
+                keccak256("1")
+            )
+        );
+    
+    bytes32 private constant JOB_RESPONSE_TYPEHASH = 
+        keccak256("JobResponse(address operator,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
+
     event JobRelayed(
         uint256 indexed jobId,
         bytes32 codehash,
@@ -266,14 +278,17 @@ contract Relay is
             revert OverallTimeoutOver();
 
         // signature check
-        bytes32 digest = keccak256(
-            abi.encodePacked(
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                JOB_RESPONSE_TYPEHASH,
+                _msgSender(),
                 _jobId,
-                _output,
+                keccak256(_output),
                 _totalTime,
                 _errorCode
             )
         );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);

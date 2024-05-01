@@ -116,6 +116,18 @@ contract Executors is
     // enclaveKey => Execution node details
     mapping(address => Executor) public executors;
 
+    bytes32 private constant DOMAIN_SEPARATOR = 
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.Executors"),
+                keccak256("1")
+            )
+        );
+    
+    bytes32 private constant REGISTER_TYPEHASH = 
+        keccak256("Register(address operator,uint256 jobCapacity)");
+
     error InvalidExecutorOperator();
 
     modifier onlyExecutorOperator(bytes memory _enclavePubKey) {
@@ -170,7 +182,14 @@ contract Executors is
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
         // signature check
-        bytes32 digest = keccak256(abi.encodePacked(_jobCapacity));
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                REGISTER_TYPEHASH,
+                _msgSender(),
+                _jobCapacity
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);

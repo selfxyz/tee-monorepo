@@ -113,6 +113,18 @@ contract Gateways is
     // enclaveAddress => Gateway
     mapping(address => Gateway) public gateways;
 
+    bytes32 private constant DOMAIN_SEPARATOR = 
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.Gateways"),
+                keccak256("1")
+            )
+        );
+    
+    bytes32 private constant REGISTER_TYPEHASH = 
+        keccak256("Register(address operator,uint256[] chainIds)");
+
     error InvalidGatewayOperator();
 
     modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
@@ -234,7 +246,14 @@ contract Gateways is
         uint256[] memory _chainIds,
         bytes memory _signature
     ) internal view {
-        bytes32 digest = keccak256(abi.encodePacked(_chainIds));
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                REGISTER_TYPEHASH,
+                _msgSender(),
+                keccak256(abi.encodePacked(_chainIds))
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);
