@@ -23,8 +23,8 @@ contract Relay is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    error InvalidToken();
-    error InvalidGlobalTimeouts();
+    error RelayInvalidToken();
+    error RelayInvalidGlobalTimeouts();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
@@ -40,11 +40,11 @@ contract Relay is
         _disableInitializers();
         
         if(address(_token) == address(0))
-            revert InvalidToken();
+            revert RelayInvalidToken();
         TOKEN = _token;
 
         if(_globalMinTimeout >= _globalMaxTimeout)
-            revert InvalidGlobalTimeouts();
+            revert RelayInvalidGlobalTimeouts();
         GLOBAL_MIN_TIMEOUT = _globalMinTimeout;
         GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
         OVERALL_TIMEOUT = _overallTimeout;
@@ -72,14 +72,14 @@ contract Relay is
 
     //-------------------------------- Initializer start --------------------------------//
 
-    error ZeroAddressAdmin();
+    error RelayZeroAddressAdmin();
 
     function initialize(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
         if(_admin == address(0))
-            revert ZeroAddressAdmin();
+            revert RelayZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -118,8 +118,8 @@ contract Relay is
 
     event GatewayDeregistered(address indexed enclaveKey);
 
-    error GatewayAlreadyExists();
-    error InvalidGatewayOperator();
+    error RelayGatewayAlreadyExists();
+    error RelayInvalidGatewayOperator();
 
     //-------------------------------- internal functions start --------------------------------//
 
@@ -137,7 +137,7 @@ contract Relay is
         
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gatewayOperators[enclaveKey] != address(0))
-            revert GatewayAlreadyExists();
+            revert RelayGatewayAlreadyExists();
         gatewayOperators[enclaveKey] = _msgSender();
 
         emit GatewayRegistered(enclaveKey, _msgSender());
@@ -148,7 +148,7 @@ contract Relay is
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gatewayOperators[enclaveKey] != _msgSender())
-            revert InvalidGatewayOperator();
+            revert RelayInvalidGatewayOperator();
         delete gatewayOperators[enclaveKey];
 
         _revokeEnclaveKey(enclaveKey);
@@ -229,11 +229,11 @@ contract Relay is
 
     event JobCancelled(uint256 indexed jobId);
 
-    error InvalidUserTimeout();
-    error JobNotExists();
-    error OverallTimeoutOver();
-    error InvalidJobOwner();
-    error OverallTimeoutNotOver();
+    error RelayInvalidUserTimeout();
+    error RelayJobNotExists();
+    error RelayOverallTimeoutOver();
+    error RelayInvalidJobOwner();
+    error RelayOverallTimeoutNotOver();
 
     //-------------------------------- internal functions start -------------------------------//
 
@@ -247,7 +247,7 @@ contract Relay is
         uint256 _callbackDeposit
     ) internal {
         if(_userTimeout <= (GLOBAL_MIN_TIMEOUT * 1000) || _userTimeout >= (GLOBAL_MAX_TIMEOUT * 1000))
-            revert InvalidUserTimeout();
+            revert RelayInvalidUserTimeout();
 
         if (jobCount + 1 == (block.chainid + 1) << 192)
             jobCount = block.chainid << 192;
@@ -271,11 +271,11 @@ contract Relay is
         uint8 _errorCode
     ) internal {
         if(jobs[_jobId].jobOwner == address(0))
-            revert JobNotExists();
+            revert RelayJobNotExists();
 
         // check time case
         if(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT)
-            revert OverallTimeoutOver();
+            revert RelayOverallTimeoutOver();
 
         // signature check
         bytes32 hashStruct = keccak256(
@@ -306,11 +306,11 @@ contract Relay is
         uint256 _jobId
     ) internal {
         if(jobs[_jobId].jobOwner != _msgSender())
-            revert InvalidJobOwner();
+            revert RelayInvalidJobOwner();
             
         // check time case
         if(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT)
-            revert OverallTimeoutNotOver();
+            revert RelayOverallTimeoutNotOver();
 
         delete jobs[_jobId];
         emit JobCancelled(_jobId);

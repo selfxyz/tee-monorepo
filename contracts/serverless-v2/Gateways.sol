@@ -23,7 +23,7 @@ contract Gateways is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    error ZeroAddressToken();
+    error GatewaysZeroAddressToken();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
@@ -37,14 +37,14 @@ contract Gateways is
         _disableInitializers();
 
         if(address(_token) == address(0))
-            revert ZeroAddressToken();
+            revert GatewaysZeroAddressToken();
         TOKEN = _token;
         DEREGISTER_OR_UNSTAKE_TIMEOUT = _deregisterOrUnstakeTimeout;
     }
 
     //-------------------------------- Overrides start --------------------------------//
 
-    error ZeroAddressAdmin();
+    error GatewaysZeroAddressAdmin();
 
     function supportsInterface(
         bytes4 interfaceId
@@ -71,7 +71,7 @@ contract Gateways is
         EnclaveImage[] memory _images
     ) public initializer {
         if(_admin == address(0))
-            revert ZeroAddressAdmin();
+            revert GatewaysZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -125,12 +125,12 @@ contract Gateways is
     bytes32 private constant REGISTER_TYPEHASH = 
         keccak256("Register(address operator,uint256[] chainIds)");
 
-    error InvalidGatewayOperator();
+    error GatewaysInvalidGatewayOperator();
 
     modifier onlyGatewayOperator(bytes memory _enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].operator != _msgSender())
-            revert InvalidGatewayOperator();
+            revert GatewaysInvalidGatewayOperator();
         _;
     }
 
@@ -179,20 +179,20 @@ contract Gateways is
         uint256 chainId
     );
 
-    error GatewayAlreadyExists();
-    error UnsupportedChain();
-    error InvalidStatus();
-    error GatewayDeregisterNotInitiated();
-    error DeregisterTimePending();
-    error GatewayDeregisterAlreadyInitiated();
-    error GatewayStakeRemoveAlreadyInitiated();
-    error UnstakeTimePending();
-    error InvalidAmount();
-    error InvalidLength();
-    error EmptyRequestedChains();
-    error ChainAlreadyExists(uint256 chainId);
-    error EmptyChainlist();
-    error ChainNotFound(uint256 chainId);
+    error GatewaysGatewayAlreadyExists();
+    error GatewaysUnsupportedChain();
+    error GatewaysInvalidStatus();
+    error GatewaysDeregisterNotInitiated();
+    error GatewaysDeregisterTimePending();
+    error GatewaysDeregisterAlreadyInitiated();
+    error GatewaysStakeRemoveAlreadyInitiated();
+    error GatewaysUnstakeTimePending();
+    error GatewaysInvalidAmount();
+    error GatewaysInvalidLength();
+    error GatewaysEmptyRequestedChains();
+    error GatewaysChainAlreadyExists(uint256 chainId);
+    error GatewaysEmptyChainlist();
+    error GatewaysChainNotFound(uint256 chainId);
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -221,11 +221,11 @@ contract Gateways is
         
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].operator != address(0))
-            revert GatewayAlreadyExists();
+            revert GatewaysGatewayAlreadyExists();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             if(requestChains[_chainIds[index]].contractAddress == address(0))
-                revert UnsupportedChain();
+                revert GatewaysUnsupportedChain();
         }
 
         // check missing for validating chainIds array for multiple same chainIds
@@ -265,7 +265,7 @@ contract Gateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         // TODO: cannot call deregister initiate again
         if(gateways[enclaveKey].deregisterStartTime > 0)
-            revert GatewayDeregisterAlreadyInitiated();
+            revert GatewaysDeregisterAlreadyInitiated();
 
         gateways[enclaveKey].status = false;
         gateways[enclaveKey].deregisterStartTime = block.timestamp;
@@ -278,11 +278,11 @@ contract Gateways is
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         // if(gateways[enclaveKey].status)
-        //     revert InvalidStatus();
+        //     revert GatewaysInvalidStatus();
         if(gateways[enclaveKey].deregisterStartTime == 0)
-            revert GatewayDeregisterNotInitiated();
+            revert GatewaysDeregisterNotInitiated();
         if(block.timestamp <= gateways[enclaveKey].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
-            revert DeregisterTimePending();
+            revert GatewaysDeregisterTimePending();
 
         // TODO: return stake amount
         TOKEN.safeTransfer(_msgSender(), gateways[enclaveKey].stakeAmount);
@@ -313,9 +313,9 @@ contract Gateways is
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         // TODO: cannot remove stake if deregister initiated already
         if(gateways[enclaveKey].deregisterStartTime > 0)
-            revert GatewayDeregisterAlreadyInitiated();
+            revert GatewaysDeregisterAlreadyInitiated();
         if(gateways[enclaveKey].unstakeStartTime > 0)
-            revert GatewayStakeRemoveAlreadyInitiated();
+            revert GatewaysStakeRemoveAlreadyInitiated();
 
         gateways[enclaveKey].status = false;
         gateways[enclaveKey].unstakeStartTime = block.timestamp;
@@ -330,15 +330,15 @@ contract Gateways is
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(gateways[enclaveKey].status)
-            revert InvalidStatus();
+            revert GatewaysInvalidStatus();
         if(gateways[enclaveKey].deregisterStartTime > 0)
-            revert GatewayDeregisterAlreadyInitiated();
+            revert GatewaysDeregisterAlreadyInitiated();
         if(block.timestamp <= gateways[enclaveKey].unstakeStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
-            revert UnstakeTimePending();
+            revert GatewaysUnstakeTimePending();
 
         _amount = _amount < gateways[enclaveKey].stakeAmount ? _amount : gateways[enclaveKey].stakeAmount;
         if(_amount == 0)
-            revert InvalidAmount();
+            revert GatewaysInvalidAmount();
 
         // transfer stake
         TOKEN.safeTransfer(_msgSender(), _amount);
@@ -355,7 +355,7 @@ contract Gateways is
         RequestChain[] memory _requestChains
     ) internal {
         if(_chainIds.length == 0 || _chainIds.length != _requestChains.length)
-            revert InvalidLength();
+            revert GatewaysInvalidLength();
         for (uint256 index = 0; index < _requestChains.length; index++) {
             RequestChain memory reqChain = _requestChains[index];
             uint256 chainId = _chainIds[index];
@@ -369,7 +369,7 @@ contract Gateways is
         uint256[] memory _chainIds
     ) internal {
         if(_chainIds.length == 0)
-            revert InvalidLength();
+            revert GatewaysInvalidLength();
         for (uint256 index = 0; index < _chainIds.length; index++) {
             uint256 chainId = _chainIds[index];
             delete requestChains[chainId];
@@ -383,7 +383,7 @@ contract Gateways is
         uint256[] memory _chainIds
     ) internal {
         if(_chainIds.length == 0)
-            revert EmptyRequestedChains();
+            revert GatewaysEmptyRequestedChains();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             _addChain(
@@ -398,7 +398,7 @@ contract Gateways is
         uint256[] memory _chainIds
     ) internal {
         if(_chainIds.length == 0)
-            revert EmptyRequestedChains();
+            revert GatewaysEmptyRequestedChains();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             _removeChain(
@@ -413,13 +413,13 @@ contract Gateways is
         uint256 _chainId
     ) internal {
         if(requestChains[_chainId].contractAddress == address(0))
-            revert UnsupportedChain();
+            revert GatewaysUnsupportedChain();
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
         for (uint256 index = 0; index < chainIdList.length; index++) {
             if(chainIdList[index] == _chainId)
-                revert ChainAlreadyExists(_chainId);
+                revert GatewaysChainAlreadyExists(_chainId);
         }
         gateways[enclaveKey].chainIds.push(_chainId);
 
@@ -434,7 +434,7 @@ contract Gateways is
         uint256[] memory chainIdList = gateways[enclaveKey].chainIds;
         uint256 len = chainIdList.length;
         if(len == 0)
-            revert EmptyChainlist();
+            revert GatewaysEmptyChainlist();
 
         uint256 index = 0;
         for (; index < len; index++) {
@@ -443,7 +443,7 @@ contract Gateways is
         }
 
         if(index == len)
-            revert ChainNotFound(_chainId);
+            revert GatewaysChainNotFound(_chainId);
         if (index != len - 1)
             gateways[enclaveKey].chainIds[index] = gateways[enclaveKey].chainIds[len - 1];
 

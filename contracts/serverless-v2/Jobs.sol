@@ -21,7 +21,7 @@ contract Jobs is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    error ZeroAddressToken();
+    error JobsZeroAddressToken();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
@@ -35,7 +35,7 @@ contract Jobs is
         _disableInitializers();
 
         if(address(_token) == address(0))
-            revert ZeroAddressToken();
+            revert JobsZeroAddressToken();
         TOKEN = _token;
         RELAY_BUFFER_TIME = _relayBufferTime;
         EXECUTION_BUFFER_TIME = _executionBufferTime;
@@ -64,7 +64,7 @@ contract Jobs is
 
     //-------------------------------- Initializer start --------------------------------//
 
-    error ZeroAddressAdmin();
+    error JobsZeroAddressAdmin();
 
     function initialize(
         address _admin,
@@ -72,7 +72,7 @@ contract Jobs is
         Executors _executors
     ) public initializer {
         if(_admin == address(0))
-            revert ZeroAddressAdmin();
+            revert JobsZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -171,14 +171,14 @@ contract Jobs is
         address indexed gatewayOperator
     );
 
-    error RelayTimeOver();
-    error JobMarkedEndedAsResourceUnavailable();
-    error InvalidSequenceId();
-    error JobAlreadyRelayed();
-    error UnsupportedChain();
-    error ExecutionTimeOver();
-    error NotSelectedExecutor();
-    error ExecutorAlreadySubmittedOutput();
+    error JobsRelayTimeOver();
+    error JobsJobMarkedEndedAsResourceUnavailable();
+    error JobsInvalidSequenceId();
+    error JobsJobAlreadyRelayed();
+    error JobsUnsupportedChain();
+    error JobsExecutionTimeOver();
+    error JobsNotSelectedExecutor();
+    error JobsExecutorAlreadySubmittedOutput();
 
     //-------------------------------- internal functions start --------------------------------//
 
@@ -193,18 +193,18 @@ contract Jobs is
         address _jobOwner
     ) internal {
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
-            revert RelayTimeOver();
+            revert JobsRelayTimeOver();
         if(jobs[_jobId].isResourceUnavailable)
-            revert JobMarkedEndedAsResourceUnavailable();
+            revert JobsJobMarkedEndedAsResourceUnavailable();
         if(jobs[_jobId].execStartTime != 0)
-            revert JobAlreadyRelayed();
+            revert JobsJobAlreadyRelayed();
         if(_sequenceId != jobs[_jobId].sequenceId + 1)
-            revert InvalidSequenceId();
+            revert JobsInvalidSequenceId();
         
         // first 64 bits represent chainId
         uint256 reqChainId = _jobId >> 192;
         if(!gateways.isChainSupported(reqChainId))
-            revert UnsupportedChain();
+            revert JobsUnsupportedChain();
 
         // signature check
         bytes32 hashStruct = keccak256(
@@ -255,7 +255,7 @@ contract Jobs is
         uint8 _errorCode
     ) internal {
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
-            revert ExecutionTimeOver();
+            revert JobsExecutionTimeOver();
 
         // signature check
         bytes32 hashStruct = keccak256(
@@ -274,9 +274,9 @@ contract Jobs is
         executors.allowOnlyVerified(signer);
 
         if(!isJobExecutor(_jobId, signer))
-            revert NotSelectedExecutor();
+            revert JobsNotSelectedExecutor();
         if(hasExecutedJob[_jobId][signer])
-            revert ExecutorAlreadySubmittedOutput();
+            revert JobsExecutorAlreadySubmittedOutput();
 
         executors.updateOnSubmitOutput(signer);
         hasExecutedJob[_jobId][signer] = true;
@@ -357,8 +357,8 @@ contract Jobs is
         uint8 sequenceId
     );
 
-    error InvalidJob();
-    error DeadlineNotOver();
+    error JobsInvalidJob();
+    error JobsDeadlineNotOver();
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -367,11 +367,11 @@ contract Jobs is
         uint256 _jobId
     ) internal {
         if(jobs[_jobId].jobId == 0)
-            revert InvalidJob();
+            revert JobsInvalidJob();
 
         // check for time
         if((block.timestamp * 1000) <= (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
-            revert DeadlineNotOver();
+            revert JobsDeadlineNotOver();
 
         delete jobs[_jobId];
 
@@ -400,12 +400,12 @@ contract Jobs is
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
         // TODO: add _jobRequestTimestamp in sign to prevent replay attack
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
-            revert RelayTimeOver();
+            revert JobsRelayTimeOver();
 
         if(jobs[_jobId].isResourceUnavailable)
-            revert JobMarkedEndedAsResourceUnavailable();
+            revert JobsJobMarkedEndedAsResourceUnavailable();
         if(_sequenceId != jobs[_jobId].sequenceId + 1 || _sequenceId > 2)
-            revert InvalidSequenceId();
+            revert JobsInvalidSequenceId();
         jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check

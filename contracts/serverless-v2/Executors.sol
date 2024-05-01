@@ -26,8 +26,8 @@ contract Executors is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    error ZeroAddressToken();
-    error InvalidJobContract();
+    error ExecutorsZeroAddressToken();
+    error ExecutorsInvalidJobContract();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
@@ -40,13 +40,13 @@ contract Executors is
         _disableInitializers();
 
         if(address(_token) == address(0))
-            revert ZeroAddressToken();
+            revert ExecutorsZeroAddressToken();
         TOKEN = _token;
     }
 
     modifier onlyJobsContract() {
         if(_msgSender() != address(jobs))
-            revert InvalidJobContract();
+            revert ExecutorsInvalidJobContract();
         _;
     }
 
@@ -72,14 +72,14 @@ contract Executors is
 
     //-------------------------------- Initializer start --------------------------------//
 
-    error ZeroAddressAdmin();
+    error ExecutorsZeroAddressAdmin();
 
     function initialize(
         address _admin,
         EnclaveImage[] memory _images
     ) public initializer {
         if(_admin == address(0))
-            revert ZeroAddressAdmin();
+            revert ExecutorsZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -128,12 +128,12 @@ contract Executors is
     bytes32 private constant REGISTER_TYPEHASH = 
         keccak256("Register(address operator,uint256 jobCapacity)");
 
-    error InvalidExecutorOperator();
+    error ExecutorsInvalidExecutorOperator();
 
     modifier onlyExecutorOperator(bytes memory _enclavePubKey) {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(executors[enclaveKey].operator != _msgSender())
-            revert InvalidExecutorOperator();
+            revert ExecutorsInvalidExecutorOperator();
         _;
     }
 
@@ -161,9 +161,9 @@ contract Executors is
         uint256 remainingStakedAmount
     );
 
-    error ExecutorAlreadyExists();
-    error AlreadyDeregistered();
-    error InvalidAmount();
+    error ExecutorsExecutorAlreadyExists();
+    error ExecutorsAlreadyDeregistered();
+    error ExecutorsInvalidAmount();
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -199,7 +199,7 @@ contract Executors is
 
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(executors[enclaveKey].operator != address(0))
-            revert ExecutorAlreadyExists();
+            revert ExecutorsExecutorAlreadyExists();
         executors[enclaveKey] = Executor({
             operator: _msgSender(),
             jobCapacity: _jobCapacity,
@@ -221,7 +221,7 @@ contract Executors is
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(!executors[enclaveKey].status)
-            revert AlreadyDeregistered();
+            revert ExecutorsAlreadyDeregistered();
 
         executors[enclaveKey].status = false;
 
@@ -243,7 +243,7 @@ contract Executors is
         uint256 _amount
     ) internal {
         if(_amount == 0)
-            revert InvalidAmount();
+            revert ExecutorsInvalidAmount();
         // transfer stake
         TOKEN.safeTransferFrom(_msgSender(), address(this), _amount);
 
@@ -263,7 +263,7 @@ contract Executors is
     ) internal {
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
         if(_amount == 0 || _amount > executors[enclaveKey].stakeAmount - executors[enclaveKey].unstakeAmount)
-            revert InvalidAmount();
+            revert ExecutorsInvalidAmount();
 
         if(executors[enclaveKey].activeJobs == 0) {
             executors[enclaveKey].stakeAmount -= _amount;

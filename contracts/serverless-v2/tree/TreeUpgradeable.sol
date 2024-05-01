@@ -37,7 +37,7 @@ contract TreeUpgradeable is Initializable {
     // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.Tree")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant TreeStorageLocation = 0x425ae037969053bfe8be40daa3fbac6dc5dd18b4cbe23752b95cbe4c4aa29c00;
 
-    error InvalidInitState();
+    error TreeInvalidInitState();
 
     function _getTreeStorage() private pure returns (TreeStorage storage $) {
         assembly {
@@ -54,7 +54,7 @@ contract TreeUpgradeable is Initializable {
     function _init_tree() private {
         TreeStorage storage $ = _getTreeStorage();
         if($.nodes.length != 0)
-            revert InvalidInitState();
+            revert TreeInvalidInitState();
         // root starts from index 1
         $.nodes.push(Node(0, 0, 0));
     }
