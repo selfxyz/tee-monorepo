@@ -99,7 +99,7 @@ pub async fn gateway_epoch_state_service(
                 - epoch)
                 / time_interval;
 
-            if current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
+            if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
                 cycle_number += 1;
                 continue;
             }
