@@ -842,12 +842,14 @@ impl CommonChainClient {
         let req_chain_id = log.topics[2].into_uint().low_u64();
 
         let job_key = get_key_for_job_id(job_id, req_chain_id).await;
-        let job: Job;
-        // TODO: Handle error case, when job is older than the maintained block states
-        // scope for the read lock
-        {
-            job = self.active_jobs.read().await.get(&job_key).unwrap().clone();
+
+        let active_jobs_guard = self.active_jobs.read().await;
+        let job = active_jobs_guard.get(&job_key);
+        if job.is_none() {
+            return;
         }
+        let job = job.unwrap().clone();
+        drop(active_jobs_guard);
 
         if job.gateway_address.unwrap() != self.address {
             return;
