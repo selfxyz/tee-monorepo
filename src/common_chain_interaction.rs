@@ -245,10 +245,7 @@ impl CommonChainClient {
         let mut job: Job = job.clone();
         let req_chain_client = self.req_chain_clients[&req_chain_id].clone();
 
-        let gateway_address: Address;
-
-        // TODO: Handle error case, when job is older than the maintained block states
-        gateway_address = self
+        let gateway_address = self
             .select_gateway_for_job_id(
                 job.job_id.clone(),
                 job.starttime.as_u64(),
@@ -256,26 +253,36 @@ impl CommonChainClient {
                 job.sequence_number,
                 req_chain_client,
             )
-            .await
-            .context("Failed to select a gateway for the job")
-            .unwrap();
+            .await;
 
-        job.gateway_address = Some(gateway_address);
+        // if error message is returned, then the job is older than the maintained block states
+        match gateway_address {
+            Ok(gateway_address) => {
+                job.gateway_address = Some(gateway_address);
 
-        if gateway_address == self.address {
-            // scope for the write lock
-            {
-                self.active_jobs
-                    .write()
-                    .await
-                    .insert(job.job_key, job.clone());
+                if gateway_address == self.address {
+                    // scope for the write lock
+                    {
+                        self.active_jobs
+                            .write()
+                            .await
+                            .insert(job.job_key, job.clone());
+                    }
+                    tx.send((job, self.clone())).await.unwrap();
+                } else {
+                    self.job_relayed_slash_timer(job.clone(), tx.clone())
+                        .await
+                        .unwrap();
+                }
             }
-            tx.send((job, self.clone())).await.unwrap();
-        } else {
-            self.job_relayed_slash_timer(job.clone(), tx.clone())
-                .await
-                .unwrap();
-        }
+            Err(err) => {
+                // confirm error message
+                if err.to_string() != "Job is older than the maintained block states" {
+                    error!("Error while selecting gateway: {}", err);
+                    panic!("Error while selecting gateway: {}", err);
+                }
+            }
+        };
     }
 
     #[async_recursion]
