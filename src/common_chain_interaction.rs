@@ -272,10 +272,7 @@ impl CommonChainClient {
     ) {
         let req_chain_client = self.req_chain_clients[&job.req_chain_id].clone();
 
-        let gateway_address: Address;
-
-        // TODO: Handle error case, when job is older than the maintained block states
-        gateway_address = self
+        let gateway_address = self
             .select_gateway_for_job_id(
                 job.clone(),
                 job.job_id.clone(),
@@ -284,29 +281,40 @@ impl CommonChainClient {
                 job.sequence_number,
                 req_chain_client,
             )
-            .await
-            .context("Failed to select a gateway for the job")
-            .unwrap();
+            .await;
 
-        if gateway_address == Address::zero() {
-            return;
-        }
-        job.gateway_address = Some(gateway_address);
-
-        if gateway_address == self.address {
-            // scope for the write lock
-            {
-                self.active_jobs
-                    .write()
-                    .unwrap()
-                    .insert(job.job_key, job.clone());
+        // if error message is returned, then the job is older than the maintained block states
+        match gateway_address {
+            Ok(gateway_address) => {
+                job.gateway_address = Some(gateway_address);
+                
+                if gateway_address == Address::zero() {
+                    return;
+                }
+                
+                if gateway_address == self.address {
+                    // scope for the write lock
+                    {
+                        self.active_jobs
+                            .write()
+                            .unwrap()
+                            .insert(job.job_key, job.clone());
+                    }
+                    tx.send((job, self.clone())).await.unwrap();
+                } else {
+                    self.job_relayed_slash_timer(job.clone(), tx.clone())
+                        .await
+                        .unwrap();
+                }
             }
-            tx.send((job, self.clone())).await.unwrap();
-        } else {
-            self.job_relayed_slash_timer(job.clone(), tx.clone())
-                .await
-                .unwrap();
-        }
+            Err(err) => {
+                // confirm error message
+                if err.to_string() != "Job is older than the maintained block states" {
+                    error!("Error while selecting gateway: {}", err);
+                    panic!("Error while selecting gateway: {}", err);
+                }
+            }
+        };
     }
 
     #[async_recursion]
@@ -881,12 +889,14 @@ impl CommonChainClient {
         let req_chain_id = log.topics[2].into_uint().low_u64();
 
         let job_key = get_key_for_job_id(job_id, req_chain_id).await;
-        let job: Job;
-        // TODO: Handle error case, when job is older than the maintained block states
-        // scope for the read lock
-        {
-            job = self.active_jobs.read().unwrap().get(&job_key).unwrap().clone();
+
+        let active_jobs_guard = self.active_jobs.read().unwrap();
+        let job = active_jobs_guard.get(&job_key);
+        if job.is_none() {
+            return;
         }
+        let job = job.unwrap().clone();
+        drop(active_jobs_guard);
 
         if job.gateway_address.unwrap() != self.address {
             return;

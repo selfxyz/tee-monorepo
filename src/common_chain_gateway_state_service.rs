@@ -25,6 +25,7 @@ pub async fn gateway_epoch_state_service(
 ) {
     let current_cycle = (current_time - common_chain_client.epoch) / common_chain_client.time_interval;
     let initial_epoch_cycle: u64;
+    let mut cycle_number: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
         initial_epoch_cycle = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
     } else {
@@ -37,7 +38,7 @@ pub async fn gateway_epoch_state_service(
         let com_chain_gateway_contract_clone = common_chain_client.gateway_contract.clone();
         let gateway_epoch_state_clone = Arc::clone(&common_chain_client.gateway_epoch_state);
 
-        let mut cycle_number = initial_epoch_cycle;
+        cycle_number = initial_epoch_cycle;
         while cycle_number <= current_cycle {
             let _current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -46,9 +47,8 @@ pub async fn gateway_epoch_state_service(
                 - common_chain_client.epoch)
                 / common_chain_client.time_interval;
 
-            if _current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
-                cycle_number += 1;
-                continue;
+            if _current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
+                cycle_number = _current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
@@ -86,7 +86,6 @@ pub async fn gateway_epoch_state_service(
         }
     }
 
-    let mut cycle_number = current_cycle + 1;
     let last_cycle_timestamp = common_chain_client.epoch + (current_cycle * common_chain_client.time_interval);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -111,9 +110,8 @@ pub async fn gateway_epoch_state_service(
                 - common_chain_client.epoch)
                 / common_chain_client.time_interval;
 
-            if current_cycle - cycle_number >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
-                cycle_number += 1;
-                continue;
+            if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
+                cycle_number = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
@@ -151,9 +149,19 @@ pub async fn gateway_epoch_state_service(
                 }
             }
             println!("Epoch state generated for cycle {}", cycle_number);
-            break;
+
+            let _current_cycle = (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs()
+                - common_chain_client.epoch)
+                / common_chain_client.time_interval;
+
+            if cycle_number == _current_cycle {
+                break;
+            }
+            cycle_number += 1;
         }
-        // veegee
         prune_old_cycle_states(&common_chain_client.gateway_epoch_state, common_chain_client.epoch, common_chain_client.time_interval).await;
 
         cycle_number += 1;
@@ -366,7 +374,7 @@ async fn prune_old_cycle_states(
             // if a state is older than 1.5 times the number of states to maintain, remove it
             // chosen a number larger than the number to maintain because in some cases, of delay,
             // an older state might be used to read and initialize the current state
-            if current_cycle - cycle >= (GATEWAY_BLOCK_STATES_TO_MAINTAIN * 3 / 2) {
+            if current_cycle >= (GATEWAY_BLOCK_STATES_TO_MAINTAIN * 3 / 2) + cycle {
                 cycles_to_remove.push(cycle.clone());
             } else {
                 break;
