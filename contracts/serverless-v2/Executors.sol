@@ -28,7 +28,6 @@ contract Executors is
 
     error ExecutorsZeroAddressToken();
     error ExecutorsZeroMinStakeAmount();
-    error ExecutorsInvalidJobContract();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
@@ -48,12 +47,6 @@ contract Executors is
 
         TOKEN = _token;
         MIN_STAKE_AMOUNT = _minStakeAmount;
-    }
-
-    modifier onlyJobsContract() {
-        if(_msgSender() != address(jobs))
-            revert ExecutorsInvalidJobContract();
-        _;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -106,8 +99,12 @@ contract Executors is
     uint256 public immutable MIN_STAKE_AMOUNT;
     Jobs public jobs;
 
+    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
+
     function setJobsContract(Jobs _jobs) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _revokeRole(JOBS_ROLE, (address(jobs)));
         jobs = _jobs;
+        _grantRole(JOBS_ROLE, address(_jobs));
     }
 
     //-------------------------------- Executor start --------------------------------//
@@ -451,7 +448,7 @@ contract Executors is
 
     function selectExecutors(
         uint256 _noOfNodesToSelect
-    ) external onlyJobsContract returns (address[] memory selectedNodes) {
+    ) external onlyRole(JOBS_ROLE) returns (address[] memory selectedNodes) {
         return _selectExecutors(_noOfNodesToSelect);
     }
 
@@ -460,14 +457,14 @@ contract Executors is
     // if unstake true, active job > 0, then --activeJob
     function updateOnSubmitOutput(
         address _executorKey
-    ) external onlyJobsContract {
+    ) external onlyRole(JOBS_ROLE) {
         _updateOnSubmitOutput(_executorKey);
     }
 
     function updateOnExecutionTimeoutSlash(
         address _executorKey,
         bool _hasExecutedJob
-    ) external onlyJobsContract {
+    ) external onlyRole(JOBS_ROLE) {
         _updateOnExecutionTimeoutSlash(_executorKey, _hasExecutedJob);
     }
 

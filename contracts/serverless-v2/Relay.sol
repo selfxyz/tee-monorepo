@@ -33,8 +33,8 @@ contract Relay is
         IAttestationVerifier attestationVerifier, 
         uint256 maxAge,
         IERC20 _token,
-        uint256 _globalMinTimeout,
-        uint256 _globalMaxTimeout,
+        uint256 _globalMinTimeout,  // in milliseconds
+        uint256 _globalMaxTimeout,  // in milliseconds
         uint256 _overallTimeout
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
@@ -246,7 +246,7 @@ contract Relay is
         uint256 _usdcDeposit,
         uint256 _callbackDeposit
     ) internal {
-        if(_userTimeout <= (GLOBAL_MIN_TIMEOUT * 1000) || _userTimeout >= (GLOBAL_MAX_TIMEOUT * 1000))
+        if(_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT)
             revert RelayInvalidUserTimeout();
 
         if (jobCount + 1 == (block.chainid + 1) << 192)
