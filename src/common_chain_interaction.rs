@@ -12,9 +12,9 @@ use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::RwLock;
 use tokio::{task, time};
 
 use crate::chain_util::{
@@ -86,7 +86,10 @@ impl CommonChainClient {
         }
     }
 
-    pub async fn run(self: Arc<Self>, common_chain_http: Arc<HttpProvider>) -> Result<(), Box<dyn Error>> {
+    pub async fn run(
+        self: Arc<Self>,
+        common_chain_http: Arc<HttpProvider>,
+    ) -> Result<(), Box<dyn Error>> {
         // setup for the listening events on Request Chain and calling Common Chain functions
         let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
@@ -161,7 +164,6 @@ impl CommonChainClient {
                         chain_id
                     ))
                     .unwrap();
-                println!("Started listening events for Chain [{}]", chain_id);
 
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
@@ -173,10 +175,6 @@ impl CommonChainClient {
                         .into()
                     {
                         info!(
-                            "Request Chain ID: {:?}, JobPlace jobID: {:?}",
-                            chain_id, log.topics[1]
-                        );
-                        println!(
                             "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                             chain_id, log.topics[1]
                         );
@@ -201,10 +199,6 @@ impl CommonChainClient {
                         });
                     } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
                         info!(
-                            "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
-                            chain_id, log.topics[1]
-                        );
-                        println!(
                             "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
                             chain_id, log.topics[1]
                         );
@@ -275,8 +269,6 @@ impl CommonChainClient {
         let gateway_address = self
             .select_gateway_for_job_id(
                 job.clone(),
-                job.job_id.clone(),
-                job.starttime.as_u64(),
                 job.starttime.as_u64(), // TODO: Update seed
                 job.sequence_number,
                 req_chain_client,
@@ -287,11 +279,11 @@ impl CommonChainClient {
         match gateway_address {
             Ok(gateway_address) => {
                 job.gateway_address = Some(gateway_address);
-                
+
                 if gateway_address == Address::zero() {
                     return;
                 }
-                
+
                 if gateway_address == self.address {
                     // scope for the write lock
                     {
@@ -415,49 +407,39 @@ impl CommonChainClient {
     async fn select_gateway_for_job_id(
         &self,
         job: Job,
-        job_id: U256,
-        job_place_ts: u64,
         seed: u64,
         skips: u8,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
         let job_cycle =
-            (job_place_ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
+            (job.starttime.as_u64() - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
+                / self.time_interval;
 
         let all_gateways_data: Vec<GatewayData>;
-        println!("Current cycle for job {} is {} and timestamp {}", job_id, job_cycle, job_place_ts);
 
         {
             let ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let current_cycle = (
-                ts
-                - self.epoch
-                - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
-                / self.time_interval;
-            println!("Job[{}] Selection Current Cycle {}, timestamp {}", job_id, current_cycle, ts);
+            let current_cycle =
+                (ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + job_cycle {
                 return Err(anyhow::Error::msg(
                     "Job is older than the maintained block states",
                 ));
             }
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().unwrap();
-            println!("Gateway State {:?}", gateway_epoch_state_guard);
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&job_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();
-                // break;
-            } else{
-                println!("Callback registered for job {}, cycle {}", job_id, job_cycle);
+            } else {
                 let mut waitlist_handle = self.gateway_epoch_state_waitlist.write().unwrap();
-                waitlist_handle.entry(job_cycle).and_modify(|jobs| jobs.push(job.clone())).or_insert(vec![job]);
-                return Ok(Address::zero()); //veegee
+                waitlist_handle
+                    .entry(job_cycle)
+                    .and_modify(|jobs| jobs.push(job.clone()))
+                    .or_insert(vec![job]);
+                return Ok(Address::zero());
             }
-            // drop(gateway_epoch_state_guard);
-
-            // wait for cycle to be created
-            // time::sleep(Duration::from_secs(WAIT_BEFORE_CHECKING_STATE)).await;
         }
 
         // create a weighted probability distribution for gateways based on stake amount
@@ -505,11 +487,7 @@ impl CommonChainClient {
 
         info!(
             "Job ID: {:?}, Gateway Address: {:?}",
-            job_id, selected_gateway.address
-        );
-        println!(
-            "Job ID: {:?}, Gateway Address: {:?}",
-            job_id, selected_gateway.address
+            job.job_id, selected_gateway.address
         );
 
         Ok(selected_gateway.address)
@@ -926,7 +904,13 @@ impl CommonChainClient {
         let job: Job;
         // scope for the read lock
         {
-            job = self.active_jobs.read().unwrap().get(&job_key).unwrap().clone();
+            job = self
+                .active_jobs
+                .read()
+                .unwrap()
+                .get(&job_key)
+                .unwrap()
+                .clone();
         }
 
         if job.sequence_number != sequence_number {

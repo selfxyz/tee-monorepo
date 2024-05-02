@@ -7,13 +7,14 @@ use ethers::utils::keccak256;
 use hex::FromHex;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
-use std::sync::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use crate::contract_abi::{CommonChainGatewayContract, RequestChainContract};
 use crate::model::{
-    AppState, CommonChainClient, InjectKeyInfo, Job, RegisterEnclaveInfo, RequestChainClient, RequestChainData
+    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainClient,
+    RequestChainData,
 };
 
 #[get("/")]
@@ -23,12 +24,8 @@ async fn index() -> impl Responder {
 
 #[post("/inject-key")]
 async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -> impl Responder {
-    // let mut gw_contract = app_state.gateway_contract_object.lock().unwrap();
-    // let mut jobs_contract = app_state.jobs_contract_object.lock().unwrap();
-
     let mut wallet_gaurd = app_state.wallet.lock().unwrap();
 
-    // if gw_contract.is_some() && jobs_contract.is_some() {
     if wallet_gaurd.is_some() {
         return HttpResponse::BadRequest().body("Secret key has already been injected");
     }
@@ -49,26 +46,6 @@ async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -
         ));
     };
     let signer_wallet = signer_wallet.with_chain_id(app_state.common_chain_id);
-    // let signer_address = signer_wallet.address();
-
-    // let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
-    // let Ok(http_rpc_client) = http_rpc_client else {
-    //     return HttpResponse::InternalServerError().body(format!(
-    //         "Failed to connect to the http rpc server {}: {}",
-    //         app_state.common_chain_http_url,
-    //         http_rpc_client.unwrap_err()
-    //     ));
-    // };
-    // let http_rpc_client = Arc::new(
-    //     http_rpc_client
-    //         .with_signer(signer_wallet.clone())
-    //         .nonce_manager(signer_address),
-    // );
-
-    // app_state.job_contract_object = Some(CommonChainJobsContractApi::new(
-    //     app_state.job_contract_addr,
-    //     http_rpc_client,
-    // ));
 
     *wallet_gaurd = Some(signer_wallet);
 
@@ -111,7 +88,7 @@ async fn register_enclave(
     let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
     let Ok(http_rpc_client) = http_rpc_client else {
         return HttpResponse::InternalServerError().body(format!(
-            "Failed to connect to the http rpc server {}: {}",
+            "Failed to connect to the common chain http rpc server {}: {}",
             app_state.common_chain_http_url,
             http_rpc_client.unwrap_err()
         ));
@@ -136,7 +113,8 @@ async fn register_enclave(
         let http_rpc_client = Provider::<Http>::try_connect(http_rpc_url.as_str()).await;
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
-                "Failed to connect to the http rpc server {}: {}",
+                "Failed to connect to the request chain {} http rpc server {}: {}",
+                chain,
                 http_rpc_url,
                 http_rpc_client.unwrap_err()
             ));
@@ -171,8 +149,8 @@ async fn register_enclave(
         let Ok(Some(_txn_receipt)) = pending_txn.confirmations(1).await else {
             // TODO: FIX CONFIRMATIONS REQUIRED
             return HttpResponse::InternalServerError().body(format!(
-                "Failed to confirm transaction with hash {}",
-                txn_hash
+                "Failed to confirm transaction on request chain {} with hash {}",
+                chain, txn_hash
             ));
         };
         chain_list.push(RequestChainData {
@@ -191,9 +169,6 @@ async fn register_enclave(
         request_chain_clients.insert(chain, req_chain_client);
     }
 
-    // let mut hasher = Keccak::v256();
-    // hasher.update(b"|chain_list|");
-    // encode chain list in ethabi encoder
     let token_list = Token::Array(
         enclave_info
             .chain_list
@@ -204,9 +179,6 @@ async fn register_enclave(
     );
     let encoded_chain_ids = encode_packed(&[token_list]).unwrap();
     let hashed_chain_ids = keccak256(&encoded_chain_ids);
-    // hasher.update(&encoded_chain_ids);
-    // let mut hash = [0u8; 32];
-    // hasher.finalize(&mut hash);
 
     let sig = app_state
         .enclave_signer_key
@@ -243,7 +215,7 @@ async fn register_enclave(
     let pending_txn = txn.send().await;
     let Ok(pending_txn) = pending_txn else {
         return HttpResponse::InternalServerError().body(format!(
-            "Failed to send transaction for registering the enclave on Common chain: {}",
+            "Failed to send transaction for registering the enclave on common chain: {}",
             pending_txn.unwrap_err()
         ));
     };
@@ -252,7 +224,7 @@ async fn register_enclave(
     let Ok(Some(txn_receipt)) = pending_txn.confirmations(1).await else {
         // TODO: FIX CONFIRMATIONS REQUIRED
         return HttpResponse::InternalServerError().body(format!(
-            "Failed to confirm transaction with hash {}",
+            "Failed to confirm transaction on common chain with hash {}",
             txn_hash
         ));
     };
@@ -264,7 +236,7 @@ async fn register_enclave(
         .unwrap()
         .append(&mut chain_list.clone());
 
-    let gateway_state_epoch_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>> = Arc::new(RwLock::new(HashMap::new()));
+    let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
     // Start contract event listner
     let contract_client = Arc::new(

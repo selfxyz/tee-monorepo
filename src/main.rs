@@ -17,8 +17,8 @@ use k256::ecdsa::SigningKey;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::fs;
 use std::sync::RwLock;
+use tokio::fs;
 
 use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
 use crate::model::{AppState, ConfigManager, GatewayData};

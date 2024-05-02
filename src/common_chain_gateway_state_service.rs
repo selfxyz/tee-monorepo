@@ -4,10 +4,10 @@ use ethers::prelude::*;
 use ethers::utils::keccak256;
 use log::{error, info};
 use std::collections::{BTreeMap, BTreeSet};
-use tokio::sync::mpsc::Sender;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::RwLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc::Sender;
 use tokio::time;
 
 use crate::chain_util::get_block_number_by_timestamp;
@@ -23,7 +23,8 @@ pub async fn gateway_epoch_state_service(
     common_chain_client: Arc<CommonChainClient>,
     tx: Sender<(Job, Arc<CommonChainClient>)>,
 ) {
-    let current_cycle = (current_time - common_chain_client.epoch) / common_chain_client.time_interval;
+    let current_cycle =
+        (current_time - common_chain_client.epoch) / common_chain_client.time_interval;
     let initial_epoch_cycle: u64;
     let mut cycle_number: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
@@ -31,7 +32,6 @@ pub async fn gateway_epoch_state_service(
     } else {
         initial_epoch_cycle = 1;
     };
-    println!("Starting from cycle {}", initial_epoch_cycle);
     {
         let contract_address_clone = common_chain_client.gateway_contract_addr.clone();
         let provider_clone = provider.clone();
@@ -70,23 +70,29 @@ pub async fn gateway_epoch_state_service(
                 continue;
             }
             {
-                let mut waitlist_handle = common_chain_client.gateway_epoch_state_waitlist.write().unwrap();
+                let mut waitlist_handle = common_chain_client
+                    .gateway_epoch_state_waitlist
+                    .write()
+                    .unwrap();
                 if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
                     let common_chain_client_clone = common_chain_client.clone();
                     let tx_clone = tx.clone();
                     tokio::spawn(async move {
                         for job in job_list {
-                            let _ = common_chain_client_clone.clone().job_placed_handler(job, tx_clone.clone()).await; //TODO check return value
+                            common_chain_client_clone
+                                .clone()
+                                .job_placed_handler(job, tx_clone.clone())
+                                .await;
                         }
                     });
                 }
             }
-            println!("Epoch state generated for cycle {}", cycle_number);
             cycle_number += 1;
         }
     }
 
-    let last_cycle_timestamp = common_chain_client.epoch + (current_cycle * common_chain_client.time_interval);
+    let last_cycle_timestamp =
+        common_chain_client.epoch + (current_cycle * common_chain_client.time_interval);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
@@ -134,21 +140,23 @@ pub async fn gateway_epoch_state_service(
                 continue;
             }
             {
-                let mut waitlist_handle = common_chain_client.gateway_epoch_state_waitlist.write().unwrap();
-                println!("waitlist {:?}", waitlist_handle);
+                let mut waitlist_handle = common_chain_client
+                    .gateway_epoch_state_waitlist
+                    .write()
+                    .unwrap();
                 if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
-                    println!("Calling Callbacks");
                     let common_chain_client_clone = common_chain_client.clone();
                     let tx_clone = tx.clone();
                     tokio::spawn(async move {
                         for job in job_list {
-                            println!("Callback for Job {}", job.job_id);
-                            let _ = common_chain_client_clone.clone().job_placed_handler(job, tx_clone.clone()).await; //TODO check return value
+                            common_chain_client_clone
+                                .clone()
+                                .job_placed_handler(job, tx_clone.clone())
+                                .await;
                         }
                     });
                 }
             }
-            println!("Epoch state generated for cycle {}", cycle_number);
 
             let _current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -162,7 +170,12 @@ pub async fn gateway_epoch_state_service(
             }
             cycle_number += 1;
         }
-        prune_old_cycle_states(&common_chain_client.gateway_epoch_state, common_chain_client.epoch, common_chain_client.time_interval).await;
+        prune_old_cycle_states(
+            &common_chain_client.gateway_epoch_state,
+            common_chain_client.epoch,
+            common_chain_client.time_interval,
+        )
+        .await;
 
         cycle_number += 1;
     }
@@ -223,8 +236,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
     // to_block_number can be less than from_block_number
     // in case of no blocks created in this epoch cycle
-    let mut to_block_number =
-        get_block_number_by_timestamp(&provider, timestamp_to_fetch).await;
+    let mut to_block_number = get_block_number_by_timestamp(&provider, timestamp_to_fetch).await;
     if to_block_number.is_none() {
         error!(
             "Failed to get block number for timestamp {}",
