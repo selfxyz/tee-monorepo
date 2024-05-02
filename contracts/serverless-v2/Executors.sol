@@ -27,6 +27,7 @@ contract Executors is
     using ECDSA for bytes32;
 
     error ExecutorsZeroAddressToken();
+    error ExecutorsZeroMinStakeAmount();
     error ExecutorsInvalidJobContract();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -35,13 +36,18 @@ contract Executors is
     constructor(
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
-        IERC20 _token
+        IERC20 _token,
+        uint256 _minStakeAmount
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
         if(address(_token) == address(0))
             revert ExecutorsZeroAddressToken();
+        if(_minStakeAmount == 0)
+            revert ExecutorsZeroMinStakeAmount();
+
         TOKEN = _token;
+        MIN_STAKE_AMOUNT = _minStakeAmount;
     }
 
     modifier onlyJobsContract() {
@@ -95,6 +101,9 @@ contract Executors is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
+    // TODO: add min stake limit and if it falls below that limit then remove from tree
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MIN_STAKE_AMOUNT;
     Jobs public jobs;
 
     function setJobsContract(Jobs _jobs) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -161,6 +170,7 @@ contract Executors is
         uint256 remainingStakedAmount
     );
 
+    error ExecutorsLessStakeAmount();
     error ExecutorsExecutorAlreadyExists();
     error ExecutorsAlreadyDeregistered();
     error ExecutorsInvalidAmount();
@@ -178,6 +188,9 @@ contract Executors is
         bytes memory _signature,
         uint256 _stakeAmount
     ) internal {
+        if(_stakeAmount < MIN_STAKE_AMOUNT)
+            revert ExecutorsLessStakeAmount();
+
         // attestation verification
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
 
@@ -268,16 +281,21 @@ contract Executors is
         if(executors[enclaveKey].activeJobs == 0) {
             executors[enclaveKey].stakeAmount -= _amount;
             TOKEN.safeTransfer(_msgSender(), _amount);
+            
+            // remove node from tree if stake falls below min level
+            if(executors[enclaveKey].stakeAmount < MIN_STAKE_AMOUNT)
+                _deleteIfPresent(enclaveKey);
             // update the value in tree only if the node exists in the tree
-            _update_unchecked(enclaveKey, uint64(executors[enclaveKey].stakeAmount));
-            // TODO: manage this event within if-else block
+            else
+                _update_unchecked(enclaveKey, uint64(executors[enclaveKey].stakeAmount));
+
             emit ExecutorStakeRemoved(enclaveKey, _amount, executors[enclaveKey].stakeAmount);
         }
         else {
             executors[enclaveKey].unstakeStatus = true;
             executors[enclaveKey].unstakeAmount += _amount;
+            // remove node from tree so it won't be considered for future jobs
             _deleteIfPresent(enclaveKey);
-            //TODO: initiated
             emit ExecutorStakeRemoveInitiated(enclaveKey, _amount);
         }
         
@@ -388,7 +406,12 @@ contract Executors is
         address _executorKey
     ) internal {
         // add back the node to the tree as now it can accept a new job
-        if(executors[_executorKey].status && !executors[_executorKey].unstakeStatus && executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity)
+        if(
+            executors[_executorKey].status && 
+            !executors[_executorKey].unstakeStatus && 
+            executors[_executorKey].activeJobs == executors[_executorKey].jobCapacity &&
+            executors[_executorKey].stakeAmount >= MIN_STAKE_AMOUNT
+        )
             _insert_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
         
         executors[_executorKey].activeJobs -= 1;
@@ -405,10 +428,15 @@ contract Executors is
 
             // TODO: unstaking completed event
             // update in tree only if the user has not initiated deregistration
-            if(executors[_executorKey].status)
+            if(executors[_executorKey].status && executors[_executorKey].stakeAmount >= MIN_STAKE_AMOUNT)
                 _update_unchecked(_executorKey, uint64(executors[_executorKey].stakeAmount));
         }
         
+        // remove node from tree if stake falls below min level
+        if(executors[_executorKey].stakeAmount < MIN_STAKE_AMOUNT)
+            _deleteIfPresent(_executorKey);
+
+        // if user has initiated deregister
         if(!executors[_executorKey].status && executors[_executorKey].activeJobs == 0) {
             // return stake amount
             TOKEN.safeTransfer(executors[_executorKey].operator, executors[_executorKey].stakeAmount);
