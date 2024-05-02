@@ -347,7 +347,7 @@ async fn prune_old_cycle_states(
             // if a state is older than 1.5 times the number of states to maintain, remove it
             // chosen a number larger than the number to maintain because in some cases, of delay,
             // an older state might be used to read and initialize the current state
-            if current_cycle - cycle >= (GATEWAY_BLOCK_STATES_TO_MAINTAIN * 3 / 2) {
+            if current_cycle >= (GATEWAY_BLOCK_STATES_TO_MAINTAIN * 3 / 2) + cycle {
                 cycles_to_remove.push(cycle.clone());
             } else {
                 break;
