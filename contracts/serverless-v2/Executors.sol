@@ -168,12 +168,8 @@ contract Executors is
     //-------------------------------- internal functions start ----------------------------------//
 
     function _registerExecutor(
-        bytes memory _attestation,
-        bytes memory _enclavePubKey,
-        bytes memory _PCR0,
-        bytes memory _PCR1,
-        bytes memory _PCR2,
-        uint256 _timestampInMilliseconds,
+        bytes memory _attestationSignature,
+        IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
         bytes memory _signature,
         uint256 _stakeAmount
@@ -182,7 +178,7 @@ contract Executors is
             revert ExecutorsLessStakeAmount();
 
         // attestation verification
-        _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
+        _verifyEnclaveKey(_attestationSignature, _attestation);
 
         address operator = _msgSender();
         // signature check
@@ -198,7 +194,7 @@ contract Executors is
 
         _allowOnlyVerified(signer);
 
-        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
         if(signer != enclaveKey)
             revert ExecutorsInvalidSigner();
 
@@ -318,17 +314,13 @@ contract Executors is
     }
 
     function registerExecutor(
-        bytes memory _attestation,
-        bytes memory _enclavePubKey,
-        bytes memory _PCR0,
-        bytes memory _PCR1,
-        bytes memory _PCR2,
-        uint256 _timestampInMilliseconds,
+        bytes memory _attestationSignature,
+        IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestation, _enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds, _jobCapacity, _signature, _stakeAmount);
+        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _signature, _stakeAmount);
     }
 
     function deregisterExecutor() external {

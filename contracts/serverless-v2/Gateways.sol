@@ -190,24 +190,17 @@ contract Gateways is
     //-------------------------------- internal functions start ----------------------------------//
 
     function _registerGateway(
-        bytes memory _attestation,
-        bytes memory _enclavePubKey,
-        bytes memory _PCR0,
-        bytes memory _PCR1,
-        bytes memory _PCR2,
-        uint256 _timestampInMilliseconds,
+        bytes memory _attestationSignature,
+        IAttestationVerifier.Attestation memory _attestation,
         uint256[] memory _chainIds,
         bytes memory _signature,
         uint256 _stakeAmount
     ) internal {
         // attestation verification
-        _verifyEnclaveKey(
-            _attestation, 
-            IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds)
-        );
+        _verifyEnclaveKey(_attestationSignature, _attestation);
 
         address operator = _msgSender();
-        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
+        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
         _verifySign(_chainIds, _signature, enclaveKey);
 
@@ -448,17 +441,13 @@ contract Gateways is
     //-------------------------------- external functions start --------------------------------//
 
     function registerGateway(
-        bytes memory _attestation,
-        bytes memory _enclavePubKey,
-        bytes memory _PCR0,
-        bytes memory _PCR1,
-        bytes memory _PCR2,
-        uint256 _timestampInMilliseconds,
+        bytes memory _attestationSignature,
+        IAttestationVerifier.Attestation memory _attestation,
         uint256[] memory _chainIds,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerGateway(_attestation, _enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds, _chainIds, _signature, _stakeAmount);
+        _registerGateway(_attestationSignature, _attestation, _chainIds, _signature, _stakeAmount);
     }
 
     function deregisterGateway() external {
