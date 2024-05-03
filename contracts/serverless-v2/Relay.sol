@@ -108,15 +108,15 @@ contract Relay is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable OVERALL_TIMEOUT;
 
-    // enclaveKey => Gateway operator
-    mapping(address => address) public gatewayOperators;
+    // Gateway operator => enclaveKey
+    mapping(address => address) public gatewayKeys;
 
     event GatewayRegistered(
-        address indexed enclaveKey,
-        address indexed operator
+        address indexed operator,
+        address indexed enclaveKey
     );
 
-    event GatewayDeregistered(address indexed enclaveKey);
+    event GatewayDeregistered(address indexed operator);
 
     error RelayGatewayAlreadyExists();
     error RelayInvalidGatewayOperator();
@@ -133,27 +133,25 @@ contract Relay is
     ) internal {
         // attestation verification
         _verifyEnclaveKey(_attestation, IAttestationVerifier.Attestation(_enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds));
-
         
         address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        if(gatewayOperators[enclaveKey] != address(0))
+        address operator = _msgSender();
+        if(gatewayKeys[operator] != address(0))
             revert RelayGatewayAlreadyExists();
-        gatewayOperators[enclaveKey] = _msgSender();
+        gatewayKeys[operator] = enclaveKey;
 
-        emit GatewayRegistered(enclaveKey, _msgSender());
+        emit GatewayRegistered(operator, enclaveKey);
     }
 
-    function _deregisterGateway(
-        bytes memory _enclavePubKey
-    ) internal {
-        address enclaveKey = _pubKeyToAddress(_enclavePubKey);
-        if(gatewayOperators[enclaveKey] != _msgSender())
+    function _deregisterGateway() internal {
+        address operator = _msgSender();
+        if(gatewayKeys[operator] == address(0))
             revert RelayInvalidGatewayOperator();
-        delete gatewayOperators[enclaveKey];
 
-        _revokeEnclaveKey(enclaveKey);
+        _revokeEnclaveKey(gatewayKeys[operator]);
+        delete gatewayKeys[operator];
 
-        emit GatewayDeregistered(enclaveKey);
+        emit GatewayDeregistered(operator);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -171,10 +169,8 @@ contract Relay is
         _registerGateway(_attestation, _enclavePubKey, _PCR0, _PCR1, _PCR2, _timestampInMilliseconds);
     }
 
-    function deregisterGateway(
-        bytes memory _enclavePubKey
-    ) external {
-        _deregisterGateway(_enclavePubKey);
+    function deregisterGateway() external {
+        _deregisterGateway();
     }
 
     //-------------------------------- external functions end ---------------------------//
@@ -232,6 +228,7 @@ contract Relay is
     error RelayInvalidUserTimeout();
     error RelayJobNotExists();
     error RelayOverallTimeoutOver();
+    error RelayInvalidSigner();
     error RelayInvalidJobOwner();
     error RelayOverallTimeoutNotOver();
 
@@ -277,11 +274,12 @@ contract Relay is
         if(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert RelayOverallTimeoutOver();
 
+        address operator = _msgSender();
         // signature check
         bytes32 hashStruct = keccak256(
             abi.encode(
                 JOB_RESPONSE_TYPEHASH,
-                _msgSender(),
+                operator,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -292,6 +290,9 @@ contract Relay is
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);
+
+        if(signer != gatewayKeys[operator])
+            revert RelayInvalidSigner();
 
         bool success = _callBackWithLimit(_jobId, _output, _errorCode);
 

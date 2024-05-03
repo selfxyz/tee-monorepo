@@ -127,7 +127,7 @@ contract Jobs is
 
     // jobKey => executors
     mapping(uint256 => address[]) public selectedExecutors;
-    // jobKey => selectedExecutorAddress => hasExecuted
+    // jobKey => selectedExecutorOperator => hasExecuted
     mapping(uint256 => mapping(address => bool)) public hasExecutedJob;
 
     bytes32 private constant DOMAIN_SEPARATOR = 
@@ -146,7 +146,7 @@ contract Jobs is
         keccak256("SubmitOutput(address operator,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
 
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
-        keccak256("ReassignGateway(address operator,uint256 jobId,address gatewayKeyOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
+        keccak256("ReassignGateway(address operator,uint256 jobId,address gatewayOperatorOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -206,11 +206,12 @@ contract Jobs is
         if(!gateways.isChainSupported(reqChainId))
             revert JobsUnsupportedChain();
 
+        address operator = _msgSender();
         // signature check
         bytes32 hashStruct = keccak256(
             abi.encode(
                 RELAY_JOB_TYPEHASH,
-                _msgSender(),
+                operator,
                 _jobId,
                 _codehash,
                 keccak256(_codeInputs),
@@ -223,13 +224,13 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer);
+        gateways.allowOnlyVerified(signer, operator);
 
         address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             jobs[_jobId].isResourceUnavailable = true;
-            emit JobResourceUnavailable(_jobId, _msgSender());
+            emit JobResourceUnavailable(_jobId, operator);
             return;
         }
         selectedExecutors[_jobId] = selectedNodes;
@@ -244,7 +245,7 @@ contract Jobs is
             isResourceUnavailable: false
         });
 
-        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _msgSender(), selectedNodes);
+        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, operator, selectedNodes);
     }
 
     function _submitOutput(
@@ -257,11 +258,12 @@ contract Jobs is
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
+        address operator = _msgSender();
         // signature check
         bytes32 hashStruct = keccak256(
             abi.encode(
                 SUBMIT_OUTPUT_TYPEHASH,
-                _msgSender(),
+                operator,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -271,7 +273,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        executors.allowOnlyVerified(signer);
+        executors.allowOnlyVerified(signer, operator);
 
         if(!isJobExecutor(_jobId, signer))
             revert JobsNotSelectedExecutor();
@@ -347,12 +349,12 @@ contract Jobs is
 
     event SlashedOnExecutionTimeout(
         uint256 indexed jobId,
-        address indexed executor
+        address indexed executorOperator
     );
 
     event GatewayReassigned(
         uint256 indexed jobId,
-        address prevGatewayKey,
+        address prevGatewayOperator,
         address reporterGateway,
         uint8 sequenceId
     );
@@ -379,19 +381,18 @@ contract Jobs is
 
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            address executorKey = selectedExecutors[_jobId][index];
-            executors.updateOnExecutionTimeoutSlash(executorKey, hasExecutedJob[_jobId][executorKey]);
-            if(!hasExecutedJob[_jobId][executorKey])
-                emit SlashedOnExecutionTimeout(_jobId, executorKey);
-            delete hasExecutedJob[_jobId][executorKey];
+            address executorOperator = selectedExecutors[_jobId][index];
+            executors.updateOnExecutionTimeoutSlash(executorOperator, hasExecutedJob[_jobId][executorOperator]);
+            if(!hasExecutedJob[_jobId][executorOperator])
+                emit SlashedOnExecutionTimeout(_jobId, executorOperator);
+            delete hasExecutedJob[_jobId][executorOperator];
         }
-
 
         delete selectedExecutors[_jobId];
     }
 
     function _reassignGatewayRelay(
-        address _gatewayKeyOld,
+        address _gatewayOperatorOld,
         uint256 _jobId,
         bytes memory _signature,
         uint8 _sequenceId,
@@ -408,13 +409,14 @@ contract Jobs is
             revert JobsInvalidSequenceId();
         jobs[_jobId].sequenceId = _sequenceId;
 
+        address operator = _msgSender();
         // signature check
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REASSIGN_GATEWAY_TYPEHASH,
-                _msgSender(),
+                operator,
                 _jobId,
-                _gatewayKeyOld,
+                _gatewayOperatorOld,
                 _sequenceId,
                 _jobRequestTimestamp
             )
@@ -422,9 +424,9 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer);
+        gateways.allowOnlyVerified(signer, operator);
 
-        emit GatewayReassigned(_jobId, _gatewayKeyOld, _msgSender(), _sequenceId);
+        emit GatewayReassigned(_jobId, _gatewayOperatorOld, operator, _sequenceId);
 
         // slash old gateway
     }
@@ -440,13 +442,13 @@ contract Jobs is
     }
 
     function reassignGatewayRelay(
-        address _gatewayKeyOld,
+        address _gatewayOperatorOld,
         uint256 _jobId,
         bytes memory _signature,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp
     ) external {
-        _reassignGatewayRelay(_gatewayKeyOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp);
+        _reassignGatewayRelay(_gatewayOperatorOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp);
     }
 
     //-------------------------------- external functions end ----------------------------------//
