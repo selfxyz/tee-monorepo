@@ -286,13 +286,13 @@ contract Relay is
         if(signer != gatewayKeys[operator])
             revert RelayInvalidSigner();
 
-        bool success = _callBackWithLimit(_jobId, _output, _errorCode);
-
-        emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
-
         // TODO: release escrow
 
         delete jobs[_jobId];
+        
+        bool success = _callBackWithLimit(_jobId, _output, _errorCode);
+
+        emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
     }
 
     function _jobCancel(
