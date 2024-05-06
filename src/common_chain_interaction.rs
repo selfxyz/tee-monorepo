@@ -12,18 +12,19 @@ use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::RwLock;
 use tokio::{task, time};
 
 use crate::chain_util::{
     get_key_for_job_id, pub_key_to_address, sign_job_response_response,
     sign_reassign_gateway_relay_response, sign_relay_job_response,
 };
+use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE,
-    REQUEST_RELAY_TIMEOUT, WAIT_BEFORE_CHECKING_STATE,
+    REQUEST_RELAY_TIMEOUT,
 };
 use crate::contract_abi::{CommonChainGatewayContract, CommonChainJobsContract};
 use crate::model::{
@@ -46,6 +47,7 @@ impl CommonChainClient {
         epoch: u64,
         time_interval: u64,
         req_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
+        gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     ) -> Self {
         info!("Initializing Common Chain Client...");
         let gateway_contract = CommonChainGatewayContract::new(
@@ -80,13 +82,35 @@ impl CommonChainClient {
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
             epoch,
             time_interval,
+            gateway_epoch_state_waitlist,
         }
     }
 
-    pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
+    pub async fn run(
+        self: Arc<Self>,
+        common_chain_http: Arc<HttpProvider>,
+    ) -> Result<(), Box<dyn Error>> {
         // setup for the listening events on Request Chain and calling Common Chain functions
         let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
+        // Start the gateway epoch state service
+        {
+            let service_start_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let contract_client_clone = self.clone();
+            let tx_clone = req_chain_tx.clone();
+            tokio::spawn(async move {
+                gateway_epoch_state_service(
+                    service_start_time,
+                    &common_chain_http,
+                    contract_client_clone,
+                    tx_clone,
+                )
+                .await;
+            });
+        }
         tokio::spawn(async move {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
@@ -168,7 +192,6 @@ impl CommonChainClient {
                                 .context("Failed to decode event")
                                 .unwrap();
                             self_clone.job_placed_handler(
-                                    chain_id,
                                     job,
                                     tx.clone(),
                                 )
@@ -236,19 +259,16 @@ impl CommonChainClient {
         })
     }
 
-    async fn job_placed_handler(
+    pub async fn job_placed_handler(
         self: Arc<Self>,
-        req_chain_id: u64,
-        job: Job,
+        mut job: Job,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
     ) {
-        let mut job: Job = job.clone();
-        let req_chain_client = self.req_chain_clients[&req_chain_id].clone();
+        let req_chain_client = self.req_chain_clients[&job.req_chain_id].clone();
 
         let gateway_address = self
             .select_gateway_for_job_id(
-                job.job_id.clone(),
-                job.starttime.as_u64(),
+                job.clone(),
                 job.starttime.as_u64(), // TODO: Update seed
                 job.sequence_number,
                 req_chain_client,
@@ -260,12 +280,16 @@ impl CommonChainClient {
             Ok(gateway_address) => {
                 job.gateway_address = Some(gateway_address);
 
+                if gateway_address == Address::zero() {
+                    return;
+                }
+
                 if gateway_address == self.address {
                     // scope for the write lock
                     {
                         self.active_jobs
                             .write()
-                            .await
+                            .unwrap()
                             .insert(job.job_key, job.clone());
                     }
                     tx.send((job, self.clone())).await.unwrap();
@@ -375,46 +399,47 @@ impl CommonChainClient {
         }
         job.gateway_address = None;
 
-        self.job_placed_handler(job.req_chain_id, job, tx).await;
+        self.job_placed_handler(job, tx).await;
 
         Ok(())
     }
 
     async fn select_gateway_for_job_id(
         &self,
-        job_id: U256,
-        job_place_ts: u64,
+        job: Job,
         seed: u64,
         skips: u8,
         req_chain_client: Arc<RequestChainClient>,
     ) -> Result<Address> {
         let job_cycle =
-            (job_place_ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
-
-        let all_gateways_data: Vec<GatewayData>;
-        loop {
-            let current_cycle = (SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                - self.epoch
-                - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
+            (job.starttime.as_u64() - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
 
+        let all_gateways_data: Vec<GatewayData>;
+
+        {
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let current_cycle =
+                (ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + job_cycle {
                 return Err(anyhow::Error::msg(
                     "Job is older than the maintained block states",
                 ));
             }
-            let gateway_epoch_state_guard = self.gateway_epoch_state.read().await;
+            let gateway_epoch_state_guard = self.gateway_epoch_state.read().unwrap();
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&job_cycle) {
                 all_gateways_data = gateway_epoch_state.values().cloned().collect();
-                break;
+            } else {
+                let mut waitlist_handle = self.gateway_epoch_state_waitlist.write().unwrap();
+                waitlist_handle
+                    .entry(job_cycle)
+                    .and_modify(|jobs| jobs.push(job.clone()))
+                    .or_insert(vec![job]);
+                return Ok(Address::zero());
             }
-            drop(gateway_epoch_state_guard);
-
-            // wait for cycle to be created
-            time::sleep(Duration::from_secs(WAIT_BEFORE_CHECKING_STATE)).await;
         }
 
         // create a weighted probability distribution for gateways based on stake amount
@@ -462,7 +487,7 @@ impl CommonChainClient {
 
         info!(
             "Job ID: {:?}, Gateway Address: {:?}",
-            job_id, selected_gateway.address
+            job.job_id, selected_gateway.address
         );
 
         Ok(selected_gateway.address)
@@ -474,7 +499,7 @@ impl CommonChainClient {
 
         // scope for the write lock
         {
-            self.active_jobs.write().await.remove(&job_key);
+            self.active_jobs.write().unwrap().remove(&job_key);
         }
     }
 
@@ -715,7 +740,7 @@ impl CommonChainClient {
             job = self
                 .active_jobs
                 .read()
-                .await
+                .unwrap()
                 .get(&job_response.job_key)
                 .cloned();
         }
@@ -761,7 +786,7 @@ impl CommonChainClient {
     }
 
     async fn remove_job(self: Arc<Self>, job: Job) {
-        let mut active_jobs = self.active_jobs.write().await;
+        let mut active_jobs = self.active_jobs.write().unwrap();
         // The retry number check is to make sure we are removing the correct job from the active jobs list
         // In a case where this txn took longer than the REQUEST_RELAY_TIMEOUT, the job might have been retried
         // and the active_jobs list might have the same job_id with a different retry number.
@@ -843,7 +868,7 @@ impl CommonChainClient {
 
         let job_key = get_key_for_job_id(job_id, req_chain_id).await;
 
-        let active_jobs_guard = self.active_jobs.read().await;
+        let active_jobs_guard = self.active_jobs.read().unwrap();
         let job = active_jobs_guard.get(&job_key);
         if job.is_none() {
             return;
@@ -857,7 +882,7 @@ impl CommonChainClient {
 
         // scope for the write lock
         {
-            self.active_jobs.write().await.remove(&job_key);
+            self.active_jobs.write().unwrap().remove(&job_key);
         }
     }
 
@@ -879,7 +904,13 @@ impl CommonChainClient {
         let job: Job;
         // scope for the read lock
         {
-            job = self.active_jobs.read().await.get(&job_key).unwrap().clone();
+            job = self
+                .active_jobs
+                .read()
+                .unwrap()
+                .get(&job_key)
+                .unwrap()
+                .clone();
         }
 
         if job.sequence_number != sequence_number {
@@ -888,7 +919,7 @@ impl CommonChainClient {
 
         // scope for the write lock
         {
-            self.active_jobs.write().await.remove(&job_key);
+            self.active_jobs.write().unwrap().remove(&job_key);
         }
     }
 
@@ -970,7 +1001,7 @@ impl CommonChainClient {
     }
 
     async fn remove_job_response(self: Arc<Self>, job_key: U256) {
-        let mut active_jobs = self.active_jobs.write().await;
+        let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_key);
     }
 }
