@@ -137,16 +137,14 @@ contract Gateways is
 
     event GatewayStakeAdded(
         address indexed operator,
-        uint256 addedAmount,
-        uint256 totalAmount
+        uint256 addedAmount
     );
 
     event GatewayStakeRemoveInitiated(address indexed operator);
 
     event GatewayStakeRemoved(
         address indexed operator,
-        uint256 removedAmount,
-        uint256 totalAmount
+        uint256 removedAmount
     );
 
     event ChainAddedGlobal(
@@ -203,9 +201,6 @@ contract Gateways is
         address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
         _verifySign(_chainIds, _signature, enclaveKey);
-
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _stakeAmount);
         
         if(gateways[operator].enclaveKey != address(0))
             revert GatewaysGatewayAlreadyExists();
@@ -226,6 +221,9 @@ contract Gateways is
             unstakeStartTime: 0
         });
 
+        // transfer stake
+        TOKEN.safeTransferFrom(operator, address(this), _stakeAmount);
+
         emit GatewayRegistered(operator, enclaveKey, _chainIds);
     }
 
@@ -243,8 +241,6 @@ contract Gateways is
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
-
-        _allowOnlyVerified(signer);
 
         if(signer != _enclaveKey)
             revert GatewaysInvalidSigner();
@@ -271,11 +267,11 @@ contract Gateways is
         if(block.timestamp <= gateways[operator].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
             revert GatewaysDeregisterTimePending();
 
-        // TODO: return stake amount
-        TOKEN.safeTransfer(operator, gateways[operator].stakeAmount);
-
+        uint256 stakeAmount = gateways[operator].stakeAmount;
         _revokeEnclaveKey(gateways[operator].enclaveKey);
         delete gateways[operator];
+
+        TOKEN.safeTransfer(operator, stakeAmount);
 
         emit GatewayDeregisterCompleted(operator);
     }
@@ -285,11 +281,12 @@ contract Gateways is
     ) internal {
         address operator = _msgSender();
         _isValidGateway(operator);
+        
+        gateways[operator].stakeAmount += _amount;
         // transfer stake
         TOKEN.safeTransferFrom(operator, address(this), _amount);
-        gateways[operator].stakeAmount += _amount;
 
-        emit GatewayStakeAdded(operator, _amount, gateways[operator].stakeAmount);
+        emit GatewayStakeAdded(operator, _amount);
     }
 
     // TODO: check if the gateway is assigned some job before full stake removal
@@ -325,14 +322,14 @@ contract Gateways is
         if(_amount == 0)
             revert GatewaysInvalidAmount();
 
-        // transfer stake
-        TOKEN.safeTransfer(operator, _amount);
-
         gateways[operator].stakeAmount -= _amount;
         gateways[operator].unstakeStartTime = 0;
         gateways[operator].status = true;
 
-        emit GatewayStakeRemoved(operator, _amount, gateways[operator].stakeAmount);
+        // transfer stake
+        TOKEN.safeTransfer(operator, _amount);
+        
+        emit GatewayStakeRemoved(operator, _amount);
     }
 
     function _addChainGlobal(
@@ -369,8 +366,11 @@ contract Gateways is
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
 
+        address operator = _msgSender();
+        _isValidGateway(operator);
+
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            _addChain(_chainIds[index]);
+            _addChain(_chainIds[index], operator);
         }
     }
 
@@ -379,20 +379,22 @@ contract Gateways is
     ) internal {
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
+        
+        address operator = _msgSender();
+        _isValidGateway(operator);
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            _removeChain(_chainIds[index]);
+            _removeChain(_chainIds[index], operator);
         }
     }
 
     function _addChain(
-        uint256 _chainId
+        uint256 _chainId,
+        address operator
     ) internal {
         if(requestChains[_chainId].contractAddress == address(0))
             revert GatewaysUnsupportedChain();
 
-        address operator = _msgSender();
-        _isValidGateway(operator);
         uint256[] memory chainIdList = gateways[operator].chainIds;
         for (uint256 index = 0; index < chainIdList.length; index++) {
             if(chainIdList[index] == _chainId)
@@ -404,10 +406,9 @@ contract Gateways is
     }
 
     function _removeChain(
-        uint256 _chainId
+        uint256 _chainId,
+        address operator
     ) internal {
-        address operator = _msgSender();
-        _isValidGateway(operator);
         uint256[] memory chainIdList = gateways[operator].chainIds;
         uint256 len = chainIdList.length;
         if(len == 0)
@@ -439,6 +440,18 @@ contract Gateways is
     //-------------------------------- internal functions end ----------------------------------//
 
     //-------------------------------- external functions start --------------------------------//
+
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
+        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+    }
+
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveImage(imageId);
+    }
 
     function registerGateway(
         bytes memory _attestationSignature,

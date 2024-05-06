@@ -275,7 +275,7 @@ contract Jobs is
 
         executors.allowOnlyVerified(signer, operator);
 
-        if(!isJobExecutor(_jobId, signer))
+        if(!isJobExecutor(_jobId, operator))
             revert JobsNotSelectedExecutor();
         if(hasExecutedJob[_jobId][signer])
             revert JobsExecutorAlreadySubmittedOutput();

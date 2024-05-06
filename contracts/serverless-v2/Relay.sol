@@ -154,6 +154,18 @@ contract Relay is
 
     //-------------------------------- external functions start --------------------------------//
 
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
+        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+    }
+
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveImage(imageId);
+    }
+
     function registerGateway(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation
@@ -305,10 +317,15 @@ contract Relay is
         if(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert RelayOverallTimeoutNotOver();
 
+        uint256 callbackDeposit = jobs[_jobId].callbackDeposit;
         delete jobs[_jobId];
-        emit JobCancelled(_jobId);
 
         // release escrow 
+
+        // TODO: remove callback eth (do we need to check 'success' param)
+        (bool success, ) = _msgSender().call{value: callbackDeposit}("");
+        
+        emit JobCancelled(_jobId);
     }
 
     function _callBackWithLimit(

@@ -97,15 +97,8 @@ contract Executors is
     // TODO: add min stake limit and if it falls below that limit then remove from tree
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable MIN_STAKE_AMOUNT;
-    Jobs public jobs;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
-
-    function setJobsContract(Jobs _jobs) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _revokeRole(JOBS_ROLE, (address(jobs)));
-        jobs = _jobs;
-        _grantRole(JOBS_ROLE, address(_jobs));
-    }
 
     //-------------------------------- Executor start --------------------------------//
 
@@ -143,8 +136,7 @@ contract Executors is
 
     event ExecutorStakeAdded(
         address indexed operator,
-        uint256 addedAmount,
-        uint256 totalAmount
+        uint256 addedAmount
     );
 
     event ExecutorStakeRemoveInitiated(
@@ -154,14 +146,14 @@ contract Executors is
 
     event ExecutorStakeRemoved(
         address indexed operator,
-        uint256 removedAmount,
-        uint256 remainingStakedAmount
+        uint256 removedAmount
     );
 
     error ExecutorsLessStakeAmount();
     error ExecutorsInvalidSigner();
     error ExecutorsExecutorAlreadyExists();
-    error ExecutorsAlreadyDeregistered();
+    error ExecutorsAlreadyInitiatedDeregister();
+    error ExecutorsAlreadyInitiatedUnstake();
     error ExecutorsInvalidAmount();
     error ExecutorsInvalidExecutor();
 
@@ -176,11 +168,14 @@ contract Executors is
     ) internal {
         if(_stakeAmount < MIN_STAKE_AMOUNT)
             revert ExecutorsLessStakeAmount();
+        
+        address operator = _msgSender();
+        if(executors[operator].enclaveKey != address(0))
+            revert ExecutorsExecutorAlreadyExists();
 
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
-        address operator = _msgSender();
         // signature check
         bytes32 hashStruct = keccak256(
             abi.encode(
@@ -192,17 +187,10 @@ contract Executors is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        _allowOnlyVerified(signer);
-
         address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
         if(signer != enclaveKey)
             revert ExecutorsInvalidSigner();
 
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _stakeAmount);
-
-        if(executors[operator].enclaveKey != address(0))
-            revert ExecutorsExecutorAlreadyExists();
         executors[operator] = Executor({
             enclaveKey: enclaveKey,
             jobCapacity: _jobCapacity,
@@ -216,6 +204,9 @@ contract Executors is
         // add node to the tree
         _insert_unchecked(operator, uint64(_stakeAmount));
 
+        // transfer stake
+        TOKEN.safeTransferFrom(operator, address(this), _stakeAmount);
+
         emit ExecutorRegistered(operator, enclaveKey);
     }
 
@@ -223,19 +214,21 @@ contract Executors is
         address operator = _msgSender();
         _isValidExecutor(operator);
         if(!executors[operator].status)
-            revert ExecutorsAlreadyDeregistered();
+            revert ExecutorsAlreadyInitiatedDeregister();
 
         executors[operator].status = false;
 
-        if(executors[operator].activeJobs == 0) {
-            // return stake amount
-            TOKEN.safeTransfer(operator, executors[operator].stakeAmount);
-            _revokeEnclaveKey(executors[operator].enclaveKey);
-            delete executors[operator];
-        }
-
         // remove node from the tree
         _deleteIfPresent(operator);
+
+        if(executors[operator].activeJobs == 0) {
+            uint256 stakeAmount = executors[operator].stakeAmount;
+            _revokeEnclaveKey(executors[operator].enclaveKey);
+            delete executors[operator];
+            
+            // return stake amount
+            TOKEN.safeTransfer(operator, stakeAmount);
+        }
 
         emit ExecutorDeregistered(operator);
     }
@@ -245,18 +238,29 @@ contract Executors is
     ) internal {
         if(_amount == 0)
             revert ExecutorsInvalidAmount();
-        
+
         address operator = _msgSender();
         _isValidExecutor(operator);
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _amount);
+
+        if(!executors[operator].status)
+            revert ExecutorsAlreadyInitiatedDeregister();
+        if(executors[operator].unstakeStatus)
+            revert ExecutorsAlreadyInitiatedUnstake();
+        
+        uint256 prevStake = executors[operator].stakeAmount;
         executors[operator].stakeAmount += _amount;
 
-        // update the value in tree only if the node exists in the tree
-        if(executors[operator].activeJobs != executors[operator].jobCapacity)
-            _update_unchecked(operator, uint64(executors[operator].stakeAmount));
+        if(executors[operator].stakeAmount >= MIN_STAKE_AMOUNT) {
+            if(prevStake < MIN_STAKE_AMOUNT)
+                _insert_unchecked(operator, uint64(executors[operator].stakeAmount));
+            else if(executors[operator].activeJobs != executors[operator].jobCapacity)
+                _update_unchecked(operator, uint64(executors[operator].stakeAmount));
+        }
+        
+        // transfer stake
+        TOKEN.safeTransferFrom(operator, address(this), _amount);
 
-        emit ExecutorStakeAdded(operator, _amount, executors[operator].stakeAmount);
+        emit ExecutorStakeAdded(operator, _amount);
     }
 
     function _removeExecutorStake(
@@ -269,7 +273,6 @@ contract Executors is
 
         if(executors[operator].activeJobs == 0) {
             executors[operator].stakeAmount -= _amount;
-            TOKEN.safeTransfer(operator, _amount);
             
             // remove node from tree if stake falls below min level
             if(executors[operator].stakeAmount < MIN_STAKE_AMOUNT)
@@ -278,7 +281,8 @@ contract Executors is
             else
                 _update_unchecked(operator, uint64(executors[operator].stakeAmount));
 
-            emit ExecutorStakeRemoved(operator, _amount, executors[operator].stakeAmount);
+            TOKEN.safeTransfer(operator, _amount);
+            emit ExecutorStakeRemoved(operator, _amount);
         }
         else {
             executors[operator].unstakeStatus = true;
@@ -413,15 +417,15 @@ contract Executors is
         if(executors[_operator].unstakeStatus && executors[_operator].activeJobs == 0) {
             uint256 amount = executors[_operator].stakeAmount < executors[_operator].unstakeAmount ? executors[_operator].stakeAmount : executors[_operator].unstakeAmount;
             executors[_operator].stakeAmount -= amount;
-            TOKEN.safeTransfer(_operator, amount);
             executors[_operator].unstakeAmount = 0;
             executors[_operator].unstakeStatus = false;
             
-            emit ExecutorStakeRemoved(_operator, amount, executors[_operator].stakeAmount);
+            TOKEN.safeTransfer(_operator, amount);
+            emit ExecutorStakeRemoved(_operator, amount);
 
             // update in tree only if the user has not initiated deregistration
             if(executors[_operator].status && executors[_operator].stakeAmount >= MIN_STAKE_AMOUNT)
-                _update_unchecked(_operator, uint64(executors[_operator].stakeAmount));
+                _insert_unchecked(_operator, uint64(executors[_operator].stakeAmount));
         }
         
         // remove node from tree if stake falls below min level
@@ -430,10 +434,11 @@ contract Executors is
 
         // if user has initiated deregister
         if(!executors[_operator].status && executors[_operator].activeJobs == 0) {
-            // return stake amount
-            TOKEN.safeTransfer(_operator, executors[_operator].stakeAmount);
+            uint256 stakeAmount = executors[_operator].stakeAmount;
             _revokeEnclaveKey(executors[_operator].enclaveKey);
             delete executors[_operator];
+            // return stake amount
+            TOKEN.safeTransfer(_operator, stakeAmount);
         }
     }
 
