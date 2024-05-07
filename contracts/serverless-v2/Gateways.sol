@@ -211,20 +211,10 @@ contract Gateways is
         }
 
         // check missing for validating chainIds array for multiple same chainIds
-        
-        gateways[operator] = Gateway({
-            enclaveKey: enclaveKey,
-            chainIds: _chainIds,
-            stakeAmount: _stakeAmount,
-            deregisterStartTime: 0,
-            status: true,
-            unstakeStartTime: 0
-        });
 
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _stakeAmount);
+        _register(operator, enclaveKey, _chainIds);
 
-        emit GatewayRegistered(operator, enclaveKey, _chainIds);
+        _addStake(operator, _stakeAmount);
     }
 
     function _verifySign(
@@ -244,6 +234,18 @@ contract Gateways is
 
         if(signer != _enclaveKey)
             revert GatewaysInvalidSigner();
+    }
+
+    function _register(
+        address _operator,
+        address _enclaveKey,
+        uint256[] memory _chainIds
+    ) internal {
+        gateways[_operator].enclaveKey = _enclaveKey;
+        gateways[_operator].chainIds = _chainIds;
+        gateways[_operator].status = true;
+
+        emit GatewayRegistered(_operator, _enclaveKey, _chainIds);
     }
 
     function _deregisterGateway() internal {
@@ -267,11 +269,10 @@ contract Gateways is
         if(block.timestamp <= gateways[operator].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
             revert GatewaysDeregisterTimePending();
 
-        uint256 stakeAmount = gateways[operator].stakeAmount;
+        _removeStake(operator, gateways[operator].stakeAmount);
+        
         _revokeEnclaveKey(gateways[operator].enclaveKey);
         delete gateways[operator];
-
-        TOKEN.safeTransfer(operator, stakeAmount);
 
         emit GatewayDeregisterCompleted(operator);
     }
@@ -281,12 +282,8 @@ contract Gateways is
     ) internal {
         address operator = _msgSender();
         _isValidGateway(operator);
-        
-        gateways[operator].stakeAmount += _amount;
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _amount);
 
-        emit GatewayStakeAdded(operator, _amount);
+        _addStake(operator, _amount);
     }
 
     // TODO: check if the gateway is assigned some job before full stake removal
@@ -322,14 +319,10 @@ contract Gateways is
         if(_amount == 0)
             revert GatewaysInvalidAmount();
 
-        gateways[operator].stakeAmount -= _amount;
         gateways[operator].unstakeStartTime = 0;
         gateways[operator].status = true;
 
-        // transfer stake
-        TOKEN.safeTransfer(operator, _amount);
-        
-        emit GatewayStakeRemoved(operator, _amount);
+        _removeStake(operator, _amount);
     }
 
     function _addChainGlobal(
@@ -435,6 +428,28 @@ contract Gateways is
     ) internal view {
         if(gateways[_operator].enclaveKey == address(0))
             revert GatewaysInvalidGateway();
+    }
+
+    function _addStake(
+        address _operator,
+        uint256 _amount
+    ) internal {
+        gateways[_operator].stakeAmount += _amount;
+        // transfer stake
+        TOKEN.safeTransferFrom(_operator, address(this), _amount);
+
+        emit GatewayStakeAdded(_operator, _amount);
+    }
+
+    function _removeStake(
+        address _operator,
+        uint256 _amount
+    ) internal {
+        gateways[_operator].stakeAmount -= _amount;
+        // transfer stake
+        TOKEN.safeTransfer(_operator, _amount);
+
+        emit GatewayStakeRemoved(_operator, _amount);
     }
 
     //-------------------------------- internal functions end ----------------------------------//

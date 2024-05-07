@@ -208,10 +208,35 @@ contract Jobs is
 
         address operator = _msgSender();
         // signature check
+        _verifyRelaySign(_signature, operator, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
+
+        address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
+        // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
+        if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
+            jobs[_jobId].isResourceUnavailable = true;
+            emit JobResourceUnavailable(_jobId, operator);
+            return;
+        }
+        selectedExecutors[_jobId] = selectedNodes;
+
+        _relay(_jobId, _codehash, _codeInputs, _deadline, _sequenceId, _jobOwner, operator, selectedNodes);
+    }
+
+    function _verifyRelaySign(
+        bytes memory _signature,
+        address _operator,
+        uint256 _jobId,
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _deadline,  // in milliseconds
+        uint256 _jobRequestTimestamp,
+        uint8 _sequenceId,
+        address _jobOwner
+    ) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 RELAY_JOB_TYPEHASH,
-                operator,
+                _operator,
                 _jobId,
                 _codehash,
                 keccak256(_codeInputs),
@@ -224,28 +249,26 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer, operator);
+        gateways.allowOnlyVerified(signer, _operator);
+    }
 
-        address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
-        // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
-        if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
-            jobs[_jobId].isResourceUnavailable = true;
-            emit JobResourceUnavailable(_jobId, operator);
-            return;
-        }
-        selectedExecutors[_jobId] = selectedNodes;
+    function _relay(
+        uint256 _jobId,
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _deadline,  // in milliseconds
+        uint8 _sequenceId,
+        address _jobOwner,
+        address _operator,
+        address[] memory _selectedNodes
+    ) internal {
+        jobs[_jobId].jobId = _jobId;
+        jobs[_jobId].deadline = _deadline;
+        jobs[_jobId].execStartTime = block.timestamp;
+        jobs[_jobId].jobOwner = _jobOwner;
+        jobs[_jobId].sequenceId = _sequenceId;
 
-        jobs[_jobId] = Job({
-            jobId: _jobId,
-            deadline: _deadline,
-            execStartTime: block.timestamp,
-            jobOwner: _jobOwner,
-            outputCount: 0,
-            sequenceId: _sequenceId,
-            isResourceUnavailable: false
-        });
-
-        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, operator, selectedNodes);
+        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _operator, _selectedNodes);
     }
 
     function _submitOutput(
@@ -260,20 +283,7 @@ contract Jobs is
 
         address operator = _msgSender();
         // signature check
-        bytes32 hashStruct = keccak256(
-            abi.encode(
-                SUBMIT_OUTPUT_TYPEHASH,
-                operator,
-                _jobId,
-                keccak256(_output),
-                _totalTime,
-                _errorCode
-            )
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
-        address signer = digest.recover(_signature);
-
-        executors.allowOnlyVerified(signer, operator);
+        address signer = _verifyOutputSign(_signature, operator, _jobId, _output, _totalTime, _errorCode);
 
         if(!isJobExecutor(_jobId, operator))
             revert JobsNotSelectedExecutor();
@@ -290,6 +300,30 @@ contract Jobs is
 
         // on reward distribution, 1st output executor node gets max reward
         // reward ratio - 2:1:0
+    }
+
+    function _verifyOutputSign(
+        bytes memory _signature,
+        address _operator,
+        uint256 _jobId,
+        bytes memory _output,
+        uint256 _totalTime,
+        uint8 _errorCode
+    ) internal view returns (address signer) {
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                SUBMIT_OUTPUT_TYPEHASH,
+                _operator,
+                _jobId,
+                keccak256(_output),
+                _totalTime,
+                _errorCode
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+        signer = digest.recover(_signature);
+
+        executors.allowOnlyVerified(signer, _operator);
     }
 
     function _isJobExecutor(
@@ -411,10 +445,25 @@ contract Jobs is
 
         address operator = _msgSender();
         // signature check
+        _verifyReassignGatewaySign(_signature, operator, _jobId, _gatewayOperatorOld, _sequenceId, _jobRequestTimestamp);
+
+        emit GatewayReassigned(_jobId, _gatewayOperatorOld, operator, _sequenceId);
+
+        // slash old gateway
+    }
+
+    function _verifyReassignGatewaySign(
+        bytes memory _signature,
+        address _operator,
+        uint256 _jobId,
+        address _gatewayOperatorOld,
+        uint8 _sequenceId,
+        uint256 _jobRequestTimestamp
+    ) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REASSIGN_GATEWAY_TYPEHASH,
-                operator,
+                _operator,
                 _jobId,
                 _gatewayOperatorOld,
                 _sequenceId,
@@ -424,11 +473,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer, operator);
-
-        emit GatewayReassigned(_jobId, _gatewayOperatorOld, operator, _sequenceId);
-
-        // slash old gateway
+        gateways.allowOnlyVerified(signer, _operator);
     }
 
     //-------------------------------- internal functions end ----------------------------------//

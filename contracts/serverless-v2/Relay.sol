@@ -280,10 +280,29 @@ contract Relay is
 
         address operator = _msgSender();
         // signature check
+        _verifyJobResponseSign(_signature, operator, _jobId, _output, _totalTime, _errorCode);
+
+        // TODO: release escrow
+
+        delete jobs[_jobId];
+        
+        bool success = _callBackWithLimit(_jobId, _output, _errorCode);
+
+        emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
+    }
+
+    function _verifyJobResponseSign(
+        bytes memory _signature,
+        address _operator,
+        uint256 _jobId,
+        bytes memory _output,
+        uint256 _totalTime,
+        uint8 _errorCode
+    ) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 JOB_RESPONSE_TYPEHASH,
-                operator,
+                _operator,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -295,16 +314,8 @@ contract Relay is
 
         _allowOnlyVerified(signer);
 
-        if(signer != gatewayKeys[operator])
+        if(signer != gatewayKeys[_operator])
             revert RelayInvalidSigner();
-
-        // TODO: release escrow
-
-        delete jobs[_jobId];
-        
-        bool success = _callBackWithLimit(_jobId, _output, _errorCode);
-
-        emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
     }
 
     function _jobCancel(

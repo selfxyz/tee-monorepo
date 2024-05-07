@@ -132,6 +132,8 @@ contract Executors is
         address indexed enclaveKey
     );
 
+    event ExecutorDeregisterInitiated(address indexed operator);
+    
     event ExecutorDeregistered(address indexed operator);
 
     event ExecutorStakeAdded(
@@ -176,38 +178,48 @@ contract Executors is
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
+        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
+        _verifySign(operator, enclaveKey, _jobCapacity, _signature);
+
+        _register(operator, enclaveKey, _jobCapacity);
+
+        // add node to the tree
+        _insert_unchecked(operator, uint64(_stakeAmount));
+
+        _addStake(operator, _stakeAmount);
+    }
+
+    function _verifySign(
+        address _operator,
+        address _enclaveKey,
+        uint256 _jobCapacity,
+        bytes memory _signature
+    ) internal pure {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REGISTER_TYPEHASH,
-                operator,
+                _operator,
                 _jobCapacity
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
-        if(signer != enclaveKey)
+        if(signer != _enclaveKey)
             revert ExecutorsInvalidSigner();
+    }
 
-        executors[operator] = Executor({
-            enclaveKey: enclaveKey,
-            jobCapacity: _jobCapacity,
-            activeJobs: 0,
-            stakeAmount: _stakeAmount,
-            status: true,
-            unstakeStatus: false,
-            unstakeAmount: 0
-        });
-
-        // add node to the tree
-        _insert_unchecked(operator, uint64(_stakeAmount));
-
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _stakeAmount);
-
-        emit ExecutorRegistered(operator, enclaveKey);
+    function _register(
+        address _operator,
+        address _enclaveKey,
+        uint256 _jobCapacity
+    ) internal {
+        executors[_operator].enclaveKey = _enclaveKey;
+        executors[_operator].jobCapacity = _jobCapacity;
+        executors[_operator].status = true;
+        
+        emit ExecutorRegistered(_operator, _enclaveKey);
     }
 
     function _deregisterExecutor() internal {
@@ -221,16 +233,10 @@ contract Executors is
         // remove node from the tree
         _deleteIfPresent(operator);
 
-        if(executors[operator].activeJobs == 0) {
-            uint256 stakeAmount = executors[operator].stakeAmount;
-            _revokeEnclaveKey(executors[operator].enclaveKey);
-            delete executors[operator];
-            
-            // return stake amount
-            TOKEN.safeTransfer(operator, stakeAmount);
-        }
-
-        emit ExecutorDeregistered(operator);
+        if(executors[operator].activeJobs == 0)
+            _completeDeregister(operator);
+        else
+            emit ExecutorDeregisterInitiated(operator);
     }
 
     function _addExecutorStake(
@@ -248,19 +254,16 @@ contract Executors is
             revert ExecutorsAlreadyInitiatedUnstake();
         
         uint256 prevStake = executors[operator].stakeAmount;
-        executors[operator].stakeAmount += _amount;
+        uint256 updatedStake = prevStake + _amount;
 
-        if(executors[operator].stakeAmount >= MIN_STAKE_AMOUNT) {
+        if(updatedStake >= MIN_STAKE_AMOUNT) {
             if(prevStake < MIN_STAKE_AMOUNT)
-                _insert_unchecked(operator, uint64(executors[operator].stakeAmount));
+                _insert_unchecked(operator, uint64(updatedStake));
             else if(executors[operator].activeJobs != executors[operator].jobCapacity)
-                _update_unchecked(operator, uint64(executors[operator].stakeAmount));
+                _update_unchecked(operator, uint64(updatedStake));
         }
         
-        // transfer stake
-        TOKEN.safeTransferFrom(operator, address(this), _amount);
-
-        emit ExecutorStakeAdded(operator, _amount);
+        _addStake(operator, _amount);
     }
 
     function _removeExecutorStake(
@@ -272,17 +275,16 @@ contract Executors is
             revert ExecutorsInvalidAmount();
 
         if(executors[operator].activeJobs == 0) {
-            executors[operator].stakeAmount -= _amount;
+            uint256 updatedStake = executors[operator].stakeAmount - _amount;
             
             // remove node from tree if stake falls below min level
-            if(executors[operator].stakeAmount < MIN_STAKE_AMOUNT)
+            if(updatedStake < MIN_STAKE_AMOUNT)
                 _deleteIfPresent(operator);
             // update the value in tree only if the node exists in the tree
             else
-                _update_unchecked(operator, uint64(executors[operator].stakeAmount));
+                _update_unchecked(operator, uint64(updatedStake));
 
-            TOKEN.safeTransfer(operator, _amount);
-            emit ExecutorStakeRemoved(operator, _amount);
+            _removeStake(operator, _amount);
         }
         else {
             executors[operator].unstakeStatus = true;
@@ -299,6 +301,28 @@ contract Executors is
     ) internal view {
         if(executors[_operator].enclaveKey == address(0))
             revert ExecutorsInvalidExecutor();
+    }
+
+    function _addStake(
+        address _operator,
+        uint256 _amount
+    ) internal {
+        executors[_operator].stakeAmount += _amount;
+        // transfer stake
+        TOKEN.safeTransferFrom(_operator, address(this), _amount);
+
+        emit ExecutorStakeAdded(_operator, _amount);
+    }
+
+    function _removeStake(
+        address _operator,
+        uint256 _amount
+    ) internal {
+        executors[_operator].stakeAmount -= _amount;
+        // transfer stake
+        TOKEN.safeTransfer(_operator, _amount);
+
+        emit ExecutorStakeRemoved(_operator, _amount);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -414,32 +438,42 @@ contract Executors is
         executors[_operator].activeJobs -= 1;
 
         // if user has initiated unstake then release tokens only if no jobs are pending
-        if(executors[_operator].unstakeStatus && executors[_operator].activeJobs == 0) {
-            uint256 amount = executors[_operator].stakeAmount < executors[_operator].unstakeAmount ? executors[_operator].stakeAmount : executors[_operator].unstakeAmount;
-            executors[_operator].stakeAmount -= amount;
-            executors[_operator].unstakeAmount = 0;
-            executors[_operator].unstakeStatus = false;
-            
-            TOKEN.safeTransfer(_operator, amount);
-            emit ExecutorStakeRemoved(_operator, amount);
+        if(executors[_operator].unstakeStatus && executors[_operator].activeJobs == 0)
+            _completeUnstakePostJob(_operator);
 
-            // update in tree only if the user has not initiated deregistration
-            if(executors[_operator].status && executors[_operator].stakeAmount >= MIN_STAKE_AMOUNT)
-                _insert_unchecked(_operator, uint64(executors[_operator].stakeAmount));
-        }
         
         // remove node from tree if stake falls below min level
         if(executors[_operator].stakeAmount < MIN_STAKE_AMOUNT)
             _deleteIfPresent(_operator);
 
         // if user has initiated deregister
-        if(!executors[_operator].status && executors[_operator].activeJobs == 0) {
-            uint256 stakeAmount = executors[_operator].stakeAmount;
-            _revokeEnclaveKey(executors[_operator].enclaveKey);
-            delete executors[_operator];
-            // return stake amount
-            TOKEN.safeTransfer(_operator, stakeAmount);
-        }
+        if(!executors[_operator].status && executors[_operator].activeJobs == 0)
+            _completeDeregister(_operator);
+    }
+
+    function _completeUnstakePostJob(
+        address _operator
+    ) internal {
+        uint256 amount = executors[_operator].stakeAmount < executors[_operator].unstakeAmount ? executors[_operator].stakeAmount : executors[_operator].unstakeAmount;
+        executors[_operator].unstakeAmount = 0;
+        executors[_operator].unstakeStatus = false;
+        
+        _removeStake(_operator, amount);
+
+        // update in tree only if the user has not initiated deregistration
+        if(executors[_operator].status && executors[_operator].stakeAmount >= MIN_STAKE_AMOUNT)
+            _insert_unchecked(_operator, uint64(executors[_operator].stakeAmount));
+    }
+
+    function _completeDeregister(
+        address _operator
+    ) internal {
+        _removeStake(_operator, executors[_operator].stakeAmount);
+
+        _revokeEnclaveKey(executors[_operator].enclaveKey);
+        delete executors[_operator];
+
+        emit ExecutorDeregistered(_operator);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
