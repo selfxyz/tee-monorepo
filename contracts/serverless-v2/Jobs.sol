@@ -293,7 +293,6 @@ contract Jobs is
         executors.updateOnSubmitOutput(signer);
         hasExecutedJob[_jobId][signer] = true;
 
-        // TODO: emit executorKey(signer) also if reqd
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, ++jobs[_jobId].outputCount);
 
         // cleanup job after 3rd output submitted
@@ -398,7 +397,6 @@ contract Jobs is
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    // TODO: active jobs cannot be updated if deadlineover and 2 of the executor nodes haven't submitted response
     function _slashOnExecutionTimeout(
         uint256 _jobId
     ) internal {
@@ -433,7 +431,6 @@ contract Jobs is
         uint256 _jobRequestTimestamp
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
-        // TODO: add _jobRequestTimestamp in sign to prevent replay attack
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert JobsRelayTimeOver();
 

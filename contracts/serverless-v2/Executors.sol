@@ -11,7 +11,6 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
 import "./tree/TreeUpgradeable.sol";
-import "./Jobs.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
 contract Executors is
@@ -94,7 +93,6 @@ contract Executors is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
-    // TODO: add min stake limit and if it falls below that limit then remove from tree
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable MIN_STAKE_AMOUNT;
 
@@ -151,7 +149,6 @@ contract Executors is
         uint256 removedAmount
     );
 
-    error ExecutorsLessStakeAmount();
     error ExecutorsInvalidSigner();
     error ExecutorsExecutorAlreadyExists();
     error ExecutorsAlreadyInitiatedDeregister();
@@ -168,9 +165,6 @@ contract Executors is
         bytes memory _signature,
         uint256 _stakeAmount
     ) internal {
-        if(_stakeAmount < MIN_STAKE_AMOUNT)
-            revert ExecutorsLessStakeAmount();
-        
         address operator = _msgSender();
         if(executors[operator].enclaveKey != address(0))
             revert ExecutorsExecutorAlreadyExists();
@@ -184,8 +178,9 @@ contract Executors is
 
         _register(operator, enclaveKey, _jobCapacity);
 
-        // add node to the tree
-        _insert_unchecked(operator, uint64(_stakeAmount));
+        // add node to the tree if min stake amount deposited
+        if(_stakeAmount >= MIN_STAKE_AMOUNT)
+            _insert_unchecked(operator, uint64(_stakeAmount));
 
         _addStake(operator, _stakeAmount);
     }
@@ -242,9 +237,6 @@ contract Executors is
     function _addExecutorStake(
         uint256 _amount
     ) internal {
-        if(_amount == 0)
-            revert ExecutorsInvalidAmount();
-
         address operator = _msgSender();
         _isValidExecutor(operator);
 
@@ -271,6 +263,9 @@ contract Executors is
     ) internal {
         address operator = _msgSender();
         _isValidExecutor(operator);
+
+        if(!executors[operator].status)
+            revert ExecutorsAlreadyInitiatedDeregister();
         if(_amount == 0 || _amount > executors[operator].stakeAmount - executors[operator].unstakeAmount)
             revert ExecutorsInvalidAmount();
 
@@ -486,9 +481,6 @@ contract Executors is
         return _selectExecutors(_noOfNodesToSelect);
     }
 
-    // TODO:
-    // if unstake is true, activeJob = 0 then insert and release unstake tokens
-    // if unstake true, active job > 0, then --activeJob
     function updateOnSubmitOutput(
         address _operator
     ) external onlyRole(JOBS_ROLE) {

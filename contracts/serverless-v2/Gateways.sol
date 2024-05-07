@@ -251,7 +251,6 @@ contract Gateways is
     function _deregisterGateway() internal {
         address operator = _msgSender();
         _isValidGateway(operator);
-        // TODO: cannot call deregister initiate again
         if(gateways[operator].deregisterStartTime > 0)
             revert GatewaysDeregisterAlreadyInitiated();
 
@@ -290,7 +289,7 @@ contract Gateways is
     function _removeGatewayStake() internal {
         address operator = _msgSender();
         _isValidGateway(operator);
-        // TODO: cannot remove stake if deregister initiated already
+
         if(gateways[operator].deregisterStartTime > 0)
             revert GatewaysDeregisterAlreadyInitiated();
         if(gateways[operator].unstakeStartTime > 0)
@@ -302,7 +301,6 @@ contract Gateways is
         emit GatewayStakeRemoveInitiated(operator);
     }
 
-    // TODO: if initiated unstake, and then deregister....then complete unstake shouldn't be allowed
     function _completeRemoveGatewayStake(
         uint256 _amount
     ) internal {
