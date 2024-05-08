@@ -127,7 +127,7 @@ contract Jobs is
 
     // jobKey => executors
     mapping(uint256 => address[]) public selectedExecutors;
-    // jobKey => selectedExecutorOperator => hasExecuted
+    // jobKey => selectedExecutor => hasExecuted
     mapping(uint256 => mapping(address => bool)) public hasExecutedJob;
 
     bytes32 private constant DOMAIN_SEPARATOR = 
@@ -140,13 +140,13 @@ contract Jobs is
         );
     
     bytes32 private constant RELAY_JOB_TYPEHASH = 
-        keccak256("RelayJob(address operator,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner)");
+        keccak256("RelayJob(address gateway,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner)");
 
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
-        keccak256("SubmitOutput(address operator,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
+        keccak256("SubmitOutput(address executor,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
 
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
-        keccak256("ReassignGateway(address operator,uint256 jobId,address gatewayOperatorOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
+        keccak256("ReassignGateway(address gateway,uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -154,7 +154,7 @@ contract Jobs is
         bytes codeInputs,
         uint256 deadline,   // in milliseconds
         address jobOwner,
-        address gatewayOperator,
+        address gateway,
         address[] selectedExecutors
     );
 
@@ -168,7 +168,7 @@ contract Jobs is
 
     event JobResourceUnavailable(
         uint256 indexed jobId,
-        address indexed gatewayOperator
+        address indexed gateway
     );
 
     error JobsRelayTimeOver();
@@ -206,25 +206,25 @@ contract Jobs is
         if(!gateways.isChainSupported(reqChainId))
             revert JobsUnsupportedChain();
 
-        address operator = _msgSender();
+        address gateway = _msgSender();
         // signature check
-        _verifyRelaySign(_signature, operator, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
+        _verifyRelaySign(_signature, gateway, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
 
         address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             jobs[_jobId].isResourceUnavailable = true;
-            emit JobResourceUnavailable(_jobId, operator);
+            emit JobResourceUnavailable(_jobId, gateway);
             return;
         }
         selectedExecutors[_jobId] = selectedNodes;
 
-        _relay(_jobId, _codehash, _codeInputs, _deadline, _sequenceId, _jobOwner, operator, selectedNodes);
+        _relay(_jobId, _codehash, _codeInputs, _deadline, _sequenceId, _jobOwner, gateway, selectedNodes);
     }
 
     function _verifyRelaySign(
         bytes memory _signature,
-        address _operator,
+        address _gateway,
         uint256 _jobId,
         bytes32 _codehash,
         bytes memory _codeInputs,
@@ -236,7 +236,7 @@ contract Jobs is
         bytes32 hashStruct = keccak256(
             abi.encode(
                 RELAY_JOB_TYPEHASH,
-                _operator,
+                _gateway,
                 _jobId,
                 _codehash,
                 keccak256(_codeInputs),
@@ -249,7 +249,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer, _operator);
+        gateways.allowOnlyVerified(signer, _gateway);
     }
 
     function _relay(
@@ -259,7 +259,7 @@ contract Jobs is
         uint256 _deadline,  // in milliseconds
         uint8 _sequenceId,
         address _jobOwner,
-        address _operator,
+        address _gateway,
         address[] memory _selectedNodes
     ) internal {
         jobs[_jobId].jobId = _jobId;
@@ -268,7 +268,7 @@ contract Jobs is
         jobs[_jobId].jobOwner = _jobOwner;
         jobs[_jobId].sequenceId = _sequenceId;
 
-        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _operator, _selectedNodes);
+        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _gateway, _selectedNodes);
     }
 
     function _submitOutput(
@@ -281,11 +281,11 @@ contract Jobs is
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
-        address operator = _msgSender();
+        address executor = _msgSender();
         // signature check
-        address signer = _verifyOutputSign(_signature, operator, _jobId, _output, _totalTime, _errorCode);
+        address signer = _verifyOutputSign(_signature, executor, _jobId, _output, _totalTime, _errorCode);
 
-        if(!isJobExecutor(_jobId, operator))
+        if(!isJobExecutor(_jobId, executor))
             revert JobsNotSelectedExecutor();
         if(hasExecutedJob[_jobId][signer])
             revert JobsExecutorAlreadySubmittedOutput();
@@ -303,7 +303,7 @@ contract Jobs is
 
     function _verifyOutputSign(
         bytes memory _signature,
-        address _operator,
+        address _executor,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
@@ -312,7 +312,7 @@ contract Jobs is
         bytes32 hashStruct = keccak256(
             abi.encode(
                 SUBMIT_OUTPUT_TYPEHASH,
-                _operator,
+                _executor,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -322,7 +322,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
-        executors.allowOnlyVerified(signer, _operator);
+        executors.allowOnlyVerified(signer, _executor);
     }
 
     function _isJobExecutor(
@@ -382,12 +382,12 @@ contract Jobs is
 
     event SlashedOnExecutionTimeout(
         uint256 indexed jobId,
-        address indexed executorOperator
+        address indexed executor
     );
 
     event GatewayReassigned(
         uint256 indexed jobId,
-        address prevGatewayOperator,
+        address prevGateway,
         address reporterGateway,
         uint8 sequenceId
     );
@@ -413,18 +413,18 @@ contract Jobs is
 
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            address executorOperator = selectedExecutors[_jobId][index];
-            executors.updateOnExecutionTimeoutSlash(executorOperator, hasExecutedJob[_jobId][executorOperator]);
-            if(!hasExecutedJob[_jobId][executorOperator])
-                emit SlashedOnExecutionTimeout(_jobId, executorOperator);
-            delete hasExecutedJob[_jobId][executorOperator];
+            address executor = selectedExecutors[_jobId][index];
+            executors.updateOnExecutionTimeoutSlash(executor, hasExecutedJob[_jobId][executor]);
+            if(!hasExecutedJob[_jobId][executor])
+                emit SlashedOnExecutionTimeout(_jobId, executor);
+            delete hasExecutedJob[_jobId][executor];
         }
 
         delete selectedExecutors[_jobId];
     }
 
     function _reassignGatewayRelay(
-        address _gatewayOperatorOld,
+        address _gatewayOld,
         uint256 _jobId,
         bytes memory _signature,
         uint8 _sequenceId,
@@ -440,29 +440,29 @@ contract Jobs is
             revert JobsInvalidSequenceId();
         jobs[_jobId].sequenceId = _sequenceId;
 
-        address operator = _msgSender();
+        address gateway = _msgSender();
         // signature check
-        _verifyReassignGatewaySign(_signature, operator, _jobId, _gatewayOperatorOld, _sequenceId, _jobRequestTimestamp);
+        _verifyReassignGatewaySign(_signature, gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
 
-        emit GatewayReassigned(_jobId, _gatewayOperatorOld, operator, _sequenceId);
+        emit GatewayReassigned(_jobId, _gatewayOld, gateway, _sequenceId);
 
         // slash old gateway
     }
 
     function _verifyReassignGatewaySign(
         bytes memory _signature,
-        address _operator,
+        address _gateway,
         uint256 _jobId,
-        address _gatewayOperatorOld,
+        address _gatewayOld,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp
     ) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REASSIGN_GATEWAY_TYPEHASH,
-                _operator,
+                _gateway,
                 _jobId,
-                _gatewayOperatorOld,
+                _gatewayOld,
                 _sequenceId,
                 _jobRequestTimestamp
             )
@@ -470,7 +470,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer, _operator);
+        gateways.allowOnlyVerified(signer, _gateway);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -484,13 +484,13 @@ contract Jobs is
     }
 
     function reassignGatewayRelay(
-        address _gatewayOperatorOld,
+        address _gatewayOld,
         uint256 _jobId,
         bytes memory _signature,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp
     ) external {
-        _reassignGatewayRelay(_gatewayOperatorOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp);
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp);
     }
 
     //-------------------------------- external functions end ----------------------------------//

@@ -108,18 +108,18 @@ contract Relay is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable OVERALL_TIMEOUT;
 
-    // Gateway operator => enclaveKey
+    // gateway => enclaveKey
     mapping(address => address) public gatewayKeys;
 
     event GatewayRegistered(
-        address indexed operator,
+        address indexed gateway,
         address indexed enclaveKey
     );
 
-    event GatewayDeregistered(address indexed operator);
+    event GatewayDeregistered(address indexed gateway);
 
     error RelayGatewayAlreadyExists();
-    error RelayInvalidGatewayOperator();
+    error RelayInvalidGateway();
 
     //-------------------------------- internal functions start --------------------------------//
 
@@ -131,23 +131,23 @@ contract Relay is
         _verifyEnclaveKey(_attestationSignature, _attestation);
         
         address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
-        address operator = _msgSender();
-        if(gatewayKeys[operator] != address(0))
+        address gateway = _msgSender();
+        if(gatewayKeys[gateway] != address(0))
             revert RelayGatewayAlreadyExists();
-        gatewayKeys[operator] = enclaveKey;
+        gatewayKeys[gateway] = enclaveKey;
 
-        emit GatewayRegistered(operator, enclaveKey);
+        emit GatewayRegistered(gateway, enclaveKey);
     }
 
     function _deregisterGateway() internal {
-        address operator = _msgSender();
-        if(gatewayKeys[operator] == address(0))
-            revert RelayInvalidGatewayOperator();
+        address gateway = _msgSender();
+        if(gatewayKeys[gateway] == address(0))
+            revert RelayInvalidGateway();
 
-        _revokeEnclaveKey(gatewayKeys[operator]);
-        delete gatewayKeys[operator];
+        _revokeEnclaveKey(gatewayKeys[gateway]);
+        delete gatewayKeys[gateway];
 
-        emit GatewayDeregistered(operator);
+        emit GatewayDeregistered(gateway);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -206,7 +206,7 @@ contract Relay is
         );
     
     bytes32 private constant JOB_RESPONSE_TYPEHASH = 
-        keccak256("JobResponse(address operator,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
+        keccak256("JobResponse(address gateway,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -278,9 +278,9 @@ contract Relay is
         if(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert RelayOverallTimeoutOver();
 
-        address operator = _msgSender();
+        address gateway = _msgSender();
         // signature check
-        _verifyJobResponseSign(_signature, operator, _jobId, _output, _totalTime, _errorCode);
+        _verifyJobResponseSign(_signature, gateway, _jobId, _output, _totalTime, _errorCode);
 
         // TODO: release escrow
 
@@ -293,7 +293,7 @@ contract Relay is
 
     function _verifyJobResponseSign(
         bytes memory _signature,
-        address _operator,
+        address _gateway,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
@@ -302,7 +302,7 @@ contract Relay is
         bytes32 hashStruct = keccak256(
             abi.encode(
                 JOB_RESPONSE_TYPEHASH,
-                _operator,
+                _gateway,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -314,7 +314,7 @@ contract Relay is
 
         _allowOnlyVerified(signer);
 
-        if(signer != gatewayKeys[_operator])
+        if(signer != gatewayKeys[_gateway])
             revert RelayInvalidSigner();
     }
 
