@@ -95,7 +95,7 @@ contract Gateways is
     modifier isValidGateway(
         address _gateway
     ) {
-        if(gateways[_gateway].enclaveKey == address(0))
+        if(gateways[_gateway].enclaveAddress == address(0))
             revert GatewaysInvalidGateway();
         _;
     }
@@ -109,7 +109,7 @@ contract Gateways is
     mapping(uint256 => RequestChain) public requestChains;
 
     struct Gateway {
-        address enclaveKey;
+        address enclaveAddress;
         uint256[] chainIds;
         uint256 stakeAmount;
         uint256 deregisterStartTime;
@@ -134,7 +134,7 @@ contract Gateways is
 
     event GatewayRegistered(
         address indexed gateway,
-        address indexed enclaveKey,
+        address indexed enclaveAddress,
         uint256[] chainIds
     );
 
@@ -205,11 +205,11 @@ contract Gateways is
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
-        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
+        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_gateway, _chainIds, _signature, enclaveKey);
+        _verifySign(_gateway, _chainIds, _signature, enclaveAddress);
         
-        if(gateways[_gateway].enclaveKey != address(0))
+        if(gateways[_gateway].enclaveAddress != address(0))
             revert GatewaysGatewayAlreadyExists();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
@@ -219,7 +219,7 @@ contract Gateways is
 
         // check missing for validating chainIds array for multiple same chainIds
 
-        _register(_gateway, enclaveKey, _chainIds);
+        _register(_gateway, enclaveAddress, _chainIds);
 
         _addStake(_gateway, _stakeAmount);
     }
@@ -228,7 +228,7 @@ contract Gateways is
         address _gateway,
         uint256[] memory _chainIds,
         bytes memory _signature,
-        address _enclaveKey
+        address _enclaveAddress
     ) internal pure {
         bytes32 hashStruct = keccak256(
             abi.encode(
@@ -240,20 +240,20 @@ contract Gateways is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        if(signer != _enclaveKey)
+        if(signer != _enclaveAddress)
             revert GatewaysInvalidSigner();
     }
 
     function _register(
         address _gateway,
-        address _enclaveKey,
+        address _enclaveAddress,
         uint256[] memory _chainIds
     ) internal {
-        gateways[_gateway].enclaveKey = _enclaveKey;
+        gateways[_gateway].enclaveAddress = _enclaveAddress;
         gateways[_gateway].chainIds = _chainIds;
         gateways[_gateway].status = true;
 
-        emit GatewayRegistered(_gateway, _enclaveKey, _chainIds);
+        emit GatewayRegistered(_gateway, _enclaveAddress, _chainIds);
     }
 
     function _deregisterGateway(
@@ -278,7 +278,7 @@ contract Gateways is
 
         _removeStake(_gateway, gateways[_gateway].stakeAmount);
         
-        _revokeEnclaveKey(gateways[_gateway].enclaveKey);
+        _revokeEnclaveKey(gateways[_gateway].enclaveAddress);
         delete gateways[_gateway];
 
         emit GatewayDeregisterCompleted(_gateway);
@@ -525,11 +525,11 @@ contract Gateways is
     }
 
     function allowOnlyVerified(
-        address _enclaveKey,
+        address _enclaveAddress,
         address _gateway
     ) external view {
-        _allowOnlyVerified(_enclaveKey);
-        if(_enclaveKey != gateways[_gateway].enclaveKey)
+        _allowOnlyVerified(_enclaveAddress);
+        if(_enclaveAddress != gateways[_gateway].enclaveAddress)
             revert GatewaysInvalidSigner();
     }
 

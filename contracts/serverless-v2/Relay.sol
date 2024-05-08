@@ -108,12 +108,12 @@ contract Relay is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable OVERALL_TIMEOUT;
 
-    // gateway => enclaveKey
-    mapping(address => address) public gatewayKeys;
+    // gateway => enclaveAddress
+    mapping(address => address) public gatewayAddresses;
 
     event GatewayRegistered(
         address indexed gateway,
-        address indexed enclaveKey
+        address indexed enclaveAddress
     );
 
     event GatewayDeregistered(address indexed gateway);
@@ -131,22 +131,22 @@ contract Relay is
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
         
-        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
-        if(gatewayKeys[_gateway] != address(0))
+        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
+        if(gatewayAddresses[_gateway] != address(0))
             revert RelayGatewayAlreadyExists();
-        gatewayKeys[_gateway] = enclaveKey;
+        gatewayAddresses[_gateway] = enclaveAddress;
 
-        emit GatewayRegistered(_gateway, enclaveKey);
+        emit GatewayRegistered(_gateway, enclaveAddress);
     }
 
     function _deregisterGateway(
         address _gateway
     ) internal {
-        if(gatewayKeys[_gateway] == address(0))
+        if(gatewayAddresses[_gateway] == address(0))
             revert RelayInvalidGateway();
 
-        _revokeEnclaveKey(gatewayKeys[_gateway]);
-        delete gatewayKeys[_gateway];
+        _revokeEnclaveKey(gatewayAddresses[_gateway]);
+        delete gatewayAddresses[_gateway];
 
         emit GatewayDeregistered(_gateway);
     }
@@ -314,7 +314,7 @@ contract Relay is
 
         _allowOnlyVerified(signer);
 
-        if(signer != gatewayKeys[_gateway])
+        if(signer != gatewayAddresses[_gateway])
             revert RelayInvalidSigner();
     }
 

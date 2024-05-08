@@ -103,13 +103,13 @@ contract Executors is
     modifier isValidExecutor(
         address _executor
     ) {
-        if(executors[_executor].enclaveKey == address(0))
+        if(executors[_executor].enclaveAddress == address(0))
             revert ExecutorsInvalidExecutor();
         _;
     }
 
     struct Executor {
-        address enclaveKey;
+        address enclaveAddress;
         uint256 jobCapacity;
         uint256 activeJobs;
         uint256 stakeAmount;
@@ -135,7 +135,7 @@ contract Executors is
 
     event ExecutorRegistered(
         address indexed executor,
-        address indexed enclaveKey
+        address indexed enclaveAddress
     );
 
     event ExecutorDeregisterInitiated(address indexed executor);
@@ -174,17 +174,17 @@ contract Executors is
         uint256 _stakeAmount,
         address _executor
     ) internal {
-        if(executors[_executor].enclaveKey != address(0))
+        if(executors[_executor].enclaveAddress != address(0))
             revert ExecutorsExecutorAlreadyExists();
 
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
-        address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
+        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_executor, enclaveKey, _jobCapacity, _signature);
+        _verifySign(_executor, enclaveAddress, _jobCapacity, _signature);
 
-        _register(_executor, enclaveKey, _jobCapacity);
+        _register(_executor, enclaveAddress, _jobCapacity);
 
         // add node to the tree if min stake amount deposited
         if(_stakeAmount >= MIN_STAKE_AMOUNT)
@@ -195,7 +195,7 @@ contract Executors is
 
     function _verifySign(
         address _executor,
-        address _enclaveKey,
+        address _enclaveAddress,
         uint256 _jobCapacity,
         bytes memory _signature
     ) internal pure {
@@ -209,20 +209,20 @@ contract Executors is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        if(signer != _enclaveKey)
+        if(signer != _enclaveAddress)
             revert ExecutorsInvalidSigner();
     }
 
     function _register(
         address _executor,
-        address _enclaveKey,
+        address _enclaveAddress,
         uint256 _jobCapacity
     ) internal {
-        executors[_executor].enclaveKey = _enclaveKey;
+        executors[_executor].enclaveAddress = _enclaveAddress;
         executors[_executor].jobCapacity = _jobCapacity;
         executors[_executor].status = true;
         
-        emit ExecutorRegistered(_executor, _enclaveKey);
+        emit ExecutorRegistered(_executor, _enclaveAddress);
     }
 
     function _deregisterExecutor(
@@ -360,11 +360,11 @@ contract Executors is
     }
 
     function allowOnlyVerified(
-        address _enclaveKey,
+        address _enclaveAddress,
         address _executor
     ) external view {
-        _allowOnlyVerified(_enclaveKey);
-        if(_enclaveKey != executors[_executor].enclaveKey)
+        _allowOnlyVerified(_enclaveAddress);
+        if(_enclaveAddress != executors[_executor].enclaveAddress)
             revert ExecutorsInvalidSigner();
     }
 
@@ -462,7 +462,7 @@ contract Executors is
     ) internal {
         _removeStake(_executor, executors[_executor].stakeAmount);
 
-        _revokeEnclaveKey(executors[_executor].enclaveKey);
+        _revokeEnclaveKey(executors[_executor].enclaveAddress);
         delete executors[_executor];
 
         emit ExecutorDeregistered(_executor);
