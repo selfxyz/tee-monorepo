@@ -92,6 +92,13 @@ contract Gateways is
 
     //-------------------------------- Gateway start --------------------------------//
 
+    modifier isValidGateway(
+        address _gateway
+    ) {
+        if(gateways[_gateway].enclaveKey == address(0))
+            revert GatewaysInvalidGateway();
+        _;
+    }
 
     struct RequestChain {
         address contractAddress;
@@ -192,17 +199,17 @@ contract Gateways is
         IAttestationVerifier.Attestation memory _attestation,
         uint256[] memory _chainIds,
         bytes memory _signature,
-        uint256 _stakeAmount
+        uint256 _stakeAmount,
+        address _gateway
     ) internal {
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
-        address gateway = _msgSender();
         address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_chainIds, _signature, enclaveKey);
+        _verifySign(_gateway, _chainIds, _signature, enclaveKey);
         
-        if(gateways[gateway].enclaveKey != address(0))
+        if(gateways[_gateway].enclaveKey != address(0))
             revert GatewaysGatewayAlreadyExists();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
@@ -212,20 +219,21 @@ contract Gateways is
 
         // check missing for validating chainIds array for multiple same chainIds
 
-        _register(gateway, enclaveKey, _chainIds);
+        _register(_gateway, enclaveKey, _chainIds);
 
-        _addStake(gateway, _stakeAmount);
+        _addStake(_gateway, _stakeAmount);
     }
 
     function _verifySign(
+        address _gateway,
         uint256[] memory _chainIds,
         bytes memory _signature,
         address _enclaveKey
-    ) internal view {
+    ) internal pure {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REGISTER_TYPEHASH,
-                _msgSender(),
+                _gateway,
                 keccak256(abi.encodePacked(_chainIds))
             )
         );
@@ -248,79 +256,75 @@ contract Gateways is
         emit GatewayRegistered(_gateway, _enclaveKey, _chainIds);
     }
 
-    function _deregisterGateway() internal {
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
-        if(gateways[gateway].deregisterStartTime > 0)
+    function _deregisterGateway(
+        address _gateway
+    ) internal {
+        if(gateways[_gateway].deregisterStartTime > 0)
             revert GatewaysDeregisterAlreadyInitiated();
 
-        gateways[gateway].status = false;
-        gateways[gateway].deregisterStartTime = block.timestamp;
+        gateways[_gateway].status = false;
+        gateways[_gateway].deregisterStartTime = block.timestamp;
 
-        emit GatewayDeregistered(gateway);
+        emit GatewayDeregistered(_gateway);
     }
 
-    function _completeDeregistration() internal {
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
-        if(gateways[gateway].deregisterStartTime == 0)
+    function _completeDeregistration(
+        address _gateway
+    ) internal {
+        if(gateways[_gateway].deregisterStartTime == 0)
             revert GatewaysDeregisterNotInitiated();
-        if(block.timestamp <= gateways[gateway].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
+        if(block.timestamp <= gateways[_gateway].deregisterStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
             revert GatewaysDeregisterTimePending();
 
-        _removeStake(gateway, gateways[gateway].stakeAmount);
+        _removeStake(_gateway, gateways[_gateway].stakeAmount);
         
-        _revokeEnclaveKey(gateways[gateway].enclaveKey);
-        delete gateways[gateway];
+        _revokeEnclaveKey(gateways[_gateway].enclaveKey);
+        delete gateways[_gateway];
 
-        emit GatewayDeregisterCompleted(gateway);
+        emit GatewayDeregisterCompleted(_gateway);
     }
 
     function _addGatewayStake(
-        uint256 _amount
+        uint256 _amount,
+        address _gateway
     ) internal {
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
-
-        _addStake(gateway, _amount);
+        _addStake(_gateway, _amount);
     }
 
     // TODO: check if the gateway is assigned some job before full stake removal
-    function _removeGatewayStake() internal {
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
-
-        if(gateways[gateway].deregisterStartTime > 0)
+    function _removeGatewayStake(
+        address _gateway
+    ) internal {
+        if(gateways[_gateway].deregisterStartTime > 0)
             revert GatewaysDeregisterAlreadyInitiated();
-        if(gateways[gateway].unstakeStartTime > 0)
+        if(gateways[_gateway].unstakeStartTime > 0)
             revert GatewaysStakeRemoveAlreadyInitiated();
 
-        gateways[gateway].status = false;
-        gateways[gateway].unstakeStartTime = block.timestamp;
+        gateways[_gateway].status = false;
+        gateways[_gateway].unstakeStartTime = block.timestamp;
 
-        emit GatewayStakeRemoveInitiated(gateway);
+        emit GatewayStakeRemoveInitiated(_gateway);
     }
 
     function _completeRemoveGatewayStake(
-        uint256 _amount
+        uint256 _amount,
+        address _gateway
     ) internal {
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
-        if(gateways[gateway].status)
+        if(gateways[_gateway].status)
             revert GatewaysInvalidStatus();
-        if(gateways[gateway].deregisterStartTime > 0)
+        if(gateways[_gateway].deregisterStartTime > 0)
             revert GatewaysDeregisterAlreadyInitiated();
-        if(block.timestamp <= gateways[gateway].unstakeStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
+        if(block.timestamp <= gateways[_gateway].unstakeStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
             revert GatewaysUnstakeTimePending();
 
-        _amount = _amount < gateways[gateway].stakeAmount ? _amount : gateways[gateway].stakeAmount;
+        _amount = _amount < gateways[_gateway].stakeAmount ? _amount : gateways[_gateway].stakeAmount;
         if(_amount == 0)
             revert GatewaysInvalidAmount();
 
-        gateways[gateway].unstakeStartTime = 0;
-        gateways[gateway].status = true;
+        gateways[_gateway].unstakeStartTime = 0;
+        gateways[_gateway].status = true;
 
-        _removeStake(gateway, _amount);
+        _removeStake(_gateway, _amount);
     }
 
     function _addChainGlobal(
@@ -352,55 +356,51 @@ contract Gateways is
     }
 
     function _addChains(
-        uint256[] memory _chainIds
+        uint256[] memory _chainIds,
+        address _gateway
     ) internal {
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
 
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
-
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            _addChain(_chainIds[index], gateway);
+            _addChain(_chainIds[index], _gateway);
         }
     }
 
     function _removeChains(
-        uint256[] memory _chainIds
+        uint256[] memory _chainIds,
+        address _gateway
     ) internal {
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
-        
-        address gateway = _msgSender();
-        _isValidGateway(gateway);
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            _removeChain(_chainIds[index], gateway);
+            _removeChain(_chainIds[index], _gateway);
         }
     }
 
     function _addChain(
         uint256 _chainId,
-        address gateway
+        address _gateway
     ) internal {
         if(requestChains[_chainId].contractAddress == address(0))
             revert GatewaysUnsupportedChain();
 
-        uint256[] memory chainIdList = gateways[gateway].chainIds;
+        uint256[] memory chainIdList = gateways[_gateway].chainIds;
         for (uint256 index = 0; index < chainIdList.length; index++) {
             if(chainIdList[index] == _chainId)
                 revert GatewaysChainAlreadyExists(_chainId);
         }
-        gateways[gateway].chainIds.push(_chainId);
+        gateways[_gateway].chainIds.push(_chainId);
 
-        emit ChainAdded(gateway, _chainId);
+        emit ChainAdded(_gateway, _chainId);
     }
 
     function _removeChain(
         uint256 _chainId,
-        address gateway
+        address _gateway
     ) internal {
-        uint256[] memory chainIdList = gateways[gateway].chainIds;
+        uint256[] memory chainIdList = gateways[_gateway].chainIds;
         uint256 len = chainIdList.length;
         if(len == 0)
             revert GatewaysEmptyChainlist();
@@ -414,18 +414,11 @@ contract Gateways is
         if(index == len)
             revert GatewaysChainNotFound(_chainId);
         if (index != len - 1)
-            gateways[gateway].chainIds[index] = gateways[gateway].chainIds[len - 1];
+            gateways[_gateway].chainIds[index] = gateways[_gateway].chainIds[len - 1];
 
-        gateways[gateway].chainIds.pop();
+        gateways[_gateway].chainIds.pop();
 
-        emit ChainRemoved(gateway, _chainId);
-    }
-
-    function _isValidGateway(
-        address _gateway
-    ) internal view {
-        if(gateways[_gateway].enclaveKey == address(0))
-            revert GatewaysInvalidGateway();
+        emit ChainRemoved(_gateway, _chainId);
     }
 
     function _addStake(
@@ -473,31 +466,31 @@ contract Gateways is
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerGateway(_attestationSignature, _attestation, _chainIds, _signature, _stakeAmount);
+        _registerGateway(_attestationSignature, _attestation, _chainIds, _signature, _stakeAmount, _msgSender());
     }
 
-    function deregisterGateway() external {
-        _deregisterGateway();
+    function deregisterGateway() external isValidGateway(_msgSender()) {
+        _deregisterGateway(_msgSender());
     }
 
-    function completeDeregistration() external {
-        _completeDeregistration();
+    function completeDeregistration() external isValidGateway(_msgSender()) {
+        _completeDeregistration(_msgSender());
     }
 
     function addGatewayStake(
         uint256 _amount
-    ) external {
-        _addGatewayStake(_amount);
+    ) external isValidGateway(_msgSender()) {
+        _addGatewayStake(_amount, _msgSender());
     }
 
-    function removeGatewayStake() external {
-        _removeGatewayStake();
+    function removeGatewayStake() external isValidGateway(_msgSender()) {
+        _removeGatewayStake(_msgSender());
     }
 
     function completeRemoveGatewayStake(
         uint256 _amount
-    ) external {
-        _completeRemoveGatewayStake(_amount);
+    ) external isValidGateway(_msgSender()) {
+        _completeRemoveGatewayStake(_amount, _msgSender());
     }
 
     function addChainGlobal(
@@ -515,14 +508,14 @@ contract Gateways is
 
     function addChains(
         uint256[] memory _chainIds
-    ) external {
-        _addChains(_chainIds);
+    ) external isValidGateway(_msgSender()) {
+        _addChains(_chainIds, _msgSender());
     }
 
     function removeChains(
         uint256[] memory _chainIds
-    ) external {
-        _removeChains(_chainIds);
+    ) external isValidGateway(_msgSender()) {
+        _removeChains(_chainIds, _msgSender());
     }
 
     function isChainSupported(

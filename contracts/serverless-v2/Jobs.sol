@@ -190,7 +190,8 @@ contract Jobs is
         uint256 _deadline,  // in milliseconds
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
-        address _jobOwner
+        address _jobOwner,
+        address _gateway
     ) internal {
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert JobsRelayTimeOver();
@@ -206,20 +207,19 @@ contract Jobs is
         if(!gateways.isChainSupported(reqChainId))
             revert JobsUnsupportedChain();
 
-        address gateway = _msgSender();
         // signature check
-        _verifyRelaySign(_signature, gateway, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
+        _verifyRelaySign(_signature, _gateway, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
 
         address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             jobs[_jobId].isResourceUnavailable = true;
-            emit JobResourceUnavailable(_jobId, gateway);
+            emit JobResourceUnavailable(_jobId, _gateway);
             return;
         }
         selectedExecutors[_jobId] = selectedNodes;
 
-        _relay(_jobId, _codehash, _codeInputs, _deadline, _sequenceId, _jobOwner, gateway, selectedNodes);
+        _relay(_jobId, _codehash, _codeInputs, _deadline, _sequenceId, _jobOwner, _gateway, selectedNodes);
     }
 
     function _verifyRelaySign(
@@ -276,16 +276,16 @@ contract Jobs is
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
-        uint8 _errorCode
+        uint8 _errorCode,
+        address _executor
     ) internal {
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
-        address executor = _msgSender();
         // signature check
-        address signer = _verifyOutputSign(_signature, executor, _jobId, _output, _totalTime, _errorCode);
+        address signer = _verifyOutputSign(_signature, _executor, _jobId, _output, _totalTime, _errorCode);
 
-        if(!isJobExecutor(_jobId, executor))
+        if(!isJobExecutor(_jobId, _executor))
             revert JobsNotSelectedExecutor();
         if(hasExecutedJob[_jobId][signer])
             revert JobsExecutorAlreadySubmittedOutput();
@@ -353,7 +353,7 @@ contract Jobs is
         uint8 _sequenceId,
         address _jobOwner
     ) external {
-        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
+        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _msgSender());
     }
 
     function submitOutput(
@@ -363,7 +363,7 @@ contract Jobs is
         uint256 _totalTime,
         uint8 _errorCode
     ) external {
-        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode);
+        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _msgSender());
     }
 
     function isJobExecutor(
@@ -428,7 +428,8 @@ contract Jobs is
         uint256 _jobId,
         bytes memory _signature,
         uint8 _sequenceId,
-        uint256 _jobRequestTimestamp
+        uint256 _jobRequestTimestamp,
+        address _gateway
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
@@ -440,11 +441,10 @@ contract Jobs is
             revert JobsInvalidSequenceId();
         jobs[_jobId].sequenceId = _sequenceId;
 
-        address gateway = _msgSender();
         // signature check
-        _verifyReassignGatewaySign(_signature, gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
+        _verifyReassignGatewaySign(_signature, _gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
 
-        emit GatewayReassigned(_jobId, _gatewayOld, gateway, _sequenceId);
+        emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
 
         // slash old gateway
     }
@@ -490,7 +490,7 @@ contract Jobs is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp
     ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp);
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//

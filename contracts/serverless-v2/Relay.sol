@@ -125,29 +125,30 @@ contract Relay is
 
     function _registerGateway(
         bytes memory _attestationSignature,
-        IAttestationVerifier.Attestation memory _attestation
+        IAttestationVerifier.Attestation memory _attestation,
+        address _gateway
     ) internal {
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
         
         address enclaveKey = _pubKeyToAddress(_attestation.enclavePubKey);
-        address gateway = _msgSender();
-        if(gatewayKeys[gateway] != address(0))
+        if(gatewayKeys[_gateway] != address(0))
             revert RelayGatewayAlreadyExists();
-        gatewayKeys[gateway] = enclaveKey;
+        gatewayKeys[_gateway] = enclaveKey;
 
-        emit GatewayRegistered(gateway, enclaveKey);
+        emit GatewayRegistered(_gateway, enclaveKey);
     }
 
-    function _deregisterGateway() internal {
-        address gateway = _msgSender();
-        if(gatewayKeys[gateway] == address(0))
+    function _deregisterGateway(
+        address _gateway
+    ) internal {
+        if(gatewayKeys[_gateway] == address(0))
             revert RelayInvalidGateway();
 
-        _revokeEnclaveKey(gatewayKeys[gateway]);
-        delete gatewayKeys[gateway];
+        _revokeEnclaveKey(gatewayKeys[_gateway]);
+        delete gatewayKeys[_gateway];
 
-        emit GatewayDeregistered(gateway);
+        emit GatewayDeregistered(_gateway);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -170,11 +171,11 @@ contract Relay is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation
     ) external {
-        _registerGateway(_attestationSignature, _attestation);
+        _registerGateway(_attestationSignature, _attestation, _msgSender());
     }
 
     function deregisterGateway() external {
-        _deregisterGateway();
+        _deregisterGateway(_msgSender());
     }
 
     //-------------------------------- external functions end ---------------------------//
@@ -278,9 +279,8 @@ contract Relay is
         if(block.timestamp > jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert RelayOverallTimeoutOver();
 
-        address gateway = _msgSender();
         // signature check
-        _verifyJobResponseSign(_signature, gateway, _jobId, _output, _totalTime, _errorCode);
+        _verifyJobResponseSign(_signature, _msgSender(), _jobId, _output, _totalTime, _errorCode);
 
         // TODO: release escrow
 
