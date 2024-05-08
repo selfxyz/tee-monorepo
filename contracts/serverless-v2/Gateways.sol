@@ -260,7 +260,7 @@ contract Gateways is
         emit GatewayDeregistered(operator);
     }
 
-    function _completeDegistration() internal {
+    function _completeDeregistration() internal {
         address operator = _msgSender();
         _isValidGateway(operator);
         if(gateways[operator].deregisterStartTime == 0)
@@ -480,8 +480,8 @@ contract Gateways is
         _deregisterGateway();
     }
 
-    function completeDegistration() external {
-        _completeDegistration();
+    function completeDeregistration() external {
+        _completeDeregistration();
     }
 
     function addGatewayStake(
