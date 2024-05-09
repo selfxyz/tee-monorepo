@@ -32,7 +32,10 @@ contract Gateways is
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token,
-        uint256 _deregisterOrUnstakeTimeout
+        uint256 _deregisterOrUnstakeTimeout,
+        uint256 _reassignCompForCommonPool,
+        uint256 _reassignCompForReporterGateway,
+        uint256 _reassignCompForJobOwner
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
@@ -40,6 +43,9 @@ contract Gateways is
             revert GatewaysZeroAddressToken();
         TOKEN = _token;
         DEREGISTER_OR_UNSTAKE_TIMEOUT = _deregisterOrUnstakeTimeout;
+        REASSIGN_COMP_FOR_COMMON_POOL = _reassignCompForCommonPool;
+        REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
+        REASSIGN_COMP_FOR_JOB_OWNER = _reassignCompForJobOwner;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -89,6 +95,17 @@ contract Gateways is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable DEREGISTER_OR_UNSTAKE_TIMEOUT;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable REASSIGN_COMP_FOR_COMMON_POOL;
+    
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable REASSIGN_COMP_FOR_JOB_OWNER;
+
+    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -542,5 +559,54 @@ contract Gateways is
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- Gateway end --------------------------------//
+
+    //-------------------------------- JobsContract functions start --------------------------------//
+
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _slashOnReassignGateway(
+        uint8 _sequenceId,
+        address _oldGateway,
+        address _reporterGateway,
+        address _jobOwner
+    ) internal {
+        if(_sequenceId == 1) {
+            uint256 commonPoolComp = REASSIGN_COMP_FOR_COMMON_POOL + (REASSIGN_COMP_FOR_JOB_OWNER / 2);
+            gateways[_oldGateway].stakeAmount -= (commonPoolComp + REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+
+            // transfer comp to common pool(jobs contract)
+            TOKEN.transfer(_msgSender(), commonPoolComp);
+            // transfer comp t reporter gateway
+            TOKEN.transfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        }
+        else if(_sequenceId == 2) {
+            uint256 commonPoolComp = REASSIGN_COMP_FOR_COMMON_POOL - (REASSIGN_COMP_FOR_JOB_OWNER / 2);
+            gateways[_oldGateway].stakeAmount -= (commonPoolComp + REASSIGN_COMP_FOR_JOB_OWNER + REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+
+            // transfer comp to common pool(jobs contract)
+            TOKEN.transfer(_msgSender(), commonPoolComp);
+            // transfer comp to job owner
+            TOKEN.transfer(_jobOwner, REASSIGN_COMP_FOR_JOB_OWNER);
+            // transfer comp to reporter gateway
+            TOKEN.transfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        }
+    }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //------------------------------- external functions start ---------------------------------//
+
+    function slashOnReassignGateway(
+        uint8 _sequenceId,
+        address _oldGateway,
+        address _reporterGateway,
+        address _jobOwner
+    ) external onlyRole(JOBS_ROLE) {
+        _slashOnReassignGateway(_sequenceId, _oldGateway, _reporterGateway, _jobOwner);
+    }
+
+    //-------------------------------- external functions end ----------------------------------//
+
+    //-------------------------------- JobsContract functions end --------------------------------//
 
 }

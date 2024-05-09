@@ -117,6 +117,7 @@ contract Jobs is
         uint256 deadline;   // in milliseconds
         uint256 execStartTime;
         address jobOwner;
+        address gateway;
         uint8 outputCount;
         uint8 sequenceId;
         bool isResourceUnavailable;
@@ -266,6 +267,7 @@ contract Jobs is
         jobs[_jobId].deadline = _deadline;
         jobs[_jobId].execStartTime = block.timestamp;
         jobs[_jobId].jobOwner = _jobOwner;
+        jobs[_jobId].gateway = _gateway;
         jobs[_jobId].sequenceId = _sequenceId;
 
         emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _gateway, _selectedNodes);
@@ -297,7 +299,7 @@ contract Jobs is
 
         // cleanup job after 3rd output submitted
 
-        // on reward distribution, 1st output executor node gets max reward
+        // TODO: on reward distribution, 1st output executor node gets max reward
         // reward ratio - 2:1:0
     }
 
@@ -407,14 +409,23 @@ contract Jobs is
         if((block.timestamp * 1000) <= (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsDeadlineNotOver();
 
+        address gateway = jobs[_jobId].gateway;
+        address jobOwner = jobs[_jobId].jobOwner;
+        bool isNoOutputSubmitted = (jobs[_jobId].outputCount == 0);
         delete jobs[_jobId];
 
         // slash Execution node
-
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
             address executor = selectedExecutors[_jobId][index];
-            executors.updateOnExecutionTimeoutSlash(executor, hasExecutedJob[_jobId][executor]);
+            executors.updateOnExecutionTimeoutSlash(
+                executor, 
+                hasExecutedJob[_jobId][executor], 
+                isNoOutputSubmitted,
+                gateway,
+                jobOwner
+            );
+
             if(!hasExecutedJob[_jobId][executor])
                 emit SlashedOnExecutionTimeout(_jobId, executor);
             delete hasExecutedJob[_jobId][executor];
@@ -444,9 +455,10 @@ contract Jobs is
         // signature check
         _verifyReassignGatewaySign(_signature, _gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
 
-        emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
-
         // slash old gateway
+        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, _gateway, jobs[_jobId].jobOwner);
+        
+        emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
     }
 
     function _verifyReassignGatewaySign(
