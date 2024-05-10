@@ -150,7 +150,7 @@ contract Executors is
 
     event ExecutorRegistered(
         address indexed executor,
-        address indexed enclaveAddress
+        uint256 jobCapacity
     );
     
     event ExecutorDeregistered(address indexed executor);
@@ -238,7 +238,7 @@ contract Executors is
         executors[_executor].enclaveAddress = _enclaveAddress;
         executors[_executor].jobCapacity = _jobCapacity;
         
-        emit ExecutorRegistered(_executor, _enclaveAddress);
+        emit ExecutorRegistered(_executor, _jobCapacity);
     }
 
     function _drainExecutor(
@@ -438,13 +438,13 @@ contract Executors is
         // require(selectedNodes.length != 0, "NO_EXECUTOR_SELECTED");
     }
 
-    function _updateOnSubmitOutput(
+    function _releaseExecutor(
         address _executor
     ) internal {
         _postJobUpdate(_executor);
     }
 
-    function _updateOnExecutionTimeoutSlash(
+    function _slashExecutor(
         address _executor,
         bool _hasExecutedJob,
         bool _isNoOutputSubmitted,
@@ -499,20 +499,20 @@ contract Executors is
         return _selectExecutors(_noOfNodesToSelect);
     }
 
-    function updateOnSubmitOutput(
+    function releaseExecutor(
         address _executor
     ) external onlyRole(JOBS_ROLE) {
-        _updateOnSubmitOutput(_executor);
+        _releaseExecutor(_executor);
     }
 
-    function updateOnExecutionTimeoutSlash(
+    function slashExecutor(
         address _executor,
         bool _hasExecutedJob,
         bool _isNoOutputSubmitted,
         address _gateway,
         address _jobOwner
     ) external onlyRole(JOBS_ROLE) {
-        _updateOnExecutionTimeoutSlash(_executor, _hasExecutedJob, _isNoOutputSubmitted, _gateway, _jobOwner);
+        _slashExecutor(_executor, _hasExecutedJob, _isNoOutputSubmitted, _gateway, _jobOwner);
     }
 
     //-------------------------------- external functions end ----------------------------------//

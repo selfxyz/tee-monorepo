@@ -292,7 +292,7 @@ contract Jobs is
         if(hasExecutedJob[_jobId][signer])
             revert JobsExecutorAlreadySubmittedOutput();
 
-        executors.updateOnSubmitOutput(signer);
+        executors.releaseExecutor(signer);
         hasExecutedJob[_jobId][signer] = true;
 
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, ++jobs[_jobId].outputCount);
@@ -418,7 +418,7 @@ contract Jobs is
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
             address executor = selectedExecutors[_jobId][index];
-            executors.updateOnExecutionTimeoutSlash(
+            executors.slashExecutor(
                 executor, 
                 hasExecutedJob[_jobId][executor], 
                 isNoOutputSubmitted,
@@ -440,6 +440,7 @@ contract Jobs is
         bytes memory _signature,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
+        address _jobOwner,
         address _gateway
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
@@ -456,7 +457,7 @@ contract Jobs is
         _verifyReassignGatewaySign(_signature, _gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
 
         // slash old gateway
-        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, _gateway, jobs[_jobId].jobOwner);
+        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, _gateway, _jobOwner);
         
         emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
     }
@@ -500,9 +501,10 @@ contract Jobs is
         uint256 _jobId,
         bytes memory _signature,
         uint8 _sequenceId,
-        uint256 _jobRequestTimestamp
+        uint256 _jobRequestTimestamp,
+        address _jobOwner
     ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _msgSender());
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//
