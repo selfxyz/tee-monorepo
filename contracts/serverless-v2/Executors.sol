@@ -130,9 +130,7 @@ contract Executors is
         uint256 jobCapacity;
         uint256 activeJobs;
         uint256 stakeAmount;
-        bool status;
-        bool unstakeStatus;
-        uint256 unstakeAmount;
+        bool draining;
     }
 
     // executor => Execution node details
@@ -154,19 +152,19 @@ contract Executors is
         address indexed executor,
         address indexed enclaveAddress
     );
-
-    event ExecutorDeregisterInitiated(address indexed executor);
     
     event ExecutorDeregistered(address indexed executor);
+
+    event ExecutorsExecutorDrained(
+        address indexed executor
+    );
+    event ExecutorsExecutorRevived(
+        address indexed executor
+    );
 
     event ExecutorStakeAdded(
         address indexed executor,
         uint256 addedAmount
-    );
-
-    event ExecutorStakeRemoveInitiated(
-        address indexed executor,
-        uint256 amount
     );
 
     event ExecutorStakeRemoved(
@@ -176,8 +174,10 @@ contract Executors is
 
     error ExecutorsInvalidSigner();
     error ExecutorsExecutorAlreadyExists();
-    error ExecutorsAlreadyInitiatedDeregister();
-    error ExecutorsAlreadyInitiatedUnstake();
+    error ExecutorsAlreadyDrained();
+    error ExecutorsAlreadyRevived();
+    error ExecutorsNotDrained();
+    error ExecutorsHasPendingJobs();
     error ExecutorsInvalidAmount();
     error ExecutorsInvalidExecutor();
 
@@ -237,44 +237,75 @@ contract Executors is
     ) internal {
         executors[_executor].enclaveAddress = _enclaveAddress;
         executors[_executor].jobCapacity = _jobCapacity;
-        executors[_executor].status = true;
         
         emit ExecutorRegistered(_executor, _enclaveAddress);
+    }
+
+    function _drainExecutor(
+        address _executor
+    ) internal {
+        if(executors[_executor].draining)
+            revert ExecutorsAlreadyDrained();
+
+        executors[_executor].draining = true;
+
+        // remove node from the tree
+        _deleteIfPresent(_executor);
+
+        emit ExecutorsExecutorDrained(_executor);
+    }
+
+    function _reviveExecutor(
+        address _executor
+    ) internal {
+        Executor memory executorNode = executors[_executor];
+        if(!executorNode.draining)
+            revert ExecutorsAlreadyRevived();
+
+        executors[_executor].draining = false;
+
+        // insert node in the tree
+        if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT && 
+            executorNode.activeJobs != executorNode.jobCapacity
+        ) {
+            _insert_unchecked(_executor, uint64(executorNode.stakeAmount));
+        }
+
+        emit ExecutorsExecutorRevived(_executor);
     }
 
     function _deregisterExecutor(
         address _executor
     ) internal {
-        if(!executors[_executor].status)
-            revert ExecutorsAlreadyInitiatedDeregister();
+        if(!executors[_executor].draining)
+            revert ExecutorsNotDrained();
+        if(executors[_executor].activeJobs != 0)
+            revert ExecutorsHasPendingJobs();
+        
+        _removeStake(_executor, executors[_executor].stakeAmount);
 
-        executors[_executor].status = false;
+        _revokeEnclaveKey(executors[_executor].enclaveAddress);
+        delete executors[_executor];
 
-        // remove node from the tree
-        _deleteIfPresent(_executor);
-
-        if(executors[_executor].activeJobs == 0)
-            _completeDeregister(_executor);
-        else
-            emit ExecutorDeregisterInitiated(_executor);
+        emit ExecutorDeregistered(_executor);
     }
 
     function _addExecutorStake(
         uint256 _amount,
         address _executor
     ) internal {
-        if(!executors[_executor].status)
-            revert ExecutorsAlreadyInitiatedDeregister();
-        if(executors[_executor].unstakeStatus)
-            revert ExecutorsAlreadyInitiatedUnstake();
-        
-        uint256 prevStake = executors[_executor].stakeAmount;
+        Executor memory executorNode = executors[_executor];
+        uint256 prevStake = executorNode.stakeAmount;
         uint256 updatedStake = prevStake + _amount;
 
-        if(updatedStake >= MIN_STAKE_AMOUNT) {
+        if(
+            !executorNode.draining && 
+            executorNode.activeJobs != executorNode.jobCapacity && 
+            updatedStake >= MIN_STAKE_AMOUNT
+        ) {
             if(prevStake < MIN_STAKE_AMOUNT)
                 _insert_unchecked(_executor, uint64(updatedStake));
-            else if(executors[_executor].activeJobs != executors[_executor].jobCapacity)
+            else if(executorNode.activeJobs != executorNode.jobCapacity)
                 _update_unchecked(_executor, uint64(updatedStake));
         }
         
@@ -285,31 +316,14 @@ contract Executors is
         uint256 _amount,
         address _executor
     ) internal {
-        if(!executors[_executor].status)
-            revert ExecutorsAlreadyInitiatedDeregister();
-        if(_amount == 0 || _amount > executors[_executor].stakeAmount - executors[_executor].unstakeAmount)
+        if(!executors[_executor].draining)
+            revert ExecutorsNotDrained();
+        if(executors[_executor].activeJobs != 0)
+            revert ExecutorsHasPendingJobs();
+        if(_amount == 0 || _amount > executors[_executor].stakeAmount)
             revert ExecutorsInvalidAmount();
 
-        if(executors[_executor].activeJobs == 0) {
-            uint256 updatedStake = executors[_executor].stakeAmount - _amount;
-            
-            // remove node from tree if stake falls below min level
-            if(updatedStake < MIN_STAKE_AMOUNT)
-                _deleteIfPresent(_executor);
-            // update the value in tree only if the node exists in the tree
-            else
-                _update_unchecked(_executor, uint64(updatedStake));
-
-            _removeStake(_executor, _amount);
-        }
-        else {
-            executors[_executor].unstakeStatus = true;
-            executors[_executor].unstakeAmount += _amount;
-            // remove node from tree so it won't be considered for future jobs
-            _deleteIfPresent(_executor);
-            emit ExecutorStakeRemoveInitiated(_executor, _amount);
-        }
-        
+        _removeStake(_executor, _amount);
     }
 
     function _addStake(
@@ -362,6 +376,14 @@ contract Executors is
 
     function deregisterExecutor() external isValidExecutor(_msgSender()) {
         _deregisterExecutor(_msgSender());
+    }
+
+    function drainExecutor() external isValidExecutor(_msgSender()) {
+        _drainExecutor(_msgSender());
+    }
+
+    function reviveExecutor() external isValidExecutor(_msgSender()) {
+        _reviveExecutor(_msgSender());
     }
 
     function addExecutorStake(
@@ -451,54 +473,20 @@ contract Executors is
     function _postJobUpdate(
         address _executor
     ) internal {
-        // add back the node to the tree as now it can accept a new job
+        // add node to the tree if it (1) is not in draining state, (2) can accept a new job and (3) has min stake amount
         if(
-            executors[_executor].status && 
-            !executors[_executor].unstakeStatus && 
+            !executors[_executor].draining && 
             executors[_executor].activeJobs == executors[_executor].jobCapacity &&
             executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT
-        )
+        ) {
             _insert_unchecked(_executor, uint64(executors[_executor].stakeAmount));
+        }
+        // remove node from tree if stake falls below min level
+        else if(executors[_executor].stakeAmount < MIN_STAKE_AMOUNT) {
+            _deleteIfPresent(_executor);
+        }
         
         executors[_executor].activeJobs -= 1;
-
-        // if user has initiated unstake then release tokens only if no jobs are pending
-        if(executors[_executor].unstakeStatus && executors[_executor].activeJobs == 0)
-            _completeUnstakePostJob(_executor);
-
-        
-        // remove node from tree if stake falls below min level
-        if(executors[_executor].stakeAmount < MIN_STAKE_AMOUNT)
-            _deleteIfPresent(_executor);
-
-        // if user has initiated deregister
-        if(!executors[_executor].status && executors[_executor].activeJobs == 0)
-            _completeDeregister(_executor);
-    }
-
-    function _completeUnstakePostJob(
-        address _executor
-    ) internal {
-        uint256 amount = executors[_executor].stakeAmount < executors[_executor].unstakeAmount ? executors[_executor].stakeAmount : executors[_executor].unstakeAmount;
-        executors[_executor].unstakeAmount = 0;
-        executors[_executor].unstakeStatus = false;
-        
-        _removeStake(_executor, amount);
-
-        // update in tree only if the user has not initiated deregistration
-        if(executors[_executor].status && executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT)
-            _insert_unchecked(_executor, uint64(executors[_executor].stakeAmount));
-    }
-
-    function _completeDeregister(
-        address _executor
-    ) internal {
-        _removeStake(_executor, executors[_executor].stakeAmount);
-
-        _revokeEnclaveKey(executors[_executor].enclaveAddress);
-        delete executors[_executor];
-
-        emit ExecutorDeregistered(_executor);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
