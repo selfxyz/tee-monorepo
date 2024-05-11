@@ -174,9 +174,9 @@ contract Executors is
 
     error ExecutorsInvalidSigner();
     error ExecutorsExecutorAlreadyExists();
-    error ExecutorsAlreadyDrained();
+    error ExecutorsAlreadyDraining();
     error ExecutorsAlreadyRevived();
-    error ExecutorsNotDrained();
+    error ExecutorsNotDraining();
     error ExecutorsHasPendingJobs();
     error ExecutorsInvalidAmount();
     error ExecutorsInvalidExecutor();
@@ -245,7 +245,7 @@ contract Executors is
         address _executor
     ) internal {
         if(executors[_executor].draining)
-            revert ExecutorsAlreadyDrained();
+            revert ExecutorsAlreadyDraining();
 
         executors[_executor].draining = true;
 
@@ -266,7 +266,7 @@ contract Executors is
 
         // insert node in the tree
         if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT && 
-            executorNode.activeJobs != executorNode.jobCapacity
+            executorNode.activeJobs < executorNode.jobCapacity
         ) {
             _insert_unchecked(_executor, uint64(executorNode.stakeAmount));
         }
@@ -278,7 +278,7 @@ contract Executors is
         address _executor
     ) internal {
         if(!executors[_executor].draining)
-            revert ExecutorsNotDrained();
+            revert ExecutorsNotDraining();
         if(executors[_executor].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
         
@@ -300,12 +300,12 @@ contract Executors is
 
         if(
             !executorNode.draining && 
-            executorNode.activeJobs != executorNode.jobCapacity && 
+            executorNode.activeJobs < executorNode.jobCapacity && 
             updatedStake >= MIN_STAKE_AMOUNT
         ) {
             if(prevStake < MIN_STAKE_AMOUNT)
                 _insert_unchecked(_executor, uint64(updatedStake));
-            else if(executorNode.activeJobs != executorNode.jobCapacity)
+            else
                 _update_unchecked(_executor, uint64(updatedStake));
         }
         
@@ -317,7 +317,7 @@ contract Executors is
         address _executor
     ) internal {
         if(!executors[_executor].draining)
-            revert ExecutorsNotDrained();
+            revert ExecutorsNotDraining();
         if(executors[_executor].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
         if(_amount == 0 || _amount > executors[_executor].stakeAmount)
