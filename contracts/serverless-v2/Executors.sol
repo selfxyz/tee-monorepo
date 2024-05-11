@@ -150,6 +150,7 @@ contract Executors is
 
     event ExecutorRegistered(
         address indexed executor,
+        address enclaveAddress,
         uint256 jobCapacity
     );
     
@@ -238,7 +239,7 @@ contract Executors is
         executors[_executor].enclaveAddress = _enclaveAddress;
         executors[_executor].jobCapacity = _jobCapacity;
         
-        emit ExecutorRegistered(_executor, _jobCapacity);
+        emit ExecutorRegistered(_executor, _enclaveAddress, _jobCapacity);
     }
 
     function _drainExecutor(
