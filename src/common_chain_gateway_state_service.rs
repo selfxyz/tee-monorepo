@@ -69,24 +69,14 @@ pub async fn gateway_epoch_state_service(
                 );
                 continue;
             }
-            {
-                let mut waitlist_handle = common_chain_client
-                    .gateway_epoch_state_waitlist
-                    .write()
-                    .unwrap();
-                if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
-                    let common_chain_client_clone = common_chain_client.clone();
-                    let tx_clone = tx.clone();
-                    tokio::spawn(async move {
-                        for job in job_list {
-                            common_chain_client_clone
-                                .clone()
-                                .job_placed_handler(job, tx_clone.clone())
-                                .await;
-                        }
-                    });
-                }
-            }
+
+            callback_for_gateway_epoch_waitlist(
+                common_chain_client.clone(),
+                cycle_number,
+                tx.clone(),
+            )
+            .await;
+
             cycle_number += 1;
         }
     }
@@ -139,24 +129,13 @@ pub async fn gateway_epoch_state_service(
                 );
                 continue;
             }
-            {
-                let mut waitlist_handle = common_chain_client
-                    .gateway_epoch_state_waitlist
-                    .write()
-                    .unwrap();
-                if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
-                    let common_chain_client_clone = common_chain_client.clone();
-                    let tx_clone = tx.clone();
-                    tokio::spawn(async move {
-                        for job in job_list {
-                            common_chain_client_clone
-                                .clone()
-                                .job_placed_handler(job, tx_clone.clone())
-                                .await;
-                        }
-                    });
-                }
-            }
+
+            callback_for_gateway_epoch_waitlist(
+                common_chain_client.clone(),
+                cycle_number,
+                tx.clone(),
+            )
+            .await;
 
             let _current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -396,8 +375,8 @@ async fn prune_old_cycle_states(
     // scope for the write lock
     {
         let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-        for cycle in cycles_to_remove {
-            gateway_epoch_state_guard.remove(&cycle);
+        for cycle in &cycles_to_remove {
+            gateway_epoch_state_guard.remove(cycle);
         }
     }
 }
@@ -528,5 +507,28 @@ async fn process_chain_removed_event(
                 gateway_data.req_chain_ids.remove(&chain_id);
             }
         }
+    }
+}
+
+async fn callback_for_gateway_epoch_waitlist(
+    common_chain_client: Arc<CommonChainClient>,
+    cycle_number: u64,
+    tx: Sender<(Job, Arc<CommonChainClient>)>,
+) {
+    let mut waitlist_handle = common_chain_client
+        .gateway_epoch_state_waitlist
+        .write()
+        .unwrap();
+    if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
+        let common_chain_client_clone = common_chain_client.clone();
+        let tx_clone = tx.clone();
+        tokio::spawn(async move {
+            for job in job_list {
+                common_chain_client_clone
+                    .clone()
+                    .job_placed_handler(job, tx_clone.clone())
+                    .await;
+            }
+        });
     }
 }
