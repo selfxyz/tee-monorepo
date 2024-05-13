@@ -38,7 +38,8 @@ contract Executors is
         uint256 _minStakeAmount,
         uint256 _slashCompForJobOwner,
         uint256 _slashCompForGateway,
-        uint256 _slashPercent
+        uint256 _slashPercentInBips,
+        uint256 _slashMaxBips
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
@@ -51,7 +52,8 @@ contract Executors is
         MIN_STAKE_AMOUNT = _minStakeAmount;
         SLASH_COMP_FOR_JOB_OWNER = _slashCompForJobOwner;
         SLASH_COMP_FOR_GATEWAY = _slashCompForGateway;
-        SLASH_PERCENT = _slashPercent;
+        SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
+        SLASH_MAX_BIPS = _slashMaxBips;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -109,9 +111,13 @@ contract Executors is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_COMP_FOR_GATEWAY;
 
-    // assuming that slash percent will be an integer in the range 0-100
+    // an integer in the range 0-10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable SLASH_PERCENT;
+    uint256 public immutable SLASH_PERCENT_IN_BIPS;
+
+    // expected to be 10^6
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable SLASH_MAX_BIPS;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
@@ -156,10 +162,10 @@ contract Executors is
     
     event ExecutorDeregistered(address indexed executor);
 
-    event ExecutorsExecutorDrained(
+    event ExecutorDrained(
         address indexed executor
     );
-    event ExecutorsExecutorRevived(
+    event ExecutorRevived(
         address indexed executor
     );
 
@@ -179,7 +185,6 @@ contract Executors is
     error ExecutorsAlreadyRevived();
     error ExecutorsNotDraining();
     error ExecutorsHasPendingJobs();
-    error ExecutorsInvalidAmount();
     error ExecutorsInvalidExecutor();
 
     //-------------------------------- internal functions start ----------------------------------//
@@ -253,7 +258,7 @@ contract Executors is
         // remove node from the tree
         _deleteIfPresent(_executor);
 
-        emit ExecutorsExecutorDrained(_executor);
+        emit ExecutorDrained(_executor);
     }
 
     function _reviveExecutor(
@@ -272,7 +277,7 @@ contract Executors is
             _insert_unchecked(_executor, uint64(executorNode.stakeAmount));
         }
 
-        emit ExecutorsExecutorRevived(_executor);
+        emit ExecutorRevived(_executor);
     }
 
     function _deregisterExecutor(
@@ -296,18 +301,15 @@ contract Executors is
         address _executor
     ) internal {
         Executor memory executorNode = executors[_executor];
-        uint256 prevStake = executorNode.stakeAmount;
-        uint256 updatedStake = prevStake + _amount;
+        uint256 updatedStake = executorNode.stakeAmount + _amount;
 
         if(
             !executorNode.draining && 
             executorNode.activeJobs < executorNode.jobCapacity && 
             updatedStake >= MIN_STAKE_AMOUNT
-        ) {
-            if(prevStake < MIN_STAKE_AMOUNT)
-                _insert_unchecked(_executor, uint64(updatedStake));
-            else
-                _update_unchecked(_executor, uint64(updatedStake));
+        ) { 
+            // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
+            _upsert(_executor, uint64(updatedStake));
         }
         
         _addStake(_executor, _amount);
@@ -321,8 +323,6 @@ contract Executors is
             revert ExecutorsNotDraining();
         if(executors[_executor].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
-        if(_amount == 0 || _amount > executors[_executor].stakeAmount)
-            revert ExecutorsInvalidAmount();
 
         _removeStake(_executor, _amount);
     }
@@ -442,7 +442,16 @@ contract Executors is
     function _releaseExecutor(
         address _executor
     ) internal {
-        _postJobUpdate(_executor);
+        if(!executors[_executor].draining) {
+            // add node to the tree if its max job capacity was reached, else update the node
+            if(executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT)
+                _upsert(_executor, uint64(executors[_executor].stakeAmount));
+            // remove node from tree if stake falls below min level
+            else
+                _deleteIfPresent(_executor);
+        }
+        
+        executors[_executor].activeJobs -= 1;
     }
 
     function _slashExecutor(
@@ -462,32 +471,13 @@ contract Executors is
                 TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
             }
 
-            uint256 commonPoolComp = executors[_executor].stakeAmount * SLASH_PERCENT / 100;
+            uint256 commonPoolComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
             executors[_executor].stakeAmount -= commonPoolComp;
             // transfer the slashed comp to common pool(jobs contract)
             TOKEN.safeTransfer(_msgSender(), commonPoolComp);
         }
 
-        _postJobUpdate(_executor);
-    }
-
-    function _postJobUpdate(
-        address _executor
-    ) internal {
-        // add node to the tree if it (1) is not in draining state, (2) can accept a new job and (3) has min stake amount
-        if(
-            !executors[_executor].draining && 
-            executors[_executor].activeJobs == executors[_executor].jobCapacity &&
-            executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT
-        ) {
-            _insert_unchecked(_executor, uint64(executors[_executor].stakeAmount));
-        }
-        // remove node from tree if stake falls below min level
-        else if(executors[_executor].stakeAmount < MIN_STAKE_AMOUNT) {
-            _deleteIfPresent(_executor);
-        }
-        
-        executors[_executor].activeJobs -= 1;
+        _releaseExecutor(_executor);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
