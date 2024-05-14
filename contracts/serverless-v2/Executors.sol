@@ -114,6 +114,9 @@ contract Executors is
     /// @notice expected to be 10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
+    
+    /// @notice executor stake amount will be divided by 10^18 before adding to the tree
+    uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
@@ -207,7 +210,7 @@ contract Executors is
 
         // add node to the tree if min stake amount deposited
         if(_stakeAmount >= MIN_STAKE_AMOUNT)
-            _insert_unchecked(_executor, uint64(_stakeAmount));
+            _insert_unchecked(_executor, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
 
         _addStake(_executor, _stakeAmount);
     }
@@ -270,7 +273,7 @@ contract Executors is
         if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT && 
             executorNode.activeJobs < executorNode.jobCapacity
         ) {
-            _insert_unchecked(_executor, uint64(executorNode.stakeAmount));
+            _insert_unchecked(_executor, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
         emit ExecutorRevived(_executor);
@@ -305,7 +308,7 @@ contract Executors is
             updatedStake >= MIN_STAKE_AMOUNT
         ) { 
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
-            _upsert(_executor, uint64(updatedStake));
+            _upsert(_executor, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
         }
         
         _addStake(_executor, _amount);
@@ -442,7 +445,7 @@ contract Executors is
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
             if(executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(_executor, uint64(executors[_executor].stakeAmount));
+                _upsert(_executor, uint64(executors[_executor].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
             // remove node from tree if stake falls below min level
             else
                 _deleteIfPresent(_executor);
