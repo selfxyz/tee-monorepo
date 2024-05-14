@@ -285,15 +285,15 @@ contract Jobs is
             revert JobsExecutionTimeOver();
 
         // signature check
-        address signer = _verifyOutputSign(_signature, _executor, _jobId, _output, _totalTime, _errorCode);
+        _verifyOutputSign(_signature, _executor, _jobId, _output, _totalTime, _errorCode);
 
-        if(!isJobExecutor(_jobId, _executor))
+        if(!_isJobExecutor(_jobId, _executor))
             revert JobsNotSelectedExecutor();
-        if(hasExecutedJob[_jobId][signer])
+        if(hasExecutedJob[_jobId][_executor])
             revert JobsExecutorAlreadySubmittedOutput();
 
-        executors.releaseExecutor(signer);
-        hasExecutedJob[_jobId][signer] = true;
+        executors.releaseExecutor(_executor);
+        hasExecutedJob[_jobId][_executor] = true;
 
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, ++jobs[_jobId].outputCount);
 
@@ -303,6 +303,7 @@ contract Jobs is
         // reward ratio - 2:1:0
     }
 
+    // TODO: this sign can be used at a later time for new job with same jobId and assigned executor
     function _verifyOutputSign(
         bytes memory _signature,
         address _executor,
@@ -310,7 +311,7 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode
-    ) internal view returns (address signer) {
+    ) internal view {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 SUBMIT_OUTPUT_TYPEHASH,
@@ -322,7 +323,7 @@ contract Jobs is
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
-        signer = digest.recover(_signature);
+        address signer = digest.recover(_signature);
 
         executors.allowOnlyVerified(signer, _executor);
     }
@@ -418,16 +419,16 @@ contract Jobs is
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
             address executor = selectedExecutors[_jobId][index];
-            executors.slashExecutor(
-                executor, 
-                hasExecutedJob[_jobId][executor], 
-                isNoOutputSubmitted,
-                gateway,
-                jobOwner
-            );
 
-            if(!hasExecutedJob[_jobId][executor])
+            if(!hasExecutedJob[_jobId][executor]) {
+                executors.slashExecutor(
+                    executor,
+                    isNoOutputSubmitted,
+                    gateway,
+                    jobOwner
+                );
                 emit SlashedOnExecutionTimeout(_jobId, executor);
+            }
             delete hasExecutedJob[_jobId][executor];
         }
 

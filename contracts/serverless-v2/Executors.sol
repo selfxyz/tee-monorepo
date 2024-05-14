@@ -439,7 +439,8 @@ contract Executors is
         address _executor
     ) internal {
         if(!executors[_executor].draining) {
-            // add node to the tree if its max job capacity was reached, else update the node
+            // node might have been deleted due to max job capacity reached
+            // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
             if(executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT)
                 _upsert(_executor, uint64(executors[_executor].stakeAmount));
             // remove node from tree if stake falls below min level
@@ -452,25 +453,22 @@ contract Executors is
 
     function _slashExecutor(
         address _executor,
-        bool _hasExecutedJob,
         bool _isNoOutputSubmitted,
         address _gateway,
         address _jobOwner
     ) internal {
-        if(!_hasExecutedJob) {
-            uint256 totalComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
-            executors[_executor].stakeAmount -= totalComp;
+        uint256 totalComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
+        executors[_executor].stakeAmount -= totalComp;
 
-            if(_isNoOutputSubmitted) {
-                // transfer the slashed comp to gateway that relayed the job
-                TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
-                // transfer the slashed comp to job owner
-                TOKEN.safeTransfer(_jobOwner, totalComp - SLASH_COMP_FOR_GATEWAY);
-            }
-            else {
-                // transfer the slashed comp to common pool(jobs contract)
-                TOKEN.safeTransfer(_msgSender(), totalComp);
-            }
+        if(_isNoOutputSubmitted) {
+            // transfer the slashed comp to gateway that relayed the job
+            TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
+            // transfer the slashed comp to job owner
+            TOKEN.safeTransfer(_jobOwner, totalComp - SLASH_COMP_FOR_GATEWAY);
+        }
+        else {
+            // transfer the slashed comp to common pool(jobs contract)
+            TOKEN.safeTransfer(_msgSender(), totalComp);
         }
 
         _releaseExecutor(_executor);
@@ -494,12 +492,11 @@ contract Executors is
 
     function slashExecutor(
         address _executor,
-        bool _hasExecutedJob,
         bool _isNoOutputSubmitted,
         address _gateway,
         address _jobOwner
     ) external onlyRole(JOBS_ROLE) {
-        _slashExecutor(_executor, _hasExecutedJob, _isNoOutputSubmitted, _gateway, _jobOwner);
+        _slashExecutor(_executor, _isNoOutputSubmitted, _gateway, _jobOwner);
     }
 
     //-------------------------------- external functions end ----------------------------------//
