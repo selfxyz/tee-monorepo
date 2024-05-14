@@ -36,7 +36,6 @@ contract Executors is
         uint256 maxAge,
         IERC20 _token,
         uint256 _minStakeAmount,
-        uint256 _slashCompForJobOwner,
         uint256 _slashCompForGateway,
         uint256 _slashPercentInBips,
         uint256 _slashMaxBips
@@ -50,7 +49,7 @@ contract Executors is
 
         TOKEN = _token;
         MIN_STAKE_AMOUNT = _minStakeAmount;
-        SLASH_COMP_FOR_JOB_OWNER = _slashCompForJobOwner;
+
         SLASH_COMP_FOR_GATEWAY = _slashCompForGateway;
         SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
         SLASH_MAX_BIPS = _slashMaxBips;
@@ -104,9 +103,6 @@ contract Executors is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable MIN_STAKE_AMOUNT;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable SLASH_COMP_FOR_JOB_OWNER;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_COMP_FOR_GATEWAY;
@@ -462,19 +458,19 @@ contract Executors is
         address _jobOwner
     ) internal {
         if(!_hasExecutedJob) {
+            uint256 totalComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
+            executors[_executor].stakeAmount -= totalComp;
+
             if(_isNoOutputSubmitted) {
-                executors[_executor].stakeAmount -= (SLASH_COMP_FOR_JOB_OWNER + SLASH_COMP_FOR_GATEWAY);
-                
-                // transfer the slashed comp to job owner
-                TOKEN.safeTransfer(_jobOwner, SLASH_COMP_FOR_JOB_OWNER);
                 // transfer the slashed comp to gateway that relayed the job
                 TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
+                // transfer the slashed comp to job owner
+                TOKEN.safeTransfer(_jobOwner, totalComp - SLASH_COMP_FOR_GATEWAY);
             }
-
-            uint256 commonPoolComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
-            executors[_executor].stakeAmount -= commonPoolComp;
-            // transfer the slashed comp to common pool(jobs contract)
-            TOKEN.safeTransfer(_msgSender(), commonPoolComp);
+            else {
+                // transfer the slashed comp to common pool(jobs contract)
+                TOKEN.safeTransfer(_msgSender(), totalComp);
+            }
         }
 
         _releaseExecutor(_executor);

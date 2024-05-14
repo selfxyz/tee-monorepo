@@ -236,6 +236,7 @@ contract Relay is
     error RelayInvalidSigner();
     error RelayInvalidJobOwner();
     error RelayOverallTimeoutNotOver();
+    error RelayCallbackDepositTransferFailed();
 
     //-------------------------------- internal functions start -------------------------------//
 
@@ -335,6 +336,8 @@ contract Relay is
 
         // TODO: remove callback eth (do we need to check 'success' param)
         (bool success, ) = _msgSender().call{value: callbackDeposit}("");
+        if(!success)
+            revert RelayCallbackDepositTransferFailed();
         
         emit JobCancelled(_jobId);
     }

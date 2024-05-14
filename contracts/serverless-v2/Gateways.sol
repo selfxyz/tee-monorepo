@@ -33,9 +33,9 @@ contract Gateways is
         uint256 maxAge,
         IERC20 _token,
         uint256 _deregisterOrUnstakeTimeout,
-        uint256 _reassignCompForCommonPool,
         uint256 _reassignCompForReporterGateway,
-        uint256 _reassignCompForJobOwner
+        uint256 _slashPercentInBips,
+        uint256 _slashMaxBips
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
@@ -43,9 +43,10 @@ contract Gateways is
             revert GatewaysZeroAddressToken();
         TOKEN = _token;
         DEREGISTER_OR_UNSTAKE_TIMEOUT = _deregisterOrUnstakeTimeout;
-        REASSIGN_COMP_FOR_COMMON_POOL = _reassignCompForCommonPool;
+
         REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
-        REASSIGN_COMP_FOR_JOB_OWNER = _reassignCompForJobOwner;
+        SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
+        SLASH_MAX_BIPS = _slashMaxBips;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -97,13 +98,13 @@ contract Gateways is
     uint256 public immutable DEREGISTER_OR_UNSTAKE_TIMEOUT;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable REASSIGN_COMP_FOR_COMMON_POOL;
-    
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable REASSIGN_COMP_FOR_JOB_OWNER;
+    uint256 public immutable SLASH_PERCENT_IN_BIPS;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable SLASH_MAX_BIPS;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
@@ -570,26 +571,15 @@ contract Gateways is
         address _reporterGateway,
         address _jobOwner
     ) internal {
-        if(_sequenceId == 1) {
-            uint256 commonPoolComp = REASSIGN_COMP_FOR_COMMON_POOL + (REASSIGN_COMP_FOR_JOB_OWNER / 2);
-            gateways[_oldGateway].stakeAmount -= (commonPoolComp + REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        uint256 totalComp = gateways[_oldGateway].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
+        gateways[_oldGateway].stakeAmount -= totalComp;
 
-            // transfer comp to common pool(jobs contract)
-            TOKEN.transfer(_msgSender(), commonPoolComp);
-            // transfer comp t reporter gateway
-            TOKEN.transfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
-        }
-        else if(_sequenceId == 2) {
-            uint256 commonPoolComp = REASSIGN_COMP_FOR_COMMON_POOL - (REASSIGN_COMP_FOR_JOB_OWNER / 2);
-            gateways[_oldGateway].stakeAmount -= (commonPoolComp + REASSIGN_COMP_FOR_JOB_OWNER + REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        // transfer comp to reporter gateway
+        TOKEN.safeTransfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
 
-            // transfer comp to common pool(jobs contract)
-            TOKEN.transfer(_msgSender(), commonPoolComp);
-            // transfer comp to job owner
-            TOKEN.transfer(_jobOwner, REASSIGN_COMP_FOR_JOB_OWNER);
-            // transfer comp to reporter gateway
-            TOKEN.transfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
-        }
+        // if sequenceId = 1, transfer comp to common pool(jobs contract)
+        // if sequenceId = 2, transfer comp to jobOwner
+        TOKEN.safeTransfer(_sequenceId == 1 ? _msgSender() : _jobOwner, totalComp - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
