@@ -107,11 +107,11 @@ contract Executors is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_COMP_FOR_GATEWAY;
 
-    // an integer in the range 0-10^6
+    /// @notice an integer in the range 0-10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_PERCENT_IN_BIPS;
 
-    // expected to be 10^6
+    /// @notice expected to be 10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
 

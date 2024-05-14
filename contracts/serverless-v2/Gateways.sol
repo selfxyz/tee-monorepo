@@ -100,9 +100,11 @@ contract Gateways is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
 
+    /// @notice an integer in the range 0-10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_PERCENT_IN_BIPS;
 
+    /// @notice expected to be 10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
 
@@ -149,6 +151,10 @@ contract Gateways is
     
     bytes32 private constant REGISTER_TYPEHASH = 
         keccak256("Register(address gateway,uint256[] chainIds)");
+    bytes32 private constant ADD_CHAINS_TYPEHASH = 
+        keccak256("AddChains(address gateway,uint256[] chainIds)");
+    bytes32 private constant REMOVE_CHAINS_TYPEHASH = 
+        keccak256("RemoveChains(address gateway,uint256[] chainIds)");
 
     event GatewayRegistered(
         address indexed gateway,
@@ -225,7 +231,7 @@ contract Gateways is
 
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_gateway, _chainIds, _signature, enclaveAddress);
+        _verifyRegisterSign(_gateway, _chainIds, _signature, enclaveAddress);
         
         if(gateways[_gateway].enclaveAddress != address(0))
             revert GatewaysGatewayAlreadyExists();
@@ -242,7 +248,7 @@ contract Gateways is
         _addStake(_gateway, _stakeAmount);
     }
 
-    function _verifySign(
+    function _verifyRegisterSign(
         address _gateway,
         uint256[] memory _chainIds,
         bytes memory _signature,
@@ -374,27 +380,37 @@ contract Gateways is
     }
 
     function _addChains(
+        bytes memory _signature,
         uint256[] memory _chainIds,
         address _gateway
     ) internal {
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
+
+        _verifyAddChainsSign(_signature, _gateway, _chainIds);
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             _addChain(_chainIds[index], _gateway);
         }
     }
 
-    function _removeChains(
-        uint256[] memory _chainIds,
-        address _gateway
-    ) internal {
-        if(_chainIds.length == 0)
-            revert GatewaysEmptyRequestedChains();
+    function _verifyAddChainsSign(
+        bytes memory _signature,
+        address _gateway,
+        uint256[] memory _chainIds
+    ) internal view {
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                ADD_CHAINS_TYPEHASH,
+                _gateway,
+                keccak256(abi.encodePacked(_chainIds))
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+        address signer = digest.recover(_signature);
 
-        for (uint256 index = 0; index < _chainIds.length; index++) {
-            _removeChain(_chainIds[index], _gateway);
-        }
+        if(signer != gateways[_gateway].enclaveAddress)
+            revert GatewaysInvalidSigner();
     }
 
     function _addChain(
@@ -412,6 +428,40 @@ contract Gateways is
         gateways[_gateway].chainIds.push(_chainId);
 
         emit ChainAdded(_gateway, _chainId);
+    }
+
+    function _removeChains(
+        bytes memory _signature,
+        uint256[] memory _chainIds,
+        address _gateway
+    ) internal {
+        if(_chainIds.length == 0)
+            revert GatewaysEmptyRequestedChains();
+
+        _verifyRemoveChainsSign(_signature, _gateway, _chainIds);
+
+        for (uint256 index = 0; index < _chainIds.length; index++) {
+            _removeChain(_chainIds[index], _gateway);
+        }
+    }
+
+    function _verifyRemoveChainsSign(
+        bytes memory _signature,
+        address _gateway,
+        uint256[] memory _chainIds
+    ) internal view {
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                REMOVE_CHAINS_TYPEHASH,
+                _gateway,
+                keccak256(abi.encodePacked(_chainIds))
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+        address signer = digest.recover(_signature);
+
+        if(signer != gateways[_gateway].enclaveAddress)
+            revert GatewaysInvalidSigner();
     }
 
     function _removeChain(
@@ -525,15 +575,17 @@ contract Gateways is
     }
 
     function addChains(
+        bytes memory _signature,
         uint256[] memory _chainIds
     ) external isValidGateway(_msgSender()) {
-        _addChains(_chainIds, _msgSender());
+        _addChains(_signature, _chainIds, _msgSender());
     }
 
     function removeChains(
+        bytes memory _signature,
         uint256[] memory _chainIds
     ) external isValidGateway(_msgSender()) {
-        _removeChains(_chainIds, _msgSender());
+        _removeChains(_signature, _chainIds, _msgSender());
     }
 
     function isChainSupported(
