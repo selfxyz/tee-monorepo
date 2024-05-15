@@ -32,8 +32,7 @@ contract Jobs is
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect,
         uint256 _executorFeePerMs,
-        uint256 _stakingRewardPerMs,
-        uint256 _gatewayFeePerJob
+        uint256 _stakingRewardPerMs
     ) {
         _disableInitializers();
 
@@ -44,9 +43,8 @@ contract Jobs is
         EXECUTION_BUFFER_TIME = _executionBufferTime;
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
 
-        EXECUTOR_FEE_PER_MS= _executorFeePerMs;
-        STAKING_REWARD_PER_MS= _stakingRewardPerMs;
-        GATEWAY_FEE_PER_JOB= _gatewayFeePerJob;
+        EXECUTOR_FEE_PER_MS = _executorFeePerMs;
+        STAKING_REWARD_PER_MS = _stakingRewardPerMs;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -115,9 +113,6 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable STAKING_REWARD_PER_MS;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable GATEWAY_FEE_PER_JOB;
-
     function setGatewaysContract(Gateways _gateways) external onlyRole(DEFAULT_ADMIN_ROLE) {
         gateways = _gateways;
     }
@@ -134,7 +129,7 @@ contract Jobs is
         uint256 execStartTime;
         address jobOwner;
         address gateway;
-        uint256 firstOutputExecutionTime;   // in milliseconds
+        uint256 executionTime;   // it stores the execution time for first output submitted only (in milliseconds)
         uint8 outputCount;
         uint8 sequenceId;
         bool isResourceUnavailable;
@@ -317,7 +312,7 @@ contract Jobs is
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
         if(outputCount == 1)
-            jobs[_jobId].firstOutputExecutionTime = _totalTime;
+            jobs[_jobId].executionTime = _totalTime;
 
         // on reward distribution, 1st output executor node gets max reward
         // reward ratio - 2:1:0
@@ -356,26 +351,26 @@ contract Jobs is
         uint256 _outputCount,
         address _executor
     ) internal {
-        uint256 totalTime = jobs[_jobId].firstOutputExecutionTime;
+        uint256 executionTime = jobs[_jobId].executionTime;
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
-            TOKEN.safeTransfer(_executor, (totalTime * EXECUTOR_FEE_PER_MS * 2) / 3);
+            TOKEN.safeTransfer(_executor, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
             // TODO: is payment pool the jobs contract itself?
             // // transfer payout to payment pool
-            // TOKEN.safeTransfer(address(this), STAKING_REWARD_PER_MS);
+            // TOKEN.safeTransfer(address(this), executionTime * STAKING_REWARD_PER_MS);
         }
         // for second output
         else if(_outputCount == 2) {
             // transfer payout to executor
-            TOKEN.safeTransfer(_executor, (totalTime * EXECUTOR_FEE_PER_MS) / 3);
+            TOKEN.safeTransfer(_executor, (executionTime * EXECUTOR_FEE_PER_MS) / 3);
         }
         // for 3rd output
         else {
-            uint256 executor1Payout = (totalTime * EXECUTOR_FEE_PER_MS * 2) / 3;
-            uint256 executor2Payout = (totalTime * EXECUTOR_FEE_PER_MS) / 3;
+            uint256 executorPayout = executionTime * EXECUTOR_FEE_PER_MS;
+            uint256 paymentPoolPayout = executionTime * STAKING_REWARD_PER_MS;
             uint256 gatewayDeposit = jobs[_jobId].deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-            uint256 gatewayPayout = gatewayDeposit - STAKING_REWARD_PER_MS - executor1Payout - executor2Payout;
+            uint256 gatewayPayout = gatewayDeposit - paymentPoolPayout - executorPayout;
             // transfer payout to gateway
             TOKEN.safeTransfer(jobs[_jobId].gateway, gatewayPayout);
 
@@ -485,10 +480,10 @@ contract Jobs is
         uint8 outputCount = jobs[_jobId].outputCount;
         bool isNoOutputSubmitted = (outputCount == 0);
         uint256 deadline = jobs[_jobId].deadline;
-        uint256 firstOutputExecutionTime = jobs[_jobId].firstOutputExecutionTime;
+        uint256 executionTime = jobs[_jobId].executionTime;
         delete jobs[_jobId];
 
-        _releaseEscrowAmount(gateway, outputCount, isNoOutputSubmitted, deadline, firstOutputExecutionTime);
+        _releaseEscrowAmount(gateway, outputCount, isNoOutputSubmitted, deadline, executionTime);
 
         // slash Execution node
         uint256 len = selectedExecutors[_jobId].length;
@@ -515,17 +510,28 @@ contract Jobs is
         uint8 _outputCount,
         bool _isNoOutputSubmitted,
         uint256 _deadline,
-        uint256 _firstOutputExecutionTime
+        uint256 _executionTime
     ) internal {
+        uint256 gatewayDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
+        uint256 gatewayPayout;
+        
         // transfer back the whole escrow amount to gateway if no output submitted
         if(_isNoOutputSubmitted)
-            TOKEN.safeTransfer(_gateway, _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
-        else if(_outputCount == 1) {
-            uint256 executor1Payout = (_firstOutputExecutionTime * EXECUTOR_FEE_PER_MS * 2) / 3;
-            uint256 gatewayDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-            uint256 gatewayPayout = gatewayDeposit - STAKING_REWARD_PER_MS - executor1Payout;
-            TOKEN.safeTransfer(_gateway, gatewayPayout);
+            gatewayPayout = gatewayDeposit;
+        else {
+            uint256 paymentPoolPayout = _executionTime * STAKING_REWARD_PER_MS;
+            uint256 executorPayout = _executionTime * EXECUTOR_FEE_PER_MS;
+            
+            if(_outputCount == 1) {
+                uint256 executor1Payout = (executorPayout * 2) / 3;
+                gatewayPayout = gatewayDeposit - paymentPoolPayout - executor1Payout;
+            }
+            // if only 2 outputs submitted
+            else
+                gatewayPayout = gatewayDeposit - paymentPoolPayout - executorPayout;
         }
+
+        TOKEN.safeTransfer(_gateway, gatewayPayout);
     }
 
     function _reassignGatewayRelay(

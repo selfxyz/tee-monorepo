@@ -36,8 +36,7 @@ contract Relay is
         uint256 _globalMinTimeout,  // in milliseconds
         uint256 _globalMaxTimeout,  // in milliseconds
         uint256 _overallTimeout,
-        uint256 _executorFeePerMs,
-        uint256 _stakingRewardPerMs,
+        uint256 _feePerMs,  // fee is in USDC
         uint256 _gatewayFeePerJob
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
@@ -52,9 +51,8 @@ contract Relay is
         GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
         OVERALL_TIMEOUT = _overallTimeout;
 
-        EXECUTOR_FEE_PER_MS= _executorFeePerMs;
-        STAKING_REWARD_PER_MS= _stakingRewardPerMs;
-        GATEWAY_FEE_PER_JOB= _gatewayFeePerJob;
+        FEE_PER_MS = _feePerMs;
+        GATEWAY_FEE_PER_JOB = _gatewayFeePerJob;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -116,10 +114,7 @@ contract Relay is
     uint256 public immutable OVERALL_TIMEOUT;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable EXECUTOR_FEE_PER_MS;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable STAKING_REWARD_PER_MS;
+    uint256 public immutable FEE_PER_MS;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GATEWAY_FEE_PER_JOB;
@@ -269,7 +264,7 @@ contract Relay is
         if (jobCount + 1 == (block.chainid + 1) << 192)
             jobCount = block.chainid << 192;
 
-        uint256 usdcDeposit = _userTimeout * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS) + GATEWAY_FEE_PER_JOB;
+        uint256 usdcDeposit = _userTimeout * FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         jobs[++jobCount] = Job({
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
@@ -304,7 +299,7 @@ contract Relay is
 
         address jobOwner = job.jobOwner;
         uint256 callbackDeposit = job.callbackDeposit;
-        uint256 gatewayPayoutUsdc = _totalTime * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS) + GATEWAY_FEE_PER_JOB;
+        uint256 gatewayPayoutUsdc = _totalTime * FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         uint256 jobOwnerPayoutUsdc = job.usdcDeposit - gatewayPayoutUsdc;
         delete jobs[_jobId];
 
