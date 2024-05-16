@@ -36,7 +36,7 @@ contract Relay is
         uint256 _globalMinTimeout,  // in milliseconds
         uint256 _globalMaxTimeout,  // in milliseconds
         uint256 _overallTimeout,
-        uint256 _feePerMs,  // fee is in USDC
+        uint256 _executionFeePerMs,  // fee is in USDC
         uint256 _gatewayFeePerJob
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
@@ -51,7 +51,7 @@ contract Relay is
         GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
         OVERALL_TIMEOUT = _overallTimeout;
 
-        FEE_PER_MS = _feePerMs;
+        EXECUTION_FEE_PER_MS = _executionFeePerMs;
         GATEWAY_FEE_PER_JOB = _gatewayFeePerJob;
     }
 
@@ -114,7 +114,7 @@ contract Relay is
     uint256 public immutable OVERALL_TIMEOUT;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable FEE_PER_MS;
+    uint256 public immutable EXECUTION_FEE_PER_MS;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GATEWAY_FEE_PER_JOB;
@@ -264,7 +264,7 @@ contract Relay is
         if (jobCount + 1 == (block.chainid + 1) << 192)
             jobCount = block.chainid << 192;
 
-        uint256 usdcDeposit = _userTimeout * FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        uint256 usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         jobs[++jobCount] = Job({
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
@@ -299,7 +299,7 @@ contract Relay is
 
         address jobOwner = job.jobOwner;
         uint256 callbackDeposit = job.callbackDeposit;
-        uint256 gatewayPayoutUsdc = _totalTime * FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        uint256 gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         uint256 jobOwnerPayoutUsdc = job.usdcDeposit - gatewayPayoutUsdc;
         delete jobs[_jobId];
 

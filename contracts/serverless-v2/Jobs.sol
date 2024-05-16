@@ -483,7 +483,7 @@ contract Jobs is
         uint256 executionTime = jobs[_jobId].executionTime;
         delete jobs[_jobId];
 
-        _releaseEscrowAmount(gateway, outputCount, isNoOutputSubmitted, deadline, executionTime);
+        _releaseEscrowAmount(gateway, outputCount, deadline, executionTime);
 
         // slash Execution node
         uint256 len = selectedExecutors[_jobId].length;
@@ -508,7 +508,6 @@ contract Jobs is
     function _releaseEscrowAmount(
         address _gateway,
         uint8 _outputCount,
-        bool _isNoOutputSubmitted,
         uint256 _deadline,
         uint256 _executionTime
     ) internal {
@@ -516,7 +515,7 @@ contract Jobs is
         uint256 gatewayPayout;
         
         // transfer back the whole escrow amount to gateway if no output submitted
-        if(_isNoOutputSubmitted)
+        if(_outputCount == 0)
             gatewayPayout = gatewayDeposit;
         else {
             uint256 paymentPoolPayout = _executionTime * STAKING_REWARD_PER_MS;
