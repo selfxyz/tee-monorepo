@@ -126,7 +126,7 @@ contract Executors is
         address _executor,
         address _owner
     ) {
-        if(!(executors[_executor].owner == _owner))
+        if (executors[_executor].owner != _owner)
             revert ExecutorsInvalidExecutor();
         _;
     }
