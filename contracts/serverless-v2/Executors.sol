@@ -153,7 +153,7 @@ contract Executors is
         );
     
     bytes32 private constant REGISTER_TYPEHASH = 
-        keccak256("Register(address executor,address owner,uint256 jobCapacity)");
+        keccak256("Register(address executor,address owner,uint256 jobCapacity,uint256 timestampInMs)");
 
     event ExecutorRegistered(
         address indexed owner,
@@ -181,6 +181,7 @@ contract Executors is
         uint256 removedAmount
     );
 
+    error ExecutorsSignatureTooOld();
     error ExecutorsInvalidSigner();
     error ExecutorsExecutorAlreadyExists();
     error ExecutorsAlreadyDraining();
@@ -196,6 +197,7 @@ contract Executors is
         IAttestationVerifier.Attestation memory _attestation,
         address _owner,
         uint256 _jobCapacity,
+        uint256 _timestampInMs,
         bytes memory _signature,
         uint256 _stakeAmount,
         address _executor
@@ -208,7 +210,7 @@ contract Executors is
 
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_executor, enclaveAddress, _owner, _jobCapacity, _signature);
+        _verifySign(_executor, enclaveAddress, _owner, _jobCapacity, _timestampInMs, _signature);
 
         _register(_executor, enclaveAddress, _owner, _jobCapacity);
 
@@ -224,14 +226,19 @@ contract Executors is
         address _enclaveAddress,
         address _owner,
         uint256 _jobCapacity,
+        uint256 _timestampInMs,
         bytes memory _signature
-    ) internal pure {
+    ) internal view {
+        if (block.timestamp > (_timestampInMs / 1000) + ATTESTATION_MAX_AGE)
+            revert ExecutorsSignatureTooOld();
+
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REGISTER_TYPEHASH,
                 _executor,
                 _owner,
-                _jobCapacity
+                _jobCapacity,
+                _timestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -377,10 +384,11 @@ contract Executors is
         IAttestationVerifier.Attestation memory _attestation,
         address _owner,
         uint256 _jobCapacity,
+        uint256 _timestampInMs,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestationSignature, _attestation, _owner, _jobCapacity, _signature, _stakeAmount, _msgSender());
+        _registerExecutor(_attestationSignature, _attestation, _owner, _jobCapacity, _timestampInMs, _signature, _stakeAmount, _msgSender());
     }
 
     function deregisterExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
