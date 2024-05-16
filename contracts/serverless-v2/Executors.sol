@@ -122,16 +122,18 @@ contract Executors is
 
     //-------------------------------- Executor start --------------------------------//
 
-    modifier isValidExecutor(
-        address _executor
+    modifier isValidExecutorOwner(
+        address _executor,
+        address _owner
     ) {
-        if(executors[_executor].enclaveAddress == address(0))
+        if(!(executors[_executor].owner == _owner))
             revert ExecutorsInvalidExecutor();
         _;
     }
 
     struct Executor {
         address enclaveAddress;
+        address owner;
         uint256 jobCapacity;
         uint256 activeJobs;
         uint256 stakeAmount;
@@ -151,9 +153,10 @@ contract Executors is
         );
     
     bytes32 private constant REGISTER_TYPEHASH = 
-        keccak256("Register(address executor,uint256 jobCapacity)");
+        keccak256("Register(address executor,address owner,uint256 jobCapacity)");
 
     event ExecutorRegistered(
+        address indexed owner,
         address indexed executor,
         address enclaveAddress,
         uint256 jobCapacity
@@ -191,6 +194,7 @@ contract Executors is
     function _registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
+        address _owner,
         uint256 _jobCapacity,
         bytes memory _signature,
         uint256 _stakeAmount,
@@ -204,9 +208,9 @@ contract Executors is
 
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_executor, enclaveAddress, _jobCapacity, _signature);
+        _verifySign(_executor, enclaveAddress, _owner, _jobCapacity, _signature);
 
-        _register(_executor, enclaveAddress, _jobCapacity);
+        _register(_executor, enclaveAddress, _owner, _jobCapacity);
 
         // add node to the tree if min stake amount deposited
         if(_stakeAmount >= MIN_STAKE_AMOUNT)
@@ -218,6 +222,7 @@ contract Executors is
     function _verifySign(
         address _executor,
         address _enclaveAddress,
+        address _owner,
         uint256 _jobCapacity,
         bytes memory _signature
     ) internal pure {
@@ -225,6 +230,7 @@ contract Executors is
             abi.encode(
                 REGISTER_TYPEHASH,
                 _executor,
+                _owner,
                 _jobCapacity
             )
         );
@@ -238,12 +244,14 @@ contract Executors is
     function _register(
         address _executor,
         address _enclaveAddress,
+        address _owner,
         uint256 _jobCapacity
     ) internal {
         executors[_executor].enclaveAddress = _enclaveAddress;
         executors[_executor].jobCapacity = _jobCapacity;
+        executors[_executor].owner = _owner;
         
-        emit ExecutorRegistered(_executor, _enclaveAddress, _jobCapacity);
+        emit ExecutorRegistered(_owner, _executor, _enclaveAddress, _jobCapacity);
     }
 
     function _drainExecutor(
@@ -332,7 +340,7 @@ contract Executors is
     ) internal {
         executors[_executor].stakeAmount += _amount;
         // transfer stake
-        TOKEN.safeTransferFrom(_executor, address(this), _amount);
+        TOKEN.safeTransferFrom(executors[_executor].owner, address(this), _amount);
 
         emit ExecutorStakeAdded(_executor, _amount);
     }
@@ -343,7 +351,7 @@ contract Executors is
     ) internal {
         executors[_executor].stakeAmount -= _amount;
         // transfer stake
-        TOKEN.safeTransfer(_executor, _amount);
+        TOKEN.safeTransfer(executors[_executor].owner, _amount);
 
         emit ExecutorStakeRemoved(_executor, _amount);
     }
@@ -367,35 +375,38 @@ contract Executors is
     function registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
+        address _owner,
         uint256 _jobCapacity,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _signature, _stakeAmount, _msgSender());
+        _registerExecutor(_attestationSignature, _attestation, _owner, _jobCapacity, _signature, _stakeAmount, _msgSender());
     }
 
-    function deregisterExecutor() external isValidExecutor(_msgSender()) {
-        _deregisterExecutor(_msgSender());
+    function deregisterExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
+        _deregisterExecutor(_executor);
     }
 
-    function drainExecutor() external isValidExecutor(_msgSender()) {
-        _drainExecutor(_msgSender());
+    function drainExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
+        _drainExecutor(_executor);
     }
 
-    function reviveExecutor() external isValidExecutor(_msgSender()) {
-        _reviveExecutor(_msgSender());
+    function reviveExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
+        _reviveExecutor(_executor);
     }
 
     function addExecutorStake(
+        address _executor,
         uint256 _amount
-    ) external isValidExecutor(_msgSender()) {
-        _addExecutorStake(_amount, _msgSender());
+    ) external isValidExecutorOwner(_executor, _msgSender()) {
+        _addExecutorStake(_amount, _executor);
     }
 
     function removeExecutorStake(
+        address _executor,
         uint256 _amount
-    ) external isValidExecutor(_msgSender()) {
-        _removeExecutorStake(_amount, _msgSender());
+    ) external isValidExecutorOwner(_executor, _msgSender()) {
+        _removeExecutorStake(_amount, _executor);
     }
 
     function allowOnlyVerified(

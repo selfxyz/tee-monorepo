@@ -352,10 +352,11 @@ contract Jobs is
         address _executor
     ) internal {
         uint256 executionTime = jobs[_jobId].executionTime;
+        ( , address owner, , , , ) = executors.executors(_executor);
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
-            TOKEN.safeTransfer(_executor, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
+            TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
             // TODO: is payment pool the jobs contract itself?
             // // transfer payout to payment pool
             // TOKEN.safeTransfer(address(this), executionTime * STAKING_REWARD_PER_MS);
@@ -363,7 +364,7 @@ contract Jobs is
         // for second output
         else if(_outputCount == 2) {
             // transfer payout to executor
-            TOKEN.safeTransfer(_executor, (executionTime * EXECUTOR_FEE_PER_MS) / 3);
+            TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS) / 3);
         }
         // for 3rd output
         else {
