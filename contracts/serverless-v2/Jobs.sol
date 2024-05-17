@@ -278,7 +278,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer, _gateway);
+        gateways.allowOnlyVerified(signer);
     }
 
     function _relay(
@@ -562,8 +562,7 @@ contract Jobs is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         address _jobOwner,
-        uint256 _timestampInMs,
-        address _gateway
+        uint256 _timestampInMs
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
@@ -576,30 +575,28 @@ contract Jobs is
         jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        _verifyReassignGatewaySign(_signature, _gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _timestampInMs);
+        address gateway = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _timestampInMs);
 
         // slash old gateway
-        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, _gateway, _jobOwner);
+        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, gateway, _jobOwner);
         
-        emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
+        emit GatewayReassigned(_jobId, _gatewayOld, gateway, _sequenceId);
     }
 
     function _verifyReassignGatewaySign(
         bytes memory _signature,
-        address _gateway,
         uint256 _jobId,
         address _gatewayOld,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         uint256 _timestampInMs
-    ) internal view {
+    ) internal view returns (address) {
         if (block.timestamp > (_timestampInMs / 1000) + SIGN_MAX_AGE)
             revert JobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REASSIGN_GATEWAY_TYPEHASH,
-                _gateway,
                 _jobId,
                 _gatewayOld,
                 _sequenceId,
@@ -610,7 +607,8 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer, _gateway);
+        gateways.allowOnlyVerified(signer);
+        return signer;
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -632,7 +630,7 @@ contract Jobs is
         address _jobOwner,
         uint256 _timestampInMs
     ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _timestampInMs, _msgSender());
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _timestampInMs);
     }
 
     //-------------------------------- external functions end ----------------------------------//
