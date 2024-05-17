@@ -189,7 +189,7 @@ contract Gateways is
         uint256 chainId
     );
 
-    event GatewaysDrained(
+    event GatewayDrained(
         address indexed enclaveAddress
     );
 
@@ -282,7 +282,6 @@ contract Gateways is
     ) internal {
         gateways[_enclaveAddress].owner = _owner;
         gateways[_enclaveAddress].chainIds = _chainIds;
-        gateways[_enclaveAddress].draining = false;
 
         emit GatewayRegistered(_enclaveAddress, _owner, _chainIds);
     }
@@ -295,7 +294,7 @@ contract Gateways is
         
         gateways[_enclaveAddress].draining = true;
 
-        emit GatewaysDrained(_enclaveAddress);
+        emit GatewayDrained(_enclaveAddress);
     }
 
     function _deregisterGateway(
@@ -332,7 +331,6 @@ contract Gateways is
         _addStake(_enclaveAddress, _amount);
     }
 
-    // TODO: check if the gateway is assigned some job before full stake removal
     function _removeGatewayStake(
         address _enclaveAddress,
         uint256 _amount
@@ -344,7 +342,6 @@ contract Gateways is
             revert GatewaysDrainPending();
 
         _removeStake(_enclaveAddress, _amount);
-        emit GatewayStakeRemoved(_enclaveAddress, _amount);
     }
 
     function _addChainGlobal(
