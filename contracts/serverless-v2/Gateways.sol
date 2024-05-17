@@ -149,11 +149,11 @@ contract Gateways is
         );
     
     bytes32 private constant REGISTER_TYPEHASH = 
-        keccak256("Register(address owner,uint256[] chainIds,uint256 timestampInMs)");
+        keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestampInMs)");
     bytes32 private constant ADD_CHAINS_TYPEHASH = 
-        keccak256("AddChains(uint256[] chainIds,uint256 timestampInMs)");
+        keccak256("AddChains(uint256[] chainIds,uint256 signTimestampInMs)");
     bytes32 private constant REMOVE_CHAINS_TYPEHASH = 
-        keccak256("RemoveChains(uint256[] chainIds,uint256 timestampInMs)");
+        keccak256("RemoveChains(uint256[] chainIds,uint256 signTimestampInMs)");
 
     event GatewayRegistered(
         address indexed enclaveAddress,
@@ -225,7 +225,7 @@ contract Gateways is
         uint256[] memory _chainIds,
         bytes memory _signature,
         uint256 _stakeAmount,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _owner
     ) internal {
         // attestation verification
@@ -233,7 +233,7 @@ contract Gateways is
 
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifyRegisterSign(_owner, _chainIds, _timestampInMs, _signature, enclaveAddress);
+        _verifyRegisterSign(_owner, _chainIds, _signTimestampInMs, _signature, enclaveAddress);
         
         if(gateways[enclaveAddress].owner != address(0))
             revert GatewaysGatewayAlreadyExists();
@@ -253,11 +253,11 @@ contract Gateways is
     function _verifyRegisterSign(
         address _owner,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         bytes memory _signature,
         address _enclaveAddress
     ) internal view {
-        if (block.timestamp > (_timestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
             revert GatewaysSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -265,7 +265,7 @@ contract Gateways is
                 REGISTER_TYPEHASH,
                 _owner,
                 keccak256(abi.encodePacked(_chainIds)),
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -378,13 +378,13 @@ contract Gateways is
     function _addChains(
         bytes memory _signature,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _enclaveAddress
     ) internal {
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
 
-        _verifyAddChainsSign(_signature, _chainIds, _timestampInMs, _enclaveAddress);
+        _verifyAddChainsSign(_signature, _chainIds, _signTimestampInMs, _enclaveAddress);
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             _addChain(_chainIds[index], _enclaveAddress);
@@ -394,17 +394,17 @@ contract Gateways is
     function _verifyAddChainsSign(
         bytes memory _signature,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _enclaveAddress
     ) internal view {
-        if (block.timestamp > (_timestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
             revert GatewaysSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
             abi.encode(
                 ADD_CHAINS_TYPEHASH,
                 keccak256(abi.encodePacked(_chainIds)),
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -436,13 +436,13 @@ contract Gateways is
     function _removeChains(
         bytes memory _signature,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _enclaveAddress
     ) internal {
         if(_chainIds.length == 0)
             revert GatewaysEmptyRequestedChains();
 
-        _verifyRemoveChainsSign(_signature, _chainIds, _timestampInMs, _enclaveAddress);
+        _verifyRemoveChainsSign(_signature, _chainIds, _signTimestampInMs, _enclaveAddress);
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
             _removeChain(_chainIds[index], _enclaveAddress);
@@ -452,17 +452,17 @@ contract Gateways is
     function _verifyRemoveChainsSign(
         bytes memory _signature,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _enclaveAddress
     ) internal view {
-        if (block.timestamp > (_timestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
             revert GatewaysSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REMOVE_CHAINS_TYPEHASH,
                 keccak256(abi.encodePacked(_chainIds)),
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -543,9 +543,9 @@ contract Gateways is
         uint256[] memory _chainIds,
         bytes memory _signature,
         uint256 _stakeAmount,
-        uint256 _timestampInMs
+        uint256 _signTimestampInMs
     ) external {
-        _registerGateway(_attestationSignature, _attestation, _chainIds, _signature, _stakeAmount, _timestampInMs, _msgSender());
+        _registerGateway(_attestationSignature, _attestation, _chainIds, _signature, _stakeAmount, _signTimestampInMs, _msgSender());
     }
 
     function deregisterGateway(address _enclaveAddress) external isValidGatewayOwner(_enclaveAddress, _msgSender()) {
@@ -590,19 +590,19 @@ contract Gateways is
     function addChains(
         bytes memory _signature,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _enclaveAddress
     ) external isValidGatewayOwner(_enclaveAddress, _msgSender()) {
-        _addChains(_signature, _chainIds, _timestampInMs, _enclaveAddress);
+        _addChains(_signature, _chainIds, _signTimestampInMs, _enclaveAddress);
     }
 
     function removeChains(
         bytes memory _signature,
         uint256[] memory _chainIds,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _enclaveAddress
     ) external isValidGatewayOwner(_enclaveAddress, _msgSender()) {
-        _removeChains(_signature, _chainIds, _timestampInMs, _enclaveAddress);
+        _removeChains(_signature, _chainIds, _signTimestampInMs, _enclaveAddress);
     }
 
     function isChainSupported(

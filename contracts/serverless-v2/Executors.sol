@@ -152,7 +152,7 @@ contract Executors is
         );
     
     bytes32 private constant REGISTER_TYPEHASH = 
-        keccak256("Register(address owner,uint256 jobCapacity,uint256 timestampInMs)");
+        keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestampInMs)");
 
     event ExecutorRegistered(
         address indexed enclaveAddress,
@@ -194,7 +194,7 @@ contract Executors is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         bytes memory _signature,
         uint256 _stakeAmount,
         address _owner
@@ -207,7 +207,7 @@ contract Executors is
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
         // signature check
-        _verifySign(enclaveAddress, _owner, _jobCapacity, _timestampInMs, _signature);
+        _verifySign(enclaveAddress, _owner, _jobCapacity, _signTimestampInMs, _signature);
 
         _register(enclaveAddress, _owner, _jobCapacity);
 
@@ -222,10 +222,10 @@ contract Executors is
         address _enclaveAddress,
         address _owner,
         uint256 _jobCapacity,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         bytes memory _signature
     ) internal view {
-        if (block.timestamp > (_timestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
             revert ExecutorsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -233,7 +233,7 @@ contract Executors is
                 REGISTER_TYPEHASH,
                 _owner,
                 _jobCapacity,
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -376,11 +376,11 @@ contract Executors is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _timestampInMs, _signature, _stakeAmount, _msgSender());
+        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _signTimestampInMs, _signature, _stakeAmount, _msgSender());
     }
 
     function deregisterExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
@@ -410,12 +410,9 @@ contract Executors is
     }
 
     function allowOnlyVerified(
-        address _signer,
-        address _enclaveAddress
+        address _signer
     ) external view {
         _allowOnlyVerified(_signer);
-        if(_signer != _enclaveAddress)
-            revert ExecutorsInvalidSigner();
     }
 
     //-------------------------------- external functions end ----------------------------------//

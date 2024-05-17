@@ -159,13 +159,13 @@ contract Jobs is
         );
     
     bytes32 private constant RELAY_JOB_TYPEHASH = 
-        keccak256("RelayJob(address gateway,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 timestampInMs)");
+        keccak256("RelayJob(address gateway,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestampInMs)");
 
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
-        keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 timestampInMs)");
+        keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
 
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
-        keccak256("ReassignGateway(address gateway,uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 timestampInMs)");
+        keccak256("ReassignGateway(address gateway,uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestampInMs)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -211,7 +211,7 @@ contract Jobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
-        uint256 _timestampInMs,
+        uint256 _signTimestampInMs,
         address _gateway
     ) internal {
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
@@ -229,7 +229,7 @@ contract Jobs is
             revert JobsUnsupportedChain();
 
         // signature check
-        _verifyRelaySign(_signature, _gateway, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _timestampInMs);
+        _verifyRelaySign(_signature, _gateway, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestampInMs);
 
         address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
@@ -256,9 +256,9 @@ contract Jobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
-        uint256 _timestampInMs
+        uint256 _signTimestampInMs
     ) internal view {
-        if (block.timestamp > (_timestampInMs / 1000) + SIGN_MAX_AGE)
+        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
             revert JobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -272,7 +272,7 @@ contract Jobs is
                 _jobRequestTimestamp,
                 _sequenceId,
                 _jobOwner,
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -307,22 +307,21 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _timestampInMs,
-        address _enclaveAddress
+        uint256 _signTimestampInMs
     ) internal {
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
         // signature check
-        _verifyOutputSign(_signature, _enclaveAddress, _jobId, _output, _totalTime, _errorCode, _timestampInMs);
+        address enclaveAddress = _verifyOutputSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
 
-        if(!_isJobExecutor(_jobId, _enclaveAddress))
+        if(!_isJobExecutor(_jobId, enclaveAddress))
             revert JobsNotSelectedExecutor();
-        if(hasExecutedJob[_jobId][_enclaveAddress])
+        if(hasExecutedJob[_jobId][enclaveAddress])
             revert JobsExecutorAlreadySubmittedOutput();
 
-        executors.releaseExecutor(_enclaveAddress);
-        hasExecutedJob[_jobId][_enclaveAddress] = true;
+        executors.releaseExecutor(enclaveAddress);
+        hasExecutedJob[_jobId][enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
         if(outputCount == 1)
@@ -330,7 +329,7 @@ contract Jobs is
 
         // on reward distribution, 1st output executor node gets max reward
         // reward ratio - 2:1:0
-        _transferRewardPayout(_jobId, outputCount, _enclaveAddress);
+        _transferRewardPayout(_jobId, outputCount, enclaveAddress);
 
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
     }
@@ -338,14 +337,13 @@ contract Jobs is
     // TODO: this sign can be used at a later time for new job with same jobId and assigned executor
     function _verifyOutputSign(
         bytes memory _signature,
-        address _enclaveAddress,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _timestampInMs
-    ) internal view {
-        if (block.timestamp > (_timestampInMs / 1000) + SIGN_MAX_AGE)
+        uint256 _signTimestampInMs
+    ) internal view returns (address) {
+        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
             revert JobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -355,13 +353,14 @@ contract Jobs is
                 keccak256(_output),
                 _totalTime,
                 _errorCode,
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        executors.allowOnlyVerified(signer, _enclaveAddress);
+        executors.allowOnlyVerified(signer);
+        return signer;
     }
 
     function _transferRewardPayout(
@@ -439,9 +438,9 @@ contract Jobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
-        uint256 _timestampInMs
+        uint256 _signTimestampInMs
     ) external {
-        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _timestampInMs, _msgSender());
+        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestampInMs, _msgSender());
     }
 
     function submitOutput(
@@ -450,10 +449,9 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _timestampInMs,
-        address _enclaveAddress
+        uint256 _signTimestampInMs
     ) external {
-        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _timestampInMs, _enclaveAddress);
+        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
     }
 
     function isJobExecutor(
@@ -562,7 +560,7 @@ contract Jobs is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         address _jobOwner,
-        uint256 _timestampInMs
+        uint256 _signTimestampInMs
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
@@ -575,7 +573,7 @@ contract Jobs is
         jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        address gateway = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _timestampInMs);
+        address gateway = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _signTimestampInMs);
 
         // slash old gateway
         gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, gateway, _jobOwner);
@@ -589,9 +587,9 @@ contract Jobs is
         address _gatewayOld,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
-        uint256 _timestampInMs
+        uint256 _signTimestampInMs
     ) internal view returns (address) {
-        if (block.timestamp > (_timestampInMs / 1000) + SIGN_MAX_AGE)
+        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
             revert JobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -601,7 +599,7 @@ contract Jobs is
                 _gatewayOld,
                 _sequenceId,
                 _jobRequestTimestamp,
-                _timestampInMs
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -628,9 +626,9 @@ contract Jobs is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         address _jobOwner,
-        uint256 _timestampInMs
+        uint256 _signTimestampInMs
     ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _timestampInMs);
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _signTimestampInMs);
     }
 
     //-------------------------------- external functions end ----------------------------------//
