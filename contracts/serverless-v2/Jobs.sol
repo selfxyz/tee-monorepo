@@ -9,7 +9,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./Executors.sol";
-import "./Gateways.sol";
 
 contract Jobs is
     Initializable, // initializer
@@ -28,7 +27,6 @@ contract Jobs is
     // safeguard against takeover of the logic contract
     constructor(
         IERC20 _token,
-        uint256 _relayBufferTime,
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect,
         uint256 _executorFeePerMs,
@@ -39,7 +37,6 @@ contract Jobs is
         if(address(_token) == address(0))
             revert JobsZeroAddressToken();
         TOKEN = _token;
-        RELAY_BUFFER_TIME = _relayBufferTime;
         EXECUTION_BUFFER_TIME = _executionBufferTime;
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
 
@@ -73,7 +70,6 @@ contract Jobs is
 
     function initialize(
         address _admin,
-        Gateways _gateways,
         Executors _executors
     ) public initializer {
         if(_admin == address(0))
@@ -86,8 +82,8 @@ contract Jobs is
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-        gateways = _gateways;
         executors = _executors;
+        jobCount = 0;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -95,11 +91,7 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
 
-    Gateways public gateways;
     Executors public executors;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable RELAY_BUFFER_TIME;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable EXECUTION_BUFFER_TIME;
@@ -113,10 +105,6 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable STAKING_REWARD_PER_MS;
 
-    function setGatewaysContract(Gateways _gateways) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        gateways = _gateways;
-    }
-
     function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
         executors = _executors;
     }
@@ -128,12 +116,11 @@ contract Jobs is
         uint256 deadline;   // in milliseconds
         uint256 execStartTime;
         address jobOwner;
-        address gateway;
         uint256 executionTime;   // it stores the execution time for first output submitted only (in milliseconds)
         uint8 outputCount;
-        uint8 sequenceId;
-        bool isResourceUnavailable;
     }
+
+    uint256 public jobCount;
 
     // jobKey => Job
     mapping(uint256 => Job) public jobs;
@@ -152,22 +139,16 @@ contract Jobs is
             )
         );
     
-    bytes32 private constant RELAY_JOB_TYPEHASH = 
-        keccak256("RelayJob(address gateway,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner)");
-
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
         keccak256("SubmitOutput(address executor,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
 
-    bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
-        keccak256("ReassignGateway(address gateway,uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
-
-    event JobRelayed(
+    
+    event JobCreated(
         uint256 indexed jobId,
         bytes32 codehash,
         bytes codeInputs,
         uint256 deadline,   // in milliseconds
         address jobOwner,
-        address gateway,
         address[] selectedExecutors
     );
 
@@ -179,11 +160,6 @@ contract Jobs is
         uint8 outputCount
     );
 
-    event JobResourceUnavailable(
-        uint256 indexed jobId,
-        address indexed gateway
-    );
-
     error JobsRelayTimeOver();
     error JobsJobMarkedEndedAsResourceUnavailable();
     error JobsInvalidSequenceId();
@@ -192,100 +168,47 @@ contract Jobs is
     error JobsExecutionTimeOver();
     error JobsNotSelectedExecutor();
     error JobsExecutorAlreadySubmittedOutput();
+    error JobsResourceUnavailable();
 
     //-------------------------------- internal functions start --------------------------------//
 
-    function _relayJob(
-        bytes memory _signature,
-        uint256 _jobId,
+    function _createJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,  // in milliseconds
-        uint256 _jobRequestTimestamp,
-        uint8 _sequenceId,
-        address _jobOwner,
-        address _gateway
-    ) internal {
-        if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
-            revert JobsRelayTimeOver();
-        if(jobs[_jobId].isResourceUnavailable)
-            revert JobsJobMarkedEndedAsResourceUnavailable();
-        if(jobs[_jobId].execStartTime != 0)
-            revert JobsJobAlreadyRelayed();
-        if(_sequenceId != jobs[_jobId].sequenceId + 1)
-            revert JobsInvalidSequenceId();
-        
-        // first 64 bits represent chainId
-        uint256 reqChainId = _jobId >> 192;
-        if(!gateways.isChainSupported(reqChainId))
-            revert JobsUnsupportedChain();
+        address _jobOwner
+    ) internal returns (uint256 jobId, uint8 errorCode) {
 
-        // signature check
-        _verifyRelaySign(_signature, _gateway, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner);
-
+        errorCode = 0;
         address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
-        // if no executors are selected, then mark isRosourceAvailable flag of the job and exit
+        // if no executors are selected, then return with error code 1
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
-            jobs[_jobId].isResourceUnavailable = true;
-            emit JobResourceUnavailable(_jobId, _gateway);
-            return;
+            errorCode = 1;
+            return (0, errorCode);
         }
-        selectedExecutors[_jobId] = selectedNodes;
+        jobId = ++jobCount;
+        selectedExecutors[jobId] = selectedNodes;
 
         // deposit escrow amount(USDC)
-        TOKEN.safeTransferFrom(_gateway, address(this), _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
+        TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
 
-        _relay(_jobId, _codehash, _codeInputs, _deadline, _sequenceId, _jobOwner, _gateway, selectedNodes);
+        _create(jobId, _codehash, _codeInputs, _deadline, _jobOwner, selectedNodes);
     }
 
-    function _verifyRelaySign(
-        bytes memory _signature,
-        address _gateway,
+    function _create(
         uint256 _jobId,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,  // in milliseconds
-        uint256 _jobRequestTimestamp,
-        uint8 _sequenceId,
-        address _jobOwner
-    ) internal view {
-        bytes32 hashStruct = keccak256(
-            abi.encode(
-                RELAY_JOB_TYPEHASH,
-                _gateway,
-                _jobId,
-                _codehash,
-                keccak256(_codeInputs),
-                _deadline,
-                _jobRequestTimestamp,
-                _sequenceId,
-                _jobOwner
-            )
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
-        address signer = digest.recover(_signature);
-
-        gateways.allowOnlyVerified(signer, _gateway);
-    }
-
-    function _relay(
-        uint256 _jobId,
-        bytes32 _codehash,
-        bytes memory _codeInputs,
-        uint256 _deadline,  // in milliseconds
-        uint8 _sequenceId,
         address _jobOwner,
-        address _gateway,
         address[] memory _selectedNodes
     ) internal {
         jobs[_jobId].jobId = _jobId;
         jobs[_jobId].deadline = _deadline;
         jobs[_jobId].execStartTime = block.timestamp;
         jobs[_jobId].jobOwner = _jobOwner;
-        jobs[_jobId].gateway = _gateway;
-        jobs[_jobId].sequenceId = _sequenceId;
 
-        emit JobRelayed(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _gateway, _selectedNodes);
+        emit JobCreated(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _selectedNodes);
     }
 
     function _submitOutput(
@@ -318,6 +241,14 @@ contract Jobs is
         // reward ratio - 2:1:0
         _transferRewardPayout(_jobId, outputCount, _executor);
 
+        // TODO: add callback gas
+        if (outputCount == 1) {
+            address jobOwner = jobs[_jobId].jobOwner;
+            (bool success,) = jobOwner.call(
+                abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8,uint256)", _jobId, _output, _errorCode,
+                                        _totalTime)
+            );
+        }
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
     }
 
@@ -353,6 +284,8 @@ contract Jobs is
     ) internal {
         uint256 executionTime = jobs[_jobId].executionTime;
         ( , address owner, , , , ) = executors.executors(_executor);
+        address jobOwner = jobs[_jobId].jobOwner;
+        uint256 deadline = jobs[_jobId].deadline;
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
@@ -360,6 +293,8 @@ contract Jobs is
             // TODO: is payment pool the jobs contract itself?
             // // transfer payout to payment pool
             // TOKEN.safeTransfer(address(this), executionTime * STAKING_REWARD_PER_MS);
+            // transfer to job owner
+            TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
         }
         // for second output
         else if(_outputCount == 2) {
@@ -368,12 +303,7 @@ contract Jobs is
         }
         // for 3rd output
         else {
-            uint256 executorPayout = executionTime * EXECUTOR_FEE_PER_MS;
-            uint256 paymentPoolPayout = executionTime * STAKING_REWARD_PER_MS;
-            uint256 gatewayDeposit = jobs[_jobId].deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-            uint256 gatewayPayout = gatewayDeposit - paymentPoolPayout - executorPayout;
-            // transfer payout to gateway
-            TOKEN.safeTransfer(jobs[_jobId].gateway, gatewayPayout);
+            // All payments have already been made during first and second submission
 
             // cleanup job data after 3rd output submitted
             _cleanJobData(_jobId, _executor);
@@ -412,17 +342,12 @@ contract Jobs is
 
     //-------------------------------- external functions start --------------------------------//
 
-    function relayJob(
-        bytes memory _signature,
-        uint256 _jobId,
+    function createJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _deadline,  // in milliseconds
-        uint256 _jobRequestTimestamp,
-        uint8 _sequenceId,
-        address _jobOwner
-    ) external {
-        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _msgSender());
+        uint256 _deadline  // in milliseconds
+    ) external returns (uint256, uint8) {
+        return _createJob(_codehash, _codeInputs, _deadline, _msgSender());
     }
 
     function submitOutput(
@@ -454,13 +379,6 @@ contract Jobs is
         address indexed executor
     );
 
-    event GatewayReassigned(
-        uint256 indexed jobId,
-        address prevGateway,
-        address reporterGateway,
-        uint8 sequenceId
-    );
-
     error JobsInvalidJob();
     error JobsDeadlineNotOver();
 
@@ -476,26 +394,24 @@ contract Jobs is
         if((block.timestamp * 1000) <= (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsDeadlineNotOver();
 
-        address gateway = jobs[_jobId].gateway;
         address jobOwner = jobs[_jobId].jobOwner;
         uint8 outputCount = jobs[_jobId].outputCount;
         bool isNoOutputSubmitted = (outputCount == 0);
         uint256 deadline = jobs[_jobId].deadline;
-        uint256 executionTime = jobs[_jobId].executionTime;
         delete jobs[_jobId];
 
-        _releaseEscrowAmount(gateway, outputCount, deadline, executionTime);
+        _releaseEscrowAmount(jobOwner, outputCount, deadline);
 
         // slash Execution node
         uint256 len = selectedExecutors[_jobId].length;
+        uint256 slashAmount = 0;
         for (uint256 index = 0; index < len; index++) {
             address executor = selectedExecutors[_jobId][index];
 
             if(!hasExecutedJob[_jobId][executor]) {
-                executors.slashExecutor(
+                slashAmount += executors.slashExecutor(
                     executor,
                     isNoOutputSubmitted,
-                    gateway,
                     jobOwner
                 );
                 emit SlashedOnExecutionTimeout(_jobId, executor);
@@ -504,86 +420,27 @@ contract Jobs is
         }
 
         delete selectedExecutors[_jobId];
+        if (isNoOutputSubmitted) {
+            // TODO: add gas limit
+            (bool success,) = jobOwner.call(
+                abi.encodeWithSignature("oysterFailureCall(uint256,uint256)", _jobId, slashAmount)
+            );
+        }
     }
 
     function _releaseEscrowAmount(
-        address _gateway,
+        address _jobOwner,
         uint8 _outputCount,
-        uint256 _deadline,
-        uint256 _executionTime
+        uint256 _deadline
     ) internal {
-        uint256 gatewayDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-        uint256 gatewayPayout;
+        uint256 jobOwnerDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
         
         // transfer back the whole escrow amount to gateway if no output submitted
-        if(_outputCount == 0)
-            gatewayPayout = gatewayDeposit;
-        else {
-            uint256 paymentPoolPayout = _executionTime * STAKING_REWARD_PER_MS;
-            uint256 executorPayout = _executionTime * EXECUTOR_FEE_PER_MS;
-            
-            if(_outputCount == 1) {
-                uint256 executor1Payout = (executorPayout * 2) / 3;
-                gatewayPayout = gatewayDeposit - paymentPoolPayout - executor1Payout;
-            }
-            // if only 2 outputs submitted
-            else
-                gatewayPayout = gatewayDeposit - paymentPoolPayout - executorPayout;
+        if(_outputCount == 0) {
+            TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
         }
-
-        TOKEN.safeTransfer(_gateway, gatewayPayout);
-    }
-
-    function _reassignGatewayRelay(
-        address _gatewayOld,
-        uint256 _jobId,
-        bytes memory _signature,
-        uint8 _sequenceId,
-        uint256 _jobRequestTimestamp,
-        address _jobOwner,
-        address _gateway
-    ) internal {
-        // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
-        if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
-            revert JobsRelayTimeOver();
-
-        if(jobs[_jobId].isResourceUnavailable)
-            revert JobsJobMarkedEndedAsResourceUnavailable();
-        if(_sequenceId != jobs[_jobId].sequenceId + 1 || _sequenceId > 2)
-            revert JobsInvalidSequenceId();
-        jobs[_jobId].sequenceId = _sequenceId;
-
-        // signature check
-        _verifyReassignGatewaySign(_signature, _gateway, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
-
-        // slash old gateway
-        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, _gateway, _jobOwner);
-        
-        emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
-    }
-
-    function _verifyReassignGatewaySign(
-        bytes memory _signature,
-        address _gateway,
-        uint256 _jobId,
-        address _gatewayOld,
-        uint8 _sequenceId,
-        uint256 _jobRequestTimestamp
-    ) internal view {
-        bytes32 hashStruct = keccak256(
-            abi.encode(
-                REASSIGN_GATEWAY_TYPEHASH,
-                _gateway,
-                _jobId,
-                _gatewayOld,
-                _sequenceId,
-                _jobRequestTimestamp
-            )
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
-        address signer = digest.recover(_signature);
-
-        gateways.allowOnlyVerified(signer, _gateway);
+        // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
+        // Keep remaining deposit in the payments pool
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -594,17 +451,6 @@ contract Jobs is
         uint256 _jobId
     ) external {
         _slashOnExecutionTimeout(_jobId);
-    }
-
-    function reassignGatewayRelay(
-        address _gatewayOld,
-        uint256 _jobId,
-        bytes memory _signature,
-        uint8 _sequenceId,
-        uint256 _jobRequestTimestamp,
-        address _jobOwner
-    ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//

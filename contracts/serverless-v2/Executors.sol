@@ -468,17 +468,16 @@ contract Executors is
     function _slashExecutor(
         address _executor,
         bool _isNoOutputSubmitted,
-        address _gateway,
         address _jobOwner
-    ) internal {
+    ) internal returns (uint256) {
         uint256 totalComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
         executors[_executor].stakeAmount -= totalComp;
 
         if(_isNoOutputSubmitted) {
             // transfer the slashed comp to gateway that relayed the job
-            TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
+            // TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
             // transfer the slashed comp to job owner
-            TOKEN.safeTransfer(_jobOwner, totalComp - SLASH_COMP_FOR_GATEWAY);
+            TOKEN.safeTransfer(_jobOwner, totalComp);
         }
         else {
             // transfer the slashed comp to common pool(jobs contract)
@@ -486,6 +485,7 @@ contract Executors is
         }
 
         _releaseExecutor(_executor);
+        return totalComp;
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -507,10 +507,9 @@ contract Executors is
     function slashExecutor(
         address _executor,
         bool _isNoOutputSubmitted,
-        address _gateway,
         address _jobOwner
-    ) external onlyRole(JOBS_ROLE) {
-        _slashExecutor(_executor, _isNoOutputSubmitted, _gateway, _jobOwner);
+    ) external onlyRole(JOBS_ROLE) returns (uint256) {
+        return _slashExecutor(_executor, _isNoOutputSubmitted, _jobOwner);
     }
 
     //-------------------------------- external functions end ----------------------------------//
