@@ -226,20 +226,13 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 
     let to_block_number = to_block_number.unwrap();
 
-    // initialize the gateway epoch state[current_cycle] with empty map if it doesn't exist
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-        gateway_epoch_state_guard
-            .entry(cycle_number)
-            .or_insert(BTreeMap::new());
-    }
+    let mut current_cycle_state_epoch: BTreeMap<Address, GatewayData> = BTreeMap::new();
+
     if last_added_cycle.is_some() {
         // initialize the gateway epoch state[current_cycle] with the previous cycle state
-        let mut last_cycle_state_map: BTreeMap<Address, GatewayData>;
         // scope for the read lock
         {
-            last_cycle_state_map = gateway_epoch_state
+            current_cycle_state_epoch = gateway_epoch_state
                 .read()
                 .unwrap()
                 .get(&last_added_cycle.unwrap())
@@ -247,25 +240,34 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 .clone();
         }
         // update the last block number of the gateway data
-        for (_, gateway_data) in last_cycle_state_map.iter_mut() {
+        for (_, gateway_data) in current_cycle_state_epoch.iter_mut() {
             gateway_data.last_block_number = to_block_number;
-        }
-
-        // scope for the write lock
-        {
-            let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-            gateway_epoch_state_guard.insert(cycle_number, last_cycle_state_map);
         }
 
         // In case where to_block_number < from_block_number, return here
         // This will happen in the case when no blocks were created in this epoch cycle,
         // so the state remains the same as the previous state
         if to_block_number < from_block_number {
+            // scope for the write lock
+            {
+                let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
+                gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
+            }
             return Ok(());
         }
     }
 
-    if from_block_number == 0 && to_block_number == 0 {
+    // In case of no blocks created in this epoch cycle, return here
+    // ||
+    // In case where to_block_number <= from_block_number, return here
+    // This will happen in the case when no blocks were created in this epoch cycle,
+    // so the state remains the same as the previous state
+    if from_block_number == 0 && to_block_number == 0 || to_block_number <= from_block_number {
+        // scope for the write lock
+        {
+            let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
+            gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
+        }
         return Ok(()); // no blocks to process
     }
 
@@ -291,35 +293,19 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         let topics = log.topics.clone();
 
         if topics[0] == keccak256("GatewayRegistered(address,address,uint256[])").into() {
-            process_gateway_registered_event(
-                log,
-                cycle_number,
-                to_block_number,
-                &gateway_epoch_state,
-            )
-            .await;
+            process_gateway_registered_event(log, to_block_number, &mut current_cycle_state_epoch)
+                .await;
         } else if topics[0] == keccak256("GatewayDeregistered(address)").into() {
-            process_gateway_deregistered_event(log, to_block_number, &gateway_epoch_state).await;
+            process_gateway_deregistered_event(log, &mut current_cycle_state_epoch).await;
         } else if topics[0] == keccak256("ChainAdded(address,uint256)").into() {
-            process_chain_added_event(log, cycle_number, &gateway_epoch_state).await;
+            process_chain_added_event(log, &mut current_cycle_state_epoch).await;
         } else if topics[0] == keccak256("ChainRemoved(address,uint256)").into() {
-            process_chain_removed_event(log, cycle_number, &gateway_epoch_state).await;
+            process_chain_removed_event(log, &mut current_cycle_state_epoch).await;
         }
     }
 
     // fetch the gateways mapping for the updated stakes.
-    let gateway_addresses: Vec<Address>;
-    // scope for the read lock
-    {
-        gateway_addresses = gateway_epoch_state
-            .read()
-            .unwrap()
-            .get(&cycle_number)
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
-    }
+    let gateway_addresses: Vec<Address> = current_cycle_state_epoch.keys().cloned().collect();
 
     for address in gateway_addresses {
         let (_, stake_amount, _, _) = com_chain_gateway_contract
@@ -329,20 +315,122 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             .await
             .context("Failed to get gateway data")?;
 
-        // scope for the write lock
-        {
-            let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-            gateway_epoch_state_guard
-                .get_mut(&cycle_number)
-                .unwrap()
-                .get_mut(&address)
-                .unwrap()
-                .stake_amount = stake_amount;
-        }
+        current_cycle_state_epoch
+            .get_mut(&address)
+            .unwrap()
+            .stake_amount = stake_amount;
+    }
+
+    // Write current cycle state to the gateway epoch state
+    // scope for the write lock
+    {
+        let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
+        gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
     }
 
     info!("Generated gateway epoch state for cycle {}", cycle_number);
     Ok(())
+}
+
+async fn process_gateway_registered_event(
+    log: Log,
+    to_block_number: u64,
+    current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
+) {
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
+    let decoded = decode(
+        &vec![ParamType::Array(Box::new(ParamType::Uint(256)))],
+        &log.data.0,
+    );
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
+
+    let mut req_chain_ids = BTreeSet::new();
+
+    if let Token::Array(array_tokens) = decoded[0].clone() {
+        for token in array_tokens {
+            if let Token::Uint(req_chain_id) = token {
+                req_chain_ids.insert(U256::from(req_chain_id).as_u64());
+            }
+        }
+    }
+
+    current_cycle_state_epoch.insert(
+        address.clone(),
+        GatewayData {
+            last_block_number: to_block_number,
+            address,
+            stake_amount: U256::zero(), // gateways call is used to get the stake amount
+            status: true,
+            req_chain_ids,
+        },
+    );
+}
+
+async fn process_gateway_deregistered_event(
+    log: Log,
+    current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
+) {
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
+    current_cycle_state_epoch.remove(&address);
+}
+
+async fn process_chain_added_event(
+    log: Log,
+    current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
+) {
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
+    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
+    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
+
+    if let Some(gateway_data) = current_cycle_state_epoch.get_mut(&address) {
+        gateway_data.req_chain_ids.insert(chain_id);
+    }
+}
+
+async fn process_chain_removed_event(
+    log: Log,
+    current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
+) {
+    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+
+    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
+
+    if decoded.is_err() {
+        error!(
+            "Failed to decode gateway registered event {}",
+            decoded.err().unwrap()
+        );
+        return;
+    }
+
+    let decoded = decoded.unwrap();
+    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
+
+    if let Some(gateway_data) = current_cycle_state_epoch.get_mut(&address) {
+        gateway_data.req_chain_ids.remove(&chain_id);
+    }
 }
 
 async fn prune_old_cycle_states(
@@ -377,135 +465,6 @@ async fn prune_old_cycle_states(
         let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
         for cycle in &cycles_to_remove {
             gateway_epoch_state_guard.remove(cycle);
-        }
-    }
-}
-
-async fn process_gateway_registered_event(
-    log: Log,
-    cycle: u64,
-    to_block_number: u64,
-    gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
-
-    let decoded = decode(
-        &vec![ParamType::Array(Box::new(ParamType::Uint(256)))],
-        &log.data.0,
-    );
-
-    if decoded.is_err() {
-        error!(
-            "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
-        );
-        return;
-    }
-
-    let decoded = decoded.unwrap();
-
-    let mut req_chain_ids = BTreeSet::new();
-
-    if let Token::Array(array_tokens) = decoded[0].clone() {
-        for token in array_tokens {
-            if let Token::Uint(req_chain_id) = token {
-                req_chain_ids.insert(U256::from(req_chain_id).as_u64());
-            }
-        }
-    }
-
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-        if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
-            cycle_gateway_state.insert(
-                address.clone(),
-                GatewayData {
-                    last_block_number: to_block_number,
-                    address,
-                    stake_amount: U256::zero(), // gateways call is used to get the stake amount
-                    status: true,
-                    req_chain_ids,
-                },
-            );
-        }
-    }
-}
-
-async fn process_gateway_deregistered_event(
-    log: Log,
-    cycle: u64,
-    gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
-
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-        if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
-            cycle_gateway_state.remove(&address);
-        }
-    }
-}
-
-async fn process_chain_added_event(
-    log: Log,
-    cycle: u64,
-    gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
-
-    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
-
-    if decoded.is_err() {
-        error!(
-            "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
-        );
-        return;
-    }
-
-    let decoded = decoded.unwrap();
-    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
-
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-        if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
-            if let Some(gateway_data) = cycle_gateway_state.get_mut(&address) {
-                gateway_data.req_chain_ids.insert(chain_id);
-            }
-        }
-    }
-}
-
-async fn process_chain_removed_event(
-    log: Log,
-    cycle: u64,
-    gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
-
-    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
-
-    if decoded.is_err() {
-        error!(
-            "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
-        );
-        return;
-    }
-
-    let decoded = decoded.unwrap();
-    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
-
-    // scope for the write lock
-    {
-        let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-        if let Some(cycle_gateway_state) = gateway_epoch_state_guard.get_mut(&cycle) {
-            if let Some(gateway_data) = cycle_gateway_state.get_mut(&address) {
-                gateway_data.req_chain_ids.remove(&chain_id);
-            }
         }
     }
 }
