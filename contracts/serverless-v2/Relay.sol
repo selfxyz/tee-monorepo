@@ -218,7 +218,7 @@ contract Relay is
         );
     
     bytes32 private constant JOB_RESPONSE_TYPEHASH = 
-        keccak256("JobResponse(address gateway,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
+        keccak256("JobResponse(address gateway,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -244,6 +244,7 @@ contract Relay is
     error RelayInvalidUserTimeout();
     error RelayJobNotExists();
     error RelayOverallTimeoutOver();
+    error RelaySignatureTooOld();
     error RelayInvalidSigner();
     error RelayInvalidJobOwner();
     error RelayOverallTimeoutNotOver();
@@ -284,7 +285,8 @@ contract Relay is
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
-        uint8 _errorCode
+        uint8 _errorCode,
+        uint256 _signTimestampInMs
     ) internal {
         Job memory job = jobs[_jobId];
         if(job.jobOwner == address(0))
@@ -295,7 +297,7 @@ contract Relay is
             revert RelayOverallTimeoutOver();
 
         // signature check
-        _verifyJobResponseSign(_signature, _msgSender(), _jobId, _output, _totalTime, _errorCode);
+        _verifyJobResponseSign(_signature, _msgSender(), _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
 
         address jobOwner = job.jobOwner;
         uint256 callbackDeposit = job.callbackDeposit;
@@ -320,8 +322,12 @@ contract Relay is
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
-        uint8 _errorCode
+        uint8 _errorCode,
+        uint256 _signTimestampInMs
     ) internal view {
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+            revert RelaySignatureTooOld();
+
         bytes32 hashStruct = keccak256(
             abi.encode(
                 JOB_RESPONSE_TYPEHASH,
@@ -329,7 +335,8 @@ contract Relay is
                 _jobId,
                 keccak256(_output),
                 _totalTime,
-                _errorCode
+                _errorCode,
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -407,9 +414,10 @@ contract Relay is
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
-        uint8 _errorCode
+        uint8 _errorCode,
+        uint256 _signTimestampInMs
     ) external {
-        _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode);
+        _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
     }
 
     function jobCancel(

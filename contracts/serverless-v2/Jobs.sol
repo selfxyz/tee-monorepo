@@ -27,6 +27,7 @@ contract Jobs is
     // safeguard against takeover of the logic contract
     constructor(
         IERC20 _token,
+        uint256 _signMaxAge,
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect,
         uint256 _executorFeePerMs,
@@ -37,6 +38,7 @@ contract Jobs is
         if(address(_token) == address(0))
             revert JobsZeroAddressToken();
         TOKEN = _token;
+        SIGN_MAX_AGE = _signMaxAge;
         EXECUTION_BUFFER_TIME = _executionBufferTime;
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
 
@@ -91,7 +93,9 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
 
-    Executors public executors;
+    /// @notice Maximum age of a valid signature, in seconds.
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable SIGN_MAX_AGE;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable EXECUTION_BUFFER_TIME;
@@ -104,6 +108,8 @@ contract Jobs is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable STAKING_REWARD_PER_MS;
+    
+    Executors public executors;
 
     function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
         executors = _executors;
@@ -138,11 +144,9 @@ contract Jobs is
                 keccak256("1")
             )
         );
-    
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
-        keccak256("SubmitOutput(address executor,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode)");
+        keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
 
-    
     event JobCreated(
         uint256 indexed jobId,
         bytes32 codehash,
@@ -165,6 +169,7 @@ contract Jobs is
     error JobsInvalidSequenceId();
     error JobsJobAlreadyRelayed();
     error JobsUnsupportedChain();
+    error JobsSignatureTooOld();
     error JobsExecutionTimeOver();
     error JobsNotSelectedExecutor();
     error JobsExecutorAlreadySubmittedOutput();
@@ -217,21 +222,21 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        address _executor
+        uint256 _signTimestampInMs
     ) internal {
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
         // signature check
-        _verifyOutputSign(_signature, _executor, _jobId, _output, _totalTime, _errorCode);
+        address enclaveAddress = _verifyOutputSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
 
-        if(!_isJobExecutor(_jobId, _executor))
+        if(!_isJobExecutor(_jobId, enclaveAddress))
             revert JobsNotSelectedExecutor();
-        if(hasExecutedJob[_jobId][_executor])
+        if(hasExecutedJob[_jobId][enclaveAddress])
             revert JobsExecutorAlreadySubmittedOutput();
 
-        executors.releaseExecutor(_executor);
-        hasExecutedJob[_jobId][_executor] = true;
+        executors.releaseExecutor(enclaveAddress);
+        hasExecutedJob[_jobId][enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
         if(outputCount == 1)
@@ -239,7 +244,7 @@ contract Jobs is
 
         // on reward distribution, 1st output executor node gets max reward
         // reward ratio - 2:1:0
-        _transferRewardPayout(_jobId, outputCount, _executor);
+        _transferRewardPayout(_jobId, outputCount, enclaveAddress);
 
         // TODO: add callback gas
         if (outputCount == 1) {
@@ -255,35 +260,39 @@ contract Jobs is
     // TODO: this sign can be used at a later time for new job with same jobId and assigned executor
     function _verifyOutputSign(
         bytes memory _signature,
-        address _executor,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
-        uint8 _errorCode
-    ) internal view {
+        uint8 _errorCode,
+        uint256 _signTimestampInMs
+    ) internal view returns (address) {
+        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
+            revert JobsSignatureTooOld();
+
         bytes32 hashStruct = keccak256(
             abi.encode(
                 SUBMIT_OUTPUT_TYPEHASH,
-                _executor,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
-                _errorCode
+                _errorCode,
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        executors.allowOnlyVerified(signer, _executor);
+        executors.allowOnlyVerified(signer);
+        return signer;
     }
 
     function _transferRewardPayout(
         uint256 _jobId,
         uint256 _outputCount,
-        address _executor
+        address _enclaveAddress
     ) internal {
+        (address owner, , , , ) = executors.executors(_enclaveAddress);
         uint256 executionTime = jobs[_jobId].executionTime;
-        ( , address owner, , , , ) = executors.executors(_executor);
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
         // for first output
@@ -306,19 +315,19 @@ contract Jobs is
             // All payments have already been made during first and second submission
 
             // cleanup job data after 3rd output submitted
-            _cleanJobData(_jobId, _executor);
+            _cleanJobData(_jobId);
         }
     }
 
     function _cleanJobData(
-        uint256 _jobId,
-        address _executor
+        uint256 _jobId
     ) internal {
         delete jobs[_jobId];
 
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            delete hasExecutedJob[_jobId][_executor];
+            address enclaveAddress = selectedExecutors[_jobId][index];
+            delete hasExecutedJob[_jobId][enclaveAddress];
         }
 
         delete selectedExecutors[_jobId];
@@ -326,12 +335,12 @@ contract Jobs is
 
     function _isJobExecutor(
         uint256 _jobId,
-        address _executor
+        address _enclaveAddress
     ) internal view returns (bool) {
         address[] memory selectedNodes = selectedExecutors[_jobId];
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            if(selectedNodes[index] == _executor)
+            if(selectedNodes[index] == _enclaveAddress)
                 return true;
         }
         return false;
@@ -355,16 +364,17 @@ contract Jobs is
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
-        uint8 _errorCode
+        uint8 _errorCode,
+        uint256 _signTimestampInMs
     ) external {
-        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _msgSender());
+        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
     }
 
     function isJobExecutor(
         uint256 _jobId,
-        address _executor
+        address _enclaveAddress
     ) public view returns (bool) {
-        return _isJobExecutor(_jobId, _executor);
+        return _isJobExecutor(_jobId, _enclaveAddress);
     }
 
     //-------------------------------- external functions end ----------------------------------//
@@ -376,7 +386,7 @@ contract Jobs is
 
     event SlashedOnExecutionTimeout(
         uint256 indexed jobId,
-        address indexed executor
+        address indexed enclaveAddress
     );
 
     error JobsInvalidJob();
@@ -406,17 +416,17 @@ contract Jobs is
         uint256 len = selectedExecutors[_jobId].length;
         uint256 slashAmount = 0;
         for (uint256 index = 0; index < len; index++) {
-            address executor = selectedExecutors[_jobId][index];
+            address enclaveAddress = selectedExecutors[_jobId][index];
 
-            if(!hasExecutedJob[_jobId][executor]) {
+            if(!hasExecutedJob[_jobId][enclaveAddress]) {
                 slashAmount += executors.slashExecutor(
-                    executor,
+                    enclaveAddress,
                     isNoOutputSubmitted,
                     jobOwner
                 );
-                emit SlashedOnExecutionTimeout(_jobId, executor);
+                emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
-            delete hasExecutedJob[_jobId][executor];
+            delete hasExecutedJob[_jobId][enclaveAddress];
         }
 
         delete selectedExecutors[_jobId];
