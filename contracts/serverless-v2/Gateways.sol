@@ -42,7 +42,7 @@ contract Gateways is
         if(address(_token) == address(0))
             revert GatewaysZeroAddressToken();
         TOKEN = _token;
-        DEREGISTER_OR_UNSTAKE_TIMEOUT = _deregisterOrUnstakeTimeout;
+        DRAINING_TIME_DURATION = _deregisterOrUnstakeTimeout;
 
         REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
         SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
@@ -95,7 +95,7 @@ contract Gateways is
     IERC20 public immutable TOKEN;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable DEREGISTER_OR_UNSTAKE_TIMEOUT;
+    uint256 public immutable DRAINING_TIME_DURATION;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
@@ -199,7 +199,7 @@ contract Gateways is
 
     event GatewayStakeRemoved(
         address indexed enclaveAddress,
-        uint256 amount
+        uint256 removedAmount
     );
 
     error GatewaysInvalidSigner();
@@ -293,6 +293,7 @@ contract Gateways is
             revert GatewaysAlreadyDraining();
         
         gateways[_enclaveAddress].draining = true;
+        gateways[_enclaveAddress].drainStartTime = block.timestamp;
 
         emit GatewayDrained(_enclaveAddress);
     }
@@ -303,7 +304,7 @@ contract Gateways is
         if (!gateways[_enclaveAddress].draining)
             revert GatewaysNotDraining();
 
-        if(block.timestamp <= gateways[_enclaveAddress].drainStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
+        if(block.timestamp <= gateways[_enclaveAddress].drainStartTime + DRAINING_TIME_DURATION)
             revert GatewaysDrainPending();
 
 
@@ -338,7 +339,7 @@ contract Gateways is
         if (!gateways[_enclaveAddress].draining)
             revert GatewaysNotDraining();
         
-        if(block.timestamp <= gateways[_enclaveAddress].drainStartTime + DEREGISTER_OR_UNSTAKE_TIMEOUT)
+        if(block.timestamp <= gateways[_enclaveAddress].drainStartTime + DRAINING_TIME_DURATION)
             revert GatewaysDrainPending();
 
         _removeStake(_enclaveAddress, _amount);
