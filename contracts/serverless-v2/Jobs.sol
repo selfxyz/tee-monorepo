@@ -162,7 +162,7 @@ contract Jobs is
         keccak256("RelayJob(address gateway,uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 timestampInMs)");
 
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
-        keccak256("SubmitOutput(address executor,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 timestampInMs)");
+        keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 timestampInMs)");
 
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
         keccak256("ReassignGateway(address gateway,uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 timestampInMs)");
@@ -308,21 +308,21 @@ contract Jobs is
         uint256 _totalTime,
         uint8 _errorCode,
         uint256 _timestampInMs,
-        address _executor
+        address _enclaveAddress
     ) internal {
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
         // signature check
-        _verifyOutputSign(_signature, _executor, _jobId, _output, _totalTime, _errorCode, _timestampInMs);
+        _verifyOutputSign(_signature, _enclaveAddress, _jobId, _output, _totalTime, _errorCode, _timestampInMs);
 
-        if(!_isJobExecutor(_jobId, _executor))
+        if(!_isJobExecutor(_jobId, _enclaveAddress))
             revert JobsNotSelectedExecutor();
-        if(hasExecutedJob[_jobId][_executor])
+        if(hasExecutedJob[_jobId][_enclaveAddress])
             revert JobsExecutorAlreadySubmittedOutput();
 
-        executors.releaseExecutor(_executor);
-        hasExecutedJob[_jobId][_executor] = true;
+        executors.releaseExecutor(_enclaveAddress);
+        hasExecutedJob[_jobId][_enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
         if(outputCount == 1)
@@ -330,7 +330,7 @@ contract Jobs is
 
         // on reward distribution, 1st output executor node gets max reward
         // reward ratio - 2:1:0
-        _transferRewardPayout(_jobId, outputCount, _executor);
+        _transferRewardPayout(_jobId, outputCount, _enclaveAddress);
 
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
     }
@@ -338,7 +338,7 @@ contract Jobs is
     // TODO: this sign can be used at a later time for new job with same jobId and assigned executor
     function _verifyOutputSign(
         bytes memory _signature,
-        address _executor,
+        address _enclaveAddress,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
@@ -351,7 +351,6 @@ contract Jobs is
         bytes32 hashStruct = keccak256(
             abi.encode(
                 SUBMIT_OUTPUT_TYPEHASH,
-                _executor,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -362,16 +361,16 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        executors.allowOnlyVerified(signer, _executor);
+        executors.allowOnlyVerified(signer, _enclaveAddress);
     }
 
     function _transferRewardPayout(
         uint256 _jobId,
         uint256 _outputCount,
-        address _executor
+        address _enclaveAddress
     ) internal {
         uint256 executionTime = jobs[_jobId].executionTime;
-        ( , address owner, , , , ) = executors.executors(_executor);
+        (address owner, , , , ) = executors.executors(_enclaveAddress);
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
@@ -395,19 +394,19 @@ contract Jobs is
             TOKEN.safeTransfer(jobs[_jobId].gateway, gatewayPayout);
 
             // cleanup job data after 3rd output submitted
-            _cleanJobData(_jobId, _executor);
+            _cleanJobData(_jobId);
         }
     }
 
     function _cleanJobData(
-        uint256 _jobId,
-        address _executor
+        uint256 _jobId
     ) internal {
         delete jobs[_jobId];
 
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            delete hasExecutedJob[_jobId][_executor];
+            address enclaveAddress = selectedExecutors[_jobId][index];
+            delete hasExecutedJob[_jobId][enclaveAddress];
         }
 
         delete selectedExecutors[_jobId];
@@ -415,12 +414,12 @@ contract Jobs is
 
     function _isJobExecutor(
         uint256 _jobId,
-        address _executor
+        address _enclaveAddress
     ) internal view returns (bool) {
         address[] memory selectedNodes = selectedExecutors[_jobId];
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            if(selectedNodes[index] == _executor)
+            if(selectedNodes[index] == _enclaveAddress)
                 return true;
         }
         return false;
@@ -451,16 +450,17 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _timestampInMs
+        uint256 _timestampInMs,
+        address _enclaveAddress
     ) external {
-        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _timestampInMs, _msgSender());
+        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _timestampInMs, _enclaveAddress);
     }
 
     function isJobExecutor(
         uint256 _jobId,
-        address _executor
+        address _enclaveAddress
     ) public view returns (bool) {
-        return _isJobExecutor(_jobId, _executor);
+        return _isJobExecutor(_jobId, _enclaveAddress);
     }
 
     //-------------------------------- external functions end ----------------------------------//
@@ -472,7 +472,7 @@ contract Jobs is
 
     event SlashedOnExecutionTimeout(
         uint256 indexed jobId,
-        address indexed executor
+        address indexed enclaveAddress
     );
 
     event GatewayReassigned(
@@ -510,18 +510,18 @@ contract Jobs is
         // slash Execution node
         uint256 len = selectedExecutors[_jobId].length;
         for (uint256 index = 0; index < len; index++) {
-            address executor = selectedExecutors[_jobId][index];
+            address enclaveAddress = selectedExecutors[_jobId][index];
 
-            if(!hasExecutedJob[_jobId][executor]) {
+            if(!hasExecutedJob[_jobId][enclaveAddress]) {
                 executors.slashExecutor(
-                    executor,
+                    enclaveAddress,
                     isNoOutputSubmitted,
                     gateway,
                     jobOwner
                 );
-                emit SlashedOnExecutionTimeout(_jobId, executor);
+                emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
-            delete hasExecutedJob[_jobId][executor];
+            delete hasExecutedJob[_jobId][enclaveAddress];
         }
 
         delete selectedExecutors[_jobId];

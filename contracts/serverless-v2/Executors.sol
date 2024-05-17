@@ -123,16 +123,15 @@ contract Executors is
     //-------------------------------- Executor start --------------------------------//
 
     modifier isValidExecutorOwner(
-        address _executor,
+        address _enclaveAddress,
         address _owner
     ) {
-        if (executors[_executor].owner != _owner)
-            revert ExecutorsInvalidExecutor();
+        if (executors[_enclaveAddress].owner != _owner)
+            revert ExecutorsInvalidOwner();
         _;
     }
 
     struct Executor {
-        address enclaveAddress;
         address owner;
         uint256 jobCapacity;
         uint256 activeJobs;
@@ -140,7 +139,7 @@ contract Executors is
         bool draining;
     }
 
-    // executor => Execution node details
+    // enclaveAddress => Execution node details
     mapping(address => Executor) public executors;
 
     bytes32 private constant DOMAIN_SEPARATOR = 
@@ -153,31 +152,30 @@ contract Executors is
         );
     
     bytes32 private constant REGISTER_TYPEHASH = 
-        keccak256("Register(address executor,address owner,uint256 jobCapacity,uint256 timestampInMs)");
+        keccak256("Register(address owner,uint256 jobCapacity,uint256 timestampInMs)");
 
     event ExecutorRegistered(
+        address indexed enclaveAddress,
         address indexed owner,
-        address indexed executor,
-        address enclaveAddress,
         uint256 jobCapacity
     );
     
-    event ExecutorDeregistered(address indexed executor);
+    event ExecutorDeregistered(address indexed enclaveAddress);
 
     event ExecutorDrained(
-        address indexed executor
+        address indexed enclaveAddress
     );
     event ExecutorRevived(
-        address indexed executor
+        address indexed enclaveAddress
     );
 
     event ExecutorStakeAdded(
-        address indexed executor,
+        address indexed enclaveAddress,
         uint256 addedAmount
     );
 
     event ExecutorStakeRemoved(
-        address indexed executor,
+        address indexed enclaveAddress,
         uint256 removedAmount
     );
 
@@ -188,41 +186,39 @@ contract Executors is
     error ExecutorsAlreadyRevived();
     error ExecutorsNotDraining();
     error ExecutorsHasPendingJobs();
-    error ExecutorsInvalidExecutor();
+    error ExecutorsInvalidOwner();
 
     //-------------------------------- internal functions start ----------------------------------//
 
     function _registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
-        address _owner,
         uint256 _jobCapacity,
         uint256 _timestampInMs,
         bytes memory _signature,
         uint256 _stakeAmount,
-        address _executor
+        address _owner
     ) internal {
-        if(executors[_executor].enclaveAddress != address(0))
+        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
+        if(executors[enclaveAddress].owner != address(0))
             revert ExecutorsExecutorAlreadyExists();
 
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
-        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
-        _verifySign(_executor, enclaveAddress, _owner, _jobCapacity, _timestampInMs, _signature);
+        _verifySign(enclaveAddress, _owner, _jobCapacity, _timestampInMs, _signature);
 
-        _register(_executor, enclaveAddress, _owner, _jobCapacity);
+        _register(enclaveAddress, _owner, _jobCapacity);
 
         // add node to the tree if min stake amount deposited
         if(_stakeAmount >= MIN_STAKE_AMOUNT)
-            _insert_unchecked(_executor, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
 
-        _addStake(_executor, _stakeAmount);
+        _addStake(enclaveAddress, _stakeAmount);
     }
 
     function _verifySign(
-        address _executor,
         address _enclaveAddress,
         address _owner,
         uint256 _jobCapacity,
@@ -235,7 +231,6 @@ contract Executors is
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REGISTER_TYPEHASH,
-                _executor,
                 _owner,
                 _jobCapacity,
                 _timestampInMs
@@ -249,72 +244,70 @@ contract Executors is
     }
 
     function _register(
-        address _executor,
         address _enclaveAddress,
         address _owner,
         uint256 _jobCapacity
     ) internal {
-        executors[_executor].enclaveAddress = _enclaveAddress;
-        executors[_executor].jobCapacity = _jobCapacity;
-        executors[_executor].owner = _owner;
+        executors[_enclaveAddress].jobCapacity = _jobCapacity;
+        executors[_enclaveAddress].owner = _owner;
         
-        emit ExecutorRegistered(_owner, _executor, _enclaveAddress, _jobCapacity);
+        emit ExecutorRegistered(_enclaveAddress, _owner, _jobCapacity);
     }
 
     function _drainExecutor(
-        address _executor
+        address _enclaveAddress
     ) internal {
-        if(executors[_executor].draining)
+        if(executors[_enclaveAddress].draining)
             revert ExecutorsAlreadyDraining();
 
-        executors[_executor].draining = true;
+        executors[_enclaveAddress].draining = true;
 
         // remove node from the tree
-        _deleteIfPresent(_executor);
+        _deleteIfPresent(_enclaveAddress);
 
-        emit ExecutorDrained(_executor);
+        emit ExecutorDrained(_enclaveAddress);
     }
 
     function _reviveExecutor(
-        address _executor
+        address _enclaveAddress
     ) internal {
-        Executor memory executorNode = executors[_executor];
+        Executor memory executorNode = executors[_enclaveAddress];
         if(!executorNode.draining)
             revert ExecutorsAlreadyRevived();
 
-        executors[_executor].draining = false;
+        executors[_enclaveAddress].draining = false;
 
         // insert node in the tree
         if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT && 
             executorNode.activeJobs < executorNode.jobCapacity
         ) {
-            _insert_unchecked(_executor, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(_enclaveAddress, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
-        emit ExecutorRevived(_executor);
+        emit ExecutorRevived(_enclaveAddress);
     }
 
     function _deregisterExecutor(
-        address _executor
+        address _enclaveAddress
     ) internal {
-        if(!executors[_executor].draining)
+        if(!executors[_enclaveAddress].draining)
             revert ExecutorsNotDraining();
-        if(executors[_executor].activeJobs != 0)
+        if(executors[_enclaveAddress].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
         
-        _removeStake(_executor, executors[_executor].stakeAmount);
+        _removeStake(_enclaveAddress, executors[_enclaveAddress].stakeAmount);
 
-        _revokeEnclaveKey(executors[_executor].enclaveAddress);
-        delete executors[_executor];
+        _revokeEnclaveKey(_enclaveAddress);
+        delete executors[_enclaveAddress];
 
-        emit ExecutorDeregistered(_executor);
+        emit ExecutorDeregistered(_enclaveAddress);
     }
 
     function _addExecutorStake(
         uint256 _amount,
-        address _executor
+        address _enclaveAddress
     ) internal {
-        Executor memory executorNode = executors[_executor];
+        Executor memory executorNode = executors[_enclaveAddress];
         uint256 updatedStake = executorNode.stakeAmount + _amount;
 
         if(
@@ -323,44 +316,44 @@ contract Executors is
             updatedStake >= MIN_STAKE_AMOUNT
         ) { 
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
-            _upsert(_executor, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
+            _upsert(_enclaveAddress, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
         }
         
-        _addStake(_executor, _amount);
+        _addStake(_enclaveAddress, _amount);
     }
 
     function _removeExecutorStake(
         uint256 _amount,
-        address _executor
+        address _enclaveAddress
     ) internal {
-        if(!executors[_executor].draining)
+        if(!executors[_enclaveAddress].draining)
             revert ExecutorsNotDraining();
-        if(executors[_executor].activeJobs != 0)
+        if(executors[_enclaveAddress].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
 
-        _removeStake(_executor, _amount);
+        _removeStake(_enclaveAddress, _amount);
     }
 
     function _addStake(
-        address _executor,
+        address _enclaveAddress,
         uint256 _amount
     ) internal {
-        executors[_executor].stakeAmount += _amount;
+        executors[_enclaveAddress].stakeAmount += _amount;
         // transfer stake
-        TOKEN.safeTransferFrom(executors[_executor].owner, address(this), _amount);
+        TOKEN.safeTransferFrom(executors[_enclaveAddress].owner, address(this), _amount);
 
-        emit ExecutorStakeAdded(_executor, _amount);
+        emit ExecutorStakeAdded(_enclaveAddress, _amount);
     }
 
     function _removeStake(
-        address _executor,
+        address _enclaveAddress,
         uint256 _amount
     ) internal {
-        executors[_executor].stakeAmount -= _amount;
+        executors[_enclaveAddress].stakeAmount -= _amount;
         // transfer stake
-        TOKEN.safeTransfer(executors[_executor].owner, _amount);
+        TOKEN.safeTransfer(executors[_enclaveAddress].owner, _amount);
 
-        emit ExecutorStakeRemoved(_executor, _amount);
+        emit ExecutorStakeRemoved(_enclaveAddress, _amount);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -382,47 +375,46 @@ contract Executors is
     function registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
-        address _owner,
         uint256 _jobCapacity,
         uint256 _timestampInMs,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestationSignature, _attestation, _owner, _jobCapacity, _timestampInMs, _signature, _stakeAmount, _msgSender());
+        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _timestampInMs, _signature, _stakeAmount, _msgSender());
     }
 
-    function deregisterExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
-        _deregisterExecutor(_executor);
+    function deregisterExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
+        _deregisterExecutor(_enclaveAddress);
     }
 
-    function drainExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
-        _drainExecutor(_executor);
+    function drainExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
+        _drainExecutor(_enclaveAddress);
     }
 
-    function reviveExecutor(address _executor) external isValidExecutorOwner(_executor, _msgSender()) {
-        _reviveExecutor(_executor);
+    function reviveExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
+        _reviveExecutor(_enclaveAddress);
     }
 
     function addExecutorStake(
-        address _executor,
+        address _enclaveAddress,
         uint256 _amount
-    ) external isValidExecutorOwner(_executor, _msgSender()) {
-        _addExecutorStake(_amount, _executor);
+    ) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
+        _addExecutorStake(_amount, _enclaveAddress);
     }
 
     function removeExecutorStake(
-        address _executor,
+        address _enclaveAddress,
         uint256 _amount
-    ) external isValidExecutorOwner(_executor, _msgSender()) {
-        _removeExecutorStake(_amount, _executor);
+    ) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
+        _removeExecutorStake(_amount, _enclaveAddress);
     }
 
     function allowOnlyVerified(
-        address _enclaveAddress,
-        address _executor
+        address _signer,
+        address _enclaveAddress
     ) external view {
-        _allowOnlyVerified(_enclaveAddress);
-        if(_enclaveAddress != executors[_executor].enclaveAddress)
+        _allowOnlyVerified(_signer);
+        if(_signer != _enclaveAddress)
             revert ExecutorsInvalidSigner();
     }
 
@@ -440,12 +432,12 @@ contract Executors is
     ) internal returns (address[] memory selectedNodes) {
         selectedNodes = _selectNodes(_noOfNodesToSelect);
         for (uint256 index = 0; index < selectedNodes.length; index++) {
-            address executor = selectedNodes[index];
-            executors[executor].activeJobs += 1;
+            address enclaveAddress = selectedNodes[index];
+            executors[enclaveAddress].activeJobs += 1;
             
             // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
-            if(executors[executor].activeJobs == executors[executor].jobCapacity)
-                _deleteIfPresent(executor);
+            if(executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
+                _deleteIfPresent(enclaveAddress);
         }
     }
 
@@ -458,29 +450,29 @@ contract Executors is
     }
 
     function _releaseExecutor(
-        address _executor
+        address _enclaveAddress
     ) internal {
-        if(!executors[_executor].draining) {
+        if(!executors[_enclaveAddress].draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
-            if(executors[_executor].stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(_executor, uint64(executors[_executor].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            if(executors[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
+                _upsert(_enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
             // remove node from tree if stake falls below min level
             else
-                _deleteIfPresent(_executor);
+                _deleteIfPresent(_enclaveAddress);
         }
         
-        executors[_executor].activeJobs -= 1;
+        executors[_enclaveAddress].activeJobs -= 1;
     }
 
     function _slashExecutor(
-        address _executor,
+        address _enclaveAddress,
         bool _isNoOutputSubmitted,
         address _gateway,
         address _jobOwner
     ) internal {
-        uint256 totalComp = executors[_executor].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
-        executors[_executor].stakeAmount -= totalComp;
+        uint256 totalComp = executors[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
+        executors[_enclaveAddress].stakeAmount -= totalComp;
 
         if(_isNoOutputSubmitted) {
             // transfer the slashed comp to gateway that relayed the job
@@ -493,7 +485,7 @@ contract Executors is
             TOKEN.safeTransfer(_msgSender(), totalComp);
         }
 
-        _releaseExecutor(_executor);
+        _releaseExecutor(_enclaveAddress);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -507,18 +499,18 @@ contract Executors is
     }
 
     function releaseExecutor(
-        address _executor
+        address _enclaveAddress
     ) external onlyRole(JOBS_ROLE) {
-        _releaseExecutor(_executor);
+        _releaseExecutor(_enclaveAddress);
     }
 
     function slashExecutor(
-        address _executor,
+        address _enclaveAddress,
         bool _isNoOutputSubmitted,
         address _gateway,
         address _jobOwner
     ) external onlyRole(JOBS_ROLE) {
-        _slashExecutor(_executor, _isNoOutputSubmitted, _gateway, _jobOwner);
+        _slashExecutor(_enclaveAddress, _isNoOutputSubmitted, _gateway, _jobOwner);
     }
 
     //-------------------------------- external functions end ----------------------------------//
