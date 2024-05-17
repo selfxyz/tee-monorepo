@@ -23,8 +23,8 @@ use crate::chain_util::{
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN, MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE,
-    REQUEST_RELAY_TIMEOUT,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, MAX_GATEWAY_RETRIES, MIN_GATEWAY_STAKE,
+    OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::contract_abi::{CommonChainGatewayContract, CommonChainJobsContract};
 use crate::model::{
@@ -167,6 +167,14 @@ impl CommonChainClient {
 
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
+
+                    if let Some(is_removed) = log.removed {
+                        if is_removed {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
 
                     if topics[0]
                         == keccak256(
@@ -444,7 +452,7 @@ impl CommonChainClient {
 
         // create a weighted probability distribution for gateways based on stake amount
         // For example, if there are 3 gateways with stake amounts 100, 200, 300
-        // then the distribution arrat will be [100, 300, 600]
+        // then the distribution array will be [100, 300, 600]
         let mut stake_distribution: Vec<u64> = vec![];
         let mut total_stake: u64 = 0;
         let mut gateway_data_of_req_chain: Vec<GatewayData> = vec![];
@@ -455,6 +463,8 @@ impl CommonChainClient {
             if gateway_data
                 .req_chain_ids
                 .contains(&req_chain_client.chain_id)
+                && gateway_data.stake_amount.as_u64() > MIN_GATEWAY_STAKE
+                && gateway_data.status
             {
                 gateway_data_of_req_chain.push(gateway_data.clone());
                 total_stake += gateway_data.stake_amount.as_u64();
