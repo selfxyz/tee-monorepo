@@ -34,7 +34,7 @@ contract Gateways is
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token,
-        IERC20 _token_usdc,
+        IERC20 _tokenUsdc,
         uint256 _deregisterOrUnstakeTimeout,
         uint256 _reassignCompForReporterGateway,
         uint256 _slashPercentInBips,
@@ -49,9 +49,9 @@ contract Gateways is
             revert GatewaysZeroAddressToken();
         TOKEN = _token;
 
-        if (address(_token_usdc) == address(0))
+        if (address(_tokenUsdc) == address(0))
             revert GatewaysZeroAddressUsdcToken();
-        TOKEN_USDC = _token_usdc;
+        TOKEN_USDC = _tokenUsdc;
 
         DRAINING_TIME_DURATION = _deregisterOrUnstakeTimeout;
 
@@ -90,7 +90,7 @@ contract Gateways is
     function initialize(
         address _admin,
         EnclaveImage[] memory _images,
-        Jobs _job_mgr
+        Jobs _jobMgr
     ) public initializer {
         if(_admin == address(0))
             revert GatewaysZeroAddressAdmin();
@@ -103,7 +103,7 @@ contract Gateways is
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-        job_mgr = _job_mgr;
+        jobMgr = _jobMgr;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -114,7 +114,7 @@ contract Gateways is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN_USDC;
 
-    Jobs public job_mgr;
+    Jobs public jobMgr;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable DRAINING_TIME_DURATION;
@@ -141,8 +141,8 @@ contract Gateways is
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
-    function setJobsContract(Jobs _job_mgr) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        job_mgr = _job_mgr;
+    function setJobsContract(Jobs _jobMgr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        jobMgr = _jobMgr;
     }
 
     //-------------------------------- Gateway start --------------------------------//
@@ -184,9 +184,9 @@ contract Gateways is
     mapping(address => Gateway) public gateways;
 
     // job_id => job
-    mapping(uint256 => Job) public relay_jobs;
+    mapping(uint256 => Job) public relayJobs;
 
-    mapping(uint256 => uint256) public exec_jobs;
+    mapping(uint256 => uint256) public execJobs;
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -204,9 +204,9 @@ contract Gateways is
     bytes32 private constant REMOVE_CHAINS_TYPEHASH =
         keccak256("RemoveChains(uint256[] chainIds,uint256 signTimestampInMs)");
     bytes32 private constant RELAY_JOB_TYPEHASH =
-        keccak256("RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner)");
+        keccak256("RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestampInMs)");
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH =
-        keccak256("ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
+        keccak256("ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestampInMs)");
 
     event GatewayRegistered(
         address indexed enclaveAddress,
@@ -610,53 +610,64 @@ contract Gateways is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
+        uint256 _signTimestampInMs,
         address _gateway
     ) internal {
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert GatewaysJobRelayTimeOver();
         // TODO: check if can remove Resource Unavialble check
-        if(relay_jobs[_jobId].isResourceUnavailable)
+        if(relayJobs[_jobId].isResourceUnavailable)
             revert GatewaysJobResourceUnavailable();
-        if(relay_jobs[_jobId].execStartTime != 0)
+        if(relayJobs[_jobId].execStartTime != 0)
             revert GatewaysJobAlreadyRelayed();
-        if(_sequenceId != relay_jobs[_jobId].sequenceId + 1)
+        if(_sequenceId != relayJobs[_jobId].sequenceId + 1)
             revert GatewaysInvalidRelaySequenceId();
+
         uint256 reqChainId = _jobId >> 192;
         if(requestChains[reqChainId].contractAddress == address(0))
             revert GatewaysUnsupportedChain();
 
         // signature check
         address enclaveAddress = _verifyRelaySign(_signature, _jobId, _codehash, _codeInputs, _deadline,
-                                                  _jobRequestTimestamp, _sequenceId, _jobOwner);
+                                                  _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestampInMs);
 
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
         TOKEN_USDC.safeTransferFrom(_gateway, address(this), usdcDeposit);
-        (uint256 execJobId, uint8 errorCode) = job_mgr.createJob(_codehash, _codeInputs, _deadline);
-        if (errorCode == 1) {
-            // Resource unavailable
-            relay_jobs[_jobId].isResourceUnavailable = true;
-            return;
-        }
+        // (uint256 execJobId, uint8 errorCode) = jobMgr.createJob(_codehash, _codeInputs, _deadline);
+        // if (errorCode == 1) {
+        //     // Resource unavailable
+        //     relayJobs[_jobId].isResourceUnavailable = true;
+        //     return;
+        // }
 
-        _createJob(_jobId, execJobId, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
+        _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
     }
 
     function _createJob(
         uint256 _jobId,
-        uint256 _execJobId,
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _deadline,
         address _jobOwner,
         address _gateway,
         uint256 _usdcDeposit,
         uint8 _sequenceId
     ) internal {
-        relay_jobs[_jobId].execStartTime = block.timestamp;
-        relay_jobs[_jobId].jobOwner = _jobOwner;
-        relay_jobs[_jobId].usdcDeposit = _usdcDeposit;
-        relay_jobs[_jobId].sequenceId = _sequenceId;
-        relay_jobs[_jobId].gateway = _gateway;
-        exec_jobs[_execJobId] = _jobId;
-        emit JobCreated(_jobId, _execJobId, _jobOwner, _gateway);
+        (uint256 execJobId, uint8 errorCode) = jobMgr.createJob(_codehash, _codeInputs, _deadline);
+        if (errorCode == 1) {
+            // Resource unavailable
+            relayJobs[_jobId].isResourceUnavailable = true;
+            return;
+        }
+
+        relayJobs[_jobId].execStartTime = block.timestamp;
+        relayJobs[_jobId].jobOwner = _jobOwner;
+        relayJobs[_jobId].usdcDeposit = _usdcDeposit;
+        relayJobs[_jobId].sequenceId = _sequenceId;
+        relayJobs[_jobId].gateway = _gateway;
+        execJobs[execJobId] = _jobId;
+        emit JobCreated(_jobId, execJobId, _jobOwner, _gateway);
     }
 
     function _verifyRelaySign(
@@ -667,8 +678,12 @@ contract Gateways is
         uint256 _deadline,  // in milliseconds
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
-        address _jobOwner
+        address _jobOwner,
+        uint256 _signTimestampInMs
     ) internal view returns (address) {
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+            revert GatewaysSignatureTooOld();
+
         bytes32 hashStruct = keccak256(
             abi.encode(
                 RELAY_JOB_TYPEHASH,
@@ -678,7 +693,8 @@ contract Gateways is
                 _deadline,
                 _jobRequestTimestamp,
                 _sequenceId,
-                _jobOwner
+                _jobOwner,
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -695,22 +711,23 @@ contract Gateways is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         address _jobOwner,
+        uint256 _signTimestampInMs,
         address _gateway
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert GatewaysJobRelayTimeOver();
 
-        if(relay_jobs[_jobId].execStartTime != 0)
+        if(relayJobs[_jobId].execStartTime != 0)
             revert GatewaysJobAlreadyRelayed();
-        if(relay_jobs[_jobId].isResourceUnavailable)
+        if(relayJobs[_jobId].isResourceUnavailable)
             revert GatewaysJobResourceUnavailable();
-        if(_sequenceId != relay_jobs[_jobId].sequenceId + 1 || _sequenceId > 2)
+        if(_sequenceId != relayJobs[_jobId].sequenceId + 1 || _sequenceId > 2)
             revert GatewaysInvalidRelaySequenceId();
-        relay_jobs[_jobId].sequenceId = _sequenceId;
+        relayJobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        address enclaveAddress = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
+        address enclaveAddress = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _signTimestampInMs);
 
         // slash old gateway
         _slashOnReassignGateway(_sequenceId, _gatewayOld, enclaveAddress, _jobOwner);
@@ -723,15 +740,20 @@ contract Gateways is
         uint256 _jobId,
         address _gatewayOld,
         uint8 _sequenceId,
-        uint256 _jobRequestTimestamp
+        uint256 _jobRequestTimestamp,
+        uint256 _signTimestampInMs
     ) internal view returns (address) {
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+            revert GatewaysSignatureTooOld();
+
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REASSIGN_GATEWAY_TYPEHASH,
                 _jobId,
                 _gatewayOld,
                 _sequenceId,
-                _jobRequestTimestamp
+                _jobRequestTimestamp,
+                _signTimestampInMs
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -863,10 +885,10 @@ contract Gateways is
         uint256 _deadline,  // in milliseconds
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
-        address _jobOwner
+        address _jobOwner,
+        uint256 _signTimestampInMs
     ) external {
-        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner,
-                  _msgSender());
+        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestampInMs, _msgSender());
     }
 
     function reassignGatewayRelay(
@@ -875,10 +897,10 @@ contract Gateways is
         bytes memory _signature,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
-        address _jobOwner
+        address _jobOwner,
+        uint256 _signTimestampInMs
     ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner,
-                              _msgSender());
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _signTimestampInMs, _msgSender());
     }
 
 
@@ -902,12 +924,12 @@ contract Gateways is
         // send fund (USDC)
         // delete job
 
-        uint256 jobId = exec_jobs[_execJobId];
-        address gateway = relay_jobs[jobId].gateway;
-        uint256 usdcDeposit = relay_jobs[jobId].usdcDeposit;
+        uint256 jobId = execJobs[_execJobId];
+        address gateway = relayJobs[jobId].gateway;
+        uint256 usdcDeposit = relayJobs[jobId].usdcDeposit;
 
-        delete exec_jobs[_execJobId];
-        delete relay_jobs[jobId];
+        delete execJobs[_execJobId];
+        delete relayJobs[jobId];
 
         TOKEN_USDC.safeTransfer(gateways[gateway].owner, usdcDeposit - _totalTime * EXECUTION_FEE_PER_MS);
         emit JobResponded(jobId, _output, _totalTime, _errorCode);
@@ -918,12 +940,12 @@ contract Gateways is
         // emit event for job
         // send fund (USDC, slashing amounts in POND)
         // delete job
-        uint jobId = exec_jobs[_execJobId];
-        address gateway = relay_jobs[jobId].gateway;
-        uint256 usdcDeposit = relay_jobs[jobId].usdcDeposit;
-        address jobOwner = relay_jobs[jobId].jobOwner;
-        delete exec_jobs[_execJobId];
-        delete relay_jobs[jobId];
+        uint jobId = execJobs[_execJobId];
+        address gateway = relayJobs[jobId].gateway;
+        uint256 usdcDeposit = relayJobs[jobId].usdcDeposit;
+        address jobOwner = relayJobs[jobId].jobOwner;
+        delete execJobs[_execJobId];
+        delete relayJobs[jobId];
 
         TOKEN_USDC.safeTransfer(gateways[gateway].owner, usdcDeposit);
         TOKEN.safeTransfer(jobOwner, _slashAmount - SLASH_COMP_FOR_GATEWAY);
