@@ -14,7 +14,7 @@ contract Jobs is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
-    AccessControlUpgradeable, 
+    AccessControlUpgradeable,
     UUPSUpgradeable // public upgrade
 {
     using SafeERC20 for IERC20;
@@ -108,7 +108,7 @@ contract Jobs is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable STAKING_REWARD_PER_MS;
-    
+
     Executors public executors;
 
     function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -136,7 +136,7 @@ contract Jobs is
     // jobKey => selectedExecutor => hasExecuted
     mapping(uint256 => mapping(address => bool)) public hasExecutedJob;
 
-    bytes32 private constant DOMAIN_SEPARATOR = 
+    bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version)"),
@@ -144,7 +144,7 @@ contract Jobs is
                 keccak256("1")
             )
         );
-    bytes32 private constant SUBMIT_OUTPUT_TYPEHASH = 
+    bytes32 private constant SUBMIT_OUTPUT_TYPEHASH =
         keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
 
     event JobCreated(
@@ -173,7 +173,6 @@ contract Jobs is
     error JobsExecutionTimeOver();
     error JobsNotSelectedExecutor();
     error JobsExecutorAlreadySubmittedOutput();
-    error JobsResourceUnavailable();
 
     //-------------------------------- internal functions start --------------------------------//
 
@@ -444,7 +443,7 @@ contract Jobs is
         uint256 _deadline
     ) internal {
         uint256 jobOwnerDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-        
+
         // transfer back the whole escrow amount to gateway if no output submitted
         if(_outputCount == 0) {
             TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);

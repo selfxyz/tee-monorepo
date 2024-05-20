@@ -17,7 +17,7 @@ contract Gateways is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
-    AccessControlUpgradeable, 
+    AccessControlUpgradeable,
     UUPSUpgradeable, // public upgrade
     AttestationAutherUpgradeable
 {
@@ -102,7 +102,7 @@ contract Gateways is
         __AttestationAuther_init_unchained(_images);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        
+
         job_mgr = _job_mgr;
     }
 
@@ -188,7 +188,7 @@ contract Gateways is
 
     mapping(uint256 => uint256) public exec_jobs;
 
-    bytes32 private constant DOMAIN_SEPARATOR = 
+    bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version)"),
@@ -196,16 +196,16 @@ contract Gateways is
                 keccak256("1")
             )
         );
-    
-    bytes32 private constant REGISTER_TYPEHASH = 
+
+    bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestampInMs)");
-    bytes32 private constant ADD_CHAINS_TYPEHASH = 
+    bytes32 private constant ADD_CHAINS_TYPEHASH =
         keccak256("AddChains(uint256[] chainIds,uint256 signTimestampInMs)");
-    bytes32 private constant REMOVE_CHAINS_TYPEHASH = 
+    bytes32 private constant REMOVE_CHAINS_TYPEHASH =
         keccak256("RemoveChains(uint256[] chainIds,uint256 signTimestampInMs)");
-    bytes32 private constant RELAY_JOB_TYPEHASH = 
+    bytes32 private constant RELAY_JOB_TYPEHASH =
         keccak256("RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner)");
-    bytes32 private constant REASSIGN_GATEWAY_TYPEHASH = 
+    bytes32 private constant REASSIGN_GATEWAY_TYPEHASH =
         keccak256("ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp)");
 
     event GatewayRegistered(
@@ -275,7 +275,7 @@ contract Gateways is
         uint256 totalTime,
         uint8 errorCode
     );
-    
+
     event JobFailed(
         uint256 indexed jobId
     );
@@ -316,7 +316,7 @@ contract Gateways is
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
         // signature check
         _verifyRegisterSign(_owner, _chainIds, _signTimestampInMs, _signature, enclaveAddress);
-        
+
         if(gateways[enclaveAddress].owner != address(0))
             revert GatewaysGatewayAlreadyExists();
 
@@ -371,9 +371,9 @@ contract Gateways is
     function _drainGateway(
         address _enclaveAddress
     ) internal {
-        if (gateways[_enclaveAddress].draining) 
+        if (gateways[_enclaveAddress].draining)
             revert GatewaysAlreadyDraining();
-        
+
         gateways[_enclaveAddress].draining = true;
         gateways[_enclaveAddress].drainStartTime = block.timestamp;
 
@@ -391,7 +391,7 @@ contract Gateways is
 
 
         _removeStake(_enclaveAddress, gateways[_enclaveAddress].stakeAmount);
-        
+
         _revokeEnclaveKey(_enclaveAddress);
         delete gateways[_enclaveAddress];
 
@@ -420,7 +420,7 @@ contract Gateways is
     ) internal {
         if (!gateways[_enclaveAddress].draining)
             revert GatewaysNotDraining();
-        
+
         if(block.timestamp <= gateways[_enclaveAddress].drainStartTime + DRAINING_TIME_DURATION)
             revert GatewaysDrainPending();
 
@@ -492,7 +492,7 @@ contract Gateways is
 
         if(signer != _enclaveAddress)
             revert GatewaysInvalidSigner();
-        
+
         _allowOnlyVerified(signer);
     }
 
@@ -550,7 +550,7 @@ contract Gateways is
 
         if(signer != _enclaveAddress)
             revert GatewaysInvalidSigner();
-        
+
         _allowOnlyVerified(signer);
     }
 
@@ -565,7 +565,7 @@ contract Gateways is
 
         uint256 index = 0;
         for (; index < len; index++) {
-            if (chainIdList[index] == _chainId) 
+            if (chainIdList[index] == _chainId)
                 break;
         }
 
@@ -624,34 +624,37 @@ contract Gateways is
         uint256 reqChainId = _jobId >> 192;
         if(requestChains[reqChainId].contractAddress == address(0))
             revert GatewaysUnsupportedChain();
-        
+
         // signature check
-        _verifyRelaySign(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId,
-                         _jobOwner);
+        address enclaveAddress = _verifyRelaySign(_signature, _jobId, _codehash, _codeInputs, _deadline,
+                                                  _jobRequestTimestamp, _sequenceId, _jobOwner);
 
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
         TOKEN_USDC.safeTransferFrom(_gateway, address(this), usdcDeposit);
-        (uint256 execJobId, uint8 errorCode) = job_mgr.createJob(_codehash, _codeInputs, _deadline); 
+        (uint256 execJobId, uint8 errorCode) = job_mgr.createJob(_codehash, _codeInputs, _deadline);
         if (errorCode == 1) {
             // Resource unavailable
             relay_jobs[_jobId].isResourceUnavailable = true;
             return;
         }
 
-        _createJob(_jobId, execJobId, _jobOwner, _gateway, usdcDeposit);
+        _createJob(_jobId, execJobId, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
     }
 
     function _createJob(
         uint256 _jobId,
         uint256 _execJobId,
         address _jobOwner,
-        address _gateway, //TODO it's not exactly gateway, it can be any sender
-        uint256 _usdcDeposit
+        address _gateway,
+        uint256 _usdcDeposit,
+        uint8 _sequenceId
     ) internal {
         relay_jobs[_jobId].execStartTime = block.timestamp;
         relay_jobs[_jobId].jobOwner = _jobOwner;
         relay_jobs[_jobId].usdcDeposit = _usdcDeposit;
+        relay_jobs[_jobId].sequenceId = _sequenceId;
+        relay_jobs[_jobId].gateway = _gateway;
         exec_jobs[_execJobId] = _jobId;
         emit JobCreated(_jobId, _execJobId, _jobOwner, _gateway);
     }
@@ -665,7 +668,7 @@ contract Gateways is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner
-    ) internal view {
+    ) internal view returns (address) {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 RELAY_JOB_TYPEHASH,
@@ -682,6 +685,7 @@ contract Gateways is
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);
+        return signer;
     }
 
     function _reassignGatewayRelay(
@@ -697,6 +701,8 @@ contract Gateways is
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert GatewaysJobRelayTimeOver();
 
+        if(relay_jobs[_jobId].execStartTime != 0)
+            revert GatewaysJobAlreadyRelayed();
         if(relay_jobs[_jobId].isResourceUnavailable)
             revert GatewaysJobResourceUnavailable();
         if(_sequenceId != relay_jobs[_jobId].sequenceId + 1 || _sequenceId > 2)
@@ -704,11 +710,11 @@ contract Gateways is
         relay_jobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
+        address enclaveAddress = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp);
 
         // slash old gateway
-        _slashOnReassignGateway(_sequenceId, _gatewayOld, _gateway, _jobOwner);
-        
+        _slashOnReassignGateway(_sequenceId, _gatewayOld, enclaveAddress, _jobOwner);
+
         emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
     }
 
@@ -718,7 +724,7 @@ contract Gateways is
         address _gatewayOld,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp
-    ) internal view {
+    ) internal view returns (address) {
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REASSIGN_GATEWAY_TYPEHASH,
@@ -732,6 +738,7 @@ contract Gateways is
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);
+        return signer;
     }
 
     function _slashOnReassignGateway(
@@ -744,7 +751,7 @@ contract Gateways is
         gateways[_oldGateway].stakeAmount -= totalComp;
 
         // transfer comp to reporter gateway
-        TOKEN.safeTransfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        TOKEN.safeTransfer(gateways[_reporterGateway].owner, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
 
         // if sequenceId = 1, keep the comp in common pool(gateway contract)
         // if sequenceId = 2, transfer comp to jobOwner
@@ -871,11 +878,11 @@ contract Gateways is
         address _jobOwner
     ) external {
         _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner,
-        _msgSender());
+                              _msgSender());
     }
 
 
-    
+
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- Gateway end --------------------------------//
@@ -883,7 +890,7 @@ contract Gateways is
     //-------------------------------- JobsContract functions start --------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
-    
+
     function _oysterResultCall(
         uint256 _execJobId,
         bytes memory _output,
@@ -902,7 +909,7 @@ contract Gateways is
         delete exec_jobs[_execJobId];
         delete relay_jobs[jobId];
 
-        TOKEN_USDC.safeTransfer(gateway, usdcDeposit - _totalTime * EXECUTION_FEE_PER_MS);
+        TOKEN_USDC.safeTransfer(gateways[gateway].owner, usdcDeposit - _totalTime * EXECUTION_FEE_PER_MS);
         emit JobResponded(jobId, _output, _totalTime, _errorCode);
     }
 
@@ -918,9 +925,9 @@ contract Gateways is
         delete exec_jobs[_execJobId];
         delete relay_jobs[jobId];
 
-        TOKEN_USDC.safeTransfer(gateway, usdcDeposit);
+        TOKEN_USDC.safeTransfer(gateways[gateway].owner, usdcDeposit);
         TOKEN.safeTransfer(jobOwner, _slashAmount - SLASH_COMP_FOR_GATEWAY);
-        TOKEN.safeTransfer(gateway, SLASH_COMP_FOR_GATEWAY);
+        TOKEN.safeTransfer(gateways[gateway].owner, SLASH_COMP_FOR_GATEWAY);
         emit JobFailed(jobId);
     }
     //-------------------------------- internal functions end ----------------------------------//

@@ -17,7 +17,7 @@ contract Executors is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
     ERC165Upgradeable, // supportsInterface
-    AccessControlUpgradeable, 
+    AccessControlUpgradeable,
     UUPSUpgradeable, // public upgrade
     AttestationAutherUpgradeable,
     TreeUpgradeable
@@ -114,7 +114,7 @@ contract Executors is
     /// @notice expected to be 10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
-    
+
     /// @notice executor stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
@@ -142,7 +142,7 @@ contract Executors is
     // enclaveAddress => Execution node details
     mapping(address => Executor) public executors;
 
-    bytes32 private constant DOMAIN_SEPARATOR = 
+    bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version)"),
@@ -150,8 +150,8 @@ contract Executors is
                 keccak256("1")
             )
         );
-    
-    bytes32 private constant REGISTER_TYPEHASH = 
+
+    bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestampInMs)");
 
     event ExecutorRegistered(
@@ -159,7 +159,7 @@ contract Executors is
         address indexed owner,
         uint256 jobCapacity
     );
-    
+
     event ExecutorDeregistered(address indexed enclaveAddress);
 
     event ExecutorDrained(
@@ -250,7 +250,7 @@ contract Executors is
     ) internal {
         executors[_enclaveAddress].jobCapacity = _jobCapacity;
         executors[_enclaveAddress].owner = _owner;
-        
+
         emit ExecutorRegistered(_enclaveAddress, _owner, _jobCapacity);
     }
 
@@ -278,7 +278,7 @@ contract Executors is
         executors[_enclaveAddress].draining = false;
 
         // insert node in the tree
-        if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT && 
+        if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT &&
             executorNode.activeJobs < executorNode.jobCapacity
         ) {
             _insert_unchecked(_enclaveAddress, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
@@ -294,7 +294,7 @@ contract Executors is
             revert ExecutorsNotDraining();
         if(executors[_enclaveAddress].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
-        
+
         _removeStake(_enclaveAddress, executors[_enclaveAddress].stakeAmount);
 
         _revokeEnclaveKey(_enclaveAddress);
@@ -311,14 +311,14 @@ contract Executors is
         uint256 updatedStake = executorNode.stakeAmount + _amount;
 
         if(
-            !executorNode.draining && 
-            executorNode.activeJobs < executorNode.jobCapacity && 
+            !executorNode.draining &&
+            executorNode.activeJobs < executorNode.jobCapacity &&
             updatedStake >= MIN_STAKE_AMOUNT
-        ) { 
+        ) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
             _upsert(_enclaveAddress, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
         }
-        
+
         _addStake(_enclaveAddress, _amount);
     }
 
@@ -431,7 +431,7 @@ contract Executors is
         for (uint256 index = 0; index < selectedNodes.length; index++) {
             address enclaveAddress = selectedNodes[index];
             executors[enclaveAddress].activeJobs += 1;
-            
+
             // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
             if(executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
                 _deleteIfPresent(enclaveAddress);
@@ -458,7 +458,7 @@ contract Executors is
             else
                 _deleteIfPresent(_enclaveAddress);
         }
-        
+
         executors[_enclaveAddress].activeJobs -= 1;
     }
 
@@ -471,8 +471,6 @@ contract Executors is
         executors[_enclaveAddress].stakeAmount -= totalComp;
 
         if(_isNoOutputSubmitted) {
-            // transfer the slashed comp to gateway that relayed the job
-            // TOKEN.safeTransfer(_gateway, SLASH_COMP_FOR_GATEWAY);
             // transfer the slashed comp to job owner
             TOKEN.safeTransfer(_jobOwner, totalComp);
         }
