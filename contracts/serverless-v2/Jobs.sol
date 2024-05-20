@@ -72,7 +72,8 @@ contract Jobs is
 
     function initialize(
         address _admin,
-        Executors _executors
+        Executors _executors,
+        address _paymentPoolAddress
     ) public initializer {
         if(_admin == address(0))
             revert JobsZeroAddressAdmin();
@@ -86,6 +87,7 @@ contract Jobs is
 
         executors = _executors;
         jobCount = 0;
+        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -111,9 +113,19 @@ contract Jobs is
 
     Executors public executors;
 
+    address public paymentPool;
+
+    //-------------------------------- Admin methods start --------------------------------//
+
     function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
         executors = _executors;
     }
+
+    function setPaymentPool(address _paymentPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        paymentPool = _paymentPoolAddress;
+    }
+
+    //-------------------------------- Admin methods end ----------------------------------//
 
     //-------------------------------- Job start --------------------------------//
 
@@ -162,6 +174,16 @@ contract Jobs is
         uint256 totalTime,
         uint8 errorCode,
         uint8 outputCount
+    );
+
+    event JobSucceeded(
+        uint256 indexed jobId,
+        bool callback_success
+    );
+
+    event JobTimeoutFailure(
+        uint256 indexed jobId,
+        bool callback_success
     );
 
     error JobsRelayTimeOver();
@@ -252,6 +274,7 @@ contract Jobs is
                 abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8,uint256)", _jobId, _output, _errorCode,
                                         _totalTime)
             );
+            emit JobSucceeded(_jobId, success);
         }
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
     }
@@ -298,9 +321,8 @@ contract Jobs is
         if(_outputCount == 1) {
             // transfer payout to executor
             TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
-            // TODO: is payment pool the jobs contract itself?
-            // // transfer payout to payment pool
-            // TOKEN.safeTransfer(address(this), executionTime * STAKING_REWARD_PER_MS);
+            // transfer payout to payment pool
+            TOKEN.safeTransfer(paymentPool, executionTime * STAKING_REWARD_PER_MS);
             // transfer to job owner
             TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
         }
@@ -407,9 +429,10 @@ contract Jobs is
         uint8 outputCount = jobs[_jobId].outputCount;
         bool isNoOutputSubmitted = (outputCount == 0);
         uint256 deadline = jobs[_jobId].deadline;
+        uint256 executionTime = jobs[_jobId].executionTime;
         delete jobs[_jobId];
 
-        _releaseEscrowAmount(jobOwner, outputCount, deadline);
+        _releaseEscrowAmount(jobOwner, outputCount, deadline, executionTime);
 
         // slash Execution node
         uint256 len = selectedExecutors[_jobId].length;
@@ -434,22 +457,26 @@ contract Jobs is
             (bool success,) = jobOwner.call(
                 abi.encodeWithSignature("oysterFailureCall(uint256,uint256)", _jobId, slashAmount)
             );
+            emit JobTimeoutFailure(_jobId, success);
         }
     }
 
     function _releaseEscrowAmount(
         address _jobOwner,
         uint8 _outputCount,
-        uint256 _deadline
+        uint256 _deadline,
+        uint256 _executionTime
     ) internal {
         uint256 jobOwnerDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
 
-        // transfer back the whole escrow amount to gateway if no output submitted
         if(_outputCount == 0) {
+            // transfer back the whole escrow amount to gateway if no output submitted
             TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
+        } else if (_outputCount == 1) {
+            // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
+            // transfer the expected reward of second submitter to payment pool
+            TOKEN.safeTransfer(paymentPool, (_executionTime * EXECUTOR_FEE_PER_MS) / 3);
         }
-        // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
-        // Keep remaining deposit in the payments pool
     }
 
     //-------------------------------- internal functions end ----------------------------------//

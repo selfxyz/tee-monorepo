@@ -90,7 +90,8 @@ contract Gateways is
     function initialize(
         address _admin,
         EnclaveImage[] memory _images,
-        Jobs _jobMgr
+        Jobs _jobMgr,
+        address _paymentPoolAddress
     ) public initializer {
         if(_admin == address(0))
             revert GatewaysZeroAddressAdmin();
@@ -104,6 +105,7 @@ contract Gateways is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
         jobMgr = _jobMgr;
+        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -141,9 +143,7 @@ contract Gateways is
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
-    function setJobsContract(Jobs _jobMgr) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        jobMgr = _jobMgr;
-    }
+    address public paymentPool;
 
     //-------------------------------- Gateway start --------------------------------//
     modifier isValidGatewayOwner(
@@ -299,6 +299,71 @@ contract Gateways is
     error GatewaysJobAlreadyRelayed();
     error GatewaysInvalidRelaySequenceId();
 
+    //-------------------------------- Admin methods start --------------------------------//
+
+    function _addChainGlobal(
+        uint256[] memory _chainIds,
+        RequestChain[] memory _requestChains
+    ) internal {
+        if(_chainIds.length == 0 || _chainIds.length != _requestChains.length)
+            revert GatewaysInvalidLength();
+        for (uint256 index = 0; index < _requestChains.length; index++) {
+            RequestChain memory reqChain = _requestChains[index];
+            uint256 chainId = _chainIds[index];
+            requestChains[chainId] = reqChain;
+
+            emit ChainAddedGlobal(chainId, reqChain.contractAddress, reqChain.httpRpcUrl, reqChain.wsRpcUrl);
+        }
+    }
+
+    function _removeChainGlobal(
+        uint256[] memory _chainIds
+    ) internal {
+        if(_chainIds.length == 0)
+            revert GatewaysInvalidLength();
+        for (uint256 index = 0; index < _chainIds.length; index++) {
+            uint256 chainId = _chainIds[index];
+            delete requestChains[chainId];
+
+            emit ChainRemovedGlobal(chainId);
+        }
+    }
+
+    function setJobsContract(Jobs _jobMgr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        jobMgr = _jobMgr;
+    }
+
+    function setPaymentPool(address _paymentPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        paymentPool = _paymentPoolAddress;
+    }
+
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
+        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+    }
+
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveImage(imageId);
+    }
+
+    function addChainGlobal(
+        uint256[] memory _chainIds,
+        RequestChain[] memory _requestChains
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addChainGlobal(_chainIds, _requestChains);
+    }
+
+    function removeChainGlobal(
+        uint256[] memory _chainIds
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _removeChainGlobal(_chainIds);
+    }
+
+    //-------------------------------- Admin methods end ----------------------------------//
+
     //-------------------------------- internal functions start ----------------------------------//
 
     function _registerGateway(
@@ -325,7 +390,7 @@ contract Gateways is
                 revert GatewaysUnsupportedChain();
         }
 
-        // check missing for validating chainIds array for multiple same chainIds
+        // TODO: check missing for validating chainIds array for multiple same chainIds
 
         _register(enclaveAddress, _owner, _chainIds);
 
@@ -425,34 +490,6 @@ contract Gateways is
             revert GatewaysDrainPending();
 
         _removeStake(_enclaveAddress, _amount);
-    }
-
-    function _addChainGlobal(
-        uint256[] memory _chainIds,
-        RequestChain[] memory _requestChains
-    ) internal {
-        if(_chainIds.length == 0 || _chainIds.length != _requestChains.length)
-            revert GatewaysInvalidLength();
-        for (uint256 index = 0; index < _requestChains.length; index++) {
-            RequestChain memory reqChain = _requestChains[index];
-            uint256 chainId = _chainIds[index];
-            requestChains[chainId] = reqChain;
-
-            emit ChainAddedGlobal(chainId, reqChain.contractAddress, reqChain.httpRpcUrl, reqChain.wsRpcUrl);
-        }
-    }
-
-    function _removeChainGlobal(
-        uint256[] memory _chainIds
-    ) internal {
-        if(_chainIds.length == 0)
-            revert GatewaysInvalidLength();
-        for (uint256 index = 0; index < _chainIds.length; index++) {
-            uint256 chainId = _chainIds[index];
-            delete requestChains[chainId];
-
-            emit ChainRemovedGlobal(chainId);
-        }
     }
 
     function _addChains(
@@ -615,7 +652,6 @@ contract Gateways is
     ) internal {
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
             revert GatewaysJobRelayTimeOver();
-        // TODO: check if can remove Resource Unavialble check
         if(relayJobs[_jobId].isResourceUnavailable)
             revert GatewaysJobResourceUnavailable();
         if(relayJobs[_jobId].execStartTime != 0)
@@ -634,12 +670,6 @@ contract Gateways is
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
         TOKEN_USDC.safeTransferFrom(_gateway, address(this), usdcDeposit);
-        // (uint256 execJobId, uint8 errorCode) = jobMgr.createJob(_codehash, _codeInputs, _deadline);
-        // if (errorCode == 1) {
-        //     // Resource unavailable
-        //     relayJobs[_jobId].isResourceUnavailable = true;
-        //     return;
-        // }
 
         _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
     }
@@ -775,27 +805,17 @@ contract Gateways is
         // transfer comp to reporter gateway
         TOKEN.safeTransfer(gateways[_reporterGateway].owner, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
 
-        // if sequenceId = 1, keep the comp in common pool(gateway contract)
-        // if sequenceId = 2, transfer comp to jobOwner
-        if (_sequenceId == 2) {
+        if (_sequenceId == 1) {
+            // if sequenceId = 1, keep the comp in payment pool
+            TOKEN.safeTransfer(paymentPool, totalComp - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        } else {
+            // if sequenceId = 2, transfer comp to jobOwner
             TOKEN.safeTransfer(_jobOwner, totalComp - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
         }
     }
     //-------------------------------- internal functions end ----------------------------------//
 
     //-------------------------------- external functions start --------------------------------//
-
-    function whitelistEnclaveImage(
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
-        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
-    }
-
-    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveImage(imageId);
-    }
 
     function registerGateway(
         bytes memory _attestationSignature,
@@ -832,19 +852,6 @@ contract Gateways is
         uint256 _amount
     ) external isValidGatewayOwner(_enclaveAddress, _msgSender()) {
         _removeGatewayStake(_enclaveAddress, _amount);
-    }
-
-    function addChainGlobal(
-        uint256[] memory _chainIds,
-        RequestChain[] memory _requestChains
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _addChainGlobal(_chainIds, _requestChains);
-    }
-
-    function removeChainGlobal(
-        uint256[] memory _chainIds
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _removeChainGlobal(_chainIds);
     }
 
     function addChains(
@@ -919,10 +926,6 @@ contract Gateways is
         uint8 _errorCode,
         uint256 _totalTime
     ) internal {
-        // it should be from jobs contract only
-        // emit event for job
-        // send fund (USDC)
-        // delete job
 
         uint256 jobId = execJobs[_execJobId];
         address gateway = relayJobs[jobId].gateway;
@@ -936,10 +939,6 @@ contract Gateways is
     }
 
     function _oysterFailureCall(uint256 _execJobId, uint256 _slashAmount) internal {
-        // it should be from jobs contract only
-        // emit event for job
-        // send fund (USDC, slashing amounts in POND)
-        // delete job
         uint jobId = execJobs[_execJobId];
         address gateway = relayJobs[jobId].gateway;
         uint256 usdcDeposit = relayJobs[jobId].usdcDeposit;
@@ -961,12 +960,10 @@ contract Gateways is
         uint8 _errorCode,
         uint256 _totalTime
     ) external onlyRole(JOBS_ROLE) {
-        // it should be from jobs contract only
         _oysterResultCall(_jobId, _output, _errorCode, _totalTime);
     }
 
     function oysterFailureCall(uint256 _jobId, uint256 _slashAmount) external onlyRole(JOBS_ROLE) {
-        // only the jobs contract
         _oysterFailureCall(_jobId, _slashAmount);
     }
     //-------------------------------- external functions end ----------------------------------//

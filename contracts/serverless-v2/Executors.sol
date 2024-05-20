@@ -81,7 +81,8 @@ contract Executors is
 
     function initialize(
         address _admin,
-        EnclaveImage[] memory _images
+        EnclaveImage[] memory _images,
+        address _paymentPoolAddress
     ) public initializer {
         if(_admin == address(0))
             revert ExecutorsZeroAddressAdmin();
@@ -94,6 +95,8 @@ contract Executors is
         __TreeUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+
+        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -117,6 +120,8 @@ contract Executors is
 
     /// @notice executor stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
+
+    address public paymentPool;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
@@ -187,6 +192,26 @@ contract Executors is
     error ExecutorsNotDraining();
     error ExecutorsHasPendingJobs();
     error ExecutorsInvalidOwner();
+
+    //-------------------------------- Admin methods start --------------------------------//
+
+    function setPaymentPool(address _paymentPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        paymentPool = _paymentPoolAddress;
+    }
+
+    function whitelistEnclaveImage(
+        bytes memory PCR0,
+        bytes memory PCR1,
+        bytes memory PCR2
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
+        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+    }
+
+    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveImage(imageId);
+    }
+
+    //-------------------------------- Admin methods end ----------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -360,18 +385,6 @@ contract Executors is
 
     //-------------------------------- external functions start ----------------------------------//
 
-    function whitelistEnclaveImage(
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
-        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
-    }
-
-    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveImage(imageId);
-    }
-
     function registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
@@ -475,8 +488,8 @@ contract Executors is
             TOKEN.safeTransfer(_jobOwner, totalComp);
         }
         else {
-            // transfer the slashed comp to common pool(jobs contract)
-            TOKEN.safeTransfer(_msgSender(), totalComp);
+            // transfer the slashed comp to payment pool
+            TOKEN.safeTransfer(paymentPool, totalComp);
         }
 
         _releaseExecutor(_enclaveAddress);
