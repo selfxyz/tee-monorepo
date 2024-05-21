@@ -239,36 +239,23 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 .unwrap()
                 .clone();
         }
-        // update the last block number of the gateway data
-        for (_, gateway_data) in current_cycle_state_epoch.iter_mut() {
-            gateway_data.last_block_number = to_block_number;
-        }
-
-        // In case where to_block_number < from_block_number, return here
-        // This will happen in the case when no blocks were created in this epoch cycle,
-        // so the state remains the same as the previous state
-        if to_block_number < from_block_number {
-            // scope for the write lock
-            {
-                let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
-                gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
-            }
-            return Ok(());
-        }
     }
 
-    // In case of no blocks created in this epoch cycle, return here
-    // ||
     // In case where to_block_number <= from_block_number, return here
     // This will happen in the case when no blocks were created in this epoch cycle,
     // so the state remains the same as the previous state
-    if from_block_number == 0 && to_block_number == 0 || to_block_number <= from_block_number {
+    if to_block_number <= from_block_number {
         // scope for the write lock
         {
             let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
             gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
         }
         return Ok(()); // no blocks to process
+    }
+
+    // update the last block number of the gateway data
+    for (_, gateway_data) in current_cycle_state_epoch.iter_mut() {
+        gateway_data.last_block_number = to_block_number;
     }
 
     // events are only used to update the gateway state and req_chain_ids, not the stake amount
