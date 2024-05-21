@@ -11,6 +11,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,8 +19,8 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::{task, time};
 
 use crate::chain_util::{
-    get_key_for_job_id, pub_key_to_address, sign_job_response_response,
-    sign_reassign_gateway_relay_response, sign_relay_job_response,
+    common_chain_jobs, get_key_for_job_id, pub_key_to_address, req_chain_jobs,
+    sign_job_response_response, sign_reassign_gateway_relay_response, sign_relay_job_response, LogsProvider,
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
@@ -135,35 +136,26 @@ impl CommonChainClient {
         let mut req_chain_data = self.request_chain_list.clone();
 
         while let Some(chain_id) = req_chain_data.pop() {
-            let event_filter = Filter::new()
-                .address(self.req_chain_clients[&chain_id].contract_address)
-                .select(0..)
-                .topic0(vec![
-                    keccak256(
-                        "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,uint256)",
-                    ),
-                    keccak256("JobCancelled(bytes32)"),
-                ]);
-
-            info!("Subscribing to events for chain_id: {}", chain_id);
-
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
-            let req_chain_ws_client =
-                Provider::<Ws>::connect_with_reconnects(self.req_chain_clients[&chain_id].ws_rpc_url.clone(), 5).await.context(
+
+            let req_chain_ws_client = 
+                Provider::<Ws>::connect_with_reconnects(
+                    self_clone.req_chain_clients[&chain_id].ws_rpc_url.clone(),
+                    5,
+                ).await
+                .context(
                     "Failed to connect to the request chain websocket provider. Please check the chain url.",
                 )?;
+
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
-                // register subscription
-                let mut stream = req_chain_ws_client
-                    .subscribe_logs(&event_filter)
-                    .await
-                    .context(format!(
-                        "failed to subscribe to events on Request Chain: {}",
-                        chain_id
-                    ))
-                    .unwrap();
+                let mut stream = self_clone.req_chain_jobs(
+                    &req_chain_ws_client,
+                    &self_clone.req_chain_clients[&chain_id],
+                )
+                .await
+                .unwrap();
 
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
@@ -637,21 +629,8 @@ impl CommonChainClient {
         self: Arc<Self>,
         tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
     ) -> Result<()> {
-        info!("Subscribing to events for Common Chain");
-        let event_filter = Filter::new()
-            .address(self.contract_addr)
-            .select(0..)
-            .topic0(vec![
-                keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8)"),
-                keccak256("JobResourceUnavailable(uint256,uint256,address)"),
-                keccak256("GatewayReassigned(uint256,uint256,address,address,uint8)"),
-            ]);
-
-        let mut stream = self
-            .chain_ws_client
-            .subscribe_logs(&event_filter)
+        let mut stream = self.common_chain_jobs()
             .await
-            .context("failed to subscribe to events on the Common Chain")
             .unwrap();
 
         while let Some(log) = stream.next().await {
@@ -1013,5 +992,21 @@ impl CommonChainClient {
     async fn remove_job_response(self: Arc<Self>, job_key: U256) {
         let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_key);
+    }
+}
+
+impl LogsProvider for CommonChainClient {
+    fn common_chain_jobs<'a>(
+        &'a self,
+    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>> {
+        common_chain_jobs(&self.chain_ws_client, self.contract_addr)
+    }
+
+    fn req_chain_jobs<'a>(
+        &'a self,
+        req_chain_ws_client: &'a Provider<Ws>,
+        req_chain_client: &'a RequestChainClient,
+    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>> {
+        req_chain_jobs(req_chain_ws_client, req_chain_client)
     }
 }
