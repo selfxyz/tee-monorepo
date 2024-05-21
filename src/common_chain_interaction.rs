@@ -996,17 +996,17 @@ impl CommonChainClient {
 }
 
 impl LogsProvider for CommonChainClient {
-    fn common_chain_jobs<'a>(
+    async fn common_chain_jobs<'a>(
         &'a self,
-    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>> {
-        common_chain_jobs(&self.chain_ws_client, self.contract_addr)
+    ) -> Result<SubscriptionStream<'a, Ws, Log>> {
+        common_chain_jobs(&self.chain_ws_client, self.contract_addr).await
     }
 
-    fn req_chain_jobs<'a>(
+    async fn req_chain_jobs<'a>(
         &'a self,
         req_chain_ws_client: &'a Provider<Ws>,
         req_chain_client: &'a RequestChainClient,
-    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>> {
-        req_chain_jobs(req_chain_ws_client, req_chain_client)
+    ) -> Result<SubscriptionStream<'a, Ws, Log>> {
+        req_chain_jobs(req_chain_ws_client, req_chain_client).await
     }
 }
