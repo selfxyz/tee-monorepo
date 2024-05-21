@@ -30,7 +30,7 @@ contract Relay is
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
     constructor(
-        IAttestationVerifier attestationVerifier, 
+        IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token,
         uint256 _globalMinTimeout,  // in milliseconds
@@ -40,7 +40,7 @@ contract Relay is
         uint256 _gatewayFeePerJob
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
-        
+
         if(address(_token) == address(0))
             revert RelayInvalidToken();
         TOKEN = _token;
@@ -99,8 +99,6 @@ contract Relay is
 
     //-------------------------------- Initializer end --------------------------------//
 
-    //-------------------------------- Gateway start --------------------------------//
-
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IERC20 public immutable TOKEN;
 
@@ -119,52 +117,16 @@ contract Relay is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GATEWAY_FEE_PER_JOB;
 
-    // gateway => enclaveAddress
-    mapping(address => address) public gatewayAddresses;
+    bytes32 private constant DOMAIN_SEPARATOR =
+        keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version)"),
+                keccak256("marlin.oyster.Relay"),
+                keccak256("1")
+            )
+        );
 
-    event GatewayRegistered(
-        address indexed gateway,
-        address indexed enclaveAddress
-    );
-
-    event GatewayDeregistered(address indexed gateway);
-
-    error RelayGatewayAlreadyExists();
-    error RelayInvalidGateway();
-
-    //-------------------------------- internal functions start --------------------------------//
-
-    function _registerGateway(
-        bytes memory _attestationSignature,
-        IAttestationVerifier.Attestation memory _attestation,
-        address _gateway
-    ) internal {
-        // attestation verification
-        _verifyEnclaveKey(_attestationSignature, _attestation);
-        
-        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
-        if(gatewayAddresses[_gateway] != address(0))
-            revert RelayGatewayAlreadyExists();
-        gatewayAddresses[_gateway] = enclaveAddress;
-
-        emit GatewayRegistered(_gateway, enclaveAddress);
-    }
-
-    function _deregisterGateway(
-        address _gateway
-    ) internal {
-        if(gatewayAddresses[_gateway] == address(0))
-            revert RelayInvalidGateway();
-
-        _revokeEnclaveKey(gatewayAddresses[_gateway]);
-        delete gatewayAddresses[_gateway];
-
-        emit GatewayDeregistered(_gateway);
-    }
-
-    //-------------------------------- internal functions end ----------------------------------//
-
-    //-------------------------------- external functions start --------------------------------//
+    //-------------------------------- Admin methods start --------------------------------//
 
     function whitelistEnclaveImage(
         bytes memory PCR0,
@@ -178,15 +140,103 @@ contract Relay is
         return _revokeEnclaveImage(imageId);
     }
 
-    function registerGateway(
+    //-------------------------------- Admin methods end ----------------------------------//
+
+    //-------------------------------- Gateway start --------------------------------//
+
+    // enclaveAddress => owner
+    mapping(address => address) public gatewayAddresses;
+
+    bytes32 private constant REGISTER_TYPEHASH =
+        keccak256("Register(address owner,uint256 signTimestampInMs)");
+
+    event GatewayRegistered(
+        address indexed owner,
+        address indexed enclaveAddress
+    );
+
+    event GatewayDeregistered(address indexed enclaveAddress);
+
+    error RelayGatewayAlreadyExists();
+    error RelayInvalidGateway();
+    error RelaySignatureTooOld();
+    error RelayInvalidSigner();
+
+    //-------------------------------- internal functions start --------------------------------//
+
+    function _registerGateway(
         bytes memory _attestationSignature,
-        IAttestationVerifier.Attestation memory _attestation
-    ) external {
-        _registerGateway(_attestationSignature, _attestation, _msgSender());
+        IAttestationVerifier.Attestation memory _attestation,
+        bytes memory _signature,
+        uint256 _signTimestampInMs,
+        address _owner
+    ) internal {
+        // attestation verification
+        _verifyEnclaveKey(_attestationSignature, _attestation);
+
+        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
+
+        // signature verification
+        _verifyRegisterSign(_owner, _signTimestampInMs, _signature, enclaveAddress);
+
+        if(gatewayAddresses[enclaveAddress] != address(0))
+            revert RelayGatewayAlreadyExists();
+        gatewayAddresses[enclaveAddress] = _owner;
+
+        emit GatewayRegistered(_owner, enclaveAddress);
     }
 
-    function deregisterGateway() external {
-        _deregisterGateway(_msgSender());
+    function _verifyRegisterSign(
+        address _owner,
+        uint256 _signTimestampInMs,
+        bytes memory _signature,
+        address _enclaveAddress
+    ) internal view {
+        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+            revert RelaySignatureTooOld();
+
+        bytes32 hashStruct = keccak256(
+            abi.encode(
+                REGISTER_TYPEHASH,
+                _owner,
+                _signTimestampInMs
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+        address signer = digest.recover(_signature);
+
+        if(signer != _enclaveAddress)
+            revert RelayInvalidSigner();
+    }
+
+    function _deregisterGateway(
+        address _enclaveAddress,
+        address _owner
+    ) internal {
+        if(gatewayAddresses[_enclaveAddress] != _owner)
+            revert RelayInvalidGateway();
+
+        _revokeEnclaveKey(gatewayAddresses[_enclaveAddress]);
+        delete gatewayAddresses[_enclaveAddress];
+
+        emit GatewayDeregistered(_enclaveAddress);
+    }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start --------------------------------//
+
+    function registerGateway(
+        bytes memory _attestationSignature,
+        IAttestationVerifier.Attestation memory _attestation,
+        bytes memory _signature,
+        uint256 _signTimestampInMs
+    ) external {
+        _registerGateway(_attestationSignature, _attestation, _signature, _signTimestampInMs, _msgSender());
+    }
+
+    function deregisterGateway(address _enclaveAddress) external {
+        _deregisterGateway(_enclaveAddress, _msgSender());
     }
 
     //-------------------------------- external functions end ---------------------------//
@@ -208,17 +258,8 @@ contract Relay is
 
     uint256 public jobCount;
 
-    bytes32 private constant DOMAIN_SEPARATOR = 
-        keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version)"),
-                keccak256("marlin.oyster.Relay"),
-                keccak256("1")
-            )
-        );
-    
-    bytes32 private constant JOB_RESPONSE_TYPEHASH = 
-        keccak256("JobResponse(address gateway,uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
+    bytes32 private constant JOB_RESPONSE_TYPEHASH =
+        keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -227,7 +268,7 @@ contract Relay is
         uint256 userTimeout,    // in milliseconds
         uint256 maxGasPrice,
         uint256 usdcDeposit,
-        uint256 callbackDeposit, 
+        uint256 callbackDeposit,
         uint256 startTime
     );
 
@@ -244,8 +285,6 @@ contract Relay is
     error RelayInvalidUserTimeout();
     error RelayJobNotExists();
     error RelayOverallTimeoutOver();
-    error RelaySignatureTooOld();
-    error RelayInvalidSigner();
     error RelayInvalidJobOwner();
     error RelayOverallTimeoutNotOver();
     error RelayCallbackDepositTransferFailed();
@@ -257,7 +296,8 @@ contract Relay is
         bytes memory _codeInputs,
         uint256 _userTimeout,   // in milliseconds
         uint256 _maxGasPrice,
-        uint256 _callbackDeposit
+        uint256 _callbackDeposit,
+        address _jobOwner
     ) internal {
         if(_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT)
             revert RelayInvalidUserTimeout();
@@ -271,11 +311,11 @@ contract Relay is
             maxGasPrice: _maxGasPrice,
             usdcDeposit: usdcDeposit,
             callbackDeposit: _callbackDeposit,
-            jobOwner: _msgSender()
+            jobOwner: _jobOwner
         });
 
         // deposit escrow amount(USDC)
-        TOKEN.safeTransferFrom(_msgSender(), address(this), usdcDeposit);
+        TOKEN.safeTransferFrom(_jobOwner, address(this), usdcDeposit);
 
         emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, usdcDeposit, _callbackDeposit, block.timestamp);
     }
@@ -297,7 +337,7 @@ contract Relay is
             revert RelayOverallTimeoutOver();
 
         // signature check
-        _verifyJobResponseSign(_signature, _msgSender(), _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
+        address enclaveAddress = _verifyJobResponseSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
 
         address jobOwner = job.jobOwner;
         uint256 callbackDeposit = job.callbackDeposit;
@@ -306,32 +346,30 @@ contract Relay is
         delete jobs[_jobId];
 
         // release escrow to gateway
-        TOKEN.safeTransfer(_msgSender(), gatewayPayoutUsdc);
+        TOKEN.safeTransfer(gatewayAddresses[enclaveAddress], gatewayPayoutUsdc);
         // release escrow to jobOwner
         TOKEN.safeTransfer(jobOwner, jobOwnerPayoutUsdc);
-        
-        bool success = _callBackWithLimit(_jobId, jobOwner, callbackDeposit, _output, _errorCode);
 
+        (bool success, uint callbackCost) = _callBackWithLimit(_jobId, jobOwner, callbackDeposit, _output, _errorCode);
+
+        _releaseGasCostOnSuccess(gatewayAddresses[enclaveAddress], jobOwner, callbackDeposit, callbackCost);
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
     }
 
-    // TODO: this sign can be used at a later time for new job with same jobId
     function _verifyJobResponseSign(
         bytes memory _signature,
-        address _gateway,
         uint256 _jobId,
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
         uint256 _signTimestampInMs
-    ) internal view {
+    ) internal view returns (address) {
         if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
             revert RelaySignatureTooOld();
 
         bytes32 hashStruct = keccak256(
             abi.encode(
                 JOB_RESPONSE_TYPEHASH,
-                _gateway,
                 _jobId,
                 keccak256(_output),
                 _totalTime,
@@ -343,17 +381,16 @@ contract Relay is
         address signer = digest.recover(_signature);
 
         _allowOnlyVerified(signer);
-
-        if(signer != gatewayAddresses[_gateway])
-            revert RelayInvalidSigner();
+        return signer;
     }
 
     function _jobCancel(
-        uint256 _jobId
+        uint256 _jobId,
+        address _jobOwner
     ) internal {
-        if(jobs[_jobId].jobOwner != _msgSender())
+        if(jobs[_jobId].jobOwner != _jobOwner)
             revert RelayInvalidJobOwner();
-            
+
         // check time case
         if(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT)
             revert RelayOverallTimeoutNotOver();
@@ -363,13 +400,13 @@ contract Relay is
         delete jobs[_jobId];
 
         // return back escrow amount to the user
-        TOKEN.safeTransfer(_msgSender(), usdcDeposit);
+        TOKEN.safeTransfer(_jobOwner, usdcDeposit);
 
         // return back callback deposit to the user
-        (bool success, ) = _msgSender().call{value: callbackDeposit}("");
+        (bool success, ) = _jobOwner.call{value: callbackDeposit}("");
         if(!success)
             revert RelayCallbackDepositTransferFailed();
-        
+
         emit JobCancelled(_jobId);
     }
 
@@ -379,7 +416,7 @@ contract Relay is
         uint256 _callbackDeposit,
         bytes memory _input,
         uint8 _errorCode
-    ) internal returns (bool) {
+    ) internal returns (bool, uint) {
         uint start_gas = gasleft();
         (bool success,) = _jobOwner.call{gas: (_callbackDeposit / tx.gasprice)}(
             abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8)", _jobId, _input, _errorCode)
@@ -387,12 +424,21 @@ contract Relay is
 
         // calculate callback cost
         uint callbackCost = (start_gas - gasleft()) * tx.gasprice;
-        // TODO: do we need to check this paySuccess
+
+        return (success, callbackCost);
+    }
+
+    function _releaseGasCostOnSuccess(
+        address _gatewayOwner,
+        address _jobOwner,
+        uint256 _callbackDeposit,
+        uint256 _callbackCost
+    )  internal {
+        // TODO: If paySuccess is false then deposit will be stucked forever. Find a way out.
         // transfer callback cost to gateway
-        (bool paySuccess, ) = _msgSender().call{ value: callbackCost }("");
+        (bool paySuccess, ) = _gatewayOwner.call{ value: _callbackCost }("");
         // transfer remaining native asset to the jobOwner
-        (paySuccess, ) = _jobOwner.call{ value: _callbackDeposit - callbackCost }("");
-        return success;
+        (paySuccess, ) = _jobOwner.call{ value: _callbackDeposit - _callbackCost }("");
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -406,7 +452,7 @@ contract Relay is
         uint256 _maxGasPrice,
         uint256 _callbackDeposit
     ) external payable {
-        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, _callbackDeposit);
+        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, _callbackDeposit, _msgSender());
     }
 
     function jobResponse(
@@ -423,7 +469,7 @@ contract Relay is
     function jobCancel(
         uint256 _jobId
     ) external {
-        _jobCancel(_jobId);
+        _jobCancel(_jobId, _msgSender());
     }
 
     //-------------------------------- external functions end --------------------------------//
