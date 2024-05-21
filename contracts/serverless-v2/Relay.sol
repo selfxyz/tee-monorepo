@@ -453,7 +453,7 @@ contract Relay is
         uint256 _userTimeout,
         uint256 _maxGasPrice,
         uint256 _callbackDeposit,
-        address _refundAccount
+        address _refundAccount // Common chain slashed token will be sent to this address
     ) external payable {
         _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, _callbackDeposit, _refundAccount, _msgSender());
     }
