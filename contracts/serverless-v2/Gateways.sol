@@ -311,8 +311,6 @@ contract Gateways is
                 revert GatewaysUnsupportedChain();
         }
 
-        // TODO: check missing for validating chainIds array for multiple same chainIds
-
         _register(enclaveAddress, _owner, _chainIds);
 
         _addStake(enclaveAddress, _stakeAmount);

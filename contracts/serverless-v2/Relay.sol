@@ -145,7 +145,7 @@ contract Relay is
     //-------------------------------- Gateway start --------------------------------//
 
     // enclaveAddress => owner
-    mapping(address => address) public gatewayAddresses;
+    mapping(address => address) public gatewayOwners;
 
     bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256 signTimestampInMs)");
@@ -179,9 +179,9 @@ contract Relay is
         // signature verification
         _verifyRegisterSign(_owner, _signTimestampInMs, _signature, enclaveAddress);
 
-        if(gatewayAddresses[enclaveAddress] != address(0))
+        if(gatewayOwners[enclaveAddress] != address(0))
             revert RelayGatewayAlreadyExists();
-        gatewayAddresses[enclaveAddress] = _owner;
+        gatewayOwners[enclaveAddress] = _owner;
 
         emit GatewayRegistered(_owner, enclaveAddress);
     }
@@ -213,11 +213,11 @@ contract Relay is
         address _enclaveAddress,
         address _owner
     ) internal {
-        if(gatewayAddresses[_enclaveAddress] != _owner)
+        if(gatewayOwners[_enclaveAddress] != _owner)
             revert RelayInvalidGateway();
 
-        _revokeEnclaveKey(gatewayAddresses[_enclaveAddress]);
-        delete gatewayAddresses[_enclaveAddress];
+        _revokeEnclaveKey(gatewayOwners[_enclaveAddress]);
+        delete gatewayOwners[_enclaveAddress];
 
         emit GatewayDeregistered(_enclaveAddress);
     }
@@ -348,13 +348,13 @@ contract Relay is
         delete jobs[_jobId];
 
         // release escrow to gateway
-        TOKEN.safeTransfer(gatewayAddresses[enclaveAddress], gatewayPayoutUsdc);
+        TOKEN.safeTransfer(gatewayOwners[enclaveAddress], gatewayPayoutUsdc);
         // release escrow to jobOwner
         TOKEN.safeTransfer(jobOwner, jobOwnerPayoutUsdc);
 
         (bool success, uint callbackCost) = _callBackWithLimit(_jobId, jobOwner, callbackDeposit, _output, _errorCode);
 
-        _releaseGasCostOnSuccess(gatewayAddresses[enclaveAddress], jobOwner, callbackDeposit, callbackCost);
+        _releaseGasCostOnSuccess(gatewayOwners[enclaveAddress], jobOwner, callbackDeposit, callbackCost);
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
     }
 
