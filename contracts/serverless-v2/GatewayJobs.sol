@@ -146,9 +146,9 @@ contract GatewayJobs is
         );
 
     bytes32 private constant RELAY_JOB_TYPEHASH =
-        keccak256("RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestampInMs)");
+        keccak256("RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestamp)");
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH =
-        keccak256("ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestampInMs)");
+        keccak256("ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestamp)");
 
     event JobCreated(
         uint256 indexed jobId,
@@ -205,7 +205,7 @@ contract GatewayJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         address _gateway
     ) internal {
         if(block.timestamp > _jobRequestTimestamp + RELAY_BUFFER_TIME)
@@ -223,7 +223,7 @@ contract GatewayJobs is
 
         // signature check
         address enclaveAddress = _verifyRelaySign(_signature, _jobId, _codehash, _codeInputs, _deadline,
-                                                  _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestampInMs);
+                                                  _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestamp);
 
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
@@ -267,9 +267,9 @@ contract GatewayJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) internal view returns (address) {
-        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
+        if (block.timestamp > _signTimestamp + SIGN_MAX_AGE)
             revert GatewayJobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -282,7 +282,7 @@ contract GatewayJobs is
                 _jobRequestTimestamp,
                 _sequenceId,
                 _jobOwner,
-                _signTimestampInMs
+                _signTimestamp
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -299,7 +299,7 @@ contract GatewayJobs is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         address _jobOwner,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         address _gateway
     ) internal {
         // time check will be done in the gateway enclaves and based on the algo, a new gateway will be selected
@@ -315,7 +315,7 @@ contract GatewayJobs is
         relayJobs[_jobId].sequenceId = _sequenceId;
 
         // signature check
-        address enclaveAddress = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _signTimestampInMs);
+        address enclaveAddress = _verifyReassignGatewaySign(_signature, _jobId, _gatewayOld, _sequenceId, _jobRequestTimestamp, _signTimestamp);
 
         // slash old gateway
         gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, enclaveAddress, _jobOwner);
@@ -329,9 +329,9 @@ contract GatewayJobs is
         address _gatewayOld,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) internal view returns (address) {
-        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
+        if (block.timestamp > _signTimestamp + SIGN_MAX_AGE)
             revert GatewayJobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -341,7 +341,7 @@ contract GatewayJobs is
                 _gatewayOld,
                 _sequenceId,
                 _jobRequestTimestamp,
-                _signTimestampInMs
+                _signTimestamp
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -363,9 +363,9 @@ contract GatewayJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) external {
-        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestampInMs, _msgSender());
+        _relayJob(_signature, _jobId, _codehash, _codeInputs, _deadline, _jobRequestTimestamp, _sequenceId, _jobOwner, _signTimestamp, _msgSender());
     }
 
     function reassignGatewayRelay(
@@ -375,9 +375,9 @@ contract GatewayJobs is
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         address _jobOwner,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) external {
-        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _signTimestampInMs, _msgSender());
+        _reassignGatewayRelay(_gatewayOld, _jobId, _signature, _sequenceId, _jobRequestTimestamp, _jobOwner, _signTimestamp, _msgSender());
     }
     //-------------------------------- external functions end ----------------------------------//
 

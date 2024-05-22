@@ -20,30 +20,42 @@ contract Jobs is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    error JobsZeroAddressToken();
+    error JobsZeroAddressStakingToken();
+    error JobsZeroAddressUsdcToken();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
     constructor(
-        IERC20 _token,
+        IERC20 _stakingToken,
+        IERC20 _usdcToken,
         uint256 _signMaxAge,
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect,
         uint256 _executorFeePerMs,
-        uint256 _stakingRewardPerMs
+        uint256 _stakingRewardPerMs,
+        address _stakingPaymentPoolAddress,
+        address _usdcPaymentPoolAddress
     ) {
         _disableInitializers();
 
-        if(address(_token) == address(0))
-            revert JobsZeroAddressToken();
-        TOKEN = _token;
+        if(address(_stakingToken) == address(0))
+            revert JobsZeroAddressStakingToken();
+        STAKING_TOKEN = _stakingToken;
+
+        if(address(_usdcToken) == address(0))
+            revert JobsZeroAddressUsdcToken();
+        USDC_TOKEN = _usdcToken;
+
         SIGN_MAX_AGE = _signMaxAge;
         EXECUTION_BUFFER_TIME = _executionBufferTime;
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
 
         EXECUTOR_FEE_PER_MS = _executorFeePerMs;
         STAKING_REWARD_PER_MS = _stakingRewardPerMs;
+
+        STAKING_PAYMENT_POOL = _stakingPaymentPoolAddress;
+        USDC_PAYMENT_POOL = _usdcPaymentPoolAddress;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -72,8 +84,7 @@ contract Jobs is
 
     function initialize(
         address _admin,
-        Executors _executors,
-        address _paymentPoolAddress
+        Executors _executors
     ) public initializer {
         if(_admin == address(0))
             revert JobsZeroAddressAdmin();
@@ -87,13 +98,15 @@ contract Jobs is
 
         executors = _executors;
         jobCount = 0;
-        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Initializer end --------------------------------//
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    IERC20 public immutable TOKEN;
+    IERC20 public immutable STAKING_TOKEN;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public immutable USDC_TOKEN;
 
     /// @notice Maximum age of a valid signature, in seconds.
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -111,18 +124,18 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable STAKING_REWARD_PER_MS;
 
-    Executors public executors;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    address public immutable STAKING_PAYMENT_POOL;
 
-    address public paymentPool;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    address public immutable USDC_PAYMENT_POOL;
+
+    Executors public executors;
 
     //-------------------------------- Admin methods start --------------------------------//
 
     function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
         executors = _executors;
-    }
-
-    function setPaymentPool(address _paymentPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Admin methods end ----------------------------------//
@@ -216,7 +229,7 @@ contract Jobs is
         selectedExecutors[jobId] = selectedNodes;
 
         // deposit escrow amount(USDC)
-        TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
+        USDC_TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
 
         _create(jobId, _codehash, _codeInputs, _deadline, _jobOwner, selectedNodes);
     }
@@ -319,16 +332,16 @@ contract Jobs is
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
-            TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
+            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
             // transfer payout to payment pool
-            TOKEN.safeTransfer(paymentPool, executionTime * STAKING_REWARD_PER_MS);
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * STAKING_REWARD_PER_MS);
             // transfer to job owner
-            TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
+            USDC_TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
         }
         // for second output
         else if(_outputCount == 2) {
             // transfer payout to executor
-            TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS) / 3);
+            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS) / 3);
         }
         // for 3rd output
         else {
@@ -441,9 +454,7 @@ contract Jobs is
 
             if(!hasExecutedJob[_jobId][enclaveAddress]) {
                 slashAmount += executors.slashExecutor(
-                    enclaveAddress,
-                    isNoOutputSubmitted,
-                    jobOwner
+                    enclaveAddress
                 );
                 emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
@@ -452,11 +463,16 @@ contract Jobs is
 
         delete selectedExecutors[_jobId];
         if (isNoOutputSubmitted) {
+            // transfer the slashed amount to job owner
+            STAKING_TOKEN.safeTransfer(jobOwner, slashAmount);
             // TODO: add gas limit
             (bool success,) = jobOwner.call(
                 abi.encodeWithSignature("oysterFailureCall(uint256,uint256)", _jobId, slashAmount)
             );
             emit JobTimeoutFailure(_jobId, success);
+        } else {
+            // transfer the slashed amount to payment pool
+            STAKING_TOKEN.safeTransfer(STAKING_PAYMENT_POOL, slashAmount);
         }
     }
 
@@ -470,11 +486,11 @@ contract Jobs is
 
         if(_outputCount == 0) {
             // transfer back the whole escrow amount to gateway if no output submitted
-            TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
+            USDC_TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
         } else if (_outputCount == 1) {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
             // transfer the expected reward of second submitter to payment pool
-            TOKEN.safeTransfer(paymentPool, (_executionTime * EXECUTOR_FEE_PER_MS) / 3);
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, (_executionTime * EXECUTOR_FEE_PER_MS) / 3);
         }
     }
 

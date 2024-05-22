@@ -36,7 +36,6 @@ contract Executors is
         uint256 maxAge,
         IERC20 _token,
         uint256 _minStakeAmount,
-        uint256 _slashCompForGateway,
         uint256 _slashPercentInBips,
         uint256 _slashMaxBips
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
@@ -50,7 +49,6 @@ contract Executors is
         TOKEN = _token;
         MIN_STAKE_AMOUNT = _minStakeAmount;
 
-        SLASH_COMP_FOR_GATEWAY = _slashCompForGateway;
         SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
         SLASH_MAX_BIPS = _slashMaxBips;
     }
@@ -81,8 +79,7 @@ contract Executors is
 
     function initialize(
         address _admin,
-        EnclaveImage[] memory _images,
-        address _paymentPoolAddress
+        EnclaveImage[] memory _images
     ) public initializer {
         if(_admin == address(0))
             revert ExecutorsZeroAddressAdmin();
@@ -95,8 +92,6 @@ contract Executors is
         __TreeUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-
-        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -106,9 +101,6 @@ contract Executors is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable MIN_STAKE_AMOUNT;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable SLASH_COMP_FOR_GATEWAY;
 
     /// @notice an integer in the range 0-10^6
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -120,8 +112,6 @@ contract Executors is
 
     /// @notice executor stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
-
-    address public paymentPool;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
@@ -157,7 +147,7 @@ contract Executors is
         );
 
     bytes32 private constant REGISTER_TYPEHASH =
-        keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestampInMs)");
+        keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestamp)");
 
     event ExecutorRegistered(
         address indexed enclaveAddress,
@@ -195,10 +185,6 @@ contract Executors is
 
     //-------------------------------- Admin methods start --------------------------------//
 
-    function setPaymentPool(address _paymentPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        paymentPool = _paymentPoolAddress;
-    }
-
     function whitelistEnclaveImage(
         bytes memory PCR0,
         bytes memory PCR1,
@@ -219,7 +205,7 @@ contract Executors is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         bytes memory _signature,
         uint256 _stakeAmount,
         address _owner
@@ -232,7 +218,7 @@ contract Executors is
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
         // signature check
-        _verifySign(enclaveAddress, _owner, _jobCapacity, _signTimestampInMs, _signature);
+        _verifySign(enclaveAddress, _owner, _jobCapacity, _signTimestamp, _signature);
 
         _register(enclaveAddress, _owner, _jobCapacity);
 
@@ -247,10 +233,10 @@ contract Executors is
         address _enclaveAddress,
         address _owner,
         uint256 _jobCapacity,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         bytes memory _signature
     ) internal view {
-        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
             revert ExecutorsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -258,7 +244,7 @@ contract Executors is
                 REGISTER_TYPEHASH,
                 _owner,
                 _jobCapacity,
-                _signTimestampInMs
+                _signTimestamp
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -389,11 +375,11 @@ contract Executors is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _signTimestampInMs, _signature, _stakeAmount, _msgSender());
+        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _signTimestamp, _signature, _stakeAmount, _msgSender());
     }
 
     function deregisterExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
@@ -477,20 +463,12 @@ contract Executors is
 
     function _slashExecutor(
         address _enclaveAddress,
-        bool _isNoOutputSubmitted,
-        address _jobOwner
+        address _recipient
     ) internal returns (uint256) {
         uint256 totalComp = executors[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
         executors[_enclaveAddress].stakeAmount -= totalComp;
 
-        if(_isNoOutputSubmitted) {
-            // transfer the slashed comp to job owner
-            TOKEN.safeTransfer(_jobOwner, totalComp);
-        }
-        else {
-            // transfer the slashed comp to payment pool
-            TOKEN.safeTransfer(paymentPool, totalComp);
-        }
+        TOKEN.safeTransfer(_recipient, totalComp);
 
         _releaseExecutor(_enclaveAddress);
         return totalComp;
@@ -513,11 +491,9 @@ contract Executors is
     }
 
     function slashExecutor(
-        address _enclaveAddress,
-        bool _isNoOutputSubmitted,
-        address _jobOwner
+        address _enclaveAddress
     ) external onlyRole(JOBS_ROLE) returns (uint256) {
-        return _slashExecutor(_enclaveAddress, _isNoOutputSubmitted, _jobOwner);
+        return _slashExecutor(_enclaveAddress, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//
