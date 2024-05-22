@@ -279,7 +279,6 @@ contract Jobs is
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
     }
 
-    // TODO: this sign can be used at a later time for new job with same jobId and assigned executor
     function _verifyOutputSign(
         bytes memory _signature,
         uint256 _jobId,
