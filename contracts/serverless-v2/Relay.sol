@@ -148,7 +148,7 @@ contract Relay is
     mapping(address => address) public gatewayAddresses;
 
     bytes32 private constant REGISTER_TYPEHASH =
-        keccak256("Register(address owner,uint256 signTimestampInMs)");
+        keccak256("Register(address owner,uint256 signTimestamp)");
 
     event GatewayRegistered(
         address indexed owner,
@@ -168,7 +168,7 @@ contract Relay is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
         bytes memory _signature,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         address _owner
     ) internal {
         // attestation verification
@@ -177,7 +177,7 @@ contract Relay is
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
 
         // signature verification
-        _verifyRegisterSign(_owner, _signTimestampInMs, _signature, enclaveAddress);
+        _verifyRegisterSign(_owner, _signTimestamp, _signature, enclaveAddress);
 
         if(gatewayAddresses[enclaveAddress] != address(0))
             revert RelayGatewayAlreadyExists();
@@ -188,18 +188,18 @@ contract Relay is
 
     function _verifyRegisterSign(
         address _owner,
-        uint256 _signTimestampInMs,
+        uint256 _signTimestamp,
         bytes memory _signature,
         address _enclaveAddress
     ) internal view {
-        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
             revert RelaySignatureTooOld();
 
         bytes32 hashStruct = keccak256(
             abi.encode(
                 REGISTER_TYPEHASH,
                 _owner,
-                _signTimestampInMs
+                _signTimestamp
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -230,9 +230,9 @@ contract Relay is
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
         bytes memory _signature,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) external {
-        _registerGateway(_attestationSignature, _attestation, _signature, _signTimestampInMs, _msgSender());
+        _registerGateway(_attestationSignature, _attestation, _signature, _signTimestamp, _msgSender());
     }
 
     function deregisterGateway(address _enclaveAddress) external {
@@ -259,7 +259,7 @@ contract Relay is
     uint256 public jobCount;
 
     bytes32 private constant JOB_RESPONSE_TYPEHASH =
-        keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
+        keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
 
     event JobRelayed(
         uint256 indexed jobId,
@@ -328,7 +328,7 @@ contract Relay is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) internal {
         Job memory job = jobs[_jobId];
         if(job.jobOwner == address(0))
@@ -339,7 +339,7 @@ contract Relay is
             revert RelayOverallTimeoutOver();
 
         // signature check
-        address enclaveAddress = _verifyJobResponseSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
+        address enclaveAddress = _verifyJobResponseSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
 
         address jobOwner = job.jobOwner;
         uint256 callbackDeposit = job.callbackDeposit;
@@ -364,9 +364,9 @@ contract Relay is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) internal view returns (address) {
-        if (block.timestamp > (_signTimestampInMs / 1000) + ATTESTATION_MAX_AGE)
+        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
             revert RelaySignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -376,7 +376,7 @@ contract Relay is
                 keccak256(_output),
                 _totalTime,
                 _errorCode,
-                _signTimestampInMs
+                _signTimestamp
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -464,9 +464,9 @@ contract Relay is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) external {
-        _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
+        _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
     function jobCancel(
