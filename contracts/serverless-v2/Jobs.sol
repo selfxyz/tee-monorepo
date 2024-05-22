@@ -156,7 +156,7 @@ contract Jobs is
             )
         );
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH =
-        keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestampInMs)");
+        keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
 
     event JobCreated(
         uint256 indexed jobId,
@@ -242,13 +242,13 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) internal {
         if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
             revert JobsExecutionTimeOver();
 
         // signature check
-        address enclaveAddress = _verifyOutputSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
+        address enclaveAddress = _verifyOutputSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
 
         if(!_isJobExecutor(_jobId, enclaveAddress))
             revert JobsNotSelectedExecutor();
@@ -284,9 +284,9 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) internal view returns (address) {
-        if (block.timestamp > (_signTimestampInMs / 1000) + SIGN_MAX_AGE)
+        if (block.timestamp > _signTimestamp + SIGN_MAX_AGE)
             revert JobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
@@ -296,7 +296,7 @@ contract Jobs is
                 keccak256(_output),
                 _totalTime,
                 _errorCode,
-                _signTimestampInMs
+                _signTimestamp
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
@@ -383,9 +383,9 @@ contract Jobs is
         bytes memory _output,
         uint256 _totalTime,
         uint8 _errorCode,
-        uint256 _signTimestampInMs
+        uint256 _signTimestamp
     ) external {
-        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestampInMs);
+        _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
     function isJobExecutor(
