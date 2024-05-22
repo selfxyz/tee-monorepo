@@ -35,7 +35,8 @@ contract Jobs is
         uint256 _executorFeePerMs,
         uint256 _stakingRewardPerMs,
         address _stakingPaymentPoolAddress,
-        address _usdcPaymentPoolAddress
+        address _usdcPaymentPoolAddress,
+        Executors _executors
     ) {
         _disableInitializers();
 
@@ -56,6 +57,8 @@ contract Jobs is
 
         STAKING_PAYMENT_POOL = _stakingPaymentPoolAddress;
         USDC_PAYMENT_POOL = _usdcPaymentPoolAddress;
+
+        EXECUTORS = _executors;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -83,8 +86,7 @@ contract Jobs is
     error JobsZeroAddressAdmin();
 
     function initialize(
-        address _admin,
-        Executors _executors
+        address _admin
     ) public initializer {
         if(_admin == address(0))
             revert JobsZeroAddressAdmin();
@@ -95,9 +97,6 @@ contract Jobs is
         __UUPSUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-
-        executors = _executors;
-        jobCount = 0;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -130,36 +129,23 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     address public immutable USDC_PAYMENT_POOL;
 
-    Executors public executors;
-
-    //-------------------------------- Admin methods start --------------------------------//
-
-    function setExecutorsContract(Executors _executors) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        executors = _executors;
-    }
-
-    //-------------------------------- Admin methods end ----------------------------------//
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    Executors public immutable EXECUTORS;
 
     //-------------------------------- Job start --------------------------------//
 
     struct Job {
-        uint256 jobId;
         uint256 deadline;   // in milliseconds
         uint256 execStartTime;
-        address jobOwner;
         uint256 executionTime;   // it stores the execution time for first output submitted only (in milliseconds)
+        address jobOwner;
         uint8 outputCount;
+        address[] selectedExecutors;
+        mapping(address => bool) hasExecutedJob;    // selectedExecutor => hasExecuted
     }
 
-    uint256 public jobCount;
-
     // jobKey => Job
-    mapping(uint256 => Job) public jobs;
-
-    // jobKey => executors
-    mapping(uint256 => address[]) public selectedExecutors;
-    // jobKey => selectedExecutor => hasExecuted
-    mapping(uint256 => mapping(address => bool)) public hasExecutedJob;
+    Job[] public jobs;
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -174,10 +160,10 @@ contract Jobs is
 
     event JobCreated(
         uint256 indexed jobId,
+        address indexed jobOwner,
         bytes32 codehash,
         bytes codeInputs,
         uint256 deadline,   // in milliseconds
-        address jobOwner,
         address[] selectedExecutors
     );
 
@@ -219,35 +205,35 @@ contract Jobs is
     ) internal returns (uint256 jobId, uint8 errorCode) {
 
         errorCode = 0;
-        address[] memory selectedNodes = executors.selectExecutors(NO_OF_NODES_TO_SELECT);
+        address[] memory selectedNodes = EXECUTORS.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then return with error code 1
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             errorCode = 1;
             return (0, errorCode);
         }
-        jobId = ++jobCount;
-        selectedExecutors[jobId] = selectedNodes;
 
         // deposit escrow amount(USDC)
         USDC_TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
 
-        _create(jobId, _codehash, _codeInputs, _deadline, _jobOwner, selectedNodes);
+        jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, selectedNodes);
     }
 
     function _create(
-        uint256 _jobId,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline,  // in milliseconds
         address _jobOwner,
         address[] memory _selectedNodes
-    ) internal {
-        jobs[_jobId].jobId = _jobId;
-        jobs[_jobId].deadline = _deadline;
-        jobs[_jobId].execStartTime = block.timestamp;
-        jobs[_jobId].jobOwner = _jobOwner;
+    ) internal returns (uint256 jobId){
+        // create a struct
+        jobId = jobs.length;
+        jobs.push();
+        jobs[jobId].deadline = _deadline;
+        jobs[jobId].execStartTime = block.timestamp;
+        jobs[jobId].jobOwner = _jobOwner;
+        jobs[jobId].selectedExecutors = _selectedNodes;
 
-        emit JobCreated(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, _selectedNodes);
+        emit JobCreated(jobId, _jobOwner, _codehash, _codeInputs, _deadline, _selectedNodes);
     }
 
     function _submitOutput(
@@ -266,11 +252,11 @@ contract Jobs is
 
         if(!_isJobExecutor(_jobId, enclaveAddress))
             revert JobsNotSelectedExecutor();
-        if(hasExecutedJob[_jobId][enclaveAddress])
+        if(jobs[_jobId].hasExecutedJob[enclaveAddress])
             revert JobsExecutorAlreadySubmittedOutput();
 
-        executors.releaseExecutor(enclaveAddress);
-        hasExecutedJob[_jobId][enclaveAddress] = true;
+        EXECUTORS.releaseExecutor(enclaveAddress);
+        jobs[_jobId].hasExecutedJob[enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
         if(outputCount == 1)
@@ -316,7 +302,7 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        executors.allowOnlyVerified(signer);
+        EXECUTORS.allowOnlyVerified(signer);
         return signer;
     }
 
@@ -325,7 +311,7 @@ contract Jobs is
         uint256 _outputCount,
         address _enclaveAddress
     ) internal {
-        (address owner, , , , ) = executors.executors(_enclaveAddress);
+        (address owner, , , , ) = EXECUTORS.executors(_enclaveAddress);
         uint256 executionTime = jobs[_jobId].executionTime;
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
@@ -355,23 +341,22 @@ contract Jobs is
     function _cleanJobData(
         uint256 _jobId
     ) internal {
-        delete jobs[_jobId];
 
-        uint256 len = selectedExecutors[_jobId].length;
+        uint256 len = jobs[_jobId].selectedExecutors.length;
         for (uint256 index = 0; index < len; index++) {
-            address enclaveAddress = selectedExecutors[_jobId][index];
-            delete hasExecutedJob[_jobId][enclaveAddress];
+            address enclaveAddress = jobs[_jobId].selectedExecutors[index];
+            delete jobs[_jobId].hasExecutedJob[enclaveAddress];
         }
-
-        delete selectedExecutors[_jobId];
+        delete jobs[_jobId].selectedExecutors;
+        delete jobs[_jobId];
     }
 
     function _isJobExecutor(
         uint256 _jobId,
         address _enclaveAddress
     ) internal view returns (bool) {
-        address[] memory selectedNodes = selectedExecutors[_jobId];
-        uint256 len = selectedExecutors[_jobId].length;
+        address[] memory selectedNodes = jobs[_jobId].selectedExecutors;
+        uint256 len = selectedNodes.length;
         for (uint256 index = 0; index < len; index++) {
             if(selectedNodes[index] == _enclaveAddress)
                 return true;
@@ -430,7 +415,7 @@ contract Jobs is
     function _slashOnExecutionTimeout(
         uint256 _jobId
     ) internal {
-        if(jobs[_jobId].jobId == 0)
+        if(jobs[_jobId].execStartTime == 0)
             revert JobsInvalidJob();
 
         // check for time
@@ -442,26 +427,27 @@ contract Jobs is
         bool isNoOutputSubmitted = (outputCount == 0);
         uint256 deadline = jobs[_jobId].deadline;
         uint256 executionTime = jobs[_jobId].executionTime;
-        delete jobs[_jobId];
 
         _releaseEscrowAmount(jobOwner, outputCount, deadline, executionTime);
 
         // slash Execution node
-        uint256 len = selectedExecutors[_jobId].length;
+        uint256 len = jobs[_jobId].selectedExecutors.length;
         uint256 slashAmount = 0;
         for (uint256 index = 0; index < len; index++) {
-            address enclaveAddress = selectedExecutors[_jobId][index];
+            address enclaveAddress = jobs[_jobId].selectedExecutors[index];
 
-            if(!hasExecutedJob[_jobId][enclaveAddress]) {
-                slashAmount += executors.slashExecutor(
+            if(!jobs[_jobId].hasExecutedJob[enclaveAddress]) {
+                slashAmount += EXECUTORS.slashExecutor(
                     enclaveAddress
                 );
                 emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
-            delete hasExecutedJob[_jobId][enclaveAddress];
+            delete jobs[_jobId].hasExecutedJob[enclaveAddress];
         }
 
-        delete selectedExecutors[_jobId];
+        delete jobs[_jobId].selectedExecutors;
+        delete jobs[_jobId];
+
         if (isNoOutputSubmitted) {
             // transfer the slashed amount to job owner
             STAKING_TOKEN.safeTransfer(jobOwner, slashAmount);
@@ -511,6 +497,6 @@ contract Jobs is
     function getSelectedExecutors(
         uint256 _jobId
     ) external view returns (address[] memory) {
-        return selectedExecutors[_jobId];
+        return jobs[_jobId].selectedExecutors;
     }
 }
