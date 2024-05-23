@@ -711,6 +711,8 @@ describe("Executors - Staking", function () {
 	});
 });
 
+// TODO: Increase code coverage
+
 function normalize(key: string): string {
 	return '0x' + key.substring(4);
 }
