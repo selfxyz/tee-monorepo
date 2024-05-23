@@ -194,6 +194,7 @@ contract Jobs is
     error JobsExecutionTimeOver();
     error JobsNotSelectedExecutor();
     error JobsExecutorAlreadySubmittedOutput();
+    error JobsUnavailableResources();
 
     //-------------------------------- internal functions start --------------------------------//
 
@@ -202,14 +203,12 @@ contract Jobs is
         bytes memory _codeInputs,
         uint256 _deadline,  // in milliseconds
         address _jobOwner
-    ) internal returns (uint256 jobId, uint8 errorCode) {
+    ) internal returns (uint256 jobId) {
 
-        errorCode = 0;
         address[] memory selectedNodes = EXECUTORS.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then return with error code 1
         if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
-            errorCode = 1;
-            return (0, errorCode);
+            revert JobsUnavailableResources();
         }
 
         // deposit escrow amount(USDC)
@@ -263,7 +262,7 @@ contract Jobs is
             jobs[_jobId].executionTime = _totalTime;
 
         // on reward distribution, 1st output executor node gets max reward
-        // reward ratio - 2:1:0
+        // reward ratio - 4:3:2
         _transferRewardPayout(_jobId, outputCount, enclaveAddress);
 
         // TODO: add callback gas
@@ -311,14 +310,14 @@ contract Jobs is
         uint256 _outputCount,
         address _enclaveAddress
     ) internal {
-        (address owner, , , , ) = EXECUTORS.executors(_enclaveAddress);
+        address owner= EXECUTORS.executors_owner(_enclaveAddress);
         uint256 executionTime = jobs[_jobId].executionTime;
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
-            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 3);
+            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 4) / 9);
             // transfer payout to payment pool
             USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * STAKING_REWARD_PER_MS);
             // transfer to job owner
@@ -331,8 +330,8 @@ contract Jobs is
         }
         // for 3rd output
         else {
-            // All payments have already been made during first and second submission
-
+            // transfer payout to executor
+            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 9);
             // cleanup job data after 3rd output submitted
             _cleanJobData(_jobId);
         }
@@ -373,7 +372,7 @@ contract Jobs is
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline  // in milliseconds
-    ) external returns (uint256, uint8) {
+    ) external returns (uint256) {
         return _createJob(_codehash, _codeInputs, _deadline, _msgSender());
     }
 
@@ -475,8 +474,12 @@ contract Jobs is
             USDC_TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
         } else if (_outputCount == 1) {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
-            // transfer the expected reward of second submitter to payment pool
-            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, (_executionTime * EXECUTOR_FEE_PER_MS) / 3);
+            // transfer the expected reward of second and third submitter to payment pool
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, (_executionTime * EXECUTOR_FEE_PER_MS * 5) / 9);
+        } else if (_outputCount == 2) {
+            // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
+            // transfer the expected reward of third submitter to payment pool
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, (_executionTime * EXECUTOR_FEE_PER_MS * 2) / 9);
         }
     }
 

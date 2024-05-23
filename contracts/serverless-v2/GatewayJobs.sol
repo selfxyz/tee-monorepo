@@ -181,6 +181,7 @@ contract GatewayJobs is
     error GatewayJobsInvalidRelaySequenceId();
     error GatewayJobsUnsupportedChain();
     error GatewayJobsSignatureTooOld();
+    error GatewayJobsCreateFailed(bytes reason);
 
     //-------------------------------- Admin methods start --------------------------------//
 
@@ -242,20 +243,26 @@ contract GatewayJobs is
         uint256 _usdcDeposit,
         uint8 _sequenceId
     ) internal {
-        (uint256 execJobId, uint8 errorCode) = jobMgr.createJob(_codehash, _codeInputs, _deadline);
-        if (errorCode == 1) {
-            // Resource unavailable
-            relayJobs[_jobId].isResourceUnavailable = true;
-            return;
-        }
 
-        relayJobs[_jobId].execStartTime = block.timestamp;
-        relayJobs[_jobId].jobOwner = _jobOwner;
-        relayJobs[_jobId].usdcDeposit = _usdcDeposit;
-        relayJobs[_jobId].sequenceId = _sequenceId;
-        relayJobs[_jobId].gateway = _gateway;
-        execJobs[execJobId] = _jobId;
-        emit JobCreated(_jobId, execJobId, _jobOwner, _gateway);
+        try jobMgr.createJob(_codehash, _codeInputs, _deadline) returns (uint256 execJobId) {
+            relayJobs[_jobId].execStartTime = block.timestamp;
+            relayJobs[_jobId].jobOwner = _jobOwner;
+            relayJobs[_jobId].usdcDeposit = _usdcDeposit;
+            relayJobs[_jobId].sequenceId = _sequenceId;
+            relayJobs[_jobId].gateway = _gateway;
+            execJobs[execJobId] = _jobId;
+            emit JobCreated(_jobId, execJobId, _jobOwner, _gateway);
+        } catch (bytes memory reason) {
+            if (keccak256(reason) == keccak256(abi.encodePacked(Jobs.JobsUnavailableResources.selector))) {
+                // Resource unavailable
+                relayJobs[_jobId].isResourceUnavailable = true;
+                // Refund the USDC deposit
+                TOKEN_USDC.safeTransfer(_gateway, _usdcDeposit);
+                return;
+            } else {
+                revert GatewayJobsCreateFailed(reason);
+            }
+        }
     }
 
     function _verifyRelaySign(
