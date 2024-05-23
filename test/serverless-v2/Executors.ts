@@ -2,7 +2,7 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Gateways, Jobs, Pond } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Pond } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
@@ -56,10 +56,20 @@ describe("Executors - Init", function () {
 	it("deploys with initialization disabled", async function () {
 
 		const Executors = await ethers.getContractFactory("Executors");
-		const executors = await Executors.deploy(addrs[10], 600, token);
+		const executors = await Executors.deploy( 
+			attestationVerifier.target,
+			600,
+			token,
+			10**10,
+			10**2,
+			10**6
+		);
 
-		expect(await executors.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
+		expect(await executors.ATTESTATION_VERIFIER()).to.equal(attestationVerifier.target);
 		expect(await executors.ATTESTATION_MAX_AGE()).to.equal(600);
+		expect(await executors.MIN_STAKE_AMOUNT()).to.equal(10**10);
+		expect(await executors.SLASH_PERCENT_IN_BIPS()).to.equal(10**2);
+		expect(await executors.SLASH_MAX_BIPS()).to.equal(10**6);
 
 		await expect(
 			executors.initialize(addrs[0], []),
@@ -78,12 +88,22 @@ describe("Executors - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token,
+					10**10,
+					10**2,
+					10**6
+				]
 			},
 		);
 
 		expect(await executors.ATTESTATION_VERIFIER()).to.equal(attestationVerifier.target);
 		expect(await executors.ATTESTATION_MAX_AGE()).to.equal(600);
+		expect(await executors.MIN_STAKE_AMOUNT()).to.equal(10**10);
+		expect(await executors.SLASH_PERCENT_IN_BIPS()).to.equal(10**2);
+		expect(await executors.SLASH_MAX_BIPS()).to.equal(10**6);
 
 		expect(await executors.hasRole(await executors.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 		{
@@ -101,7 +121,14 @@ describe("Executors - Init", function () {
 				{
 					kind: "uups",
 					initializer: "initialize",
-					constructorArgs: [attestationVerifier.target, 600, token]
+					constructorArgs: [
+						attestationVerifier.target,
+						600,
+						token,
+						10**10,
+						10**2,
+						10**6
+					]
 				},
 			)
 		).to.be.revertedWithCustomError(Executors, "ExecutorsZeroAddressAdmin");
@@ -115,20 +142,38 @@ describe("Executors - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [addrs[10], 600, token]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token,
+					10**10,
+					10**2,
+					10**6
+				]
 			},
 		);
+		// TODO update the init params of executor
 		await upgrades.upgradeProxy(
 			executors.target,
 			Executors,
 			{
 				kind: "uups",
-				constructorArgs: [addrs[10], 600, token]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token,
+					10**10,
+					10**2,
+					10**6
+				]
 			}
 		);
-
-		expect(await executors.ATTESTATION_VERIFIER()).to.equal(addrs[10]);
+		
+		expect(await executors.ATTESTATION_VERIFIER()).to.equal(attestationVerifier.target);
 		expect(await executors.ATTESTATION_MAX_AGE()).to.equal(600);
+		expect(await executors.MIN_STAKE_AMOUNT()).to.equal(10**10);
+		expect(await executors.SLASH_PERCENT_IN_BIPS()).to.equal(10**2);
+		expect(await executors.SLASH_MAX_BIPS()).to.equal(10**6);
 
 		expect(await executors.hasRole(await executors.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 		{
@@ -153,19 +198,35 @@ describe("Executors - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [addrs[10], 600, token]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token,
+					10**10,
+					10**2,
+					10**6
+				]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(executors.target, Executors.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [addrs[10], 600, token],
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token,
+					10**10,
+					10**2,
+					10**6
+				],
 			}),
 		).to.be.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
 	});
 });
 
+
+// TODO: Not sure if this is required, these tests belong to AttestationAutherUpgradeable
 describe("Executors - Verify", function () {
 	let signers: Signer[];
 	let addrs: string[];
@@ -197,7 +258,14 @@ describe("Executors - Verify", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token,
+					10**10,
+					10**2,
+					10**6
+				]
 			},
 		) as unknown as Executors;
 	});
@@ -274,7 +342,14 @@ describe("Executors - Register executor", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token.target,
+					10,
+					10**2,
+					10**6
+				]
 			},
 		) as unknown as Executors;
 	});
@@ -283,202 +358,215 @@ describe("Executors - Register executor", function () {
 
 	it("can register executor", async function () {
 		const timestamp = await time.latest() * 1000;
-        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
 
-		await expect(executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
+		await expect(executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0))
 			.to.emit(executors, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image2), pubkeys[15]);
 		expect(await executors.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
 	});
 
 	it("cannot register executor with same enclave key twice", async function () {
 		const timestamp = await time.latest() * 1000;
-        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
-		executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
-
-		await expect(executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0))
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0
+		)
+		await expect(executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0))
 			.to.revertedWithCustomError(executors, "ExecutorsExecutorAlreadyExists");
 	});
 
+	// drain then deregister with active jobs 0
 	it('can deregister executor without active jobs', async function () {
 		const timestamp = await time.latest() * 1000;
-        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
 
-		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
-		await expect(executors.connect(signers[1]).deregisterExecutor(pubkeys[15]))
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0
+		)
+
+		await executors.connect(signers[1]).drainExecutor(addrs[15]);
+		await expect(executors.connect(signers[1]).deregisterExecutor(addrs[15]))
 			.to.emit(executors, "ExecutorDeregistered").withArgs(addrs[15]);
-
 		expect(await executors.getVerifiedKey(addrs[15])).to.equal(ZeroHash);
-		expect((await executors.executors(addrs[15])).operator).to.be.eq(ZeroAddress);
+		expect((await executors.executors(addrs[15])).owner).to.be.eq(ZeroAddress);
 	});
 
-	it('can deregister executor with active jobs', async function () {
-		const Gateways = await ethers.getContractFactory("Gateways");
-		let gateways = await upgrades.deployProxy(
-			Gateways,
-			[addrs[0], [image2, image3]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
-			},
-		) as unknown as Gateways;
-
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0], gateways.target, executors.target],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					100,
-					100,
-					1
-				]
-			},
-		) as unknown as Jobs;
-
-		await executors.setJobsContract(jobs.target);
-
-		let chainIds = [1];
-		let reqChains = [
-			{
-				contractAddress: addrs[1],
-				httpRpcUrl: "https://eth.rpc",
-				wsRpcUrl: "wss://eth.rpc"
-			}
-		]
-		await gateways.addChainGlobal(chainIds, reqChains);
-
-		await token.transfer(addrs[1], 100000);
-		await token.connect(signers[1]).approve(gateways.target, 10000);
-		await token.connect(signers[1]).approve(executors.target, 10000);
-
-		let timestamp = await time.latest() * 1000,
-			stakeAmount = 10;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
-		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
-		
-		timestamp = await time.latest() * 1000;
-        [signature] = await createAttestation(pubkeys[16], image2, wallets[14], timestamp - 540000);
-
-		let jobCapacity = 20;
-		signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[16]);
-		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[16], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
-
-		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
-			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			deadline = await time.latest() + 10000,
-			jobRequestTimestamp = await time.latest(),
-			sequenceId = 1,
-			jobOwner = addrs[1];
-		signedDigest = await createRelayJobSignature(addrs[1], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
-		await jobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
-
-		await expect(executors.connect(signers[1]).deregisterExecutor(pubkeys[16]))
-			.to.emit(executors, "ExecutorDeregistered").withArgs(addrs[16]);
-
-		expect(await executors.getVerifiedKey(addrs[16])).to.equal(getImageId(image2));
-		expect((await executors.executors(addrs[16])).operator).to.be.eq(addrs[1]);
-	});
-
-	it('cannot deregister executor without the operator account', async function () {
+	// fail to deregister if no draining
+	it('Failed deregistration without draining', async function () {
 		const timestamp = await time.latest() * 1000;
-        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
 
 		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
 
-		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, 0);
 
-		await expect(executors.deregisterExecutor(pubkeys[15]))
-			.to.revertedWithCustomError(executors, "ExecutorsInvalidExecutorOperator");
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0
+		)
+
+		await expect(executors.connect(signers[1]).deregisterExecutor(addrs[15]))
+			.to.revertedWithCustomError(executors, "ExecutorsNotDraining");
 	});
 
-	it('cannot deregister executor twice', async function () {
-		const Gateways = await ethers.getContractFactory("Gateways");
-		let gateways = await upgrades.deployProxy(
-			Gateways,
-			[addrs[0], [image2, image3]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
-			},
-		) as unknown as Gateways;
+	// drain then deregister failed with active jobs != 0
+	it('cannot deregister executor with active jobs', async function () {
+		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
 
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0], gateways.target, executors.target],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					100,
-					100,
-					1
-				]
-			},
-		) as unknown as Jobs;
+		await token.transfer(addrs[1], 10n**19n);
+		await token.connect(signers[1]).approve(executors.target, 10n**19n);
 
-		await executors.setJobsContract(jobs.target);
-
-		let chainIds = [1];
-		let reqChains = [
-			{
-				contractAddress: addrs[1],
-				httpRpcUrl: "https://eth.rpc",
-				wsRpcUrl: "wss://eth.rpc"
-			}
-		]
-		await gateways.addChainGlobal(chainIds, reqChains);
-
-		await token.transfer(addrs[1], 100000);
-		await token.connect(signers[1]).approve(gateways.target, 10000);
-		await token.connect(signers[1]).approve(executors.target, 10000);
-
-		let timestamp = await time.latest() * 1000,
-			stakeAmount = 10;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[15]);
-		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
-		
-		timestamp = await time.latest() * 1000;
-        [signature] = await createAttestation(pubkeys[16], image2, wallets[14], timestamp - 540000);
+		const timestamp = await time.latest() * 1000;
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
 
 		let jobCapacity = 20;
-		signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[16]);
-		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[16], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
 
-		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
-			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			deadline = await time.latest() + 10000,
-			jobRequestTimestamp = await time.latest(),
-			sequenceId = 1,
-			jobOwner = addrs[1];
-		signedDigest = await createRelayJobSignature(addrs[0], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[15]);
-		await jobs.relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
+		// register a enclave
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			10n**19n
+		)
 
-		await executors.connect(signers[1]).deregisterExecutor(pubkeys[16]);
+		// select nodes
+		await executors.connect(signers[0]).selectExecutors(1);
+		// drain
+		await executors.connect(signers[1]).drainExecutor(addrs[15]);
+		// deregister
+		await expect(executors.connect(signers[1]).deregisterExecutor(addrs[15]))
+			.to.revertedWithCustomError(executors, "ExecutorsHasPendingJobs");
+	});
 
-		await expect(executors.connect(signers[1]).deregisterExecutor(pubkeys[16]))
-			.to.revertedWithCustomError(executors, "ExecutorsAlreadyDeregistered");
+	it('cannot deregister executor without the owner account', async function () {
+		const timestamp = await time.latest() * 1000;
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
+
+		let jobCapacity = 20;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
+
+		// register a enclave
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0
+		)
+		// deregister with signer 0
+		await expect(executors.deregisterExecutor(addrs[15]))
+			.to.revertedWithCustomError(executors, "ExecutorsInvalidOwner");
+	});
+
+	it('cannot drain executor twice', async function () {
+		const timestamp = await time.latest() * 1000;
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
+
+		let jobCapacity = 20;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
+
+
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0
+		)
+
+		await executors.connect(signers[1]).drainExecutor(addrs[15]);
+		await expect(executors.connect(signers[1]).drainExecutor(addrs[15]))
+			.to.revertedWithCustomError(executors, "ExecutorsAlreadyDraining");
 	});
 
 });
@@ -517,26 +605,48 @@ describe("Executors - Staking", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token.target]
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token.target,
+					10,
+					10**2,
+					10**6
+				]
 			},
 		) as unknown as Executors;
 
 		await token.transfer(addrs[1], 100000);
 		await token.connect(signers[1]).approve(executors.target, 10000);
-
 		const timestamp = await time.latest() * 1000;
-        let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let jobCapacity = 20, 
+		let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540000
+		);
+
+		let jobCapacity = 20,
 			stakeAmount = 10;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, wallets[15]);
-		await executors.connect(signers[1]).registerExecutor(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, jobCapacity, signedDigest, stakeAmount);
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+														 wallets[15]);
+
+		await executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			stakeAmount
+		);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can stake", async function () {
 		let amount = 20;
-		await expect(executors.connect(signers[1]).addExecutorStake(pubkeys[15], amount))
+		await expect(executors.connect(signers[1]).addExecutorStake(addrs[15], amount))
 			.to.emit(executors, "ExecutorStakeAdded");
 		
 		let executor = await executors.executors(addrs[15]);
@@ -545,21 +655,22 @@ describe("Executors - Staking", function () {
 		expect(await token.balanceOf(addrs[1])).to.be.eq(99970);
 	});
 
-	it("cannot stake zero amount", async function () {
-		let amount = 0;
-		await expect(executors.connect(signers[1]).addExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidAmount");
-	});
-
-	it("cannot stake without executor operator", async function () {
+	it("cannot stake without executor owner", async function () {
 		let amount = 20;
-		await expect(executors.addExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidExecutorOperator");
+		await expect(executors.addExecutorStake(addrs[15], amount))
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidOwner");
 	});
 
-	it("can unstake if no active jobs", async function () {
+	it("cannot drain without executor owner", async function () {
+		let amount = 20;
+		await expect(executors.drainExecutor(addrs[15]))
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidOwner");
+	});
+
+	it("can unstake with draining if no active jobs", async function () {
 		let amount = 10;
-		await expect(executors.connect(signers[1]).removeExecutorStake(pubkeys[15], amount))
+		await executors.connect(signers[1]).drainExecutor(addrs[15]);
+		await expect(executors.connect(signers[1]).removeExecutorStake(addrs[15], amount))
 			.to.emit(executors, "ExecutorStakeRemoved");
 		
 		let executor = await executors.executors(addrs[15]);
@@ -568,87 +679,36 @@ describe("Executors - Staking", function () {
 		expect(await token.balanceOf(addrs[1])).to.be.eq(100000);
 	});
 
-	it("cannot unstake zero amount", async function () {
+	it("Failed to unstake without draining", async function () {
 		let amount = 0;
-		await expect(executors.connect(signers[1]).removeExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidAmount");
+		await expect(executors.connect(signers[1]).removeExecutorStake(addrs[15], amount))
+			.to.revertedWithCustomError(executors, "ExecutorsNotDraining");
 	});
 
 	it("cannot unstake without executor operator", async function () {
 		let amount = 10;
-		await expect(executors.removeExecutorStake(pubkeys[15], amount))
-			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidExecutorOperator");
+		await expect(executors.removeExecutorStake(addrs[15], amount))
+			.to.be.revertedWithCustomError(executors, "ExecutorsInvalidOwner");
 	});
 
-	it('can unstake with active jobs', async function () {
-		const Gateways = await ethers.getContractFactory("Gateways");
-		let gateways = await upgrades.deployProxy(
-			Gateways,
-			[addrs[0], [image2, image3]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, 600, token.target, 600]
-			},
-		) as unknown as Gateways;
-
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0], gateways.target, executors.target],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					100,
-					100,
-					1
-				]
-			},
-		) as unknown as Jobs;
-
-		await executors.setJobsContract(jobs.target);
-
-		let chainIds = [1];
-		let reqChains = [
-			{
-				contractAddress: addrs[1],
-				httpRpcUrl: "https://eth.rpc",
-				wsRpcUrl: "wss://eth.rpc"
-			}
-		]
-		await gateways.addChainGlobal(chainIds, reqChains);
-
-		await token.transfer(addrs[1], 100000);
-		await token.connect(signers[1]).approve(gateways.target, 10000);
-		await token.connect(signers[1]).approve(executors.target, 10000);
-
-		let timestamp = await time.latest() * 1000,
-			stakeAmount = 10;
-		let [signature] = await createAttestation(pubkeys[16], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(addrs[1], chainIds, wallets[16]);
-		await gateways.connect(signers[1]).registerGateway(signature, pubkeys[16], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000, chainIds, signedDigest, stakeAmount);
+	it('cannot unstake with active jobs after draining started', async function () {
+		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
 		
-		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
-			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			deadline = await time.latest() + 10000,
-			jobRequestTimestamp = await time.latest(),
-			sequenceId = 1,
-			jobOwner = addrs[1];
-		signedDigest = await createRelayJobSignature(addrs[0], jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, wallets[16]);
-		await jobs.relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner);
+		await token.transfer(addrs[1], 10n**19n);
+		await token.connect(signers[1]).approve(executors.target, 10n**19n);
+
+		// add stake to get node added to tree
+		await executors.connect(signers[1]).addExecutorStake(addrs[15], 10n**19n);
+		// select nodes
+		await executors.connect(signers[0]).selectExecutors(1);
+		// drain
+		await executors.connect(signers[1]).drainExecutor(addrs[15]);
 
 		let amount = 5;
-		await expect(executors.connect(signers[1]).removeExecutorStake(pubkeys[15], amount))
-			.to.emit(executors, "ExecutorStakeRemoveInitiated").withArgs(addrs[15], amount);
+		await expect(executors.connect(signers[1]).removeExecutorStake(addrs[15], amount))
+			.to.be.revertedWithCustomError(executors, "ExecutorsHasPendingJobs");
 
-		let executor = await executors.executors(addrs[15]);
-		expect(executor.unstakeAmount).to.be.eq(amount);
-		expect(executor.unstakeStatus).to.be.true;
 	});
-
 });
 
 function normalize(key: string): string {
@@ -701,8 +761,9 @@ async function createAttestation(
 }
 
 async function createExecutorSignature(
-	operator: string,
+	owner: string,
 	jobCapacity: number,
+	signTimestamp: number,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
 	const domain = {
@@ -712,14 +773,16 @@ async function createExecutorSignature(
 
 	const types = {
 		Register: [
-			{ name: 'operator', type: 'address' },
-			{ name: 'jobCapacity', type: 'uint256' }
+			{ name: 'owner', type: 'address' },
+			{ name: 'jobCapacity', type: 'uint256' },
+			{ name: 'signTimestamp', type: 'uint256' }
 		]
 	};
 
 	const value = {
-		operator,
-		jobCapacity
+		owner,
+		jobCapacity,
+		signTimestamp
 	};
 
 	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
