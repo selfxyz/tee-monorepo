@@ -186,7 +186,6 @@ contract Jobs is
     );
 
     error JobsRelayTimeOver();
-    error JobsJobMarkedEndedAsResourceUnavailable();
     error JobsInvalidSequenceId();
     error JobsJobAlreadyRelayed();
     error JobsUnsupportedChain();

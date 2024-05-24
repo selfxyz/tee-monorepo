@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.0;
 
-contract UserSample {
-    address payable serverless_addr;
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-    constructor(address addr) {
-        serverless_addr = payable(addr);
+contract UserSample {
+    using SafeERC20 for IERC20;
+
+    address public relayAddress;
+
+    /// @notice refers to USDC token
+    IERC20 public token;
+
+    constructor(
+        address _relayAddress,
+        address _token
+    ) {
+        relayAddress = _relayAddress;
+        token = IERC20(_token);
     }
 
     event CalledBack(uint256 indexed jobId, bytes outputs, uint8 errorCode);
@@ -18,18 +30,18 @@ contract UserSample {
         uint256 _userTimeout,
         uint256 _maxGasPrice,
         uint256 _usdcDeposit,
-        uint256 _callbackDeposit
+        address _refundAccount
     ) external payable returns (bool success) {
-        // uint256 job_deposit = 1000000000;
-        // uint256 callback_deposit = 1 ether;
-        (bool _success,) = serverless_addr.call{value: _callbackDeposit}(
-            abi.encodeWithSignature("relayJob(bytes32,bytes,uint256,uint256,uint256,uint256)",
+        // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
+
+        (bool _success,) = relayAddress.call{value: msg.value}(
+            abi.encodeWithSignature("relayJob(bytes32,bytes,uint256,uint256,address)",
                 _codehash,
                 _codeInputs,
                 _userTimeout,
                 _maxGasPrice,
-                _usdcDeposit,
-                _callbackDeposit
+                _refundAccount
             )
         );
         return _success;

@@ -74,7 +74,7 @@ contract GatewayJobs is
 
     //-------------------------------- Initializer start --------------------------------//
 
-    error GatewaysZeroAddressAdmin();
+    error GatewayJobsZeroAddressAdmin();
 
     function initialize(
         address _admin,
@@ -82,7 +82,7 @@ contract GatewayJobs is
         Gateways _gateways
     ) public initializer {
         if(_admin == address(0))
-            revert GatewaysZeroAddressAdmin();
+            revert GatewayJobsZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -150,11 +150,16 @@ contract GatewayJobs is
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH =
         keccak256("ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestamp)");
 
-    event JobCreated(
+    event JobRelayed(
         uint256 indexed jobId,
         uint256 execJobId,
         address jobOwner,
         address gateway
+    );
+
+    event JobResourceUnavailable(
+        uint256 indexed jobId,
+        address indexed gateway
     );
 
     event GatewayReassigned(
@@ -229,6 +234,7 @@ contract GatewayJobs is
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
         TOKEN_USDC.safeTransferFrom(_gateway, address(this), usdcDeposit);
+        TOKEN_USDC.safeIncreaseAllowance(address(jobMgr), usdcDeposit);
 
         _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
     }
@@ -250,14 +256,18 @@ contract GatewayJobs is
             relayJobs[_jobId].usdcDeposit = _usdcDeposit;
             relayJobs[_jobId].sequenceId = _sequenceId;
             relayJobs[_jobId].gateway = _gateway;
+            
             execJobs[execJobId] = _jobId;
-            emit JobCreated(_jobId, execJobId, _jobOwner, _gateway);
+            
+            emit JobRelayed(_jobId, execJobId, _jobOwner, _gateway);
         } catch (bytes memory reason) {
             if (keccak256(reason) == keccak256(abi.encodePacked(Jobs.JobsUnavailableResources.selector))) {
                 // Resource unavailable
                 relayJobs[_jobId].isResourceUnavailable = true;
                 // Refund the USDC deposit
                 TOKEN_USDC.safeTransfer(_gateway, _usdcDeposit);
+
+                emit JobResourceUnavailable(_jobId, _gateway);
                 return;
             } else {
                 revert GatewayJobsCreateFailed(reason);
