@@ -309,14 +309,15 @@ contract Jobs is
         uint256 _outputCount,
         address _enclaveAddress
     ) internal {
-        address owner= EXECUTORS.executors_owner(_enclaveAddress);
+        address owner= EXECUTORS.getOwner(_enclaveAddress);
         uint256 executionTime = jobs[_jobId].executionTime;
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
+        uint256 executorsFee = executionTime * EXECUTOR_FEE_PER_MS;
         // for first output
         if(_outputCount == 1) {
             // transfer payout to executor
-            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 4) / 9);
+            USDC_TOKEN.safeTransfer(owner, (executorsFee * 4) / 9);
             // transfer payout to payment pool
             USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * STAKING_REWARD_PER_MS);
             // transfer to job owner
@@ -325,12 +326,12 @@ contract Jobs is
         // for second output
         else if(_outputCount == 2) {
             // transfer payout to executor
-            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS) / 3);
+            USDC_TOKEN.safeTransfer(owner, executorsFee / 3);
         }
         // for 3rd output
         else {
             // transfer payout to executor
-            USDC_TOKEN.safeTransfer(owner, (executionTime * EXECUTOR_FEE_PER_MS * 2) / 9);
+            USDC_TOKEN.safeTransfer(owner, executorsFee - (executorsFee * 7) / 9);
             // cleanup job data after 3rd output submitted
             _cleanJobData(_jobId);
         }
@@ -467,18 +468,18 @@ contract Jobs is
         uint256 _executionTime
     ) internal {
         uint256 jobOwnerDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-
+        uint256 executorsFee = _executionTime * EXECUTOR_FEE_PER_MS;
         if(_outputCount == 0) {
             // transfer back the whole escrow amount to gateway if no output submitted
             USDC_TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
         } else if (_outputCount == 1) {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
             // transfer the expected reward of second and third submitter to payment pool
-            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, (_executionTime * EXECUTOR_FEE_PER_MS * 5) / 9);
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executorsFee - (executorsFee * 4) / 9);
         } else if (_outputCount == 2) {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
             // transfer the expected reward of third submitter to payment pool
-            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, (_executionTime * EXECUTOR_FEE_PER_MS * 2) / 9);
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executorsFee - (executorsFee * 7) / 9);
         }
     }
 

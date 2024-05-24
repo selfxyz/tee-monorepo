@@ -5,6 +5,8 @@ import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Gateways, Jobs, Pond, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { timeStamp } from 'console';
+import { exec } from 'child_process';
+import exp from 'constants';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -143,6 +145,58 @@ describe("Jobs - Init", function () {
 		).to.be.revertedWithCustomError(Jobs, "JobsZeroAddressAdmin");
 	});
 
+	it("cannot initialize with zero address as staking token", async function () {
+		const Jobs = await ethers.getContractFactory("Jobs");
+		await expect(
+			upgrades.deployProxy(
+				Jobs,
+				[addrs[0]],
+				{
+					kind: "uups",
+					initializer: "initialize",
+					constructorArgs: [
+						ZeroAddress,
+						usdc_token,
+						100,
+						100,
+						3,
+						1,
+						1,
+						staking_payment_pool,
+						usdc_payment_pool,
+						executors
+					]
+				},
+			)
+		).to.be.revertedWithCustomError(Jobs, "JobsZeroAddressStakingToken");
+	});
+
+	it("cannot initialize with zero address as usdc token", async function () {
+		const Jobs = await ethers.getContractFactory("Jobs");
+		await expect(
+			upgrades.deployProxy(
+				Jobs,
+				[addrs[0]],
+				{
+					kind: "uups",
+					initializer: "initialize",
+					constructorArgs: [
+						staking_token,
+						ZeroAddress,
+						100,
+						100,
+						3,
+						1,
+						1,
+						staking_payment_pool,
+						usdc_payment_pool,
+						executors
+					]
+				},
+			)
+		).to.be.revertedWithCustomError(Jobs, "JobsZeroAddressUsdcToken");
+	});
+
 	it("upgrades", async function () {
 		const Jobs = await ethers.getContractFactory("Jobs");
 		const jobs = await upgrades.deployProxy(
@@ -165,28 +219,56 @@ describe("Jobs - Init", function () {
 				]
 			},
 		);
+
+		// Deploy new executor contract
+		const Executors = await ethers.getContractFactory("Executors");
+		const executors2 = await upgrades.deployProxy(
+			Executors,
+			[addrs[0], [image1]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					addrs[0],
+					600,
+					staking_token,
+					10**10,
+					10**2,
+					10**6
+				]
+			},
+		);
 		await upgrades.upgradeProxy(
 			jobs.target,
 			Jobs,
 			{
 				kind: "uups",
 				constructorArgs: [
-					staking_token,
-					usdc_token,
-					100,
-					100,
-					3,
-					1,
-					1,
-					staking_payment_pool,
-					usdc_payment_pool,
-					executors
+					addrs[2],
+					addrs[2],
+					200,
+					200,
+					5,
+					2,
+					2,
+					addrs[2],
+					addrs[2],
+					executors2.target
 				]
 			}
 		);
 
 		expect(await jobs.hasRole(await jobs.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
-		// TODO verify immutables are updated
+		expect(await jobs.STAKING_TOKEN()).to.be.eq(addrs[2]);
+		expect(await jobs.USDC_TOKEN()).to.be.eq(addrs[2]);
+		expect(await jobs.SIGN_MAX_AGE()).to.be.eq(200);
+		expect(await jobs.EXECUTION_BUFFER_TIME()).to.be.eq(200);
+		expect(await jobs.NO_OF_NODES_TO_SELECT()).to.be.eq(5);
+		expect(await jobs.EXECUTOR_FEE_PER_MS()).to.be.eq(2);
+		expect(await jobs.STAKING_REWARD_PER_MS()).to.be.eq(2);
+		expect(await jobs.STAKING_PAYMENT_POOL()).to.be.eq(addrs[2]);
+		expect(await jobs.USDC_PAYMENT_POOL()).to.be.eq(addrs[2]);
+		expect(await jobs.EXECUTORS()).to.be.eq(executors2.target);
 	});
 
 	it("does not upgrade without admin", async function () {
@@ -271,10 +353,6 @@ describe("Jobs - Create", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		// TODO check why getAddress have to be called to obtain the address
-		let attestationVerifierAddress = await attestationVerifier.getAddress();
-		let staking_token_address = await staking_token.getAddress();
-		let usdc_token_address = await usdc_token.getAddress();
 		let executor_images = [image4, image5, image6, image7]
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
@@ -284,9 +362,9 @@ describe("Jobs - Create", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					attestationVerifierAddress,
+					attestationVerifier.target,
 					600,
-					staking_token_address,
+					staking_token.target,
 					10**10,
 					10**2,
 					10**6
@@ -294,7 +372,6 @@ describe("Jobs - Create", function () {
 			},
 		) as unknown as Executors;
 
-		let executors_address = await executors.getAddress();
 		const Jobs = await ethers.getContractFactory("Jobs");
 		jobs = await upgrades.deployProxy(
 			Jobs,
@@ -303,8 +380,8 @@ describe("Jobs - Create", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					staking_token_address,
-					usdc_token_address,
+					attestationVerifier.target,
+					usdc_token.target,
 					100,
 					100,
 					3,
@@ -312,7 +389,7 @@ describe("Jobs - Create", function () {
 					1,
 					staking_payment_pool,
 					usdc_payment_pool,
-					executors_address
+					executors.target
 				]
 			},
 		) as unknown as Jobs;
@@ -338,7 +415,7 @@ describe("Jobs - Create", function () {
 
 			await executors.connect(signers[1]).registerExecutor(
 				attestationSign,
-				attestation, 
+				attestation,
 				jobCapacity,
 				signTimestamp,
 				signedDigest,
@@ -362,7 +439,7 @@ describe("Jobs - Create", function () {
 		let tx = await jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline);
 		await tx.wait();
 		await expect(tx).to.emit(jobs, "JobCreated");
-		
+
 		// Since it is a first job.
 		let jobId = 0;
 		let job = await jobs.jobs(jobId);
@@ -371,7 +448,7 @@ describe("Jobs - Create", function () {
 		expect(job.deadline).to.eq(deadline);
 		expect(job.execStartTime).to.eq((await tx.getBlock())?.timestamp);
 
-		
+
 		let selectedExecutors = await jobs.getSelectedExecutors(jobId);
 		for (let index = 0; index < selectedExecutors.length; index++) {
 			const executor = selectedExecutors[index];
@@ -393,11 +470,11 @@ describe("Jobs - Create", function () {
 
 	it("cannot relay job after all the executors are fully occupied", async function () {
 		await executors.connect(signers[1]).drainExecutor(addrs[20]);
-		
+
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			deadline = 10000;
-			
+
 		for (let index = 1; index <= 3; index++) {
 			await expect(jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline))
 				.to.emit(jobs, "JobCreated");
@@ -407,8 +484,6 @@ describe("Jobs - Create", function () {
 			.to.revertedWithCustomError(jobs, "JobsUnavailableResources");
 	});
 });
-
-// TODO: add case for combination of relay, resource full, submit ouptut and relay again. 
 
 describe("Jobs - Output", function () {
 	let signers: Signer[];
@@ -428,8 +503,8 @@ describe("Jobs - Output", function () {
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
-		staking_payment_pool = addrs[1];
-		usdc_payment_pool = addrs[1];
+		staking_payment_pool = addrs[4];
+		usdc_payment_pool = addrs[4];
 
 		const Pond = await ethers.getContractFactory("Pond");
 		staking_token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -447,9 +522,6 @@ describe("Jobs - Output", function () {
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
-		let attestationVerifierAddress = await attestationVerifier.getAddress();
-		let staking_token_address = await staking_token.getAddress();
-		let usdc_token_address = await usdc_token.getAddress();
 		let executor_images = [image4, image5, image6, image7]
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
@@ -459,9 +531,9 @@ describe("Jobs - Output", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					attestationVerifierAddress,
+					attestationVerifier.target,
 					600,
-					staking_token_address,
+					staking_token.target,
 					10**10,
 					10**2,
 					10**6
@@ -469,7 +541,6 @@ describe("Jobs - Output", function () {
 			},
 		) as unknown as Executors;
 
-		let executors_address = await executors.getAddress();
 
 		const Jobs = await ethers.getContractFactory("Jobs");
 		jobs = await upgrades.deployProxy(
@@ -479,8 +550,8 @@ describe("Jobs - Output", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					staking_token_address,
-					usdc_token_address,
+					staking_token.target,
+					usdc_token.target,
 					600,
 					100,
 					3,
@@ -488,7 +559,7 @@ describe("Jobs - Output", function () {
 					1,
 					staking_payment_pool,
 					usdc_payment_pool,
-					executors_address
+					executors.target
 				]
 			},
 		) as unknown as Jobs;
@@ -513,7 +584,7 @@ describe("Jobs - Output", function () {
 
 			await executors.connect(signers[1]).registerExecutor(
 				attestationSign,
-				attestation, 
+				attestation,
 				jobCapacity,
 				signTimestamp,
 				signedDigest,
@@ -521,25 +592,28 @@ describe("Jobs - Output", function () {
 			);
 		}
 		// RELAY JOB
-		await usdc_token.transfer(addrs[1], 10n**6n);
-		await usdc_token.connect(signers[1]).approve(jobs.target, 10n**6n);
+		await usdc_token.transfer(addrs[3], 10n**6n);
+		await usdc_token.connect(signers[3]).approve(jobs.target, 10n**6n);
 
 
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			deadline = 10000;
-		await jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline);
+		await jobs.connect(signers[3]).createJob(codeHash, codeInputs, deadline);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
+	// TODO: test callback for oysterResultCall
+
+	// submit 1 output
 	it("can submit output by selected executor node", async function () {
 		let jobId = 0,
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest() - 540;
-		
+
 		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
 		let tx = await jobs.connect(signers[1]).submitOutput(
 			signedDigest,
@@ -549,7 +623,170 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 		);
-		await expect(tx).to.emit(jobs, "JobResponded");
+		await expect(tx).to.emit(jobs, "JobResponded").and.to.emit(jobs, "JobSucceeded").withArgs(jobId, true);
+		// check active jobs for submitter
+		let executor = await executors.executors(addrs[17]);
+		expect(executor.activeJobs).to.eq(0);
+		// check active job for pending submitter
+		executor = await executors.executors(addrs[18]);
+		expect(executor.activeJobs).to.eq(1);
+
+		executor = await executors.executors(addrs[19]);
+		expect(executor.activeJobs).to.eq(1);
+
+		// check usdc balance of executor
+		expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n*4n/9n);
+		// check usdc balance of payment pool
+		expect(await usdc_token.balanceOf(usdc_payment_pool)).to.eq(100n);
+		// check usdc balance of job owner
+		expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n**6n - 100n*2n);
+		// check stakes of all executors
+		for (let index = 17; index < 20; index++) {
+			const executor = await executors.executors(addrs[index]);
+			expect(executor.stakeAmount).to.eq(10n**19n);
+		}
+	});
+
+	// submit 2 output
+	it("two output submits by selected executor nodes", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		let tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobSucceeded").withArgs(jobId, true);
+
+		// submit 2nd output
+		output = solidityPacked(["string"], ["it is the output"]);
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[18]);
+		tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobSucceeded");
+
+		// check active jobs for submitter
+		let executor = await executors.executors(addrs[17]);
+		expect(executor.activeJobs).to.eq(0);
+		executor = await executors.executors(addrs[18]);
+		expect(executor.activeJobs).to.eq(0);
+
+		// check active job for pending submitter
+		executor = await executors.executors(addrs[19]);
+		expect(executor.activeJobs).to.eq(1);
+
+		// check usdc balance of executor
+		expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n*7n/9n);
+		// check usdc balance of payment pool
+		expect(await usdc_token.balanceOf(usdc_payment_pool)).to.eq(100n);
+		// check usdc balance of job owner
+		expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n**6n - 100n*2n);
+		// check stakes of all executors
+		for (let index = 17; index < 20; index++) {
+			const executor = await executors.executors(addrs[index]);
+			expect(executor.stakeAmount).to.eq(10n**19n);
+		}
+	});
+
+	// submit 3 output
+	it("three output submits by selected executor nodes", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		let tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobSucceeded").withArgs(jobId, true);
+
+		// submit 2nd output
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[18]);
+		tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.not.emit(jobs, "JobSucceeded");
+
+		// submit 3rd output
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[19]);
+		tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobSucceeded");
+
+		// check active jobs for submitter
+		let executor = await executors.executors(addrs[17]);
+		expect(executor.activeJobs).to.eq(0);
+
+		executor = await executors.executors(addrs[18]);
+		expect(executor.activeJobs).to.eq(0);
+
+		executor = await executors.executors(addrs[19]);
+		expect(executor.activeJobs).to.eq(0);
+
+		// check usdc balance of executor
+		expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n);
+		// check usdc balance of payment pool
+		expect(await usdc_token.balanceOf(usdc_payment_pool)).to.eq(100n);
+		// check usdc balance of job owner
+		expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n**6n - 100n*2n);
+		// check stakes of all executors
+		for (let index = 17; index < 20; index++) {
+			const executor = await executors.executors(addrs[index]);
+			expect(executor.stakeAmount).to.eq(10n**19n);
+		}
+	});
+
+	it("cannot submit output with expired signature", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 800;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		await expect(jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		)).to.revertedWithCustomError(jobs, "JobsSignatureTooOld");
 	});
 
 	it("cannot submit output after execution time is over", async function () {
@@ -560,7 +797,7 @@ describe("Jobs - Output", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest() - 540;
-		
+
 		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
 
 		await expect(jobs.connect(signers[1]).submitOutput(
@@ -571,7 +808,7 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 			))
-			.to.be.revertedWithCustomError(jobs, "JobsExecutionTimeOver"); 
+			.to.be.revertedWithCustomError(jobs, "JobsExecutionTimeOver");
 	});
 
 	it("cannot submit output twice", async function () {
@@ -580,7 +817,7 @@ describe("Jobs - Output", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest() - 540;
-	
+
 		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
 		let tx = await jobs.connect(signers[1]).submitOutput(
 			signedDigest,
@@ -590,7 +827,7 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 		);
-		await expect(tx).to.emit(jobs, "JobResponded"); 
+		await expect(tx).to.emit(jobs, "JobResponded");
 
 		await expect(jobs.connect(signers[1]).submitOutput(
 			signedDigest,
@@ -617,7 +854,7 @@ describe("Jobs - Output", function () {
 
 		await executors.connect(signers[1]).registerExecutor(
 			attestationSign,
-			attestation, 
+			attestation,
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
@@ -649,7 +886,7 @@ describe("Jobs - Output", function () {
 			signTimestamp = await time.latest() - 540;
 
 		await executors.connect(signers[1]).drainExecutor(addrs[17]);
-		
+
 		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
 		await expect(jobs.connect(signers[1]).submitOutput(
 			signedDigest,
@@ -684,8 +921,8 @@ describe("Jobs - Slashing", function () {
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
-		staking_payment_pool = addrs[1];
-		usdc_payment_pool = addrs[1];
+		staking_payment_pool = addrs[2];
+		usdc_payment_pool = addrs[2];
 
 		const Pond = await ethers.getContractFactory("Pond");
 		staking_token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -704,9 +941,6 @@ describe("Jobs - Slashing", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		let attestationVerifierAddress = await attestationVerifier.getAddress();
-		let staking_token_address = await staking_token.getAddress();
-		let usdc_token_address = await usdc_token.getAddress();
 		let executor_images = [image4, image5, image6, image7]
 
 		const Executors = await ethers.getContractFactory("Executors");
@@ -717,9 +951,9 @@ describe("Jobs - Slashing", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					attestationVerifierAddress,
+					attestationVerifier.target,
 					600,
-					staking_token_address,
+					staking_token.target,
 					10**10,
 					10**2,
 					10**6
@@ -727,7 +961,6 @@ describe("Jobs - Slashing", function () {
 			},
 		) as unknown as Executors;
 
-		let executors_address = await executors.getAddress();
 		const Jobs = await ethers.getContractFactory("Jobs");
 		jobs = await upgrades.deployProxy(
 			Jobs,
@@ -736,16 +969,16 @@ describe("Jobs - Slashing", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					staking_token_address,
-					usdc_token_address,
-					100,
+					staking_token.target,
+					usdc_token.target,
+					600,
 					100,
 					3,
 					1,
 					1,
 					staking_payment_pool,
 					usdc_payment_pool,
-					executors_address
+					executors.target
 				]
 			},
 		) as unknown as Jobs;
@@ -769,7 +1002,7 @@ describe("Jobs - Slashing", function () {
 
 			await executors.connect(signers[1]).registerExecutor(
 				attestationSign,
-				attestation, 
+				attestation,
 				jobCapacity,
 				signTimestamp,
 				signedDigest,
@@ -777,24 +1010,37 @@ describe("Jobs - Slashing", function () {
 			);
 		}
 
-		// RELAY JOB
-		await usdc_token.transfer(addrs[1], 10n**6n);
-		await usdc_token.connect(signers[1]).approve(jobs.target, 10n**6n);
+		// RELAY JOB, caller address 3
+		await usdc_token.transfer(addrs[3], 10n**6n);
+		await usdc_token.connect(signers[3]).approve(jobs.target, 10n**6n);
 
 
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			deadline = 10000;
-		await jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline);
+		await jobs.connect(signers[3]).createJob(codeHash, codeInputs, deadline);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	// TODO: test callback for OysterFailureCall
 
 	it("can slash after deadline over", async function () {
 		await time.increase(await time.latest() + 100000);
 		let jobId = 0;
 		let tx = await jobs.slashOnExecutionTimeout(jobId);
-		await expect(tx).to.emit(jobs, "SlashedOnExecutionTimeout");
+		await expect(tx).to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[17])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[18])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[19])
+			.and.to.emit(jobs, "JobTimeoutFailure").withArgs(jobId, true);
+		// check job does not exists
+		let job = await jobs.jobs(jobId);
+		expect(job.execStartTime).to.be.eq(0);
+
+		// check slashed amount that job owner is getting
+		expect(await staking_token.balanceOf(addrs[3])).to.be.eq(3n*10n**15n);
+		// check USDC balance of owner should be same
+		expect(await usdc_token.balanceOf(addrs[3])).to.be.eq(10n**6n);
 	});
 
 	it("cannot slash non-existing job with id greater than total job count", async function () {
@@ -821,7 +1067,7 @@ describe("Jobs - Slashing", function () {
 
 	it("can slash after executor initiates drain", async function () {
 		await executors.connect(signers[1]).drainExecutor(addrs[17]);
-		
+
 		await time.increase(await time.latest() + 100000);
 		let jobId = 0;
 
@@ -831,9 +1077,122 @@ describe("Jobs - Slashing", function () {
 		let executor = await executors.executors(addrs[17]);
 		expect(executor.draining).to.be.true;
 	});
-});
 
-// TODO: Increase Coverage
+	it("slash after only one executor submits output", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+
+		await time.increase(await time.latest() + 100000);
+		await expect(jobs.slashOnExecutionTimeout(jobId))
+			.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[18])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[19]);
+		// check job does not exists
+		let job = await jobs.jobs(jobId);
+		expect(job.execStartTime).to.be.eq(0);
+
+		// check slashed amount payment pool is getting
+		expect(await staking_token.balanceOf(staking_payment_pool)).to.be.eq(2n*10n**15n);
+		// check payments received by payment pool in USDC
+		let expected_balance = 100n*2n - 100n*1n*4n/9n;
+		expect(await usdc_token.balanceOf(usdc_payment_pool)).to.be.eq((expected_balance));
+	});
+
+	it("slash after two executors submits output", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[18]);
+		await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+
+		await time.increase(await time.latest() + 100000);
+		await expect(jobs.slashOnExecutionTimeout(jobId))
+			.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[19]);
+		// check job does not exists
+		let job = await jobs.jobs(jobId);
+		expect(job.execStartTime).to.be.eq(0);
+
+		// check slashed amount payment pool is getting
+		expect(await staking_token.balanceOf(staking_payment_pool)).to.be.eq(1n*10n**15n);
+		// check payments received by payment pool in USDC
+		let expected_balance = 100n*2n - 100n*1n*7n/9n;
+		expect(await usdc_token.balanceOf(usdc_payment_pool)).to.be.eq((expected_balance));
+	});
+
+	it("slash after all executors submits output", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[18]);
+		await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[19]);
+		await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+
+		await time.increase(await time.latest() + 100000);
+		await expect(jobs.slashOnExecutionTimeout(jobId))
+			.to.revertedWithCustomError(jobs, "JobsInvalidJob");
+	});
+});
 
 function normalize(key: string): string {
 	return '0x' + key.substring(4);
@@ -913,50 +1272,6 @@ async function createExecutorSignature(
 	return ethers.Signature.from(sign).serialized;
 }
 
-async function createRelayJobSignature(
-	operator: string,
-	jobId: number,
-    codeHash: string,
-	codeInputs: string,
-    deadline: number,
-	jobRequestTimestamp: number,
-	sequenceId: number,
-	jobOwner: string,
-	sourceEnclaveWallet: Wallet
-): Promise<string> {
-	const domain = {
-		name: 'marlin.oyster.Jobs',
-		version: '1',
-	};
-
-	const types = {
-		RelayJob: [
-			{ name: 'operator', type: 'address' },
-			{ name: 'jobId', type: 'uint256' },
-			{ name: 'codeHash', type: 'bytes32' },
-			{ name: 'codeInputs', type: 'bytes' },
-			{ name: 'deadline', type: 'uint256' },
-			{ name: 'jobRequestTimestamp', type: 'uint256' },
-			{ name: 'sequenceId', type: 'uint8' },
-			{ name: 'jobOwner', type: 'address' }
-		]
-	};
-
-	const value = {
-		operator,
-		jobId, 
-		codeHash, 
-		codeInputs, 
-		deadline, 
-		jobRequestTimestamp, 
-		sequenceId, 
-		jobOwner
-	};
-
-	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
-	return ethers.Signature.from(sign).serialized;
-}
-
 async function createOutputSignature(
 	jobId: number,
     output: string,
@@ -986,41 +1301,6 @@ async function createOutputSignature(
 		totalTime,
 		errorCode,
 		signTimestamp
-	};
-
-	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
-	return ethers.Signature.from(sign).serialized;
-}
-
-async function createReassignGatewaySignature(
-	operator: string,
-	jobId: number,
-    gatewayKeyOld: string,
-	sequenceId: number,
-	jobRequestTimestamp: number,
-	sourceEnclaveWallet: Wallet
-): Promise<string> {
-	const domain = {
-		name: 'marlin.oyster.Jobs',
-		version: '1',
-	};
-
-	const types = {
-		ReassignGateway: [
-			{ name: 'operator', type: 'address' },
-			{ name: 'jobId', type: 'uint256' },
-			{ name: 'gatewayKeyOld', type: 'address' },
-			{ name: 'sequenceId', type: 'uint8' },
-			{ name: 'jobRequestTimestamp', type: 'uint256' }
-		]
-	};
-
-	const value = {
-		operator,
-		jobId,
-		gatewayKeyOld,
-		sequenceId,
-		jobRequestTimestamp
 	};
 
 	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);

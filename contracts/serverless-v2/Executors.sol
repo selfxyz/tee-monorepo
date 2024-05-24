@@ -414,7 +414,7 @@ contract Executors is
         _allowOnlyVerified(_signer);
     }
 
-    function executors_owner(address _enclaveAddress) external view returns (address){
+    function getOwner(address _enclaveAddress) external view returns (address){
         return executors[_enclaveAddress].owner;
     }
 
