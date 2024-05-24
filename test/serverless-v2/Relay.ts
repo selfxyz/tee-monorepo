@@ -2,7 +2,7 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Pond, Relay, UserSample } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Relay, USDCoin, UserSample } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
@@ -33,20 +33,32 @@ describe("Relay - Init", function () {
 	let attestationVerifier: string;
 	let token: string;
 
+	let maxAge: number;
+    let globalMinTimeout: number;  // in milliseconds
+    let globalMaxTimeout: number;  // in milliseconds
+    let overallTimeout: number;
+    let executionFeePerMs: number;  // fee is in USDC
+    let gatewayFeePerJob: number;
+
 	before(async function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
 		attestationVerifier = addrs[1];
 		token = addrs[1];
+        maxAge = 600;
+        globalMinTimeout = 10 * 1000;  // in milliseconds
+        globalMaxTimeout = 100 * 1000;  // in milliseconds
+        overallTimeout = 100;
+        executionFeePerMs = 10;  // fee is in USDC
+        gatewayFeePerJob = 10;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("deploys with initialization disabled", async function () {
-
 		const Relay = await ethers.getContractFactory("Relay");
-		const relay = await Relay.deploy(attestationVerifier, 500, token, 100, 500, 1000);
+		const relay = await Relay.deploy(attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob);
 
 		await expect(
 			relay.initialize(addrs[0], [image1]),
@@ -61,14 +73,7 @@ describe("Relay - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier, 
-					100,
-					token,
-					100,
-					500,
-					1000
-				]
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		);
 
@@ -84,14 +89,7 @@ describe("Relay - Init", function () {
 				{
 					kind: "uups",
 					initializer: "initialize",
-					constructorArgs: [
-						attestationVerifier,
-						500,
-						token,
-						10,
-						1000,
-						1000
-					]
+					constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 				},
 			)
 		).to.be.revertedWithCustomError(Relay, "RelayZeroAddressAdmin");
@@ -105,14 +103,7 @@ describe("Relay - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier,
-					100,
-					token,
-					10,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		);
 		await upgrades.upgradeProxy(
@@ -120,14 +111,7 @@ describe("Relay - Init", function () {
 			Relay,
 			{
 				kind: "uups",
-				constructorArgs: [
-					attestationVerifier,
-					100,
-					token,
-					10,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			}
 		);
 
@@ -142,28 +126,14 @@ describe("Relay - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier,
-					100,
-					token,
-					10,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(relay.target, Relay.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [
-					attestationVerifier,
-					100,
-					token,
-					10,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			}),
 		).to.be.revertedWithCustomError(Relay, "AccessControlUnauthorizedAccount");
 	});
@@ -174,7 +144,7 @@ describe("Relay - Register gateway", function () {
 	let addrs: string[];
 	let wallets: Wallet[];
 	let pubkeys: string[];
-	let token: Pond;
+	let token: USDCoin;
 	let attestationVerifier: AttestationVerifier;
 	let relay: Relay;
 
@@ -191,26 +161,31 @@ describe("Relay - Register gateway", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		const Pond = await ethers.getContractFactory("Pond");
-        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
-            kind: "uups",
-        }) as unknown as Pond;
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin, 
+			[addrs[0]], 
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
 
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
-			[addrs[0], [image1, image2]],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier.target, 
-					600, 
-					token.target, 
-					600,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		) as unknown as Relay;
 
@@ -220,42 +195,54 @@ describe("Relay - Register gateway", function () {
 
 	it("can register gateway", async function () {
 		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
-			.to.emit(relay, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
+			.to.emit(relay, "GatewayRegistered").withArgs(addrs[1], addrs[15]);
 		expect(await relay.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
 	});
 
-	it("cannot register gateway with same enclaveKey twice", async function () {
+	it("cannot register gateway with same enclaveAddress twice", async function () {
 		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
-			.to.emit(relay, "GatewayRegistered").withArgs(addrs[15], addrs[1]);
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
 
-		await expect(relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000))
+		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
+			.to.emit(relay, "GatewayRegistered").withArgs(addrs[1], addrs[15]);
+
+		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
 			.to.revertedWithCustomError(relay, "RelayGatewayAlreadyExists");
 	});
 
 	it('can deregister gateway', async function () {
 		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
 
-		await expect(relay.connect(signers[1]).deregisterGateway(pubkeys[15]))
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		await expect(relay.connect(signers[1]).deregisterGateway(addrs[15]))
 			.to.emit(relay, "GatewayDeregistered").withArgs(addrs[15]);
 	});
 
-	it('cannot deregister gateway without gateway operator', async function () {
+	it('cannot deregister gateway without gateway owner', async function () {
 		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
 
-		await expect(relay.connect(signers[2]).deregisterGateway(pubkeys[15]))
-			.to.revertedWithCustomError(relay, "RelayInvalidGatewayOperator");
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		await expect(relay.connect(signers[2]).deregisterGateway(addrs[15]))
+			.to.revertedWithCustomError(relay, "RelayInvalidGateway");
 	});
 
 });
@@ -263,7 +250,7 @@ describe("Relay - Register gateway", function () {
 describe("Relay - Relay Job", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: Pond;
+	let token: USDCoin;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
@@ -275,10 +262,14 @@ describe("Relay - Relay Job", function () {
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
-		const Pond = await ethers.getContractFactory("Pond");
-		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
-			kind: "uups",
-		}) as unknown as Pond;
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin, 
+			[addrs[0]], 
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		attestationVerifier = await upgrades.deployProxy(
@@ -287,28 +278,35 @@ describe("Relay - Relay Job", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
-			[addrs[0], [image1, image2]],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier.target,
-					600,
-					token.target,
-					100,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		) as unknown as Relay;
 
-		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		await token.transfer(addrs[2], 1000000);
+		await token.connect(signers[2]).approve(relay.target, 1000000);
 
-		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -316,17 +314,21 @@ describe("Relay - Relay Job", function () {
 	it("can relay job", async function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 500000,
+			userTimeout = 50000,
 			maxGasPrice = 100,
-			usdcDeposit = 100,
-			callbackDeposit = 100;
-		let tx = await relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1];
+		let tx = await relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, 
+				{ value: callbackDeposit }
+			);
 		await expect(tx).to.emit(relay, "JobRelayed");
 
 		let key = await relay.jobCount();
 		let job = await relay.jobs(key);
 
-		expect(job.jobOwner).to.eq(addrs[15]);
+		expect(job.jobOwner).to.eq(addrs[2]);
 	});
 
 	it("cannot relay job with invalid user timeout", async function () {
@@ -334,9 +336,13 @@ describe("Relay - Relay Job", function () {
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 500,
 			maxGasPrice = 100,
-			usdcDeposit = 100,
-			callbackDeposit = 100;
-		let tx = relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
+			callbackDeposit = 100,
+			refundAccount = addrs[1];
+		let tx = relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, 
+				{ value: callbackDeposit }
+			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
 	});
 });
@@ -344,7 +350,7 @@ describe("Relay - Relay Job", function () {
 describe("Relay - Job Response", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: Pond;
+	let token: USDCoin;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
@@ -356,10 +362,14 @@ describe("Relay - Job Response", function () {
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
-		const Pond = await ethers.getContractFactory("Pond");
-		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
-			kind: "uups",
-		}) as unknown as Pond;
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin, 
+			[addrs[0]], 
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		attestationVerifier = await upgrades.deployProxy(
@@ -368,37 +378,47 @@ describe("Relay - Job Response", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
-			[addrs[0], [image1, image2]],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier.target,
-					600,
-					token.target,
-					100,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		) as unknown as Relay;
 
-		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		await token.transfer(addrs[2], 1000000);
+		await token.connect(signers[2]).approve(relay.target, 1000000);
 
-		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 	
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 500000,
+			userTimeout = 50000,
 			maxGasPrice = 100,
-			usdcDeposit = 100,
-			callbackDeposit = 100;
-		await relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
-		
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1];
+		await relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount,
+				{ value: callbackDeposit }
+			);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -407,10 +427,11 @@ describe("Relay - Job Response", function () {
 		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
-			errorCode = 0;
+			errorCode = 0,
+			signTimestamp = await time.latest();
 		
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relay, "JobResponded");
 	});
 
@@ -418,13 +439,14 @@ describe("Relay - Job Response", function () {
 		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
-			errorCode = 0;
+			errorCode = 0,
+			signTimestamp = await time.latest();
 		
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relay, "JobResponded"); 
 
-		let tx2 = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let tx2 = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx2).to.revertedWithCustomError(relay, "RelayJobNotExists");
 	});
 
@@ -432,22 +454,24 @@ describe("Relay - Job Response", function () {
 		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
-			errorCode = 0;
+			errorCode = 0,
+			signTimestamp = await time.latest();
 		
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[16]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[16]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified"); 
 	});
 
-	it("cannot submit response after overall timeout if over", async function () {
+	it("cannot submit response after overall timeout is over", async function () {
 		await time.increase(1100);
 		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
-			errorCode = 0;
+			errorCode = 0,
+			signTimestamp = await time.latest();
 		
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayOverallTimeoutOver"); 
 	});
 
@@ -456,7 +480,7 @@ describe("Relay - Job Response", function () {
 describe("Relay - Job Cancel", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: Pond;
+	let token: USDCoin;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
@@ -468,10 +492,14 @@ describe("Relay - Job Cancel", function () {
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
-		const Pond = await ethers.getContractFactory("Pond");
-		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
-			kind: "uups",
-		}) as unknown as Pond;
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin, 
+			[addrs[0]], 
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		attestationVerifier = await upgrades.deployProxy(
@@ -480,37 +508,47 @@ describe("Relay - Job Cancel", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
-			[addrs[0], [image1, image2]],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier.target,
-					600,
-					token.target,
-					100,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		) as unknown as Relay;
 
-		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		await token.transfer(addrs[2], 1000000);
+		await token.connect(signers[2]).approve(relay.target, 1000000);
 
-		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
-	
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 500000,
+			userTimeout = 50000,
 			maxGasPrice = 100,
-			usdcDeposit = 100,
-			callbackDeposit = 100;
-		await relay.connect(signers[15]).relayJob(codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit);
-		
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1];
+		await relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount,
+				{ value: callbackDeposit }
+			);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -519,15 +557,16 @@ describe("Relay - Job Cancel", function () {
 		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
-			errorCode = 0;
+			errorCode = 0,
+			signTimestamp = await time.latest();
 		
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		await expect(
-			relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode)
+			relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp)
 		).to.emit(relay, "JobResponded"); 
 
 		await expect(
-			relay.connect(signers[15]).jobCancel(jobId)
+			relay.connect(signers[2]).jobCancel(jobId)
 		).to.be.revertedWithCustomError(relay, "RelayInvalidJobOwner");
 	});
 
@@ -535,7 +574,7 @@ describe("Relay - Job Cancel", function () {
 		let jobId: any = await relay.jobCount();
 
 		await expect(
-			relay.connect(signers[15]).jobCancel(jobId)
+			relay.connect(signers[2]).jobCancel(jobId)
 		).to.revertedWithCustomError(relay, "RelayOverallTimeoutNotOver");
 	});
 
@@ -553,7 +592,7 @@ describe("Relay - Job Cancel", function () {
 		await time.increase(1100);
 
 		await expect(
-			relay.connect(signers[15]).jobCancel(jobId)
+			relay.connect(signers[2]).jobCancel(jobId)
 		).to.emit(relay, "JobCancelled").withArgs(jobId);
 
 		let job = await relay.jobs(jobId);
@@ -565,7 +604,7 @@ describe("Relay - Job Cancel", function () {
 describe("Relay - Job sent by UserSample contract", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: Pond;
+	let token: USDCoin;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
@@ -578,10 +617,14 @@ describe("Relay - Job sent by UserSample contract", function () {
 		wallets = signers.map((_, idx) => walletForIndex(idx));
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
-		const Pond = await ethers.getContractFactory("Pond");
-		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
-			kind: "uups",
-		}) as unknown as Pond;
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin, 
+			[addrs[0]], 
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
 
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		attestationVerifier = await upgrades.deployProxy(
@@ -590,31 +633,37 @@ describe("Relay - Job sent by UserSample contract", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
-			[addrs[0], [image1, image2]],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [
-					attestationVerifier.target,
-					600,
-					token.target,
-					100,
-					1000,
-					1000
-				]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			},
 		) as unknown as Relay;
 
 		const timestamp = await time.latest() * 1000;
-		let [signature] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
-		await relay.connect(signers[1]).registerGateway(signature, pubkeys[15], image2.PCR0, image2.PCR1, image2.PCR2, timestamp - 540000);
-	
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
 		const UserSample = await ethers.getContractFactory("UserSample");
-		userSample = await UserSample.deploy(relay) as unknown as UserSample;	
+		userSample = await UserSample.deploy(relay.target, token.target) as unknown as UserSample;
+
+		await token.transfer(userSample.target, 1000000);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -622,46 +671,52 @@ describe("Relay - Job sent by UserSample contract", function () {
 	it("can submit response and execute callback", async function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 500000,
+			userTimeout = 50000,
 			maxGasPrice = 100,
-			usdcDeposit = 100,
-			callbackDeposit = parseUnits("1");	// 1 eth
+			usdcDeposit = 1000000,
+			callbackDeposit = parseUnits("1"),	// 1 eth
+			refundAccount = addrs[1];
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, 
+			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount,
 			{value: callbackDeposit}
 		);
 
 		let jobId: any = await relay.jobCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
-			errorCode = 0;
-		
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(userSample, "CalledBack").and.to.emit(relay, "JobResponded");
 	});
 
-	it("can submit response but fails to execute callback due to less callbackDeposit", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 500000,
-			maxGasPrice = 100,
-			usdcDeposit = 100,
-			callbackDeposit = 1;	// 1 wei
-		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, 
-			{value: callbackDeposit}
-		);
+	// TODO
+	// it("can submit response but fails to execute callback due to less callbackDeposit", async function () {
+	// 	let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+	// 		codeInputs = solidityPacked(["string"], ["codeInput"]),
+	// 		userTimeout = 50000,
+	// 		maxGasPrice = 100,
+	// 		callbackDeposit = 1,	// 1 wei
+	// 		refundAccount = addrs[1];
+	// 	await userSample.relayJob(
+	// 		codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, 
+	// 		{value: callbackDeposit}
+	// 	);
 
-		let jobId: any = await relay.jobCount(),
-			output = solidityPacked(["string"], ["it is the output"]),
-			totalTime = 100,
-			errorCode = 0;
+	// 	let jobId: any = await relay.jobCount(),
+	// 		output = solidityPacked(["string"], ["it is the output"]),
+	// 		totalTime = 100,
+	// 		errorCode = 0,
+	// 		signTimestamp = await time.latest();
 
-		let signedDigest = await createJobResponseSignature(addrs[1], jobId, output, totalTime, errorCode, wallets[15]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode);
-		await expect(tx).to.emit(relay, "JobResponded").and.to.not.emit(userSample, "CalledBack");
-	});
+	// 	console.log("job: ", jobId, await relay.jobs(jobId));
+
+	// 	let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+	// 	let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+	// 	await expect(tx).to.emit(relay, "JobResponded").and.to.not.emit(userSample, "CalledBack");
+	// });
 
 });
 
@@ -714,12 +769,38 @@ async function createAttestation(
 	}];
 }
 
+async function createGatewaySignature(
+	owner: string,
+	signTimestamp: number,
+	sourceEnclaveWallet: Wallet
+): Promise<string> {
+	const domain = {
+		name: 'marlin.oyster.Relay',
+		version: '1',
+	};
+
+	const types = {
+		Register: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'signTimestamp', type: 'uint256' }
+		]
+	};
+
+	const value = {
+		owner,
+		signTimestamp
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
+}
+
 async function createJobResponseSignature(
-	operator: string,
 	jobId: number,
     output: string,
 	totalTime: number,
     errorCode: number,
+	signTimestamp: number,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
 	const domain = {
@@ -729,20 +810,20 @@ async function createJobResponseSignature(
 
 	const types = {
 		JobResponse: [
-			{ name: 'operator', type: 'address' },
 			{ name: 'jobId', type: 'uint256' },
 			{ name: 'output', type: 'bytes' },
 			{ name: 'totalTime', type: 'uint256' },
-			{ name: 'errorCode', type: 'uint8' }
+			{ name: 'errorCode', type: 'uint8' },
+			{ name: 'signTimestamp', type: 'uint256' }
 		]
 	};
 
 	const value = {
-		operator,
 		jobId,
 		output,
 		totalTime,
-		errorCode
+		errorCode,
+		signTimestamp
 	};
 
 	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);

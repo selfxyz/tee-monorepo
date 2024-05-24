@@ -515,7 +515,7 @@ describe("Gateways - Add/Remove chains", function () {
 		expect(gatewayChainIds.length).equals(0);
 	});
 
-	it("cannot remove chain without gateway operator", async function () {
+	it("cannot remove chain without gateway owner", async function () {
 		let chainIds = [1],
 			signTimestamp = await time.latest();
 		let signedDigest = await createRemoveChainsSignature(chainIds, signTimestamp, wallets[15])
@@ -615,7 +615,7 @@ describe("Gateways - Draining gateway", function () {
 		expect((await gateways.gateways(addrs[15])).draining).to.be.eq(true);
 	});
 
-	it('cannot drain without gateway operator', async function () {
+	it('cannot drain without gateway owner', async function () {
 		await expect(gateways.connect(signers[0]).drainGateway(addrs[15]))
 			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
 	});
@@ -636,7 +636,7 @@ describe("Gateways - Draining gateway", function () {
 		expect((await gateways.gateways(addrs[15])).draining).to.be.eq(false);
 	});
 
-	it('cannot drain without gateway operator', async function () {
+	it('cannot drain without gateway owner', async function () {
 		await expect(gateways.connect(signers[0]).reviveGateway(addrs[15]))
 			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
 	});
@@ -764,7 +764,7 @@ describe("Gateways - Register gateway", function () {
 			.to.be.revertedWithCustomError(gateways, "GatewaysNotDraining");
 	});
 
-	it('cannot deregister without gateway operator', async function () {
+	it('cannot deregister without gateway owner', async function () {
 		const timestamp = await time.latest() * 1000;
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 
