@@ -4,6 +4,7 @@ import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidity
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Executors, GatewayJobs, Gateways, Jobs, Pond, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
+import { testERC165 } from '../helpers/erc165';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -193,6 +194,40 @@ describe("Jobs - Init", function () {
 		await expect(gatewayJobs.setJobsContract(addrs[1])).to.not.be.rejected;
 	});
 });
+
+testERC165(
+	"GatewayJobs - ERC165",
+	async function(_signers: Signer[], addrs: string[]) {
+		let token = addrs[1],
+			gateways = addrs[1],
+			jobs = addrs[1],
+			tokenUsdc = addrs[1],
+			signMaxAge = 600,
+			relayBufferTime = 100,
+			executionFeePerMs = 10,
+			slashCompForGateway = 10;
+		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+		const gatewayJobs = await upgrades.deployProxy(
+			GatewayJobs,
+			[addrs[0], jobs, gateways],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+			},
+		);
+		return gatewayJobs;
+	},
+	{
+		IAccessControl: [
+			"hasRole(bytes32,address)",
+			"getRoleAdmin(bytes32)",
+			"grantRole(bytes32,address)",
+			"revokeRole(bytes32,address)",
+			"renounceRole(bytes32,address)",
+		],
+	},
+);
 
 describe("Jobs - Relay", function () {
 	let signers: Signer[];

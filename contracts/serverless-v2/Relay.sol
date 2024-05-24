@@ -297,6 +297,7 @@ contract Relay is
         bytes memory _codeInputs,
         uint256 _userTimeout,   // in milliseconds
         uint256 _maxGasPrice,
+        uint256 _callbackDeposit,
         address _refundAccount,
         address _jobOwner
     ) internal {
@@ -311,14 +312,14 @@ contract Relay is
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
             usdcDeposit: usdcDeposit,
-            callbackDeposit: msg.value,
+            callbackDeposit: _callbackDeposit,
             jobOwner: _jobOwner
         });
 
         // deposit escrow amount(USDC)
         TOKEN.safeTransferFrom(_jobOwner, address(this), usdcDeposit);
 
-        emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, usdcDeposit, msg.value, _refundAccount, block.timestamp);
+        emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, usdcDeposit, _callbackDeposit, _refundAccount, block.timestamp);
     }
 
     function _jobResponse(
@@ -453,7 +454,7 @@ contract Relay is
         uint256 _maxGasPrice,
         address _refundAccount // Common chain slashed token will be sent to this address
     ) external payable {
-        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, _refundAccount, _msgSender());
+        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _msgSender());
     }
 
     function jobResponse(

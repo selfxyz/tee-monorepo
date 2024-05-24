@@ -4,6 +4,7 @@ import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidity
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Relay, USDCoin, UserSample } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
+import { testERC165 } from '../helpers/erc165';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -80,6 +81,21 @@ describe("Relay - Init", function () {
 		expect(await relay.hasRole(await relay.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 	});
 
+	it("cannot deploy with zero address as token", async function () {
+		const Relay = await ethers.getContractFactory("Relay");
+		await expect(
+			upgrades.deployProxy(
+				Relay,
+				[addrs[0], [image1]],
+				{
+					kind: "uups",
+					initializer: "initialize",
+					constructorArgs: [attestationVerifier, maxAge, ZeroAddress, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				},
+			)
+		).to.be.revertedWithCustomError(Relay, "RelayInvalidToken");
+	});
+
 	it("cannot initialize with zero address as admin", async function () {
 		const Relay = await ethers.getContractFactory("Relay");
 		await expect(
@@ -93,6 +109,21 @@ describe("Relay - Init", function () {
 				},
 			)
 		).to.be.revertedWithCustomError(Relay, "RelayZeroAddressAdmin");
+	});
+
+	it("cannot deploy with globalMaxTimeout smaller than globalMinTimeout", async function () {
+		const Relay = await ethers.getContractFactory("Relay");
+		await expect(
+			upgrades.deployProxy(
+				Relay,
+				[addrs[0], [image1]],
+				{
+					kind: "uups",
+					initializer: "initialize",
+					constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, 1000, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				},
+			)
+		).to.be.revertedWithCustomError(Relay, "RelayInvalidGlobalTimeouts");
 	});
 
 	it("upgrades", async function () {
@@ -136,6 +167,105 @@ describe("Relay - Init", function () {
 				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
 			}),
 		).to.be.revertedWithCustomError(Relay, "AccessControlUnauthorizedAccount");
+	});
+});
+
+testERC165(
+	"Relay - ERC165",
+	async function(_signers: Signer[], addrs: string[]) {
+		let attestationVerifier = addrs[1],
+			token = addrs[1],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
+		const Relay = await ethers.getContractFactory("Relay");
+		const relay = await upgrades.deployProxy(
+			Relay,
+			[addrs[0], [image1]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+			},
+		);
+		return relay;
+	},
+	{
+		IAccessControl: [
+			"hasRole(bytes32,address)",
+			"getRoleAdmin(bytes32)",
+			"grantRole(bytes32,address)",
+			"revokeRole(bytes32,address)",
+			"renounceRole(bytes32,address)",
+		],
+	},
+);
+
+describe("Relay - Whitelist/Revoke enclave", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let relay: Relay;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		let attestationVerifier = addrs[1],
+			token = addrs[1];
+
+		let admin = addrs[0],
+			images = [image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+			},
+		) as unknown as Relay;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can whitelist enclave image with admin account", async function () {
+		await expect(relay.connect(signers[0]).whitelistEnclaveImage(image1.PCR0, image1.PCR1, image1.PCR2))
+			.to.emit(relay, "EnclaveImageWhitelisted").withArgs(getImageId(image1), image1.PCR0, image1.PCR1, image1.PCR2);
+
+		const { PCR0, PCR1, PCR2 } = await relay.getWhitelistedImage(getImageId(image1));
+		expect({PCR0, PCR1, PCR2}).to.deep.equal(image1);
+	});
+
+	it("cannot whitelist enclave image without admin account", async function () {
+		await expect(relay.connect(signers[1]).whitelistEnclaveImage(image1.PCR0, image1.PCR1, image1.PCR2))
+			.to.be.revertedWithCustomError(relay, "AccessControlUnauthorizedAccount");
+	});
+
+	it("can revoke enclave image with admin account", async function () {
+		await expect(relay.connect(signers[0]).revokeEnclaveImage(getImageId(image2)))
+			.to.emit(relay, "EnclaveImageRevoked").withArgs(getImageId(image2));
+
+		const { PCR0 } = await relay.getWhitelistedImage(getImageId(image2));
+		expect(PCR0).to.equal("0x");
+	});
+
+	it("cannot revoke enclave image without admin account", async function () {
+		await expect(relay.connect(signers[1]).revokeEnclaveImage(getImageId(image2)))
+			.to.be.revertedWithCustomError(relay, "AccessControlUnauthorizedAccount");
 	});
 });
 
@@ -203,6 +333,28 @@ describe("Relay - Register gateway", function () {
 		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
 			.to.emit(relay, "GatewayRegistered").withArgs(addrs[1], addrs[15]);
 		expect(await relay.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
+	});
+
+	it("cannot register gateway with expired signature", async function () {
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest() - 700;
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
+			.to.revertedWithCustomError(relay, "RelaySignatureTooOld");
+	});
+
+	it("cannot register gateway with invalid signer", async function () {
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[16]);
+
+		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
+			.to.revertedWithCustomError(relay, "RelayInvalidSigner");
 	});
 
 	it("cannot register gateway with same enclaveAddress twice", async function () {
@@ -433,6 +585,19 @@ describe("Relay - Job Response", function () {
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relay, "JobResponded");
+	});
+
+	it("cannot submit response with expired signature", async function () {
+		let jobId: any = await relay.jobCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 700;
+		
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+
+		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.revertedWithCustomError(relay, "RelaySignatureTooOld");
 	});
 
 	it("cannot submit response twice", async function () {

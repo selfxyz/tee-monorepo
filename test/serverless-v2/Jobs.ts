@@ -7,6 +7,7 @@ import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { timeStamp } from 'console';
 import { exec } from 'child_process';
 import exp from 'constants';
+import { testERC165 } from '../helpers/erc165';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -314,6 +315,43 @@ describe("Jobs - Init", function () {
 	});
 
 });
+
+testERC165(
+	"Jobs - ERC165",
+	async function(_signers: Signer[], addrs: string[]) {
+		const Jobs = await ethers.getContractFactory("Jobs");
+		const jobs = await upgrades.deployProxy(
+			Jobs,
+			[addrs[0]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					addrs[1],
+					addrs[1],
+					100,
+					100,
+					3,
+					1,
+					1,
+					addrs[1],
+					addrs[1],
+					addrs[1]
+				]
+			},
+		);
+		return jobs;
+	},
+	{
+		IAccessControl: [
+			"hasRole(bytes32,address)",
+			"getRoleAdmin(bytes32)",
+			"grantRole(bytes32,address)",
+			"revokeRole(bytes32,address)",
+			"renounceRole(bytes32,address)",
+		],
+	},
+);
 
 describe("Jobs - Create", function () {
 	let signers: Signer[];

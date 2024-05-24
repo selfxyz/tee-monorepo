@@ -4,6 +4,7 @@ import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, solidityPa
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Pond } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
+import { testERC165 } from '../helpers/erc165';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -278,6 +279,38 @@ describe("Executors - Init", function () {
 	});
 });
 
+testERC165(
+	"Executors - ERC165",
+	async function(_signers: Signer[], addrs: string[]) {
+		const Executors = await ethers.getContractFactory("Executors");
+		const executors = await upgrades.deployProxy(
+			Executors,
+			[addrs[0], [image1]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					addrs[1],
+					600,
+					addrs[2],
+					10**10,
+					10**2,
+					10**6
+				]
+			},
+		);
+		return executors;
+	},
+	{
+		IAccessControl: [
+			"hasRole(bytes32,address)",
+			"getRoleAdmin(bytes32)",
+			"grantRole(bytes32,address)",
+			"revokeRole(bytes32,address)",
+			"renounceRole(bytes32,address)",
+		],
+	},
+);
 
 describe("Executors - Verify", function () {
 	let signers: Signer[];
