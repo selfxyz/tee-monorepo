@@ -40,12 +40,10 @@ contract Jobs is
     ) {
         _disableInitializers();
 
-        if(address(_stakingToken) == address(0))
-            revert JobsZeroAddressStakingToken();
+        if (address(_stakingToken) == address(0)) revert JobsZeroAddressStakingToken();
         STAKING_TOKEN = _stakingToken;
 
-        if(address(_usdcToken) == address(0))
-            revert JobsZeroAddressUsdcToken();
+        if (address(_usdcToken) == address(0)) revert JobsZeroAddressUsdcToken();
         USDC_TOKEN = _usdcToken;
 
         SIGN_MAX_AGE = _signMaxAge;
@@ -65,19 +63,11 @@ contract Jobs is
 
     function supportsInterface(
         bytes4 interfaceId
-    )
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, AccessControlUpgradeable)
-        returns (bool)
-    {
+    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function _authorizeUpgrade(
-        address /*account*/
-    ) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -85,11 +75,8 @@ contract Jobs is
 
     error JobsZeroAddressAdmin();
 
-    function initialize(
-        address _admin
-    ) public initializer {
-        if(_admin == address(0))
-            revert JobsZeroAddressAdmin();
+    function initialize(address _admin) public initializer {
+        if (_admin == address(0)) revert JobsZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -135,13 +122,13 @@ contract Jobs is
     //-------------------------------- Job start --------------------------------//
 
     struct Job {
-        uint256 deadline;   // in milliseconds
+        uint256 deadline; // in milliseconds
         uint256 execStartTime;
-        uint256 executionTime;   // it stores the execution time for first output submitted only (in milliseconds)
+        uint256 executionTime; // it stores the execution time for first output submitted only (in milliseconds)
         address jobOwner;
         uint8 outputCount;
         address[] selectedExecutors;
-        mapping(address => bool) hasExecutedJob;    // selectedExecutor => hasExecuted
+        mapping(address => bool) hasExecutedJob; // selectedExecutor => hasExecuted
     }
 
     // jobKey => Job
@@ -163,27 +150,15 @@ contract Jobs is
         address indexed jobOwner,
         bytes32 codehash,
         bytes codeInputs,
-        uint256 deadline,   // in milliseconds
+        uint256 deadline, // in milliseconds
         address[] selectedExecutors
     );
 
-    event JobResponded(
-        uint256 indexed jobId,
-        bytes output,
-        uint256 totalTime,
-        uint8 errorCode,
-        uint8 outputCount
-    );
+    event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint8 errorCode, uint8 outputCount);
 
-    event JobSucceeded(
-        uint256 indexed jobId,
-        bool callback_success
-    );
+    event JobSucceeded(uint256 indexed jobId, bool callback_success);
 
-    event JobTimeoutFailure(
-        uint256 indexed jobId,
-        bool callback_success
-    );
+    event JobTimeoutFailure(uint256 indexed jobId, bool callback_success);
 
     error JobsRelayTimeOver();
     error JobsInvalidSequenceId();
@@ -200,18 +175,21 @@ contract Jobs is
     function _createJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _deadline,  // in milliseconds
+        uint256 _deadline, // in milliseconds
         address _jobOwner
     ) internal returns (uint256 jobId) {
-
         address[] memory selectedNodes = EXECUTORS.selectExecutors(NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then return with error code 1
-        if(selectedNodes.length < NO_OF_NODES_TO_SELECT) {
+        if (selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             revert JobsUnavailableResources();
         }
 
         // deposit escrow amount(USDC)
-        USDC_TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
+        USDC_TOKEN.safeTransferFrom(
+            _jobOwner,
+            address(this),
+            _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS)
+        );
 
         jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, selectedNodes);
     }
@@ -219,10 +197,10 @@ contract Jobs is
     function _create(
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _deadline,  // in milliseconds
+        uint256 _deadline, // in milliseconds
         address _jobOwner,
         address[] memory _selectedNodes
-    ) internal returns (uint256 jobId){
+    ) internal returns (uint256 jobId) {
         // create a struct
         jobId = jobs.length;
         jobs.push();
@@ -242,23 +220,22 @@ contract Jobs is
         uint8 _errorCode,
         uint256 _signTimestamp
     ) internal {
-        if((block.timestamp * 1000) > (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
-            revert JobsExecutionTimeOver();
+        if (
+            (block.timestamp * 1000) >
+            (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000)
+        ) revert JobsExecutionTimeOver();
 
         // signature check
         address enclaveAddress = _verifyOutputSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
 
-        if(!_isJobExecutor(_jobId, enclaveAddress))
-            revert JobsNotSelectedExecutor();
-        if(jobs[_jobId].hasExecutedJob[enclaveAddress])
-            revert JobsExecutorAlreadySubmittedOutput();
+        if (!_isJobExecutor(_jobId, enclaveAddress)) revert JobsNotSelectedExecutor();
+        if (jobs[_jobId].hasExecutedJob[enclaveAddress]) revert JobsExecutorAlreadySubmittedOutput();
 
         EXECUTORS.releaseExecutor(enclaveAddress);
         jobs[_jobId].hasExecutedJob[enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
-        if(outputCount == 1)
-            jobs[_jobId].executionTime = _totalTime;
+        if (outputCount == 1) jobs[_jobId].executionTime = _totalTime;
 
         // on reward distribution, 1st output executor node gets max reward
         // reward ratio - 4:3:2
@@ -267,9 +244,14 @@ contract Jobs is
         // TODO: add callback gas
         if (outputCount == 1) {
             address jobOwner = jobs[_jobId].jobOwner;
-            (bool success,) = jobOwner.call(
-                abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8,uint256)", _jobId, _output, _errorCode,
-                                        _totalTime)
+            (bool success, ) = jobOwner.call(
+                abi.encodeWithSignature(
+                    "oysterResultCall(uint256,bytes,uint8,uint256)",
+                    _jobId,
+                    _output,
+                    _errorCode,
+                    _totalTime
+                )
             );
             emit JobSucceeded(_jobId, success);
         }
@@ -284,18 +266,10 @@ contract Jobs is
         uint8 _errorCode,
         uint256 _signTimestamp
     ) internal view returns (address) {
-        if (block.timestamp > _signTimestamp + SIGN_MAX_AGE)
-            revert JobsSignatureTooOld();
+        if (block.timestamp > _signTimestamp + SIGN_MAX_AGE) revert JobsSignatureTooOld();
 
         bytes32 hashStruct = keccak256(
-            abi.encode(
-                SUBMIT_OUTPUT_TYPEHASH,
-                _jobId,
-                keccak256(_output),
-                _totalTime,
-                _errorCode,
-                _signTimestamp
-            )
+            abi.encode(SUBMIT_OUTPUT_TYPEHASH, _jobId, keccak256(_output), _totalTime, _errorCode, _signTimestamp)
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
@@ -304,27 +278,26 @@ contract Jobs is
         return signer;
     }
 
-    function _transferRewardPayout(
-        uint256 _jobId,
-        uint256 _outputCount,
-        address _enclaveAddress
-    ) internal {
-        address owner= EXECUTORS.getOwner(_enclaveAddress);
+    function _transferRewardPayout(uint256 _jobId, uint256 _outputCount, address _enclaveAddress) internal {
+        address owner = EXECUTORS.getOwner(_enclaveAddress);
         uint256 executionTime = jobs[_jobId].executionTime;
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
         uint256 executorsFee = executionTime * EXECUTOR_FEE_PER_MS;
         // for first output
-        if(_outputCount == 1) {
+        if (_outputCount == 1) {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, (executorsFee * 4) / 9);
             // transfer payout to payment pool
             USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * STAKING_REWARD_PER_MS);
             // transfer to job owner
-            USDC_TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS));
+            USDC_TOKEN.safeTransfer(
+                jobOwner,
+                (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS)
+            );
         }
         // for second output
-        else if(_outputCount == 2) {
+        else if (_outputCount == 2) {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, executorsFee / 3);
         }
@@ -337,10 +310,7 @@ contract Jobs is
         }
     }
 
-    function _cleanJobData(
-        uint256 _jobId
-    ) internal {
-
+    function _cleanJobData(uint256 _jobId) internal {
         uint256 len = jobs[_jobId].selectedExecutors.length;
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = jobs[_jobId].selectedExecutors[index];
@@ -350,28 +320,23 @@ contract Jobs is
         delete jobs[_jobId];
     }
 
-    function _isJobExecutor(
-        uint256 _jobId,
-        address _enclaveAddress
-    ) internal view returns (bool) {
+    function _isJobExecutor(uint256 _jobId, address _enclaveAddress) internal view returns (bool) {
         address[] memory selectedNodes = jobs[_jobId].selectedExecutors;
         uint256 len = selectedNodes.length;
         for (uint256 index = 0; index < len; index++) {
-            if(selectedNodes[index] == _enclaveAddress)
-                return true;
+            if (selectedNodes[index] == _enclaveAddress) return true;
         }
         return false;
     }
 
     //-------------------------------- internal functions end ----------------------------------//
 
-
     //-------------------------------- external functions start --------------------------------//
 
     function createJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _deadline  // in milliseconds
+        uint256 _deadline // in milliseconds
     ) external returns (uint256) {
         return _createJob(_codehash, _codeInputs, _deadline, _msgSender());
     }
@@ -387,10 +352,7 @@ contract Jobs is
         _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
-    function isJobExecutor(
-        uint256 _jobId,
-        address _enclaveAddress
-    ) public view returns (bool) {
+    function isJobExecutor(uint256 _jobId, address _enclaveAddress) public view returns (bool) {
         return _isJobExecutor(_jobId, _enclaveAddress);
     }
 
@@ -398,28 +360,23 @@ contract Jobs is
 
     //-------------------------------- Job end --------------------------------//
 
-
     //-------------------------------- Timeout start --------------------------------//
 
-    event SlashedOnExecutionTimeout(
-        uint256 indexed jobId,
-        address indexed enclaveAddress
-    );
+    event SlashedOnExecutionTimeout(uint256 indexed jobId, address indexed enclaveAddress);
 
     error JobsInvalidJob();
     error JobsDeadlineNotOver();
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _slashOnExecutionTimeout(
-        uint256 _jobId
-    ) internal {
-        if(jobs[_jobId].execStartTime == 0)
-            revert JobsInvalidJob();
+    function _slashOnExecutionTimeout(uint256 _jobId) internal {
+        if (jobs[_jobId].execStartTime == 0) revert JobsInvalidJob();
 
         // check for time
-        if((block.timestamp * 1000) <= (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000))
-            revert JobsDeadlineNotOver();
+        if (
+            (block.timestamp * 1000) <=
+            (jobs[_jobId].execStartTime * 1000) + jobs[_jobId].deadline + (EXECUTION_BUFFER_TIME * 1000)
+        ) revert JobsDeadlineNotOver();
 
         address jobOwner = jobs[_jobId].jobOwner;
         uint8 outputCount = jobs[_jobId].outputCount;
@@ -435,10 +392,8 @@ contract Jobs is
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = jobs[_jobId].selectedExecutors[index];
 
-            if(!jobs[_jobId].hasExecutedJob[enclaveAddress]) {
-                slashAmount += EXECUTORS.slashExecutor(
-                    enclaveAddress
-                );
+            if (!jobs[_jobId].hasExecutedJob[enclaveAddress]) {
+                slashAmount += EXECUTORS.slashExecutor(enclaveAddress);
                 emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
             delete jobs[_jobId].hasExecutedJob[enclaveAddress];
@@ -451,7 +406,7 @@ contract Jobs is
             // transfer the slashed amount to job owner
             STAKING_TOKEN.safeTransfer(jobOwner, slashAmount);
             // TODO: add gas limit
-            (bool success,) = jobOwner.call(
+            (bool success, ) = jobOwner.call(
                 abi.encodeWithSignature("oysterFailureCall(uint256,uint256)", _jobId, slashAmount)
             );
             emit JobTimeoutFailure(_jobId, success);
@@ -469,7 +424,7 @@ contract Jobs is
     ) internal {
         uint256 jobOwnerDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
         uint256 executorsFee = _executionTime * EXECUTOR_FEE_PER_MS;
-        if(_outputCount == 0) {
+        if (_outputCount == 0) {
             // transfer back the whole escrow amount to gateway if no output submitted
             USDC_TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
         } else if (_outputCount == 1) {
@@ -487,9 +442,7 @@ contract Jobs is
 
     //-------------------------------- external functions start ----------------------------------//
 
-    function slashOnExecutionTimeout(
-        uint256 _jobId
-    ) external {
+    function slashOnExecutionTimeout(uint256 _jobId) external {
         _slashOnExecutionTimeout(_jobId);
     }
 
@@ -497,9 +450,7 @@ contract Jobs is
 
     //-------------------------------- Timeout end --------------------------------//
 
-    function getSelectedExecutors(
-        uint256 _jobId
-    ) external view returns (address[] memory) {
+    function getSelectedExecutors(uint256 _jobId) external view returns (address[] memory) {
         return jobs[_jobId].selectedExecutors;
     }
 }

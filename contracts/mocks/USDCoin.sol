@@ -13,7 +13,7 @@ contract USDCoin is Initializable, ERC20Upgradeable, OwnableUpgradeable, UUPSUpg
         _disableInitializers();
     }
 
-    function initialize(address initialOwner) initializer public {
+    function initialize(address initialOwner) public initializer {
         __ERC20_init("USD Coin", "USDC");
         __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
@@ -21,11 +21,7 @@ contract USDCoin is Initializable, ERC20Upgradeable, OwnableUpgradeable, UUPSUpg
         _mint(msg.sender, 10000 * 10 ** decimals());
     }
 
-    function _authorizeUpgrade(address newImplementation)
-        internal
-        onlyOwner
-        override
-    {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function mint(address to, uint256 amount) public onlyOwner {
         _mint(to, amount);

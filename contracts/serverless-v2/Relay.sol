@@ -33,20 +33,18 @@ contract Relay is
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
         IERC20 _token,
-        uint256 _globalMinTimeout,  // in milliseconds
-        uint256 _globalMaxTimeout,  // in milliseconds
+        uint256 _globalMinTimeout, // in milliseconds
+        uint256 _globalMaxTimeout, // in milliseconds
         uint256 _overallTimeout,
-        uint256 _executionFeePerMs,  // fee is in USDC
+        uint256 _executionFeePerMs, // fee is in USDC
         uint256 _gatewayFeePerJob
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
-        if(address(_token) == address(0))
-            revert RelayInvalidToken();
+        if (address(_token) == address(0)) revert RelayInvalidToken();
         TOKEN = _token;
 
-        if(_globalMinTimeout >= _globalMaxTimeout)
-            revert RelayInvalidGlobalTimeouts();
+        if (_globalMinTimeout >= _globalMaxTimeout) revert RelayInvalidGlobalTimeouts();
         GLOBAL_MIN_TIMEOUT = _globalMinTimeout;
         GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
         OVERALL_TIMEOUT = _overallTimeout;
@@ -59,19 +57,11 @@ contract Relay is
 
     function supportsInterface(
         bytes4 interfaceId
-    )
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, AccessControlUpgradeable)
-        returns (bool)
-    {
+    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function _authorizeUpgrade(
-        address /*account*/
-    ) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -79,12 +69,8 @@ contract Relay is
 
     error RelayZeroAddressAdmin();
 
-    function initialize(
-        address _admin,
-        EnclaveImage[] memory _images
-    ) public initializer {
-        if(_admin == address(0))
-            revert RelayZeroAddressAdmin();
+    function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
+        if (_admin == address(0)) revert RelayZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -147,13 +133,9 @@ contract Relay is
     // enclaveAddress => owner
     mapping(address => address) public gatewayOwners;
 
-    bytes32 private constant REGISTER_TYPEHASH =
-        keccak256("Register(address owner,uint256 signTimestamp)");
+    bytes32 private constant REGISTER_TYPEHASH = keccak256("Register(address owner,uint256 signTimestamp)");
 
-    event GatewayRegistered(
-        address indexed owner,
-        address indexed enclaveAddress
-    );
+    event GatewayRegistered(address indexed owner, address indexed enclaveAddress);
 
     event GatewayDeregistered(address indexed enclaveAddress);
 
@@ -179,8 +161,7 @@ contract Relay is
         // signature verification
         _verifyRegisterSign(_owner, _signTimestamp, _signature, enclaveAddress);
 
-        if(gatewayOwners[enclaveAddress] != address(0))
-            revert RelayGatewayAlreadyExists();
+        if (gatewayOwners[enclaveAddress] != address(0)) revert RelayGatewayAlreadyExists();
         gatewayOwners[enclaveAddress] = _owner;
 
         emit GatewayRegistered(_owner, enclaveAddress);
@@ -192,29 +173,17 @@ contract Relay is
         bytes memory _signature,
         address _enclaveAddress
     ) internal view {
-        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
-            revert RelaySignatureTooOld();
+        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE) revert RelaySignatureTooOld();
 
-        bytes32 hashStruct = keccak256(
-            abi.encode(
-                REGISTER_TYPEHASH,
-                _owner,
-                _signTimestamp
-            )
-        );
+        bytes32 hashStruct = keccak256(abi.encode(REGISTER_TYPEHASH, _owner, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        if(signer != _enclaveAddress)
-            revert RelayInvalidSigner();
+        if (signer != _enclaveAddress) revert RelayInvalidSigner();
     }
 
-    function _deregisterGateway(
-        address _enclaveAddress,
-        address _owner
-    ) internal {
-        if(gatewayOwners[_enclaveAddress] != _owner)
-            revert RelayInvalidGateway();
+    function _deregisterGateway(address _enclaveAddress, address _owner) internal {
+        if (gatewayOwners[_enclaveAddress] != _owner) revert RelayInvalidGateway();
 
         _revokeEnclaveKey(gatewayOwners[_enclaveAddress]);
         delete gatewayOwners[_enclaveAddress];
@@ -243,7 +212,6 @@ contract Relay is
 
     //-------------------------------- Gateway End --------------------------------//
 
-
     //-------------------------------- Job start --------------------------------//
 
     struct Job {
@@ -265,7 +233,7 @@ contract Relay is
         uint256 indexed jobId,
         bytes32 codehash,
         bytes codeInputs,
-        uint256 userTimeout,    // in milliseconds
+        uint256 userTimeout, // in milliseconds
         uint256 maxGasPrice,
         uint256 usdcDeposit,
         uint256 callbackDeposit,
@@ -273,13 +241,7 @@ contract Relay is
         uint256 startTime
     );
 
-    event JobResponded(
-        uint256 indexed jobId,
-        bytes output,
-        uint256 totalTime,
-        uint256 errorCode,
-        bool success
-    );
+    event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint256 errorCode, bool success);
 
     event JobCancelled(uint256 indexed jobId);
 
@@ -295,17 +257,15 @@ contract Relay is
     function _relayJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
-        uint256 _userTimeout,   // in milliseconds
+        uint256 _userTimeout, // in milliseconds
         uint256 _maxGasPrice,
         uint256 _callbackDeposit,
         address _refundAccount,
         address _jobOwner
     ) internal {
-        if(_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT)
-            revert RelayInvalidUserTimeout();
+        if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
-        if (jobCount + 1 == (block.chainid + 1) << 192)
-            jobCount = block.chainid << 192;
+        if (jobCount + 1 == (block.chainid + 1) << 192) jobCount = block.chainid << 192;
 
         uint256 usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         jobs[++jobCount] = Job({
@@ -319,7 +279,17 @@ contract Relay is
         // deposit escrow amount(USDC)
         TOKEN.safeTransferFrom(_jobOwner, address(this), usdcDeposit);
 
-        emit JobRelayed(jobCount, _codehash, _codeInputs, _userTimeout, _maxGasPrice, usdcDeposit, _callbackDeposit, _refundAccount, block.timestamp);
+        emit JobRelayed(
+            jobCount,
+            _codehash,
+            _codeInputs,
+            _userTimeout,
+            _maxGasPrice,
+            usdcDeposit,
+            _callbackDeposit,
+            _refundAccount,
+            block.timestamp
+        );
     }
 
     function _jobResponse(
@@ -331,15 +301,20 @@ contract Relay is
         uint256 _signTimestamp
     ) internal {
         Job memory job = jobs[_jobId];
-        if(job.jobOwner == address(0))
-            revert RelayJobNotExists();
+        if (job.jobOwner == address(0)) revert RelayJobNotExists();
 
         // check time case
-        if(block.timestamp > job.startTime + OVERALL_TIMEOUT)
-            revert RelayOverallTimeoutOver();
+        if (block.timestamp > job.startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutOver();
 
         // signature check
-        address enclaveAddress = _verifyJobResponseSign(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
+        address enclaveAddress = _verifyJobResponseSign(
+            _signature,
+            _jobId,
+            _output,
+            _totalTime,
+            _errorCode,
+            _signTimestamp
+        );
 
         address jobOwner = job.jobOwner;
         uint256 callbackDeposit = job.callbackDeposit;
@@ -366,18 +341,10 @@ contract Relay is
         uint8 _errorCode,
         uint256 _signTimestamp
     ) internal view returns (address) {
-        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
-            revert RelaySignatureTooOld();
+        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE) revert RelaySignatureTooOld();
 
         bytes32 hashStruct = keccak256(
-            abi.encode(
-                JOB_RESPONSE_TYPEHASH,
-                _jobId,
-                keccak256(_output),
-                _totalTime,
-                _errorCode,
-                _signTimestamp
-            )
+            abi.encode(JOB_RESPONSE_TYPEHASH, _jobId, keccak256(_output), _totalTime, _errorCode, _signTimestamp)
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
@@ -386,16 +353,11 @@ contract Relay is
         return signer;
     }
 
-    function _jobCancel(
-        uint256 _jobId,
-        address _jobOwner
-    ) internal {
-        if(jobs[_jobId].jobOwner != _jobOwner)
-            revert RelayInvalidJobOwner();
+    function _jobCancel(uint256 _jobId, address _jobOwner) internal {
+        if (jobs[_jobId].jobOwner != _jobOwner) revert RelayInvalidJobOwner();
 
         // check time case
-        if(block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT)
-            revert RelayOverallTimeoutNotOver();
+        if (block.timestamp <= jobs[_jobId].startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutNotOver();
 
         uint256 callbackDeposit = jobs[_jobId].callbackDeposit;
         uint256 usdcDeposit = jobs[_jobId].usdcDeposit;
@@ -406,8 +368,7 @@ contract Relay is
 
         // return back callback deposit to the user
         (bool success, ) = _jobOwner.call{value: callbackDeposit}("");
-        if(!success)
-            revert RelayCallbackDepositTransferFailed();
+        if (!success) revert RelayCallbackDepositTransferFailed();
 
         emit JobCancelled(_jobId);
     }
@@ -420,7 +381,7 @@ contract Relay is
         uint8 _errorCode
     ) internal returns (bool, uint) {
         uint startGas = gasleft();
-        (bool success,) = _jobOwner.call{gas: (_callbackDeposit / tx.gasprice)}(
+        (bool success, ) = _jobOwner.call{gas: (_callbackDeposit / tx.gasprice)}(
             abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8)", _jobId, _input, _errorCode)
         );
 
@@ -435,12 +396,12 @@ contract Relay is
         address _jobOwner,
         uint256 _callbackDeposit,
         uint256 _callbackCost
-    )  internal {
+    ) internal {
         // TODO: If paySuccess is false then deposit will be stucked forever. Find a way out.
         // transfer callback cost to gateway
-        (bool paySuccess, ) = _gatewayOwner.call{ value: _callbackCost }("");
+        (bool paySuccess, ) = _gatewayOwner.call{value: _callbackCost}("");
         // transfer remaining native asset to the jobOwner
-        (paySuccess, ) = _jobOwner.call{ value: _callbackDeposit - _callbackCost }("");
+        (paySuccess, ) = _jobOwner.call{value: _callbackDeposit - _callbackCost}("");
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -468,14 +429,11 @@ contract Relay is
         _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
-    function jobCancel(
-        uint256 _jobId
-    ) external {
+    function jobCancel(uint256 _jobId) external {
         _jobCancel(_jobId, _msgSender());
     }
 
     //-------------------------------- external functions end --------------------------------//
 
     //-------------------------------- Job End --------------------------------//
-
 }

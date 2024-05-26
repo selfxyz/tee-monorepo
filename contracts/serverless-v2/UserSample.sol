@@ -12,10 +12,7 @@ contract UserSample {
     /// @notice refers to USDC token
     IERC20 public token;
 
-    constructor(
-        address _relayAddress,
-        address _token
-    ) {
+    constructor(address _relayAddress, address _token) {
         relayAddress = _relayAddress;
         token = IERC20(_token);
     }
@@ -35,8 +32,9 @@ contract UserSample {
         // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
 
-        (bool _success,) = relayAddress.call{value: msg.value}(
-            abi.encodeWithSignature("relayJob(bytes32,bytes,uint256,uint256,address)",
+        (bool _success, ) = relayAddress.call{value: msg.value}(
+            abi.encodeWithSignature(
+                "relayJob(bytes32,bytes,uint256,uint256,address)",
                 _codehash,
                 _codeInputs,
                 _userTimeout,

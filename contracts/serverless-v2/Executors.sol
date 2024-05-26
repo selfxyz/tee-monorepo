@@ -41,10 +41,8 @@ contract Executors is
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
-        if(address(_token) == address(0))
-            revert ExecutorsZeroAddressToken();
-        if(_minStakeAmount == 0)
-            revert ExecutorsZeroMinStakeAmount();
+        if (address(_token) == address(0)) revert ExecutorsZeroAddressToken();
+        if (_minStakeAmount == 0) revert ExecutorsZeroMinStakeAmount();
 
         TOKEN = _token;
         MIN_STAKE_AMOUNT = _minStakeAmount;
@@ -57,19 +55,11 @@ contract Executors is
 
     function supportsInterface(
         bytes4 interfaceId
-    )
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, AccessControlUpgradeable)
-        returns (bool)
-    {
+    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function _authorizeUpgrade(
-        address /*account*/
-    ) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
@@ -77,12 +67,8 @@ contract Executors is
 
     error ExecutorsZeroAddressAdmin();
 
-    function initialize(
-        address _admin,
-        EnclaveImage[] memory _images
-    ) public initializer {
-        if(_admin == address(0))
-            revert ExecutorsZeroAddressAdmin();
+    function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
+        if (_admin == address(0)) revert ExecutorsZeroAddressAdmin();
 
         __Context_init_unchained();
         __ERC165_init_unchained();
@@ -117,12 +103,8 @@ contract Executors is
 
     //-------------------------------- Executor start --------------------------------//
 
-    modifier isValidExecutorOwner(
-        address _enclaveAddress,
-        address _owner
-    ) {
-        if (executors[_enclaveAddress].owner != _owner)
-            revert ExecutorsInvalidOwner();
+    modifier isValidExecutorOwner(address _enclaveAddress, address _owner) {
+        if (executors[_enclaveAddress].owner != _owner) revert ExecutorsInvalidOwner();
         _;
     }
 
@@ -149,30 +131,16 @@ contract Executors is
     bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestamp)");
 
-    event ExecutorRegistered(
-        address indexed enclaveAddress,
-        address indexed owner,
-        uint256 jobCapacity
-    );
+    event ExecutorRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity);
 
     event ExecutorDeregistered(address indexed enclaveAddress);
 
-    event ExecutorDrained(
-        address indexed enclaveAddress
-    );
-    event ExecutorRevived(
-        address indexed enclaveAddress
-    );
+    event ExecutorDrained(address indexed enclaveAddress);
+    event ExecutorRevived(address indexed enclaveAddress);
 
-    event ExecutorStakeAdded(
-        address indexed enclaveAddress,
-        uint256 addedAmount
-    );
+    event ExecutorStakeAdded(address indexed enclaveAddress, uint256 addedAmount);
 
-    event ExecutorStakeRemoved(
-        address indexed enclaveAddress,
-        uint256 removedAmount
-    );
+    event ExecutorStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
 
     error ExecutorsSignatureTooOld();
     error ExecutorsInvalidSigner();
@@ -211,8 +179,7 @@ contract Executors is
         address _owner
     ) internal {
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
-        if(executors[enclaveAddress].owner != address(0))
-            revert ExecutorsExecutorAlreadyExists();
+        if (executors[enclaveAddress].owner != address(0)) revert ExecutorsExecutorAlreadyExists();
 
         // attestation verification
         _verifyEnclaveKey(_attestationSignature, _attestation);
@@ -223,7 +190,7 @@ contract Executors is
         _register(enclaveAddress, _owner, _jobCapacity);
 
         // add node to the tree if min stake amount deposited
-        if(_stakeAmount >= MIN_STAKE_AMOUNT)
+        if (_stakeAmount >= MIN_STAKE_AMOUNT)
             _insert_unchecked(enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
 
         _addStake(enclaveAddress, _stakeAmount);
@@ -236,40 +203,24 @@ contract Executors is
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal view {
-        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
-            revert ExecutorsSignatureTooOld();
+        if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE) revert ExecutorsSignatureTooOld();
 
-        bytes32 hashStruct = keccak256(
-            abi.encode(
-                REGISTER_TYPEHASH,
-                _owner,
-                _jobCapacity,
-                _signTimestamp
-            )
-        );
+        bytes32 hashStruct = keccak256(abi.encode(REGISTER_TYPEHASH, _owner, _jobCapacity, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        if(signer != _enclaveAddress)
-            revert ExecutorsInvalidSigner();
+        if (signer != _enclaveAddress) revert ExecutorsInvalidSigner();
     }
 
-    function _register(
-        address _enclaveAddress,
-        address _owner,
-        uint256 _jobCapacity
-    ) internal {
+    function _register(address _enclaveAddress, address _owner, uint256 _jobCapacity) internal {
         executors[_enclaveAddress].jobCapacity = _jobCapacity;
         executors[_enclaveAddress].owner = _owner;
 
         emit ExecutorRegistered(_enclaveAddress, _owner, _jobCapacity);
     }
 
-    function _drainExecutor(
-        address _enclaveAddress
-    ) internal {
-        if(executors[_enclaveAddress].draining)
-            revert ExecutorsAlreadyDraining();
+    function _drainExecutor(address _enclaveAddress) internal {
+        if (executors[_enclaveAddress].draining) revert ExecutorsAlreadyDraining();
 
         executors[_enclaveAddress].draining = true;
 
@@ -279,32 +230,23 @@ contract Executors is
         emit ExecutorDrained(_enclaveAddress);
     }
 
-    function _reviveExecutor(
-        address _enclaveAddress
-    ) internal {
+    function _reviveExecutor(address _enclaveAddress) internal {
         Executor memory executorNode = executors[_enclaveAddress];
-        if(!executorNode.draining)
-            revert ExecutorsAlreadyRevived();
+        if (!executorNode.draining) revert ExecutorsAlreadyRevived();
 
         executors[_enclaveAddress].draining = false;
 
         // insert node in the tree
-        if(executorNode.stakeAmount >= MIN_STAKE_AMOUNT &&
-            executorNode.activeJobs < executorNode.jobCapacity
-        ) {
+        if (executorNode.stakeAmount >= MIN_STAKE_AMOUNT && executorNode.activeJobs < executorNode.jobCapacity) {
             _insert_unchecked(_enclaveAddress, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
         emit ExecutorRevived(_enclaveAddress);
     }
 
-    function _deregisterExecutor(
-        address _enclaveAddress
-    ) internal {
-        if(!executors[_enclaveAddress].draining)
-            revert ExecutorsNotDraining();
-        if(executors[_enclaveAddress].activeJobs != 0)
-            revert ExecutorsHasPendingJobs();
+    function _deregisterExecutor(address _enclaveAddress) internal {
+        if (!executors[_enclaveAddress].draining) revert ExecutorsNotDraining();
+        if (executors[_enclaveAddress].activeJobs != 0) revert ExecutorsHasPendingJobs();
 
         _removeStake(_enclaveAddress, executors[_enclaveAddress].stakeAmount);
 
@@ -314,14 +256,11 @@ contract Executors is
         emit ExecutorDeregistered(_enclaveAddress);
     }
 
-    function _addExecutorStake(
-        uint256 _amount,
-        address _enclaveAddress
-    ) internal {
+    function _addExecutorStake(uint256 _amount, address _enclaveAddress) internal {
         Executor memory executorNode = executors[_enclaveAddress];
         uint256 updatedStake = executorNode.stakeAmount + _amount;
 
-        if(
+        if (
             !executorNode.draining &&
             executorNode.activeJobs < executorNode.jobCapacity &&
             updatedStake >= MIN_STAKE_AMOUNT
@@ -333,22 +272,14 @@ contract Executors is
         _addStake(_enclaveAddress, _amount);
     }
 
-    function _removeExecutorStake(
-        uint256 _amount,
-        address _enclaveAddress
-    ) internal {
-        if(!executors[_enclaveAddress].draining)
-            revert ExecutorsNotDraining();
-        if(executors[_enclaveAddress].activeJobs != 0)
-            revert ExecutorsHasPendingJobs();
+    function _removeExecutorStake(uint256 _amount, address _enclaveAddress) internal {
+        if (!executors[_enclaveAddress].draining) revert ExecutorsNotDraining();
+        if (executors[_enclaveAddress].activeJobs != 0) revert ExecutorsHasPendingJobs();
 
         _removeStake(_enclaveAddress, _amount);
     }
 
-    function _addStake(
-        address _enclaveAddress,
-        uint256 _amount
-    ) internal {
+    function _addStake(address _enclaveAddress, uint256 _amount) internal {
         executors[_enclaveAddress].stakeAmount += _amount;
         // transfer stake
         TOKEN.safeTransferFrom(executors[_enclaveAddress].owner, address(this), _amount);
@@ -356,10 +287,7 @@ contract Executors is
         emit ExecutorStakeAdded(_enclaveAddress, _amount);
     }
 
-    function _removeStake(
-        address _enclaveAddress,
-        uint256 _amount
-    ) internal {
+    function _removeStake(address _enclaveAddress, uint256 _amount) internal {
         executors[_enclaveAddress].stakeAmount -= _amount;
         // transfer stake
         TOKEN.safeTransfer(executors[_enclaveAddress].owner, _amount);
@@ -379,7 +307,15 @@ contract Executors is
         bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        _registerExecutor(_attestationSignature, _attestation, _jobCapacity, _signTimestamp, _signature, _stakeAmount, _msgSender());
+        _registerExecutor(
+            _attestationSignature,
+            _attestation,
+            _jobCapacity,
+            _signTimestamp,
+            _signature,
+            _stakeAmount,
+            _msgSender()
+        );
     }
 
     function deregisterExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
@@ -408,13 +344,11 @@ contract Executors is
         _removeExecutorStake(_amount, _enclaveAddress);
     }
 
-    function allowOnlyVerified(
-        address _signer
-    ) external view {
+    function allowOnlyVerified(address _signer) external view {
         _allowOnlyVerified(_signer);
     }
 
-    function getOwner(address _enclaveAddress) external view returns (address){
+    function getOwner(address _enclaveAddress) external view returns (address) {
         return executors[_enclaveAddress].owner;
     }
 
@@ -422,54 +356,43 @@ contract Executors is
 
     //--------------------------------------- Executor end -----------------------------------------//
 
-
     //-------------------------------- JobsContract functions start --------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _selectExecutors(
-        uint256 _noOfNodesToSelect
-    ) internal returns (address[] memory selectedNodes) {
+    function _selectExecutors(uint256 _noOfNodesToSelect) internal returns (address[] memory selectedNodes) {
         selectedNodes = _selectNodes(_noOfNodesToSelect);
         for (uint256 index = 0; index < selectedNodes.length; index++) {
             address enclaveAddress = selectedNodes[index];
             executors[enclaveAddress].activeJobs += 1;
 
             // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
-            if(executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
+            if (executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
                 _deleteIfPresent(enclaveAddress);
         }
     }
 
-    function _selectNodes(
-        uint256 _noOfNodesToSelect
-    ) internal view returns (address[] memory selectedNodes) {
+    function _selectNodes(uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
         uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
         selectedNodes = _selectN(randomizer, _noOfNodesToSelect);
         // require(selectedNodes.length != 0, "NO_EXECUTOR_SELECTED");
     }
 
-    function _releaseExecutor(
-        address _enclaveAddress
-    ) internal {
-        if(!executors[_enclaveAddress].draining) {
+    function _releaseExecutor(address _enclaveAddress) internal {
+        if (!executors[_enclaveAddress].draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
-            if(executors[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
+            if (executors[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
                 _upsert(_enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
-            // remove node from tree if stake falls below min level
-            else
-                _deleteIfPresent(_enclaveAddress);
+                // remove node from tree if stake falls below min level
+            else _deleteIfPresent(_enclaveAddress);
         }
 
         executors[_enclaveAddress].activeJobs -= 1;
     }
 
-    function _slashExecutor(
-        address _enclaveAddress,
-        address _recipient
-    ) internal returns (uint256) {
-        uint256 totalComp = executors[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS / SLASH_MAX_BIPS;
+    function _slashExecutor(address _enclaveAddress, address _recipient) internal returns (uint256) {
+        uint256 totalComp = (executors[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
         executors[_enclaveAddress].stakeAmount -= totalComp;
 
         TOKEN.safeTransfer(_recipient, totalComp);
@@ -488,20 +411,15 @@ contract Executors is
         return _selectExecutors(_noOfNodesToSelect);
     }
 
-    function releaseExecutor(
-        address _enclaveAddress
-    ) external onlyRole(JOBS_ROLE) {
+    function releaseExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) {
         _releaseExecutor(_enclaveAddress);
     }
 
-    function slashExecutor(
-        address _enclaveAddress
-    ) external onlyRole(JOBS_ROLE) returns (uint256) {
+    function slashExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) returns (uint256) {
         return _slashExecutor(_enclaveAddress, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- JobsContract functions end --------------------------------//
-
 }
