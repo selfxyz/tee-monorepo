@@ -186,10 +186,7 @@ contract AttestationVerifier is
 
     error AttestationVerifierAttestationTooOld();
 
-    function _verifyEnclaveKey(
-        bytes memory signature,
-        Attestation memory attestation
-    ) internal returns (bool) {
+    function _verifyEnclaveKey(bytes memory signature, Attestation memory attestation) internal returns (bool) {
         if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE))
             revert AttestationVerifierAttestationTooOld();
         bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));

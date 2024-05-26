@@ -86,10 +86,7 @@ contract AttestationAuther {
     /// to the respective families.
     /// @param images Enclave images to be whitelisted.
     /// @param families Corresponding family for each enclave images.
-    function __AttestationAuther_constructor(
-        EnclaveImage[] memory images,
-        bytes32[] memory families
-    ) internal {
+    function __AttestationAuther_constructor(EnclaveImage[] memory images, bytes32[] memory families) internal {
         if (!(images.length == families.length)) revert AttestationAutherMismatchedLengths();
         for (uint256 i = 0; i < images.length; i++) {
             (bytes32 imageId, ) = _whitelistEnclaveImage(images[i]);
