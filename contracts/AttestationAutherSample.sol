@@ -25,9 +25,7 @@ contract AttestationAutherSample is
 
     //-------------------------------- Overrides start --------------------------------//
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view virtual override(ERC165, AccessControl) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
