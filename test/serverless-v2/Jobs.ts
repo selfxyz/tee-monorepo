@@ -2,11 +2,8 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Gateways, Jobs, Pond, USDCoin } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, USDCoin, JobsUser } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { timeStamp } from 'console';
-import { exec } from 'child_process';
-import exp from 'constants';
 import { testERC165 } from '../helpers/erc165';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
@@ -642,8 +639,6 @@ describe("Jobs - Output", function () {
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-	// TODO: test callback for oysterResultCall
-
 	// submit 1 output
 	it("can submit output by selected executor node", async function () {
 		let jobId = 0,
@@ -661,7 +656,8 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 		);
-		await expect(tx).to.emit(jobs, "JobResponded").and.to.emit(jobs, "JobSucceeded").withArgs(jobId, true);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
 		// check active jobs for submitter
 		let executor = await executors.executors(addrs[17]);
 		expect(executor.activeJobs).to.eq(0);
@@ -703,7 +699,7 @@ describe("Jobs - Output", function () {
 			signTimestamp
 		);
 		await expect(tx).to.emit(jobs, "JobResponded")
-			.and.to.emit(jobs, "JobSucceeded").withArgs(jobId, true);
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
 
 		// submit 2nd output
 		output = solidityPacked(["string"], ["it is the output"]);
@@ -716,7 +712,7 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 		);
-		await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobSucceeded");
+		await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobResultCallbackCalled");
 
 		// check active jobs for submitter
 		let executor = await executors.executors(addrs[17]);
@@ -759,7 +755,7 @@ describe("Jobs - Output", function () {
 			signTimestamp
 		);
 		await expect(tx).to.emit(jobs, "JobResponded")
-			.and.to.emit(jobs, "JobSucceeded").withArgs(jobId, true);
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
 
 		// submit 2nd output
 		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[18]);
@@ -772,7 +768,7 @@ describe("Jobs - Output", function () {
 			signTimestamp
 		);
 		await expect(tx).to.emit(jobs, "JobResponded")
-			.and.to.not.emit(jobs, "JobSucceeded");
+			.and.to.not.emit(jobs, "JobResultCallbackCalled");
 
 		// submit 3rd output
 		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[19]);
@@ -784,7 +780,7 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 		);
-		await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobSucceeded");
+		await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobResultCallbackCalled");
 
 		// check active jobs for submitter
 		let executor = await executors.executors(addrs[17]);
@@ -807,6 +803,37 @@ describe("Jobs - Output", function () {
 			const executor = await executors.executors(addrs[index]);
 			expect(executor.stakeAmount).to.eq(10n**19n);
 		}
+	});
+
+	it("verify job result callback", async function () {
+		// deploy job user
+		const JobsUser = await ethers.getContractFactory("JobsUser");
+		let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			usdcDeposit = 1000000,
+			deadline = 10000;
+		await usdc_token.transfer(jobsUser.target, 10n**6n);
+		await jobsUser.createJob(codeHash, codeInputs, deadline, usdcDeposit);
+
+		let jobId = 1,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		let tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true)
+			.and.to.emit(jobsUser, "CalledBack").withArgs(jobId, output, errorCode, totalTime);
 	});
 
 	it("cannot submit output with expired signature", async function () {
@@ -1061,8 +1088,6 @@ describe("Jobs - Slashing", function () {
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-	// TODO: test callback for OysterFailureCall
-
 	it("can slash after deadline over", async function () {
 		await time.increase(await time.latest() + 100000);
 		let jobId = 0;
@@ -1070,7 +1095,7 @@ describe("Jobs - Slashing", function () {
 		await expect(tx).to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[17])
 			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[18])
 			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[19])
-			.and.to.emit(jobs, "JobTimeoutFailure").withArgs(jobId, true);
+			.and.to.emit(jobs, "JobFailureCallbackCalled").withArgs(jobId, true);
 		// check job does not exists
 		let job = await jobs.jobs(jobId);
 		expect(job.execStartTime).to.be.eq(0);
@@ -1230,6 +1255,28 @@ describe("Jobs - Slashing", function () {
 		await expect(jobs.slashOnExecutionTimeout(jobId))
 			.to.revertedWithCustomError(jobs, "JobsInvalidJob");
 	});
+
+	it("verify job failed callback", async function () {
+		// deploy job user
+		const JobsUser = await ethers.getContractFactory("JobsUser");
+		let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			usdcDeposit = 1000000,
+			deadline = 10000;
+		await usdc_token.transfer(jobsUser.target, 10n**6n);
+		await jobsUser.createJob(codeHash, codeInputs, deadline, usdcDeposit);
+
+		await time.increase(await time.latest() + 100000);
+		let jobId = 1;
+		let tx = await jobs.slashOnExecutionTimeout(jobId);
+		await expect(tx).to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[17])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[18])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[19])
+			.and.to.emit(jobs, "JobFailureCallbackCalled").withArgs(jobId, true)
+			.and.to.emit(jobsUser, "FailedCallback").withArgs(jobId, 3n*10n**15n);
+	});
+
 });
 
 function normalize(key: string): string {

@@ -859,7 +859,10 @@ describe("Relay - Job sent by UserSample contract", function () {
 
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
-		await expect(tx).to.emit(userSample, "CalledBack").and.to.emit(relay, "JobResponded");
+		await expect(tx).to.emit(relay, "JobResponded")
+			.and.to.emit(userSample, "CalledBack").withArgs(
+				jobId, callbackContract, codeHash, codeInputs, output, errorCode
+		);
 	});
 
 	// TODO
