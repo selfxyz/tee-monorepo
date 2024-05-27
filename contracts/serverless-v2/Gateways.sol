@@ -34,7 +34,6 @@ contract Gateways is
         uint256 maxAge,
         IERC20 _token,
         uint256 _deregisterOrUnstakeTimeout,
-        uint256 _reassignCompForReporterGateway,
         uint256 _slashPercentInBips,
         uint256 _slashMaxBips
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
@@ -44,7 +43,6 @@ contract Gateways is
         TOKEN = _token;
 
         DRAINING_TIME_DURATION = _deregisterOrUnstakeTimeout;
-        REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
         SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
         SLASH_MAX_BIPS = _slashMaxBips;
     }
@@ -65,7 +63,7 @@ contract Gateways is
 
     error GatewaysZeroAddressAdmin();
 
-    function initialize(address _admin, EnclaveImage[] memory _images, address _paymentPoolAddress) public initializer {
+    function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
         if (_admin == address(0)) revert GatewaysZeroAddressAdmin();
 
         __Context_init_unchained();
@@ -75,8 +73,6 @@ contract Gateways is
         __AttestationAuther_init_unchained(_images);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-
-        paymentPool = _paymentPoolAddress;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -99,8 +95,6 @@ contract Gateways is
     uint256 public immutable SLASH_MAX_BIPS;
 
     bytes32 public constant GATEWAY_JOBS_ROLE = keccak256("GATEWAY_JOBS_ROLE");
-
-    address public paymentPool;
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -199,10 +193,6 @@ contract Gateways is
 
             emit ChainRemovedGlobal(chainId);
         }
-    }
-
-    function setPaymentPool(address _paymentPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        paymentPool = _paymentPoolAddress;
     }
 
     function whitelistEnclaveImage(
@@ -521,6 +511,10 @@ contract Gateways is
         _allowOnlyVerified(_enclaveAddress);
     }
 
+    function getOwner(address _enclaveAddress) external view returns (address) {
+        return gateways[_enclaveAddress].owner;
+    }
+
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- Gateway end --------------------------------//
@@ -530,24 +524,15 @@ contract Gateways is
     //-------------------------------- internal functions start ----------------------------------//
 
     function _slashOnReassignGateway(
-        uint8 _sequenceId,
         address _oldGateway,
-        address _reporterGateway,
-        address _jobOwner
-    ) internal {
+        address _recipient
+    ) internal returns (uint256){
         uint256 totalComp = (gateways[_oldGateway].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
         gateways[_oldGateway].stakeAmount -= totalComp;
 
         // transfer comp to reporter gateway
-        TOKEN.safeTransfer(gateways[_reporterGateway].owner, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
-
-        if (_sequenceId == 1) {
-            // if sequenceId = 1, keep the comp in payment pool
-            TOKEN.safeTransfer(paymentPool, totalComp - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
-        } else {
-            // if sequenceId = 2, transfer comp to jobOwner
-            TOKEN.safeTransfer(_jobOwner, totalComp - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
-        }
+        TOKEN.safeTransfer(_recipient, totalComp);
+        return totalComp;
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -555,12 +540,9 @@ contract Gateways is
     //------------------------------- external functions start ---------------------------------//
 
     function slashOnReassignGateway(
-        uint8 _sequenceId,
-        address _oldGateway,
-        address _reporterGateway,
-        address _jobOwner
-    ) external onlyRole(GATEWAY_JOBS_ROLE) {
-        _slashOnReassignGateway(_sequenceId, _oldGateway, _reporterGateway, _jobOwner);
+        address _oldGateway
+    ) external onlyRole(GATEWAY_JOBS_ROLE) returns (uint256){
+        return _slashOnReassignGateway(_oldGateway, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//

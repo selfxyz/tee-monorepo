@@ -22,32 +22,40 @@ contract GatewayJobs is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
-    error GatewayJobsZeroAddressToken();
+    error GatewayJobsZeroAddressStakingToken();
     error GatewayJobsZeroAddressUsdcToken();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     // initializes the logic contract without any admins
     // safeguard against takeover of the logic contract
     constructor(
-        IERC20 _token,
-        IERC20 _tokenUsdc,
+        IERC20 _stakingToken,
+        IERC20 _usdcToken,
         uint256 _signMaxAge,
         uint256 _relayBufferTime,
         uint256 _executionFeePerMs,
-        uint256 _slashCompForGateway
+        uint256 _slashCompForGateway,
+        uint256 _reassignCompForReporterGateway,
+        Jobs _jobMgr,
+        Gateways _gateways,
+        address _stakingPaymentPoolAddress
     ) {
         _disableInitializers();
 
-        if (address(_token) == address(0)) revert GatewayJobsZeroAddressToken();
-        TOKEN = _token;
+        if (address(_stakingToken) == address(0)) revert GatewayJobsZeroAddressStakingToken();
+        STAKING_TOKEN = _stakingToken;
 
-        if (address(_tokenUsdc) == address(0)) revert GatewayJobsZeroAddressUsdcToken();
-        TOKEN_USDC = _tokenUsdc;
+        if (address(_usdcToken) == address(0)) revert GatewayJobsZeroAddressUsdcToken();
+        USDC_TOKEN = _usdcToken;
 
         SIGN_MAX_AGE = _signMaxAge;
         RELAY_BUFFER_TIME = _relayBufferTime;
         EXECUTION_FEE_PER_MS = _executionFeePerMs;
         SLASH_COMP_FOR_GATEWAY = _slashCompForGateway;
+        REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
+        JOB_MANAGER = _jobMgr;
+        GATEWAYS = _gateways;
+        STAKING_PAYMENY_POOL = _stakingPaymentPoolAddress;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -66,7 +74,7 @@ contract GatewayJobs is
 
     error GatewayJobsZeroAddressAdmin();
 
-    function initialize(address _admin, Jobs _jobMgr, Gateways _gateways) public initializer {
+    function initialize(address _admin) public initializer {
         if (_admin == address(0)) revert GatewayJobsZeroAddressAdmin();
 
         __Context_init_unchained();
@@ -76,17 +84,15 @@ contract GatewayJobs is
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-        jobMgr = _jobMgr;
-        gateways = _gateways;
     }
 
     //-------------------------------- Initializer end --------------------------------//
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    IERC20 public immutable TOKEN;
+    IERC20 public immutable STAKING_TOKEN;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    IERC20 public immutable TOKEN_USDC;
+    IERC20 public immutable USDC_TOKEN;
 
     /// @notice Maximum age of a valid signature, in seconds.
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -101,10 +107,19 @@ contract GatewayJobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_COMP_FOR_GATEWAY;
 
-    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
 
-    Jobs public jobMgr;
-    Gateways public gateways;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    Jobs public immutable JOB_MANAGER;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    Gateways public immutable GATEWAYS;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    address public immutable STAKING_PAYMENY_POOL;
+
+    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
     struct Job {
         uint256 execStartTime;
@@ -136,7 +151,7 @@ contract GatewayJobs is
         );
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH =
         keccak256(
-            "ReassignGateway(uint256 jobId,address gatewayOld,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestamp)"
+            "ReassignGateway(uint256 jobId,address gatewayOld,address jobOwner,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestamp)"
         );
 
     event JobRelayed(uint256 indexed jobId, uint256 execJobId, address jobOwner, address gateway);
@@ -156,18 +171,6 @@ contract GatewayJobs is
     error GatewayJobsUnsupportedChain();
     error GatewayJobsSignatureTooOld();
     error GatewayJobsCreateFailed(bytes reason);
-
-    //-------------------------------- Admin methods start --------------------------------//
-
-    function setJobsContract(Jobs _jobMgr) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        jobMgr = _jobMgr;
-    }
-
-    function setGatewaysContract(Gateways _gateways) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        gateways = _gateways;
-    }
-
-    //-------------------------------- Admin methods end ----------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -189,7 +192,7 @@ contract GatewayJobs is
         if (_sequenceId != relayJobs[_jobId].sequenceId + 1) revert GatewayJobsInvalidRelaySequenceId();
 
         uint256 reqChainId = _jobId >> 192;
-        if (!gateways.isChainSupported(reqChainId)) revert GatewayJobsUnsupportedChain();
+        if (!GATEWAYS.isChainSupported(reqChainId)) revert GatewayJobsUnsupportedChain();
 
         // signature check
         address enclaveAddress = _verifyRelaySign(
@@ -206,8 +209,8 @@ contract GatewayJobs is
 
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
-        TOKEN_USDC.safeTransferFrom(_gateway, address(this), usdcDeposit);
-        TOKEN_USDC.safeIncreaseAllowance(address(jobMgr), usdcDeposit);
+        USDC_TOKEN.safeTransferFrom(_gateway, address(this), usdcDeposit);
+        USDC_TOKEN.safeIncreaseAllowance(address(JOB_MANAGER), usdcDeposit);
 
         _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
     }
@@ -222,7 +225,7 @@ contract GatewayJobs is
         uint256 _usdcDeposit,
         uint8 _sequenceId
     ) internal {
-        try jobMgr.createJob(_codehash, _codeInputs, _deadline) returns (uint256 execJobId) {
+        try JOB_MANAGER.createJob(_codehash, _codeInputs, _deadline) returns (uint256 execJobId) {
             relayJobs[_jobId].execStartTime = block.timestamp;
             relayJobs[_jobId].jobOwner = _jobOwner;
             relayJobs[_jobId].usdcDeposit = _usdcDeposit;
@@ -237,7 +240,7 @@ contract GatewayJobs is
                 // Resource unavailable
                 relayJobs[_jobId].isResourceUnavailable = true;
                 // Refund the USDC deposit
-                TOKEN_USDC.safeTransfer(_gateway, _usdcDeposit);
+                USDC_TOKEN.safeTransfer(_gateway, _usdcDeposit);
 
                 emit JobResourceUnavailable(_jobId, _gateway);
                 return;
@@ -276,7 +279,7 @@ contract GatewayJobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer);
+        GATEWAYS.allowOnlyVerified(signer);
         return signer;
     }
 
@@ -304,13 +307,23 @@ contract GatewayJobs is
             _signature,
             _jobId,
             _gatewayOld,
+            _jobOwner,
             _sequenceId,
             _jobRequestTimestamp,
             _signTimestamp
         );
 
         // slash old gateway
-        gateways.slashOnReassignGateway(_sequenceId, _gatewayOld, enclaveAddress, _jobOwner);
+        uint256 slashedAmount = GATEWAYS.slashOnReassignGateway(_gatewayOld);
+        address _reporterGateway = GATEWAYS.getOwner(enclaveAddress);
+        STAKING_TOKEN.safeTransfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        if (_sequenceId == 1) {
+            // if sequenceId = 1, keep the comp in payment pool
+            STAKING_TOKEN.safeTransfer(STAKING_PAYMENY_POOL, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        } else if (_sequenceId == 2) {
+            // if sequenceId = 2, transfer comp to jobOwner
+            STAKING_TOKEN.safeTransfer(_jobOwner, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+        }
 
         emit GatewayReassigned(_jobId, _gatewayOld, _gateway, _sequenceId);
     }
@@ -319,6 +332,7 @@ contract GatewayJobs is
         bytes memory _signature,
         uint256 _jobId,
         address _gatewayOld,
+        address _jobOwner,
         uint8 _sequenceId,
         uint256 _jobRequestTimestamp,
         uint256 _signTimestamp
@@ -330,6 +344,7 @@ contract GatewayJobs is
                 REASSIGN_GATEWAY_TYPEHASH,
                 _jobId,
                 _gatewayOld,
+                _jobOwner,
                 _sequenceId,
                 _jobRequestTimestamp,
                 _signTimestamp
@@ -338,7 +353,7 @@ contract GatewayJobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        gateways.allowOnlyVerified(signer);
+        GATEWAYS.allowOnlyVerified(signer);
         return signer;
     }
     //-------------------------------- internal functions end ----------------------------------//
@@ -409,9 +424,9 @@ contract GatewayJobs is
         delete execJobs[_execJobId];
         delete relayJobs[jobId];
 
-        (address owner, , , ) = gateways.gateways(gateway);
+        address owner = GATEWAYS.getOwner(gateway);
 
-        TOKEN_USDC.safeTransfer(owner, usdcDeposit - _totalTime * EXECUTION_FEE_PER_MS);
+        USDC_TOKEN.safeTransfer(owner, usdcDeposit - _totalTime * EXECUTION_FEE_PER_MS);
         emit JobResponded(jobId, _output, _totalTime, _errorCode);
     }
 
@@ -423,11 +438,11 @@ contract GatewayJobs is
         delete execJobs[_execJobId];
         delete relayJobs[jobId];
 
-        (address gatewayOwner, , , ) = gateways.gateways(gateway);
+        address gatewayOwner = GATEWAYS.getOwner(gateway);
 
-        TOKEN_USDC.safeTransfer(gatewayOwner, usdcDeposit);
-        TOKEN.safeTransfer(jobOwner, _slashAmount - SLASH_COMP_FOR_GATEWAY);
-        TOKEN.safeTransfer(gatewayOwner, SLASH_COMP_FOR_GATEWAY);
+        USDC_TOKEN.safeTransfer(gatewayOwner, usdcDeposit);
+        STAKING_TOKEN.safeTransfer(jobOwner, _slashAmount - SLASH_COMP_FOR_GATEWAY);
+        STAKING_TOKEN.safeTransfer(gatewayOwner, SLASH_COMP_FOR_GATEWAY);
         emit JobFailed(jobId);
     }
     //-------------------------------- internal functions end ----------------------------------//
