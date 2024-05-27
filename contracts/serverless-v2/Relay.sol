@@ -220,6 +220,9 @@ contract Relay is
         uint256 usdcDeposit;
         uint256 callbackDeposit;
         address jobOwner;
+        bytes32 codehash;
+        bytes codeInputs;
+        address callbackContract;
     }
 
     mapping(uint256 => Job) public jobs;
@@ -238,6 +241,7 @@ contract Relay is
         uint256 usdcDeposit,
         uint256 callbackDeposit,
         address refundAccount,
+        address callbackContract,
         uint256 startTime
     );
 
@@ -261,6 +265,7 @@ contract Relay is
         uint256 _maxGasPrice,
         uint256 _callbackDeposit,
         address _refundAccount,
+        address _callbackContract,
         address _jobOwner
     ) internal {
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
@@ -273,7 +278,10 @@ contract Relay is
             maxGasPrice: _maxGasPrice,
             usdcDeposit: usdcDeposit,
             callbackDeposit: _callbackDeposit,
-            jobOwner: _jobOwner
+            jobOwner: _jobOwner,
+            codehash: _codehash,
+            codeInputs: _codeInputs,
+            callbackContract: _callbackContract
         });
 
         // deposit escrow amount(USDC)
@@ -288,6 +296,7 @@ contract Relay is
             usdcDeposit,
             _callbackDeposit,
             _refundAccount,
+            _callbackContract,
             block.timestamp
         );
     }
@@ -316,8 +325,6 @@ contract Relay is
             _signTimestamp
         );
 
-        address jobOwner = job.jobOwner;
-        uint256 callbackDeposit = job.callbackDeposit;
         uint256 gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         uint256 jobOwnerPayoutUsdc = job.usdcDeposit - gatewayPayoutUsdc;
         delete jobs[_jobId];
@@ -325,11 +332,13 @@ contract Relay is
         // release escrow to gateway
         TOKEN.safeTransfer(gatewayOwners[enclaveAddress], gatewayPayoutUsdc);
         // release escrow to jobOwner
-        TOKEN.safeTransfer(jobOwner, jobOwnerPayoutUsdc);
+        TOKEN.safeTransfer(job.jobOwner, jobOwnerPayoutUsdc);
 
-        (bool success, uint callbackCost) = _callBackWithLimit(_jobId, jobOwner, callbackDeposit, _output, _errorCode);
+        (bool success, uint callbackCost) = _callBackWithLimit(
+            _jobId, job.callbackContract, job.callbackDeposit, job.codehash, job.codeInputs, _output, _errorCode
+        );
 
-        _releaseGasCostOnSuccess(gatewayOwners[enclaveAddress], jobOwner, callbackDeposit, callbackCost);
+        _releaseGasCostOnSuccess(gatewayOwners[enclaveAddress], job.jobOwner, job.callbackDeposit, callbackCost);
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
     }
 
@@ -375,14 +384,19 @@ contract Relay is
 
     function _callBackWithLimit(
         uint256 _jobId,
-        address _jobOwner,
+        address _callbackContract,
         uint256 _callbackDeposit,
-        bytes memory _input,
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        bytes memory _output,
         uint8 _errorCode
     ) internal returns (bool, uint) {
         uint startGas = gasleft();
-        (bool success, ) = _jobOwner.call{gas: (_callbackDeposit / tx.gasprice)}(
-            abi.encodeWithSignature("oysterResultCall(uint256,bytes,uint8)", _jobId, _input, _errorCode)
+        (bool success, ) = _callbackContract.call{gas: (_callbackDeposit / tx.gasprice)}(
+            abi.encodeWithSignature(
+                "oysterResultCall(uint256,bytes32,bytes,bytes,uint8)",
+                _jobId, _codehash, _codeInputs, _output, _errorCode
+            )
         );
 
         // calculate callback cost
@@ -413,9 +427,10 @@ contract Relay is
         bytes memory _codeInputs,
         uint256 _userTimeout,
         uint256 _maxGasPrice,
-        address _refundAccount // Common chain slashed token will be sent to this address
+        address _refundAccount, // Common chain slashed token will be sent to this address
+        address _callbackContract
     ) external payable {
-        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _msgSender());
+        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _callbackContract, _msgSender());
     }
 
     function jobResponse(

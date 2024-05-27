@@ -17,7 +17,13 @@ contract UserSample {
         token = IERC20(_token);
     }
 
-    event CalledBack(uint256 indexed jobId, bytes outputs, uint8 errorCode);
+    event CalledBack(
+        uint256 indexed jobId, 
+        bytes32 codehash,
+        bytes codeInputs,
+        bytes outputs, 
+        uint8 errorCode
+    );
 
     // bytes32 txhash = 0xc7d9122f583971d4801747ab24cf3e83984274b8d565349ed53a73e0a547d113;
 
@@ -45,8 +51,14 @@ contract UserSample {
         return _success;
     }
 
-    function oysterResultCall(uint256 jobId, bytes calldata output, uint8 errorCode) public {
-        emit CalledBack(jobId, output, errorCode);
+    function oysterResultCall(
+        uint256 _jobId, 
+        bytes32 _codehash,
+        bytes calldata _codeInputs,
+        bytes calldata _output, 
+        uint8 _errorCode
+    ) public {
+        emit CalledBack(_jobId, _codehash, _codeInputs, _output, _errorCode);
     }
 
     receive() external payable {}
