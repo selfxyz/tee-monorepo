@@ -33,19 +33,21 @@ contract UserSample {
         uint256 _userTimeout,
         uint256 _maxGasPrice,
         uint256 _usdcDeposit,
-        address _refundAccount
+        address _refundAccount,
+        address _callbackContract
     ) external payable returns (bool success) {
         // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
 
         (bool _success, ) = relayAddress.call{value: msg.value}(
             abi.encodeWithSignature(
-                "relayJob(bytes32,bytes,uint256,uint256,address)",
+                "relayJob(bytes32,bytes,uint256,uint256,address,address)",
                 _codehash,
                 _codeInputs,
                 _userTimeout,
                 _maxGasPrice,
-                _refundAccount
+                _refundAccount,
+                _callbackContract
             )
         );
         return _success;

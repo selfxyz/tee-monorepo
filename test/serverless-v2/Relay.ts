@@ -469,10 +469,11 @@ describe("Relay - Relay Job", function () {
 			userTimeout = 50000,
 			maxGasPrice = 100,
 			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1];
+			refundAccount = addrs[1],
+			callbackContract = addrs[1];
 		let tx = await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, 
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, 
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.emit(relay, "JobRelayed");
@@ -489,10 +490,11 @@ describe("Relay - Relay Job", function () {
 			userTimeout = 500,
 			maxGasPrice = 100,
 			callbackDeposit = 100,
-			refundAccount = addrs[1];
+			refundAccount = addrs[1],
+			callbackContract = addrs[1];
 		let tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, 
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, 
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
@@ -565,10 +567,11 @@ describe("Relay - Job Response", function () {
 			userTimeout = 50000,
 			maxGasPrice = 100,
 			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1];
+			refundAccount = addrs[1],
+			callbackContract = addrs[1];
 		await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount,
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract,
 				{ value: callbackDeposit }
 			);
 	});
@@ -708,10 +711,11 @@ describe("Relay - Job Cancel", function () {
 			userTimeout = 50000,
 			maxGasPrice = 100,
 			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1];
+			refundAccount = addrs[1],
+			callbackContract = addrs[1];
 		await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount,
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract,
 				{ value: callbackDeposit }
 			);
 	});
@@ -840,9 +844,10 @@ describe("Relay - Job sent by UserSample contract", function () {
 			maxGasPrice = 100,
 			usdcDeposit = 1000000,
 			callbackDeposit = parseUnits("1"),	// 1 eth
-			refundAccount = addrs[1];
+			refundAccount = addrs[1],
+			callbackContract = userSample.target;
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount,
+			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount, callbackContract,
 			{value: callbackDeposit}
 		);
 
