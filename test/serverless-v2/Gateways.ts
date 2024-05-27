@@ -55,9 +55,8 @@ describe("Gateways - Init", function () {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("deploys with initialization disabled", async function () {
-        let maxAge = 600, 
+        let maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
@@ -66,7 +65,6 @@ describe("Gateways - Init", function () {
 			maxAge,
 			token,
 			deregisterOrUnstakeTimeout,
-			reassignCompForReporterGateway,
 			slashPercentInBips,
 			slashMaxBips
 		);
@@ -75,35 +73,32 @@ describe("Gateways - Init", function () {
 		expect(await gateways.ATTESTATION_MAX_AGE()).to.equal(600);
 
 		let admin = addrs[0],
-        	images: any = [],
-        	paymentPoolAddress = addrs[1];
+        	images: any = [];
 		await expect(
-			gateways.initialize(admin, images, paymentPoolAddress),
+			gateways.initialize(admin, images),
 		).to.be.revertedWithCustomError(gateways, "InvalidInitialization");
 
 		images = [image1, image2];
 		await expect(
-			gateways.initialize(addrs[0], images, paymentPoolAddress),
+			gateways.initialize(addrs[0], images),
 		).to.be.revertedWithCustomError(gateways, "InvalidInitialization");
 	});
 
 	it("deploys as proxy and initializes", async function () {
 		let admin = addrs[0],
 			images = [image1],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		const gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		);
 
@@ -120,20 +115,18 @@ describe("Gateways - Init", function () {
 	it("cannot deploy with zero address as token", async function () {
 		let admin = addrs[1],
 			images = [image1],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		await expect(upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, ZeroAddress, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, ZeroAddress, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		)).to.be.revertedWithCustomError(Gateways, "GatewaysZeroAddressToken");
 	});
@@ -141,20 +134,18 @@ describe("Gateways - Init", function () {
 	it("cannot initialize with zero address as admin", async function () {
 		let admin = ZeroAddress,
 			images = [image1],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		await expect(upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		)).to.be.revertedWithCustomError(Gateways, "GatewaysZeroAddressAdmin");
 	});
@@ -162,20 +153,18 @@ describe("Gateways - Init", function () {
 	it("upgrades", async function () {
 		let admin = addrs[0],
 			images = [image1, image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		const gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		);
 		await upgrades.upgradeProxy(
@@ -183,7 +172,7 @@ describe("Gateways - Init", function () {
 			Gateways,
 			{
 				kind: "uups",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			}
 		);
 
@@ -208,54 +197,29 @@ describe("Gateways - Init", function () {
 	it("does not upgrade without admin", async function () {
 		let admin = addrs[0],
 			images = [image1, image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		const gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(gateways.target, Gateways.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			}),
 		).to.be.revertedWithCustomError(gateways, "AccessControlUnauthorizedAccount");
 	});
 
-	it("can set payment pool address", async function () {
-		let admin = addrs[0],
-			images = [image1, image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
-        	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
-        	slashPercentInBips = 1,
-        	slashMaxBips = 100;
-		const Gateways = await ethers.getContractFactory("Gateways");
-		const gateways = await upgrades.deployProxy(
-			Gateways,
-			[admin, images, paymentPoolAddress],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
-			},
-		) as unknown as Gateways;
-
-		await expect(gateways.setPaymentPool(addrs[2])).to.be.fulfilled;
-
-	});
 });
 
 testERC165(
@@ -263,22 +227,20 @@ testERC165(
 	async function(_signers: Signer[], addrs: string[]) {
 		let admin = addrs[0],
 			images = [image1],
-			paymentPoolAddress = addrs[1],
 			attestationVerifier = addrs[1],
 			token = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		const gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		);
 		return gateways;
@@ -312,20 +274,18 @@ describe("Gateways - Whitelist/Revoke enclave", function () {
 
 		let admin = addrs[0],
 			images = [image2],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 	});
@@ -385,20 +345,18 @@ describe("Gateways - Verify", function () {
 
 		let admin = addrs[0],
 			images = [image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 	});
@@ -444,20 +402,18 @@ describe("Gateways - Global chains", function () {
 
 		let admin = addrs[0],
 			images = [image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 	});
@@ -560,20 +516,18 @@ describe("Gateways - Add/Remove chains", function () {
 
 		let admin = addrs[0],
 			images = [image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 
@@ -673,7 +627,7 @@ describe("Gateways - Add/Remove chains", function () {
 		let signedDigest = await createRemoveChainsSignature(chainIds, signTimestamp, wallets[15])
 		await expect(gateways.connect(signers[1]).removeChains(signedDigest, chainIds, signTimestamp, addrs[15]))
 			.to.emit(gateways, "ChainRemoved").withArgs(addrs[15], 1);
-		
+
 		let gatewayChainIds = await gateways.getGatewayChainIds(addrs[15]);
 		expect(gatewayChainIds.length).equals(0);
 	});
@@ -715,7 +669,7 @@ describe("Gateways - Add/Remove chains", function () {
 			signTimestamp = await time.latest();
 		let signedDigest = await createRemoveChainsSignature(chainIds, signTimestamp, wallets[15]);
 		await gateways.connect(signers[1]).removeChains(signedDigest, chainIds, signTimestamp, addrs[15]);
-		
+
 		await expect(gateways.connect(signers[1]).removeChains(signedDigest, chainIds, signTimestamp, addrs[15]))
 			.to.be.revertedWithCustomError(gateways, "GatewaysEmptyChainlist");
 	});
@@ -759,20 +713,18 @@ describe("Gateways - Draining gateway", function () {
 
 		let admin = addrs[0],
 			images = [image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 
@@ -868,20 +820,18 @@ describe("Gateways - Register gateway", function () {
 
 		let admin = addrs[0],
 			images = [image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 
@@ -1084,20 +1034,18 @@ describe("Gateways - Staking", function () {
 
 		let admin = addrs[0],
 			images = [image2, image3],
-			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
-        	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
         	slashMaxBips = 100;
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 
@@ -1136,7 +1084,7 @@ describe("Gateways - Staking", function () {
 		let amount = 20;
 		await expect(gateways.connect(signers[1]).addGatewayStake(addrs[15], amount))
 			.to.emit(gateways, "GatewayStakeAdded");
-		
+
 		let executor = await gateways.gateways(addrs[15]);
 		expect(executor.stakeAmount).to.be.eq(30);
 	});
@@ -1144,7 +1092,7 @@ describe("Gateways - Staking", function () {
 	it("cannot unstake without gateway owner", async function () {
 		await expect(gateways.connect(signers[0]).removeGatewayStake(addrs[15], 10))
 			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
-		
+
 	});
 
 	it("cannot unstake without draining", async function () {
@@ -1165,7 +1113,7 @@ describe("Gateways - Staking", function () {
 		await time.increase(700);
 		await expect(gateways.connect(signers[1]).removeGatewayStake(addrs[15], 5))
 			.to.emit(gateways, "GatewayStakeRemoved");
-		
+
 		let gateway = await gateways.gateways(addrs[15]);
 		expect(gateway.stakeAmount).to.be.eq(5);
 		expect(await token.balanceOf(gateways.target)).to.be.eq(5);

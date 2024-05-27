@@ -51,28 +51,33 @@ const image7: AttestationAutherUpgradeable.EnclaveImageStruct = {
 describe("Jobs - Init", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: string;
+	let stakingToken: string;
+	let usdcToken: string;
 	let gateways: string;
 
     let jobs: string;
-	let tokenUsdc: string;
 	let signMaxAge: number;
 	let relayBufferTime: number;
 	let executionFeePerMs: number;
 	let slashCompForGateway: number;
+	let reassignCompForReporterGateway: number;
+	let stakingPaymentPool: string;
 
 	before(async function () {
 		signers = await ethers.getSigners();
 		addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
-		token = addrs[1];
+		stakingToken = addrs[1];
 		gateways = addrs[1];
 		jobs = addrs[1];
-		tokenUsdc = addrs[1];
+		usdcToken = addrs[1];
 		signMaxAge = 600;
 		relayBufferTime = 100;
 		executionFeePerMs = 10;
 		slashCompForGateway = 10;
+		reassignCompForReporterGateway = 100;
+		stakingPaymentPool = addrs[1];
+
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -80,10 +85,21 @@ describe("Jobs - Init", function () {
 	it("deploys with initialization disabled", async function () {
 
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
-		const gatewayJobs = await GatewayJobs.deploy(token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway);
+		const gatewayJobs = await GatewayJobs.deploy(
+			stakingToken,
+			usdcToken,
+			signMaxAge,
+			relayBufferTime,
+			executionFeePerMs,
+			slashCompForGateway,
+			reassignCompForReporterGateway,
+			jobs,
+			gateways,
+			stakingPaymentPool
+		);
 
 		await expect(
-			gatewayJobs.initialize(addrs[0], jobs, gateways),
+			gatewayJobs.initialize(addrs[0]),
 		).to.be.revertedWithCustomError(gatewayJobs, "InvalidInitialization");
 	});
 
@@ -91,11 +107,22 @@ describe("Jobs - Init", function () {
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		const gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
-			[addrs[0], jobs, gateways],
+			[addrs[0]],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
 			},
 		);
 
@@ -107,11 +134,22 @@ describe("Jobs - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				GatewayJobs,
-				[ZeroAddress, jobs, gateways],
+				[ZeroAddress],
 				{
 					kind: "uups",
 					initializer: "initialize",
-					constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+					constructorArgs: [
+						stakingToken,
+						usdcToken,
+						signMaxAge,
+						relayBufferTime,
+						executionFeePerMs,
+						slashCompForGateway,
+						reassignCompForReporterGateway,
+						jobs,
+						gateways,
+						stakingPaymentPool
+					]
 				}
 			)
 		).to.be.revertedWithCustomError(GatewayJobs, "GatewayJobsZeroAddressAdmin");
@@ -121,11 +159,22 @@ describe("Jobs - Init", function () {
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		const gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
-			[addrs[0], jobs, gateways],
+			[addrs[0]],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
 			}
 		);
 		await upgrades.upgradeProxy(
@@ -133,7 +182,18 @@ describe("Jobs - Init", function () {
 			GatewayJobs,
 			{
 				kind: "uups",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
 			}
 		);
 
@@ -144,76 +204,78 @@ describe("Jobs - Init", function () {
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		const gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
-			[addrs[0], jobs, gateways],
+			[addrs[0]],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
 			},
 		);
 
 		await expect(
 			upgrades.upgradeProxy(gatewayJobs.target, GatewayJobs.connect(signers[1]), {
 				kind: "uups",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
 			}),
 		).to.be.revertedWithCustomError(GatewayJobs, "AccessControlUnauthorizedAccount");
 	});
 
-	it("can set gateway contract only with admin role", async function () {
-		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
-		const gatewayJobs = await upgrades.deployProxy(
-			GatewayJobs,
-			[addrs[0], jobs, gateways],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
-			},
-		) as unknown as GatewayJobs;
-		
-		await expect(gatewayJobs.connect(signers[1]).setGatewaysContract(addrs[1]))
-			.to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
-		await expect(gatewayJobs.setGatewaysContract(addrs[1])).to.not.be.rejected;
-	});
-
-	it("can set executor contract only with admin role", async function () {
-		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
-		const gatewayJobs = await upgrades.deployProxy(
-			GatewayJobs,
-			[addrs[0], jobs, gateways],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
-			},
-		) as unknown as GatewayJobs;
-		
-		await expect(gatewayJobs.connect(signers[1]).setJobsContract(addrs[1]))
-			.to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
-		await expect(gatewayJobs.setJobsContract(addrs[1])).to.not.be.rejected;
-	});
 });
 
 testERC165(
 	"GatewayJobs - ERC165",
 	async function(_signers: Signer[], addrs: string[]) {
-		let token = addrs[1],
+		let stakingToken = addrs[1],
 			gateways = addrs[1],
 			jobs = addrs[1],
-			tokenUsdc = addrs[1],
+			usdcToken = addrs[1],
 			signMaxAge = 600,
 			relayBufferTime = 100,
 			executionFeePerMs = 10,
-			slashCompForGateway = 10;
+			slashCompForGateway = 10,
+			reassignCompForReporterGateway = 100,
+			stakingPaymentPool = addrs[1];
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		const gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
-			[addrs[0], jobs, gateways],
+			[addrs[0]],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [token, tokenUsdc, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
 			},
 		);
 		return gatewayJobs;
@@ -232,7 +294,7 @@ testERC165(
 describe("Jobs - Relay", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: Pond;
+	let stakingToken: Pond;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
@@ -240,7 +302,7 @@ describe("Jobs - Relay", function () {
 	let executors: Executors;
 	let jobs: Jobs;
 	let gatewayJobs: GatewayJobs;
-	let tokenUsdc: USDCoin;
+	let usdcToken: USDCoin;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -249,14 +311,15 @@ describe("Jobs - Relay", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
 		}) as unknown as Pond;
 
+
 		const USDCoin = await ethers.getContractFactory("USDCoin");
-		tokenUsdc = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+		usdcToken = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -272,7 +335,7 @@ describe("Jobs - Relay", function () {
 		let admin = addrs[0],
 			images = [image2, image3],
 			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
         	reassignCompForReporterGateway = 100,
         	slashPercentInBips = 1,
@@ -280,11 +343,11 @@ describe("Jobs - Relay", function () {
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, stakingToken.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 
@@ -297,7 +360,7 @@ describe("Jobs - Relay", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, minStakeAmount, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, stakingToken.target, minStakeAmount, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Executors;
 
@@ -316,15 +379,15 @@ describe("Jobs - Relay", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					token.target, 
-					tokenUsdc.target, 
-					signMaxAge, 
-					executionBufferTime, 
-					noOfNodesToSelect, 
-					executorFeePerMs, 
-					stakingRewardPerMs, 
-					stakingPaymentPoolAddress, 
-					usdcPaymentPoolAddress, 
+					stakingToken.target,
+					usdcToken.target,
+					signMaxAge,
+					executionBufferTime,
+					noOfNodesToSelect,
+					executorFeePerMs,
+					stakingRewardPerMs,
+					stakingPaymentPoolAddress,
+					usdcPaymentPoolAddress,
 					executors.target
 				]
 			},
@@ -336,11 +399,22 @@ describe("Jobs - Relay", function () {
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
-			[admin, jobs.target, gateways.target],
+			[admin],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [token.target, tokenUsdc.target, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken.target,
+					usdcToken.target,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs.target,
+					gateways.target,
+					stakingPaymentPoolAddress
+				]
 			},
 		) as unknown as GatewayJobs;
 
@@ -357,13 +431,13 @@ describe("Jobs - Relay", function () {
 		await gateways.addChainGlobal(chainIds, reqChains);
 
 		let amount = parseUnits("1000");	// 1000 POND
-		await token.transfer(addrs[1], amount);
-		await token.connect(signers[1]).approve(gateways.target, amount);
-		await token.connect(signers[1]).approve(executors.target, amount);
+		await stakingToken.transfer(addrs[1], amount);
+		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
+		await stakingToken.connect(signers[1]).approve(executors.target, amount);
 
 		amount = parseUnits("1000", 6);
-		await tokenUsdc.transfer(addrs[1], amount);
-		await tokenUsdc.connect(signers[1]).approve(gatewayJobs.target, amount);
+		await usdcToken.transfer(addrs[1], amount);
+		await usdcToken.connect(signers[1]).approve(gatewayJobs.target, amount);
 
 		// REGISTER GATEWAYS
 		let timestamp = await time.latest() * 1000,
@@ -373,7 +447,7 @@ describe("Jobs - Relay", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 		let signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[15]);
 		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
-		
+
 		// 2nd gateway
 		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
 		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
@@ -426,7 +500,7 @@ describe("Jobs - Relay", function () {
 
 		let execJobId = 0;
 		expect(await gatewayJobs.execJobs(execJobId)).to.eq(jobId);
-		
+
 		let selectedExecutors = await jobs.getSelectedExecutors(execJobId);
 		for (let index = 0; index < selectedExecutors.length; index++) {
 			const executor = selectedExecutors[index];
@@ -558,7 +632,7 @@ describe("Jobs - Relay", function () {
 				jobOwner = addrs[1],
 				signTimestamp = await time.latest();
 			let signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
-			
+
 			await expect(await gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp))
 				.to.emit(gatewayJobs, "JobRelayed");
 		}
@@ -583,7 +657,7 @@ describe("Jobs - Relay", function () {
 		let	output = solidityPacked(["string"], ["it is the output"]),
 			totalTime = 100,
 			errorCode = 0;
-		
+
 		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
 		await jobs.connect(signers[1]).submitOutput(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 
@@ -596,7 +670,7 @@ describe("Jobs - Relay", function () {
 		// RELAY AGAIN WORKS
 		jobId = (BigInt(1) << BigInt(192)) + BigInt(5);
 		signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
-			
+
 		await expect(gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp))
 			.to.emit(gatewayJobs, "JobRelayed");
 	});
@@ -605,14 +679,14 @@ describe("Jobs - Relay", function () {
 describe("Jobs - Reassign Gateway", function () {
 	let signers: Signer[];
 	let addrs: string[];
-	let token: Pond;
+	let stakingToken: Pond;
 	let wallets: Wallet[];
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
 	let gateways: Gateways;
 	let executors: Executors;
 	let jobs: Jobs;
-	let tokenUsdc: USDCoin;
+	let usdcToken: USDCoin;
 	let gatewayJobs: GatewayJobs;
 
 	before(async function () {
@@ -622,14 +696,14 @@ describe("Jobs - Reassign Gateway", function () {
 		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
 		const Pond = await ethers.getContractFactory("Pond");
-		token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+		stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
 			kind: "uups",
 		}) as unknown as Pond;
 
 		const USDCoin = await ethers.getContractFactory("USDCoin");
-		tokenUsdc = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+		usdcToken = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -645,7 +719,7 @@ describe("Jobs - Reassign Gateway", function () {
 		let admin = addrs[0],
 			images = [image2, image3],
 			paymentPoolAddress = addrs[1],
-			maxAge = 600, 
+			maxAge = 600,
         	deregisterOrUnstakeTimeout = 600,
         	reassignCompForReporterGateway = 10,
         	slashPercentInBips = 1,
@@ -653,11 +727,11 @@ describe("Jobs - Reassign Gateway", function () {
 		const Gateways = await ethers.getContractFactory("Gateways");
 		gateways = await upgrades.deployProxy(
 			Gateways,
-			[admin, images, paymentPoolAddress],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, deregisterOrUnstakeTimeout, reassignCompForReporterGateway, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, stakingToken.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Gateways;
 
@@ -670,7 +744,7 @@ describe("Jobs - Reassign Gateway", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, minStakeAmount, slashPercentInBips, slashMaxBips]
+				constructorArgs: [attestationVerifier.target, maxAge, stakingToken.target, minStakeAmount, slashPercentInBips, slashMaxBips]
 			},
 		) as unknown as Executors;
 
@@ -689,15 +763,15 @@ describe("Jobs - Reassign Gateway", function () {
 				kind: "uups",
 				initializer: "initialize",
 				constructorArgs: [
-					token.target, 
-					tokenUsdc.target, 
-					signMaxAge, 
-					executionBufferTime, 
-					noOfNodesToSelect, 
-					executorFeePerMs, 
-					stakingRewardPerMs, 
-					stakingPaymentPoolAddress, 
-					usdcPaymentPoolAddress, 
+					stakingToken.target,
+					usdcToken.target,
+					signMaxAge,
+					executionBufferTime,
+					noOfNodesToSelect,
+					executorFeePerMs,
+					stakingRewardPerMs,
+					stakingPaymentPoolAddress,
+					usdcPaymentPoolAddress,
 					executors.target
 				]
 			},
@@ -709,11 +783,22 @@ describe("Jobs - Reassign Gateway", function () {
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
-			[admin, jobs.target, gateways.target],
+			[admin],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [token.target, tokenUsdc.target, signMaxAge, relayBufferTime, executionFeePerMs, slashCompForGateway]
+				constructorArgs: [
+					stakingToken.target,
+					usdcToken.target,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs.target,
+					gateways.target,
+					stakingPaymentPoolAddress
+				]
 			},
 		) as unknown as GatewayJobs;
 
@@ -731,13 +816,13 @@ describe("Jobs - Reassign Gateway", function () {
 		await gateways.addChainGlobal(chainIds, reqChains);
 
 		let amount = parseUnits("1000");	// 1000 POND
-		await token.transfer(addrs[1], amount);
-		await token.connect(signers[1]).approve(gateways.target, amount);
-		await token.connect(signers[1]).approve(executors.target, amount);
+		await stakingToken.transfer(addrs[1], amount);
+		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
+		await stakingToken.connect(signers[1]).approve(executors.target, amount);
 
 		amount = parseUnits("1000", 6);		// 1000 USDC
-		await tokenUsdc.transfer(addrs[1], amount);
-		await tokenUsdc.connect(signers[1]).approve(gatewayJobs.target, amount);
+		await usdcToken.transfer(addrs[1], amount);
+		await usdcToken.connect(signers[1]).approve(gatewayJobs.target, amount);
 
 		// REGISTER GATEWAYS
 		let timestamp = await time.latest() * 1000,
@@ -747,7 +832,7 @@ describe("Jobs - Reassign Gateway", function () {
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
 		let signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[15]);
 		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
-		
+
 		// 2nd gateway
 		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
 		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
@@ -782,7 +867,7 @@ describe("Jobs - Reassign Gateway", function () {
 			jobOwner = addrs[1],
 			signTimestamp = await time.latest();
 
-		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
 		let tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
 	});
@@ -795,7 +880,7 @@ describe("Jobs - Reassign Gateway", function () {
 			jobOwner = addrs[1],
 			signTimestamp = await time.latest();
 
-		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
 		let tx = gatewayJobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.revertedWithCustomError(gatewayJobs, "GatewayJobsInvalidRelaySequenceId");
 	});
@@ -808,8 +893,8 @@ describe("Jobs - Reassign Gateway", function () {
 			jobOwner = addrs[1],
 			signTimestamp = await time.latest();
 
-		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
-		
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+
 		await time.increase(1000);
 		let tx = gatewayJobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.revertedWithCustomError(gatewayJobs, "GatewayJobsRelayTimeOver");
@@ -834,8 +919,8 @@ describe("Jobs - Reassign Gateway", function () {
 
 		let gatewayKeyOld = addrs[15];
 		jobRequestTimestamp = await time.latest() + 10;
-		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
-		
+		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+
 		// reassign new gateway
 		await expect(gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp))
 			.to.be.revertedWithCustomError(gatewayJobs, "GatewayJobsResourceUnavailable");
@@ -980,12 +1065,12 @@ async function createRelayJobSignature(
 	};
 
 	const value = {
-		jobId, 
-		codeHash, 
-		codeInputs, 
-		deadline, 
-		jobRequestTimestamp, 
-		sequenceId, 
+		jobId,
+		codeHash,
+		codeInputs,
+		deadline,
+		jobRequestTimestamp,
+		sequenceId,
 		jobOwner,
 		signTimestamp
 	};
@@ -1032,6 +1117,7 @@ async function createOutputSignature(
 async function createReassignGatewaySignature(
 	jobId: number,
     gatewayOld: string,
+	jobOwner: string,
 	sequenceId: number,
 	jobRequestTimestamp: number,
 	signTimestamp: number,
@@ -1046,6 +1132,7 @@ async function createReassignGatewaySignature(
 		ReassignGateway: [
 			{ name: 'jobId', type: 'uint256' },
 			{ name: 'gatewayOld', type: 'address' },
+			{ name: 'jobOwner', type: 'address' },
 			{ name: 'sequenceId', type: 'uint8' },
 			{ name: 'jobRequestTimestamp', type: 'uint256' },
 			{ name: 'signTimestamp', type: 'uint256' }
@@ -1055,6 +1142,7 @@ async function createReassignGatewaySignature(
 	const value = {
 		jobId,
 		gatewayOld,
+		jobOwner,
 		sequenceId,
 		jobRequestTimestamp,
 		signTimestamp
