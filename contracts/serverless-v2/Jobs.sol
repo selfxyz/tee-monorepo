@@ -235,6 +235,7 @@ contract Jobs is
         jobs[_jobId].hasExecutedJob[enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
+        _totalTime = _totalTime > jobs[_jobId].deadline ? jobs[_jobId].deadline : _totalTime;
         if (outputCount == 1) jobs[_jobId].executionTime = _totalTime;
 
         // on reward distribution, 1st output executor node gets max reward
@@ -304,7 +305,7 @@ contract Jobs is
         // for 3rd output
         else {
             // transfer payout to executor
-            USDC_TOKEN.safeTransfer(owner, executorsFee - (executorsFee * 7) / 9);
+            USDC_TOKEN.safeTransfer(owner, executorsFee - ((executorsFee * 4) / 9) - (executorsFee / 3));
             // cleanup job data after 3rd output submitted
             _cleanJobData(_jobId);
         }
@@ -434,7 +435,7 @@ contract Jobs is
         } else if (_outputCount == 2) {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
             // transfer the expected reward of third submitter to payment pool
-            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executorsFee - (executorsFee * 7) / 9);
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executorsFee - ((executorsFee * 4) / 9) - (executorsFee / 3));
         }
     }
 
