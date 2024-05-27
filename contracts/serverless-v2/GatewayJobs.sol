@@ -102,8 +102,6 @@ contract GatewayJobs is
     uint256 public immutable SLASH_COMP_FOR_GATEWAY;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
-    bytes32 public constant RESOURCE_UNAVAILABLE_ERROR =
-        keccak256(abi.encodeWithSignature("JobsUnavailableResources()"));
 
     Jobs public jobMgr;
     Gateways public gateways;
@@ -235,7 +233,7 @@ contract GatewayJobs is
 
             emit JobRelayed(_jobId, execJobId, _jobOwner, _gateway);
         } catch (bytes memory reason) {
-            if (keccak256(reason) == RESOURCE_UNAVAILABLE_ERROR) {
+            if (bytes4(reason) == Jobs.JobsUnavailableResources.selector) {
                 // Resource unavailable
                 relayJobs[_jobId].isResourceUnavailable = true;
                 // Refund the USDC deposit
