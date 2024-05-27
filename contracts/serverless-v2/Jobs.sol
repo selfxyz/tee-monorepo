@@ -353,10 +353,6 @@ contract Jobs is
         _submitOutput(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
-    function isJobExecutor(uint256 _jobId, address _enclaveAddress) public view returns (bool) {
-        return _isJobExecutor(_jobId, _enclaveAddress);
-    }
-
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- Job end --------------------------------//

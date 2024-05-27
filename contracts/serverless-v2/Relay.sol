@@ -325,17 +325,11 @@ contract Relay is
             _signTimestamp
         );
 
-        uint256 gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
-        uint256 jobOwnerPayoutUsdc = job.usdcDeposit - gatewayPayoutUsdc;
         delete jobs[_jobId];
-
-        // release escrow to gateway
-        TOKEN.safeTransfer(gatewayOwners[enclaveAddress], gatewayPayoutUsdc);
-        // release escrow to jobOwner
-        TOKEN.safeTransfer(job.jobOwner, jobOwnerPayoutUsdc);
+        _releaseEscrowAmount(enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
 
         (bool success, uint callbackCost) = _callBackWithLimit(
-            _jobId, job.callbackContract, job.callbackDeposit, job.codehash, job.codeInputs, _output, _errorCode
+            _jobId, job.jobOwner, job.callbackContract, job.callbackDeposit, job.codehash, job.codeInputs, _output, _errorCode
         );
 
         _releaseGasCostOnSuccess(gatewayOwners[enclaveAddress], job.jobOwner, job.callbackDeposit, callbackCost);
@@ -362,6 +356,21 @@ contract Relay is
         return signer;
     }
 
+    function _releaseEscrowAmount(
+        address _enclaveAddress,
+        address _jobOwner,
+        uint256 _totalTime,
+        uint256 _usdcDeposit
+    ) internal {
+        uint256 gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        uint256 jobOwnerPayoutUsdc = _usdcDeposit - gatewayPayoutUsdc;
+
+        // release escrow to gateway
+        TOKEN.safeTransfer(gatewayOwners[_enclaveAddress], gatewayPayoutUsdc);
+        // release escrow to jobOwner
+        TOKEN.safeTransfer(_jobOwner, jobOwnerPayoutUsdc);
+    }
+
     function _jobCancel(uint256 _jobId, address _jobOwner) internal {
         if (jobs[_jobId].jobOwner != _jobOwner) revert RelayInvalidJobOwner();
 
@@ -384,6 +393,7 @@ contract Relay is
 
     function _callBackWithLimit(
         uint256 _jobId,
+        address _jobOwner,
         address _callbackContract,
         uint256 _callbackDeposit,
         bytes32 _codehash,
@@ -394,8 +404,8 @@ contract Relay is
         uint startGas = gasleft();
         (bool success, ) = _callbackContract.call{gas: (_callbackDeposit / tx.gasprice)}(
             abi.encodeWithSignature(
-                "oysterResultCall(uint256,bytes32,bytes,bytes,uint8)",
-                _jobId, _codehash, _codeInputs, _output, _errorCode
+                "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
+                _jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode
             )
         );
 

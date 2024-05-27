@@ -18,7 +18,8 @@ contract UserSample {
     }
 
     event CalledBack(
-        uint256 indexed jobId, 
+        uint256 indexed jobId,
+        address jobOwner, 
         bytes32 codehash,
         bytes codeInputs,
         bytes outputs, 
@@ -54,13 +55,14 @@ contract UserSample {
     }
 
     function oysterResultCall(
-        uint256 _jobId, 
+        uint256 _jobId,
+        address _jobOwner,
         bytes32 _codehash,
         bytes calldata _codeInputs,
         bytes calldata _output, 
         uint8 _errorCode
     ) public {
-        emit CalledBack(_jobId, _codehash, _codeInputs, _output, _errorCode);
+        emit CalledBack(_jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode);
     }
 
     receive() external payable {}
