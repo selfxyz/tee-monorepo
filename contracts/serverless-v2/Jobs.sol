@@ -156,9 +156,9 @@ contract Jobs is
 
     event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint8 errorCode, uint8 outputCount);
 
-    event JobSucceeded(uint256 indexed jobId, bool callback_success);
+    event JobResultCallbackCalled(uint256 indexed jobId, bool callback_success);
 
-    event JobTimeoutFailure(uint256 indexed jobId, bool callback_success);
+    event JobFailureCallbackCalled(uint256 indexed jobId, bool callback_success);
 
     error JobsRelayTimeOver();
     error JobsInvalidSequenceId();
@@ -254,7 +254,7 @@ contract Jobs is
                     _totalTime
                 )
             );
-            emit JobSucceeded(_jobId, success);
+            emit JobResultCallbackCalled(_jobId, success);
         }
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
     }
@@ -406,7 +406,7 @@ contract Jobs is
             (bool success, ) = jobOwner.call(
                 abi.encodeWithSignature("oysterFailureCall(uint256,uint256)", _jobId, slashAmount)
             );
-            emit JobTimeoutFailure(_jobId, success);
+            emit JobFailureCallbackCalled(_jobId, success);
         } else {
             // transfer the slashed amount to payment pool
             STAKING_TOKEN.safeTransfer(STAKING_PAYMENT_POOL, slashAmount);

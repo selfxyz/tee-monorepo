@@ -375,7 +375,6 @@ contract Executors is
     function _selectNodes(uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
         uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
         selectedNodes = _selectN(randomizer, _noOfNodesToSelect);
-        // require(selectedNodes.length != 0, "NO_EXECUTOR_SELECTED");
     }
 
     function _releaseExecutor(address _enclaveAddress) internal {
