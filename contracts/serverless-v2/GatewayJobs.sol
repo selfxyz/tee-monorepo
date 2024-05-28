@@ -236,8 +236,9 @@ contract GatewayJobs is
 
             emit JobRelayed(_jobId, execJobId, _jobOwner, _gateway);
         } catch (bytes memory reason) {
-            USDC_TOKEN.safeDecreaseAllowance(address(JOB_MANAGER), _usdcDeposit);
             if (bytes4(reason) == Jobs.JobsUnavailableResources.selector) {
+                // decrease allowance by _usdcDeposit amount as job failed to relay
+                USDC_TOKEN.safeDecreaseAllowance(address(JOB_MANAGER), _usdcDeposit);
                 // Resource unavailable
                 relayJobs[_jobId].isResourceUnavailable = true;
                 // Refund the USDC deposit
@@ -321,7 +322,7 @@ contract GatewayJobs is
         if (_sequenceId == 1) {
             // if sequenceId = 1, keep the comp in payment pool
             STAKING_TOKEN.safeTransfer(STAKING_PAYMENY_POOL, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
-        } else if (_sequenceId == 2) {
+        } else {
             // if sequenceId = 2, transfer comp to jobOwner
             STAKING_TOKEN.safeTransfer(_jobOwner, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
         }

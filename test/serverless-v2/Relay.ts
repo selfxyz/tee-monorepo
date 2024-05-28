@@ -498,6 +498,14 @@ describe("Relay - Relay Job", function () {
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
+
+		userTimeout = 1000 * 1000;	// 1000ms
+		tx = relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, 
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
 	});
 });
 

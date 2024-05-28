@@ -783,6 +783,19 @@ describe("Executors - Staking", function () {
 		expect(await token.balanceOf(addrs[1])).to.be.eq(99970);
 	});
 
+	it("can stake if draining", async function () {
+		await executors.connect(signers[1]).drainExecutor(addrs[15]);
+
+		let amount = 20;
+		await expect(executors.connect(signers[1]).addExecutorStake(addrs[15], amount))
+			.to.emit(executors, "ExecutorStakeAdded");
+
+		let executor = await executors.executors(addrs[15]);
+		expect(executor.stakeAmount).to.be.eq(30);
+		expect(await token.balanceOf(executors.target)).to.be.eq(30);
+		expect(await token.balanceOf(addrs[1])).to.be.eq(99970);
+	});
+
 	it("cannot stake without executor owner", async function () {
 		let amount = 20;
 		await expect(executors.addExecutorStake(addrs[15], amount))

@@ -966,6 +966,26 @@ describe("Jobs - Output", function () {
 		let executor = await executors.executors(addrs[17]);
 		expect(executor.draining).to.be.true;
 	});
+
+	it("can submit output by selected executor node with totalTime > deadline", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100000,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		let tx = await jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
+	});
 });
 
 describe("Jobs - Slashing", function () {

@@ -532,7 +532,7 @@ describe("Gateways - Add/Remove chains", function () {
 			},
 		) as unknown as Gateways;
 
-		let chainIds = [1, 56];
+		let chainIds = [1, 56, 137];
 		reqChains = [
 			{
 				contractAddress: addrs[1],
@@ -543,6 +543,11 @@ describe("Gateways - Add/Remove chains", function () {
 				contractAddress: addrs[2],
 				httpRpcUrl: "https://bsc.rpc",
 				wsRpcUrl: "wss://bsc.rpc"
+			},
+			{
+				contractAddress: addrs[3],
+				httpRpcUrl: "https://polygon.rpc",
+				wsRpcUrl: "wss://polygon.rpc"
 			}
 		]
 		await gateways.addChainGlobal(chainIds, reqChains);
@@ -555,8 +560,8 @@ describe("Gateways - Add/Remove chains", function () {
 
 		let signTimestamp = await time.latest(),
 			stakeAmount = 10;
-		let signedDigest = await createGatewaySignature(addrs[1], [1], signTimestamp, wallets[15]);
-		await gateways.connect(signers[1]).registerGateway(signature, attestation, [1], signedDigest, stakeAmount, signTimestamp);
+		let signedDigest = await createGatewaySignature(addrs[1], [1, 137], signTimestamp, wallets[15]);
+		await gateways.connect(signers[1]).registerGateway(signature, attestation, [1, 137], signedDigest, stakeAmount, signTimestamp);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -570,7 +575,7 @@ describe("Gateways - Add/Remove chains", function () {
 			.to.emit(gateways, "ChainAdded").withArgs(addrs[15], 56);
 
 		let gatewayChainIds = await gateways.getGatewayChainIds(addrs[15]);
-		expect(gatewayChainIds.length).equals(2);
+		expect(gatewayChainIds.length).equals(3);
 		expect(gatewayChainIds).contains(BigInt(56));
 	});
 
@@ -607,7 +612,7 @@ describe("Gateways - Add/Remove chains", function () {
 	});
 
 	it("cannot add chains that are not supported globally", async function () {
-		let chainIds = [137],
+		let chainIds = [250],
 			signTimestamp = await time.latest();
 		let signedDigest = await createAddChainsSignature(chainIds, signTimestamp, wallets[15])
 		await expect(gateways.connect(signers[1]).addChains(signedDigest, chainIds, signTimestamp, addrs[15]))
@@ -630,7 +635,7 @@ describe("Gateways - Add/Remove chains", function () {
 			.to.emit(gateways, "ChainRemoved").withArgs(addrs[15], 1);
 
 		let gatewayChainIds = await gateways.getGatewayChainIds(addrs[15]);
-		expect(gatewayChainIds.length).equals(0);
+		expect(gatewayChainIds.length).equals(1);
 	});
 
 	it("cannot remove chain without gateway owner", async function () {
@@ -666,7 +671,7 @@ describe("Gateways - Add/Remove chains", function () {
 	});
 
 	it("cannot remove chain if no chain is added previously", async function () {
-		let chainIds = [1],
+		let chainIds = [1, 137],
 			signTimestamp = await time.latest();
 		let signedDigest = await createRemoveChainsSignature(chainIds, signTimestamp, wallets[15]);
 		await gateways.connect(signers[1]).removeChains(signedDigest, chainIds, signTimestamp, addrs[15]);

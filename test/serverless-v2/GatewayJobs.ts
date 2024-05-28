@@ -591,6 +591,21 @@ describe("GatewayJobs - Relay", function () {
 			.to.be.revertedWithCustomError(gatewayJobs, "GatewayJobsInvalidRelaySequenceId");
 	});
 
+	it("cannot relay job with expired signature", async function () {
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			deadline = 10000,
+			jobRequestTimestamp = await time.latest(),
+			sequenceId = 1,
+			jobOwner = addrs[1],
+			signTimestamp = await time.latest() - 700;
+		let signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
+
+		await expect(gatewayJobs.connect(signers[15]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp))
+			.to.be.revertedWithCustomError(gatewayJobs, "GatewayJobsSignatureTooOld");
+	});
+
 	it("cannot relay a job twice with same job id", async function () {
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
 			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
@@ -924,6 +939,26 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
 	});
 
+	it("cannot reassign if job already relayed", async function () {
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			deadline = 10000,
+			jobRequestTimestamp = await time.latest(),
+			sequenceId = 1,
+			jobOwner = addrs[1],
+			signTimestamp = await time.latest();
+		let signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
+		await gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp);
+
+		let gatewayKeyOld = addrs[15];
+		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		
+		await expect(
+			gatewayJobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp)
+		).to.revertedWithCustomError(gatewayJobs, "GatewayJobsAlreadyRelayed");
+	});
+
 	it("cannot reassign for wrong sequenceId", async function () {
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
 			gatewayKeyOld = addrs[15],
@@ -935,6 +970,19 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
 		let tx = gatewayJobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.revertedWithCustomError(gatewayJobs, "GatewayJobsInvalidRelaySequenceId");
+	});
+
+	it("cannot reassign with expired signature", async function () {
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			gatewayKeyOld = addrs[15],
+			sequenceId = 1,
+			jobRequestTimestamp = await time.latest() + 10,
+			jobOwner = addrs[1],
+			signTimestamp = await time.latest() - 700;
+
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		let tx = gatewayJobs.connect(signers[16]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.revertedWithCustomError(gatewayJobs, "GatewayJobsSignatureTooOld");
 	});
 
 	it("cannot reassign after relay time is over", async function () {
@@ -994,6 +1042,29 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
 		tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+	});
+
+	it("cannot reassign 3rd time if job still not relayed by previously reassigned gateways", async function () {
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			gatewayKeyOld = addrs[15],
+			sequenceId = 1,
+			jobRequestTimestamp = await time.latest() + 100,
+			jobOwner = addrs[1],
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		let tx = gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		sequenceId = 2;
+		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		tx = gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		sequenceId = 3;
+		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		tx = gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.be.revertedWithCustomError(gatewayJobs, "GatewayJobsInvalidRelaySequenceId");
 	});
 
 });
