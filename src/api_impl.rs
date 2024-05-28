@@ -239,30 +239,33 @@ async fn register_enclave(
     let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
     // Start contract event listner
-    let contract_client = Arc::new(
-        CommonChainClient::new(
-            app_state.enclave_signer_key.clone(),
-            app_state.enclave_pub_key.clone().into(),
-            signer_wallet,
-            &app_state.common_chain_ws_url,
-            http_rpc_client.clone(),
-            &app_state.gateway_contract_addr,
-            &app_state.job_contract_addr,
-            app_state.gateway_epoch_state.clone(),
-            enclave_info.chain_list,
-            app_state.epoch,
-            app_state.time_interval,
-            request_chain_clients,
-            gateway_state_epoch_waitlist,
-        )
-        .await,
-    );
+    let contract_client = CommonChainClient::new(
+        app_state.enclave_signer_key.clone(),
+        app_state.enclave_pub_key.clone().into(),
+        signer_wallet,
+        &app_state.common_chain_ws_url,
+        http_rpc_client.clone(),
+        &app_state.gateway_contract_addr,
+        &app_state.job_contract_addr,
+        app_state.gateway_epoch_state.clone(),
+        enclave_info.chain_list,
+        app_state.epoch,
+        app_state.time_interval,
+        request_chain_clients,
+        gateway_state_epoch_waitlist,
+    )
+    .await;
+
+    let mut common_chain_client_guard = app_state.common_chain_client.lock().unwrap();
+    *common_chain_client_guard = Some(contract_client.clone());
+
+    let common_chain_client = Arc::new(contract_client.clone());
 
     // Listen for new jobs and handles them.
     info!("Starting the contract event listener.");
 
     tokio::spawn(async move {
-        let _ = contract_client.run(http_rpc_client).await;
+        let _ = common_chain_client.run(http_rpc_client).await;
     });
 
     HttpResponse::Ok().body(format!(

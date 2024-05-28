@@ -15,6 +15,7 @@ use crate::contract_abi::{
 };
 use crate::HttpProvider;
 
+#[derive(Debug)]
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
     pub wallet: Mutex<Option<LocalWallet>>,
@@ -29,6 +30,7 @@ pub struct AppState {
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub epoch: u64,
     pub time_interval: u64,
+    pub common_chain_client: Mutex<Option<CommonChainClient>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,7 +82,7 @@ pub struct CommonChainClient {
     pub address: Address,
     pub chain_ws_client: Provider<Ws>,
     pub gateway_contract_addr: H160,
-    pub contract_addr: H160,
+    pub jobs_contract_addr: H160,
     pub gateway_contract: CommonChainGatewayContract<HttpProvider>,
     pub com_chain_jobs_contract: CommonChainJobsContract<HttpProvider>,
     pub req_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
@@ -107,19 +109,19 @@ pub struct RequestChainClient {
     pub contract: RequestChainContract<HttpProvider>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ComChainJobType {
     JobRelay,
     SlashGatewayJob,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReqChainJobType {
     JobResponded,
     // SlashGatewayResponse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Job {
     pub job_id: U256,
     pub req_chain_id: u64,
@@ -134,7 +136,7 @@ pub struct Job {
     pub gateway_address: Option<Address>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JobResponse {
     pub job_id: U256,
     pub req_chain_id: u64,

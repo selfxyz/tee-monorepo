@@ -11,7 +11,6 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
-use std::future::Future;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -20,7 +19,8 @@ use tokio::{task, time};
 
 use crate::chain_util::{
     common_chain_jobs, get_key_for_job_id, pub_key_to_address, req_chain_jobs,
-    sign_job_response_response, sign_reassign_gateway_relay_response, sign_relay_job_response, LogsProvider,
+    sign_job_response_response, sign_reassign_gateway_relay_response, sign_relay_job_response,
+    LogsProvider,
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
@@ -42,7 +42,7 @@ impl CommonChainClient {
         com_chain_ws_url: &String,
         chain_http_provider: Arc<HttpProvider>,
         gateway_contract_addr: &H160,
-        contract_addr: &H160,
+        jobs_contract_addr: &H160,
         gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
         request_chain_list: Vec<u64>,
         epoch: u64,
@@ -57,7 +57,7 @@ impl CommonChainClient {
         );
 
         let com_chain_jobs_contract =
-            CommonChainJobsContract::new(contract_addr.clone(), chain_http_provider.clone());
+            CommonChainJobsContract::new(jobs_contract_addr.clone(), chain_http_provider.clone());
 
         info!("Gateway Data fetched. Common Chain Client Initialized");
 
@@ -73,7 +73,7 @@ impl CommonChainClient {
             enclave_signer_key,
             address: pub_key_to_address(&enclave_pub_key).unwrap(),
             chain_ws_client,
-            contract_addr: *contract_addr,
+            jobs_contract_addr: *jobs_contract_addr,
             gateway_contract_addr: *gateway_contract_addr,
             gateway_contract,
             com_chain_jobs_contract,
@@ -139,8 +139,7 @@ impl CommonChainClient {
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
 
-            let req_chain_ws_client = 
-                Provider::<Ws>::connect_with_reconnects(
+            let req_chain_ws_client = Provider::<Ws>::connect_with_reconnects(
                     self_clone.req_chain_clients[&chain_id].ws_rpc_url.clone(),
                     5,
                 ).await
@@ -150,12 +149,13 @@ impl CommonChainClient {
 
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
-                let mut stream = self_clone.req_chain_jobs(
-                    &req_chain_ws_client,
-                    &self_clone.req_chain_clients[&chain_id],
-                )
-                .await
-                .unwrap();
+                let mut stream = self_clone
+                    .req_chain_jobs(
+                        &req_chain_ws_client,
+                        &self_clone.req_chain_clients[&chain_id],
+                    )
+                    .await
+                    .unwrap();
 
                 while let Some(log) = stream.next().await {
                     let topics = log.topics.clone();
@@ -182,6 +182,7 @@ impl CommonChainClient {
                         let self_clone = Arc::clone(&self_clone);
                         let tx = tx_clone.clone();
                         task::spawn(async move {
+                            // TODO: what to do in case of error? Let it panic or return None?
                             let job = self_clone.clone()
                                 .get_job_from_job_relay_event(
                                     log,
@@ -189,7 +190,7 @@ impl CommonChainClient {
                                     chain_id
                                 )
                                 .await
-                                .context("Failed to decode event")
+                                .context("Failed to get Job from Log")
                                 .unwrap();
                             self_clone.job_placed_handler(
                                     job,
@@ -223,7 +224,7 @@ impl CommonChainClient {
         Ok(())
     }
 
-    async fn get_job_from_job_relay_event(
+    pub async fn get_job_from_job_relay_event(
         self: Arc<Self>,
         log: Log,
         sequence_number: u8,
@@ -239,7 +240,14 @@ impl CommonChainClient {
             ParamType::Uint(256),
         ];
 
-        let decoded = decode(&types, &log.data.0).unwrap();
+        let decoded = decode(&types, &log.data.0);
+        let decoded = match decoded {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                error!("Error while decoding event: {}", err);
+                return Err(anyhow::Error::msg("Error while decoding event"));
+            }
+        };
 
         let req_chain_client = self.req_chain_clients[&req_chain_id].clone();
         let job_id = log.topics[1].into_uint();
@@ -322,7 +330,7 @@ impl CommonChainClient {
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
         let job_relayed_event_filter = Filter::new()
-            .address(self.contract_addr)
+            .address(self.jobs_contract_addr)
             .topic0(vec![keccak256(
                 "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
             )])
@@ -404,7 +412,7 @@ impl CommonChainClient {
         Ok(())
     }
 
-    async fn select_gateway_for_job_id(
+    pub async fn select_gateway_for_job_id(
         &self,
         job: Job,
         seed: u64,
@@ -629,9 +637,7 @@ impl CommonChainClient {
         self: Arc<Self>,
         tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
     ) -> Result<()> {
-        let mut stream = self.common_chain_jobs()
-            .await
-            .unwrap();
+        let mut stream = self.common_chain_jobs().await.unwrap();
 
         while let Some(log) = stream.next().await {
             let topics = log.topics.clone();
@@ -996,10 +1002,8 @@ impl CommonChainClient {
 }
 
 impl LogsProvider for CommonChainClient {
-    async fn common_chain_jobs<'a>(
-        &'a self,
-    ) -> Result<SubscriptionStream<'a, Ws, Log>> {
-        common_chain_jobs(&self.chain_ws_client, self.contract_addr).await
+    async fn common_chain_jobs<'a>(&'a self) -> Result<SubscriptionStream<'a, Ws, Log>> {
+        common_chain_jobs(&self.chain_ws_client, self.jobs_contract_addr).await
     }
 
     async fn req_chain_jobs<'a>(
