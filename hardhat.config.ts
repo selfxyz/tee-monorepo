@@ -120,9 +120,6 @@ export default {
       },
     }],
   },
-  mocha: {
-    timeout: 100000000
-  },
   gasReporter: {
     enabled: process.env?.GAS_REPORTER?.toLowerCase() == "true"
   }
