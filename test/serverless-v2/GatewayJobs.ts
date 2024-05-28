@@ -1249,6 +1249,18 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 			.and.to.not.emit(gatewayJobs, "JobResponded");
 	});
 
+	it("can call oysterResultCall with any account having JOBS_ROLE", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 2000,
+			errorCode = 0;
+
+		await gatewayJobs.grantRole(await gatewayJobs.JOBS_ROLE(), addrs[0]);
+
+		await expect(gatewayJobs.oysterResultCall(jobId, output, errorCode, totalTime))
+			.and.to.emit(gatewayJobs, "JobResponded");
+	});
+
 	it("cannot call oysterResultCall without Jobs contract", async function () {
 		let jobId = 0,
 			output = solidityPacked(["string"], ["it is the output"]),
@@ -1279,6 +1291,18 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 
 		await expect(gatewayJobs.oysterFailureCall(jobId, slashAmount))
 			.to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
+	});
+
+	it("can call oysterFailureCall with any account having JOBS_ROLE", async function () {
+		let jobId = 0,
+			slashAmount = 100;
+	
+		await usdcToken.transfer(gatewayJobs.target, 100000);
+		await stakingToken.transfer(gatewayJobs.target, 100000);
+		await gatewayJobs.grantRole(await gatewayJobs.JOBS_ROLE(), addrs[0]);
+
+		await expect(gatewayJobs.oysterFailureCall(jobId, slashAmount))
+			.and.to.emit(gatewayJobs, "JobFailed");
 	});
 });
 
