@@ -236,6 +236,7 @@ contract GatewayJobs is
 
             emit JobRelayed(_jobId, execJobId, _jobOwner, _gateway);
         } catch (bytes memory reason) {
+            USDC_TOKEN.safeDecreaseAllowance(address(JOB_MANAGER), _usdcDeposit);
             if (bytes4(reason) == Jobs.JobsUnavailableResources.selector) {
                 // Resource unavailable
                 relayJobs[_jobId].isResourceUnavailable = true;
