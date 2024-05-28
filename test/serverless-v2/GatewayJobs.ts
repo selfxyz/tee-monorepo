@@ -48,7 +48,7 @@ const image7: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR2: ethers.hexlify(ethers.randomBytes(48)),
 };
 
-describe("Jobs - Init", function () {
+describe("GatewayJobs - Init", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let stakingToken: string;
@@ -153,6 +153,58 @@ describe("Jobs - Init", function () {
 				}
 			)
 		).to.be.revertedWithCustomError(GatewayJobs, "GatewayJobsZeroAddressAdmin");
+	});
+
+	it("cannot deploy with zero address as staking token", async function () {
+		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+		await expect(
+			upgrades.deployProxy(
+				GatewayJobs,
+				[addrs[1]],
+				{
+					kind: "uups",
+					initializer: "initialize",
+					constructorArgs: [
+						ZeroAddress,
+						usdcToken,
+						signMaxAge,
+						relayBufferTime,
+						executionFeePerMs,
+						slashCompForGateway,
+						reassignCompForReporterGateway,
+						jobs,
+						gateways,
+						stakingPaymentPool
+					]
+				}
+			)
+		).to.be.revertedWithCustomError(GatewayJobs, "GatewayJobsZeroAddressStakingToken");
+	});
+
+	it("cannot deploy with zero address as usdc token", async function () {
+		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+		await expect(
+			upgrades.deployProxy(
+				GatewayJobs,
+				[addrs[1]],
+				{
+					kind: "uups",
+					initializer: "initialize",
+					constructorArgs: [
+						stakingToken,
+						ZeroAddress,
+						signMaxAge,
+						relayBufferTime,
+						executionFeePerMs,
+						slashCompForGateway,
+						reassignCompForReporterGateway,
+						jobs,
+						gateways,
+						stakingPaymentPool
+					]
+				}
+			)
+		).to.be.revertedWithCustomError(GatewayJobs, "GatewayJobsZeroAddressUsdcToken");
 	});
 
 	it("upgrades", async function () {
@@ -291,7 +343,7 @@ testERC165(
 	},
 );
 
-describe("Jobs - Relay", function () {
+describe("GatewayJobs - Relay", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let stakingToken: Pond;
@@ -676,7 +728,7 @@ describe("Jobs - Relay", function () {
 	});
 });
 
-describe("Jobs - Reassign Gateway", function () {
+describe("GatewayJobs - Reassign Gateway", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let stakingToken: Pond;
@@ -826,7 +878,7 @@ describe("Jobs - Reassign Gateway", function () {
 
 		// REGISTER GATEWAYS
 		let timestamp = await time.latest() * 1000,
-			stakeAmount = 1000,
+			stakeAmount = 10000,
 			signTimestamp = await time.latest();
 		// 1st gateway
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
@@ -859,7 +911,7 @@ describe("Jobs - Reassign Gateway", function () {
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-	it("can reassign after job output not relayed", async function () {
+	it("can reassign if job not relayed", async function () {
 		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
 			gatewayKeyOld = addrs[15],
 			sequenceId = 1,
@@ -926,6 +978,308 @@ describe("Jobs - Reassign Gateway", function () {
 			.to.be.revertedWithCustomError(gatewayJobs, "GatewayJobsResourceUnavailable");
 	});
 
+	it("can reassign 2nd time if job still not relayed by previous reassigned gateway", async function () {
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			gatewayKeyOld = addrs[15],
+			sequenceId = 1,
+			jobRequestTimestamp = await time.latest() + 100,
+			jobOwner = addrs[1],
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		let tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		sequenceId = 2;
+		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+	});
+
+});
+
+describe("GatewayJobs - oyster callback in GatewayJobs", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let stakingToken: Pond;
+	let usdcToken: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let executors: Executors;
+	let jobs: Jobs;
+	let gateways: Gateways;
+	let gatewayJobs: GatewayJobs;
+	let stakingPaymentPool: string;
+	let usdcPaymentPool: string;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+		stakingPaymentPool = addrs[4];
+		usdcPaymentPool = addrs[4];
+
+		const Pond = await ethers.getContractFactory("Pond");
+		stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+			kind: "uups",
+		}) as unknown as Pond;
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		usdcToken = await upgrades.deployProxy(USDCoin, [addrs[0]], {
+			kind: "uups",
+		}) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image2, image3],
+			maxAge = 600,
+        	deregisterOrUnstakeTimeout = 600,
+        	slashPercentInBips = 1,
+        	slashMaxBips = 100;
+		const Gateways = await ethers.getContractFactory("Gateways");
+		gateways = await upgrades.deployProxy(
+			Gateways,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [attestationVerifier.target, maxAge, stakingToken.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
+			},
+		) as unknown as Gateways;
+
+		let executor_images = [image4, image5, image6, image7]
+		const Executors = await ethers.getContractFactory("Executors");
+		executors = await upgrades.deployProxy(
+			Executors,
+			[addrs[0], executor_images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					stakingToken.target,
+					10**10,
+					10**2,
+					10**6
+				]
+			},
+		) as unknown as Executors;
+
+		const Jobs = await ethers.getContractFactory("Jobs");
+		jobs = await upgrades.deployProxy(
+			Jobs,
+			[addrs[0]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					stakingToken.target,
+					usdcToken.target,
+					600,
+					100,
+					3,
+					1,
+					1,
+					stakingPaymentPool,
+					usdcPaymentPool,
+					executors.target
+				]
+			},
+		) as unknown as Jobs;
+
+		let signMaxAge = 600,
+			relayBufferTime = 100,
+			executionFeePerMs = 20,
+			slashCompForGateway = 10,
+			reassignCompForReporterGateway = 100,
+			stakingPaymentPoolAddress = addrs[1];
+		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+		gatewayJobs = await upgrades.deployProxy(
+			GatewayJobs,
+			[admin],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					stakingToken.target,
+					usdcToken.target,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs.target,
+					gateways.target,
+					stakingPaymentPoolAddress
+				]
+			},
+		) as unknown as GatewayJobs;
+
+		// Grant role to jobs contract
+		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+		await gatewayJobs.grantRole(await gatewayJobs.JOBS_ROLE(), jobs.target);
+
+		let chainIds = [1];
+		let reqChains = [
+			{
+				contractAddress: addrs[1],
+				httpRpcUrl: "https://eth.rpc",
+				wsRpcUrl: "wss://eth.rpc"
+			}
+		]
+		await gateways.addChainGlobal(chainIds, reqChains);
+
+		// Register Executors. Owner is addrs[1]
+		let amount = 10n**20n;	// 100 POND
+		await stakingToken.transfer(addrs[1], amount);
+		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
+		await stakingToken.connect(signers[1]).approve(executors.target, amount);
+
+		amount = parseUnits("1000", 6);	// 100 USDC
+		await usdcToken.transfer(addrs[1], amount);
+		await usdcToken.connect(signers[1]).approve(gatewayJobs.target, amount);
+
+		let jobCapacity = 20, stakeAmount = 10n**19n;
+		const timestamp = await time.latest() * 1000;
+
+		// REGISTER GATEWAYS
+		let signTimestamp = await time.latest();
+		// 1st gateway
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[15]);
+		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+
+		// 2nd gateway
+		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
+		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
+		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+
+		// REGISTER EXECUTORS
+		for (let index = 0; index < 3; index++) {
+			let signTimestamp = await time.latest() - 540;
+			// Executor index using wallet 17 + index as enclave address
+			let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index], wallets[14], timestamp - 540000);
+			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp, wallets[17 + index]);
+			await executors.connect(signers[1]).registerExecutor(
+				attestationSign,
+				attestation,
+				jobCapacity,
+				signTimestamp,
+				signedDigest,
+				stakeAmount
+			);
+		}
+
+		// RELAY JOB
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			deadline = 10000,
+			jobRequestTimestamp = await time.latest(),
+			sequenceId = 1,
+			jobOwner = addrs[1];
+		signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
+		await gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can call oysterResultCall on first output submit", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		let tx = jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true)
+			.and.to.emit(gatewayJobs, "JobResponded");
+	});
+
+	it("cannot call oysterResultCall on second output submit", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 540;
+
+		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
+		let tx = jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true)
+			.and.to.emit(gatewayJobs, "JobResponded");
+
+		// submit 2nd ouput
+		signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[18]);
+		tx = jobs.connect(signers[1]).submitOutput(
+			signedDigest,
+			jobId,
+			output,
+			totalTime,
+			errorCode,
+			signTimestamp
+		);
+		await expect(tx).to.emit(jobs, "JobResponded")
+			.and.to.not.emit(jobs, "JobResultCallbackCalled")
+			.and.to.not.emit(gatewayJobs, "JobResponded");
+	});
+
+	it("cannot call oysterResultCall without Jobs contract", async function () {
+		let jobId = 0,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0;
+
+		await expect(gatewayJobs.oysterResultCall(jobId, output, errorCode, totalTime))
+			.to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
+	});
+
+	it("can slash after deadline over", async function () {
+		await time.increase(await time.latest() + 100000);
+		let jobId = 0;
+		let tx = jobs.slashOnExecutionTimeout(jobId);
+		await expect(tx).to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[17])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[18])
+			.and.to.emit(jobs, "SlashedOnExecutionTimeout").withArgs(jobId, addrs[19])
+			.and.to.emit(jobs, "JobFailureCallbackCalled").withArgs(jobId, true)
+			.and.to.emit(gatewayJobs, "JobFailed").withArgs((BigInt(1) << BigInt(192)) + BigInt(1));
+		// check job does not exists
+		let job = await jobs.jobs(jobId);
+		expect(job.execStartTime).to.be.eq(0);
+	});
+
+	it("cannot call oysterFailureCall without Jobs contract", async function () {
+		let jobId = 0,
+			slashAmount = 0;
+
+		await expect(gatewayJobs.oysterFailureCall(jobId, slashAmount))
+			.to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
+	});
 });
 
 function normalize(key: string): string {

@@ -455,6 +455,10 @@ describe("Executors - Register executor", function () {
 			0))
 			.to.emit(executors, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image2), pubkeys[15]);
 		expect(await executors.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
+		expect(await executors.getOwner(addrs[15])).to.eq(addrs[1]);
+		expect(await executors.allowOnlyVerified(addrs[15])).to.be.not.reverted;
+		await expect(executors.allowOnlyVerified(addrs[16]))
+			.to.be.revertedWithCustomError(executors, "AttestationAutherKeyNotVerified");
 	});
 
 	it("cannot register executor with old signature timestamp", async function () {

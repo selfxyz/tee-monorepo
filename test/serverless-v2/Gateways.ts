@@ -1,8 +1,8 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, ZeroAddress, keccak256, solidityPacked, Wallet } from "ethers";
+import { BytesLike, Signer, ZeroAddress, keccak256, solidityPacked, Wallet, parseUnits } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Gateways, Pond } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, GatewayJobs, Gateways, Pond } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -433,6 +433,7 @@ describe("Gateways - Global chains", function () {
 
 		let {contractAddress, httpRpcUrl, wsRpcUrl} = await gateways.requestChains(1);
 		expect({contractAddress, httpRpcUrl, wsRpcUrl}).to.deep.eq(reqChains[0]);
+		expect(await gateways.isChainSupported(chainIds[0])).to.be.true;
 	});
 
 	it("cannot add global chain without admin", async function () {
@@ -1122,6 +1123,136 @@ describe("Gateways - Staking", function () {
 
 });
 
+describe("Gateways - Slash on reassign gateway", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let stakingToken: Pond;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let gateways: Gateways;
+	let gatewayJobs: GatewayJobs;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const Pond = await ethers.getContractFactory("Pond");
+		stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+			kind: "uups",
+		}) as unknown as Pond;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image2, image3],
+			maxAge = 600,
+        	deregisterOrUnstakeTimeout = 600,
+        	reassignCompForReporterGateway = 10,
+        	slashPercentInBips = 1,
+        	slashMaxBips = 100;
+		const Gateways = await ethers.getContractFactory("Gateways");
+		gateways = await upgrades.deployProxy(
+			Gateways,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [attestationVerifier.target, maxAge, stakingToken.target, deregisterOrUnstakeTimeout, slashPercentInBips, slashMaxBips]
+			},
+		) as unknown as Gateways;
+
+		let relayBufferTime = 100,
+			executionFeePerMs = 20,
+			slashCompForGateway = 10,
+			signMaxAge = 600,
+			usdcToken = addrs[1],
+			jobs = addrs[1],
+			stakingPaymentPoolAddress = addrs[1];
+		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+		gatewayJobs = await upgrades.deployProxy(
+			GatewayJobs,
+			[admin],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					stakingToken.target,
+					usdcToken,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways.target,
+					stakingPaymentPoolAddress
+				]
+			},
+		) as unknown as GatewayJobs;
+
+		await gateways.grantRole(await gateways.GATEWAY_JOBS_ROLE(), gatewayJobs.target);
+
+		let chainIds = [1];
+		let reqChains = [
+			{
+				contractAddress: addrs[1],
+				httpRpcUrl: "https://eth.rpc",
+				wsRpcUrl: "ws://eth.rpc"
+			}
+		]
+		await gateways.addChainGlobal(chainIds, reqChains);
+
+		let amount = parseUnits("1000");	// 1000 POND
+		await stakingToken.transfer(addrs[1], amount);
+		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
+
+		// REGISTER GATEWAYS
+		let timestamp = await time.latest() * 1000,
+			stakeAmount = 10000,
+			signTimestamp = await time.latest();
+		// 1st gateway
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+		let signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[15]);
+		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+
+		// 2nd gateway
+		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
+		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
+		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can reassign if job not relayed", async function () {
+		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
+			gatewayKeyOld = addrs[15],
+			sequenceId = 1,
+			jobRequestTimestamp = await time.latest() + 100,
+			jobOwner = addrs[1],
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
+		let tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+	});
+
+	it("cannot reassign if not called by GatewayJobs contract", async function () {
+		let gatewayKeyOld = addrs[15];
+
+		let tx = gateways.slashOnReassignGateway(gatewayKeyOld);
+		await expect(tx).to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
+	});
+
+});
+
 function normalize(key: string): string {
 	return '0x' + key.substring(4);
 }
@@ -1245,6 +1376,44 @@ async function createRemoveChainsSignature(
 
 	const value = {
 		chainIds,
+		signTimestamp
+	};
+
+	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+	return ethers.Signature.from(sign).serialized;
+}
+
+async function createReassignGatewaySignature(
+	jobId: number,
+    gatewayOld: string,
+	jobOwner: string,
+	sequenceId: number,
+	jobRequestTimestamp: number,
+	signTimestamp: number,
+	sourceEnclaveWallet: Wallet
+): Promise<string> {
+	const domain = {
+		name: 'marlin.oyster.GatewayJobs',
+		version: '1',
+	};
+
+	const types = {
+		ReassignGateway: [
+			{ name: 'jobId', type: 'uint256' },
+			{ name: 'gatewayOld', type: 'address' },
+			{ name: 'jobOwner', type: 'address' },
+			{ name: 'sequenceId', type: 'uint8' },
+			{ name: 'jobRequestTimestamp', type: 'uint256' },
+			{ name: 'signTimestamp', type: 'uint256' }
+		]
+	};
+
+	const value = {
+		jobId,
+		gatewayOld,
+		jobOwner,
+		sequenceId,
+		jobRequestTimestamp,
 		signTimestamp
 	};
 
