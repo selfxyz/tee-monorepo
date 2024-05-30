@@ -2,7 +2,7 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, ZeroAddress, keccak256, solidityPacked, Wallet, parseUnits } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, GatewayJobs, Gateways, Pond } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, GatewayJobs, Gateways, Pond, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -1149,6 +1149,15 @@ describe("Gateways - Slash on reassign gateway", function () {
 			kind: "uups",
 		}) as unknown as Pond;
 
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		let usdcToken = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
 		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
 		attestationVerifier = await upgrades.deployProxy(
 			AttestationVerifier,
@@ -1178,7 +1187,6 @@ describe("Gateways - Slash on reassign gateway", function () {
 			executionFeePerMs = 20,
 			slashCompForGateway = 10,
 			signMaxAge = 600,
-			usdcToken = addrs[1],
 			jobs = addrs[1],
 			stakingPaymentPoolAddress = addrs[1];
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
@@ -1190,7 +1198,7 @@ describe("Gateways - Slash on reassign gateway", function () {
 				initializer: "initialize",
 				constructorArgs: [
 					stakingToken.target,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
