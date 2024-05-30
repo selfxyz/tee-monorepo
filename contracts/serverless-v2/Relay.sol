@@ -103,6 +103,9 @@ contract Relay is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GATEWAY_FEE_PER_JOB;
 
+    /// @notice gas reserved to execute other required instructions/opcodes during callback function call
+    uint public constant MIN_GAS_LIMIT = 4530;
+
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
@@ -402,15 +405,15 @@ contract Relay is
         uint8 _errorCode
     ) internal returns (bool, uint) {
         uint startGas = gasleft();
-        (bool success, ) = _callbackContract.call{gas: (_callbackDeposit / tx.gasprice)}(
+        (bool success, ) = _callbackContract.call{ gas: (_callbackDeposit / tx.gasprice) }(
             abi.encodeWithSignature(
                 "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
                 _jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode
             )
         );
-
+        uint endGas = gasleft();
         // calculate callback cost
-        uint callbackCost = (startGas - gasleft()) * tx.gasprice;
+        uint callbackCost = (startGas - endGas - MIN_GAS_LIMIT) * tx.gasprice;
 
         return (success, callbackCost);
     }
