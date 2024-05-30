@@ -52,7 +52,7 @@ describe("GatewayJobs - Init", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let stakingToken: string;
-	let usdcToken: string;
+	let usdcToken: USDCoin;
 	let gateways: string;
 
     let jobs: string;
@@ -70,7 +70,6 @@ describe("GatewayJobs - Init", function () {
 		stakingToken = addrs[1];
 		gateways = addrs[1];
 		jobs = addrs[1];
-		usdcToken = addrs[1];
 		signMaxAge = 600;
 		relayBufferTime = 100;
 		executionFeePerMs = 10;
@@ -78,6 +77,14 @@ describe("GatewayJobs - Init", function () {
 		reassignCompForReporterGateway = 100;
 		stakingPaymentPool = addrs[1];
 
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		usdcToken = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -113,7 +120,7 @@ describe("GatewayJobs - Init", function () {
 				initializer: "initialize",
 				constructorArgs: [
 					stakingToken,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
@@ -140,7 +147,7 @@ describe("GatewayJobs - Init", function () {
 					initializer: "initialize",
 					constructorArgs: [
 						stakingToken,
-						usdcToken,
+						usdcToken.target,
 						signMaxAge,
 						relayBufferTime,
 						executionFeePerMs,
@@ -166,7 +173,7 @@ describe("GatewayJobs - Init", function () {
 					initializer: "initialize",
 					constructorArgs: [
 						ZeroAddress,
-						usdcToken,
+						usdcToken.target,
 						signMaxAge,
 						relayBufferTime,
 						executionFeePerMs,
@@ -217,7 +224,7 @@ describe("GatewayJobs - Init", function () {
 				initializer: "initialize",
 				constructorArgs: [
 					stakingToken,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
@@ -236,7 +243,7 @@ describe("GatewayJobs - Init", function () {
 				kind: "uups",
 				constructorArgs: [
 					stakingToken,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
@@ -262,7 +269,7 @@ describe("GatewayJobs - Init", function () {
 				initializer: "initialize",
 				constructorArgs: [
 					stakingToken,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
@@ -280,7 +287,7 @@ describe("GatewayJobs - Init", function () {
 				kind: "uups",
 				constructorArgs: [
 					stakingToken,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
@@ -299,10 +306,18 @@ describe("GatewayJobs - Init", function () {
 testERC165(
 	"GatewayJobs - ERC165",
 	async function(_signers: Signer[], addrs: string[]) {
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		const usdcToken = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
 		let stakingToken = addrs[1],
 			gateways = addrs[1],
 			jobs = addrs[1],
-			usdcToken = addrs[1],
 			signMaxAge = 600,
 			relayBufferTime = 100,
 			executionFeePerMs = 10,
@@ -318,7 +333,7 @@ testERC165(
 				initializer: "initialize",
 				constructorArgs: [
 					stakingToken,
-					usdcToken,
+					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
 					executionFeePerMs,
@@ -1197,7 +1212,6 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 
 		// Grant role to jobs contract
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
-		await gatewayJobs.grantRole(await gatewayJobs.JOBS_ROLE(), jobs.target);
 
 		let chainIds = [1];
 		let reqChains = [

@@ -83,7 +83,10 @@ contract GatewayJobs is
         __UUPSUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(JOBS_ROLE, address(JOB_MANAGER));
 
+        // increasing allowance to be used while relaying jobs
+        USDC_TOKEN.safeIncreaseAllowance(address(JOB_MANAGER), type(uint256).max);
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -210,7 +213,6 @@ contract GatewayJobs is
         // reserve execution fee from gateway
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
         USDC_TOKEN.safeTransferFrom(_gateway, address(this), usdcDeposit);
-        USDC_TOKEN.safeIncreaseAllowance(address(JOB_MANAGER), usdcDeposit);
 
         _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
     }
@@ -237,8 +239,6 @@ contract GatewayJobs is
             emit JobRelayed(_jobId, execJobId, _jobOwner, _gateway);
         } catch (bytes memory reason) {
             if (bytes4(reason) == Jobs.JobsUnavailableResources.selector) {
-                // decrease allowance by _usdcDeposit amount as job failed to relay
-                USDC_TOKEN.safeDecreaseAllowance(address(JOB_MANAGER), _usdcDeposit);
                 // Resource unavailable
                 relayJobs[_jobId].isResourceUnavailable = true;
                 // Refund the USDC deposit
