@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use ethers::abi::{encode_packed, FixedBytes, Token};
 use ethers::prelude::*;
 use ethers::types::{Address, U256};
@@ -11,61 +11,8 @@ use std::sync::Arc;
 use tokio::time;
 
 use crate::constant::WAIT_BEFORE_CHECKING_BLOCK;
-use crate::model::RequestChainClient;
+use crate::model::{Job, RequestChainClient};
 use crate::HttpProvider;
-
-pub async fn common_chain_jobs(
-    com_chain_client: &Provider<Ws>,
-    contract_address: Address,
-) -> Result<SubscriptionStream<Ws, Log>> {
-    info!("Subscribing to events for Common Chain");
-    let event_filter: Filter = Filter::new()
-        .address(contract_address)
-        .select(0..)
-        .topic0(vec![
-            keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8)"),
-            keccak256("JobResourceUnavailable(uint256,uint256,address)"),
-            keccak256("GatewayReassigned(uint256,uint256,address,address,uint8)"),
-        ]);
-
-    let stream = com_chain_client
-        .subscribe_logs(&event_filter)
-        .await
-        .context("failed to subscribe to events on the Common Chain")
-        .unwrap();
-
-    Ok(stream)
-}
-
-pub async fn req_chain_jobs<'a>(
-    req_chain_ws_client: &'a Provider<Ws>,
-    req_chain_client: &'a RequestChainClient,
-) -> Result<SubscriptionStream<'a, Ws, Log>> {
-    let event_filter = Filter::new()
-        .address(req_chain_client.contract_address)
-        .select(0..)
-        .topic0(vec![
-            keccak256("JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,uint256)"),
-            keccak256("JobCancelled(bytes32)"),
-        ]);
-
-    info!(
-        "Subscribing to events for chain_id: {}",
-        req_chain_client.chain_id
-    );
-
-    // register subscription
-    let stream = req_chain_ws_client
-        .subscribe_logs(&event_filter)
-        .await
-        .context(format!(
-            "failed to subscribe to events on Request Chain: {}",
-            req_chain_client.chain_id
-        ))
-        .unwrap();
-
-    Ok(stream)
-}
 
 pub trait LogsProvider {
     fn common_chain_jobs<'a>(
@@ -77,6 +24,11 @@ pub trait LogsProvider {
         req_chain_ws_client: &'a Provider<Ws>,
         req_chain_client: &'a RequestChainClient,
     ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>>;
+
+    fn common_chain_job_relayed_logs<'a>(
+        &'a self,
+        job: Job,
+    ) -> impl Future<Output = Result<Vec<Log>>>;
 }
 
 pub async fn get_block_number_by_timestamp(

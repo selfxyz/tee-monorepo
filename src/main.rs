@@ -6,7 +6,6 @@ mod config;
 mod constant;
 mod contract_abi;
 mod model;
-mod tests;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
