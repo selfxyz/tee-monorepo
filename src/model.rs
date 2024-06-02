@@ -137,7 +137,7 @@ pub struct Job {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct JobResponse {
+pub struct ResponseJob {
     pub job_id: U256,
     pub req_chain_id: u64,
     pub job_key: U256,

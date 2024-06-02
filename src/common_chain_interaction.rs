@@ -28,8 +28,8 @@ use crate::constant::{
 };
 use crate::contract_abi::{CommonChainGatewayContract, CommonChainJobsContract};
 use crate::model::{
-    ComChainJobType, CommonChainClient, GatewayData, Job, JobResponse, ReqChainJobType,
-    RequestChainClient,
+    ComChainJobType, CommonChainClient, GatewayData, Job, ReqChainJobType, RequestChainClient,
+    ResponseJob,
 };
 use crate::HttpProvider;
 
@@ -118,7 +118,7 @@ impl CommonChainClient {
         self_clone.handle_all_req_chain_events(req_chain_tx).await?;
 
         // setup for the listening events on Common Chain and calling Request Chain functions
-        let (com_chain_tx, req_chain_rx) = channel::<(JobResponse, Arc<CommonChainClient>)>(100);
+        let (com_chain_tx, req_chain_rx) = channel::<(ResponseJob, Arc<CommonChainClient>)>(100);
         let self_clone = Arc::clone(&self);
         tokio::spawn(async move {
             let _ = self_clone.txns_to_request_chain(req_chain_rx).await;
@@ -633,7 +633,7 @@ impl CommonChainClient {
 
     async fn handle_all_com_chain_events(
         self: Arc<Self>,
-        tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
+        tx: Sender<(ResponseJob, Arc<CommonChainClient>)>,
     ) -> Result<()> {
         let mut stream = self.common_chain_jobs().await.unwrap();
 
@@ -650,13 +650,13 @@ impl CommonChainClient {
                 let self_clone = Arc::clone(&self);
                 let tx = tx.clone();
                 task::spawn(async move {
-                    let job_response = self_clone
+                    let response_job = self_clone
                         .clone()
                         .get_job_from_job_responded_event(log)
                         .await
                         .context("Failed to decode event")
                         .unwrap();
-                    self_clone.job_responded_handler(job_response, tx).await;
+                    self_clone.job_responded_handler(response_job, tx).await;
                 });
             } else if topics[0]
                 == keccak256("JobResourceUnavailable(uint256,uint256,address)").into()
@@ -685,7 +685,7 @@ impl CommonChainClient {
         Ok(())
     }
 
-    async fn get_job_from_job_responded_event(self: Arc<Self>, log: Log) -> Result<JobResponse> {
+    async fn get_job_from_job_responded_event(self: Arc<Self>, log: Log) -> Result<ResponseJob> {
         let types = vec![
             ParamType::Bytes,
             ParamType::Uint(256),
@@ -697,7 +697,7 @@ impl CommonChainClient {
         let job_id = log.topics[1].into_uint();
         let req_chain_id = log.topics[2].into_uint().low_u64();
 
-        Ok(JobResponse {
+        Ok(ResponseJob {
             job_id,
             req_chain_id,
             job_key: get_key_for_job_id(job_id, req_chain_id).await,
@@ -707,25 +707,25 @@ impl CommonChainClient {
             output_count: decoded[3].clone().into_uint().unwrap().low_u64() as u8,
             job_type: ReqChainJobType::JobResponded,
             gateway_address: None,
-            sequence_number: 0,
+            sequence_number: 1,
         })
     }
 
     async fn job_responded_handler(
         self: Arc<Self>,
-        mut job_response: JobResponse,
-        tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
+        mut response_job: ResponseJob,
+        tx: Sender<(ResponseJob, Arc<CommonChainClient>)>,
     ) {
-        if job_response.output_count > 1 {
+        if response_job.output_count > 1 {
             info!(
                 "Job ID: {:?}, Multiple outputs received. Ignoring the response.",
-                job_response.job_id
+                response_job.job_id
             );
             return;
         }
 
         // let req_chain_client =
-        //     self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
+        //     self.req_chain_clients[&response_job.req_chain_id.to_string()].clone();
 
         let job: Option<Job>;
         // scope for the read lock
@@ -734,45 +734,45 @@ impl CommonChainClient {
                 .active_jobs
                 .read()
                 .unwrap()
-                .get(&job_response.job_key)
+                .get(&response_job.job_key)
                 .cloned();
         }
         if job.is_some() {
             let job = job.unwrap();
-            job_response.gateway_address = job.gateway_address;
+            response_job.gateway_address = job.gateway_address;
             self.clone().remove_job(job).await;
 
             // Currently, slashing is not implemented for the JobResponded event
-            // } else if job_response.sequence_number > 0 {
+            // } else if response_job.sequence_number > 1 {
             //     let gateway_address: Address;
             //     // let seed be absolute difference between (job_id and req_chain_id) + total_time
             //     let seed = {
-            //         let job_id_req_chain_id = match job_response
+            //         let job_id_req_chain_id = match response_job
             //             .job_id
             //             .as_u64()
-            //             .checked_sub(job_response.req_chain_id)
+            //             .checked_sub(response_job.req_chain_id)
             //         {
             //             Some(val) => val,
-            //             None => job_response.req_chain_id - job_response.job_id.as_u64(),
+            //             None => response_job.req_chain_id - response_job.job_id.as_u64(),
             //         };
-            //         job_id_req_chain_id + job_response.total_time.as_u64()
+            //         job_id_req_chain_id + response_job.total_time.as_u64()
             //     };
             //     gateway_address = self
             //         .select_gateway_for_job_id(
-            //             job_response.job_id.clone(),
+            //             response_job.job_id.clone(),
             //             seed,
-            //             job_response.sequence_number,
+            //             response_job.sequence_number,
             //             req_chain_client,
             //         )
             //         .await
             //         .context("Failed to select a gateway for the job")
             //         .unwrap();
-            //     job_response.gateway_address = Some(gateway_address);
+            //     response_job.gateway_address = Some(gateway_address);
             // }
-            // if job_response.gateway_address.unwrap() == self.address {
-            tx.send((job_response, self.clone())).await.unwrap();
+            // if response_job.gateway_address.unwrap() == self.address {
+            tx.send((response_job, self.clone())).await.unwrap();
             // } else {
-            //     self.job_responded_slash_timer(job_response.clone(), tx.clone())
+            //     self.job_responded_slash_timer(response_job.clone(), tx.clone())
             //         .await
             //         .unwrap();
         }
@@ -795,39 +795,42 @@ impl CommonChainClient {
     // #[async_recursion]
     // async fn job_responded_slash_timer(
     //     self: Arc<Self>,
-    //     mut job_response: JobResponse,
-    //     tx: Sender<(JobResponse, Arc<CommonChainClient>)>,
+    //     mut response_job: ResponseJob,
+    //     tx: Sender<(ResponseJob, Arc<CommonChainClient>)>,
     // ) -> Result<()> {
     //     time::sleep(Duration::from_secs(RESPONSE_RELAY_TIMEOUT)).await;
     //     // get request chain client
     //     let req_chain_client =
-    //         self.req_chain_clients[&job_response.req_chain_id.to_string()].clone();
-    //     let onchain_job_response = req_chain_client
+    //         self.req_chain_clients[&response_job.req_chain_id.to_string()].clone();
+    //     let onchain_response_job = req_chain_client
     //         .contract
-    //         .jobs(job_response.job_id)
+    //         .jobs(response_job.job_id)
     //         .await
     //         .unwrap();
-    //     let output_received: bool = onchain_job_response.8;
-    //     let onchain_job_response: JobResponse = JobResponse {
-    //         job_id: job_response.job_id,
-    //         req_chain_id: job_response.req_chain_id,
-    //         job_key: get_key_for_job_id(job_response.job_id, job_response.req_chain_id).await,
+    //     let output_received: bool = onchain_response_job.8;
+    //     let onchain_response_job: ResponseJob = ResponseJob {
+    //         job_id: response_job.job_id,
+    //         req_chain_id: response_job.req_chain_id,
+    //         job_key: get_key_for_job_id(response_job.job_id, response_job.req_chain_id).await,
     //         output: Bytes::default().into(),
     //         total_time: U256::zero(),
     //         error_code: 0,
     //         output_count: 0,
     //         job_type: ReqChainJobType::JobResponded,
-    //         gateway_address: Some(onchain_job_response.7),
+    //         gateway_address: Some(onchain_response_job.7),
     //         // depending on how the gateway is reassigned, the retry number might be different
     //         // can be added to event and a check below in the if condition
     //         // if retry number is added to the event,
-    //         // remove_job_response needs to be updated accordingly
+    //         // remove_response_job needs to be updated accordingly
     //         sequence_number: 1,
     //     };
-    //     if output_received && onchain_job_response.gateway_address.unwrap() != H160::zero() {
+    //     // if output is received and the gateway is the same as the one assigned by the common chain
+    //     // then the job is relayed
+    //     // sequence_number check is missing
+    //     if output_received && onchain_response_job.gateway_address.unwrap() != H160::zero() {
     //         info!(
     //             "Job ID: {:?}, JobResponded event triggered",
-    //             job_response.job_id
+    //             response_job.job_id
     //         );
     //         return Ok(());
     //     }
@@ -836,22 +839,22 @@ impl CommonChainClient {
     //     // For now, use the same function.
     //     {
     //         let self_clone = self.clone();
-    //         let mut job_response_clone = job_response.clone();
-    //         job_response_clone.job_type = ReqChainJobType::SlashGatewayResponse;
+    //         let mut response_job_clone = response_job.clone();
+    //         response_job_clone.job_type = ReqChainJobType::SlashGatewayResponse;
     //         let tx_clone = tx.clone();
     //         tx_clone
-    //             .send((job_response_clone, self_clone))
+    //             .send((response_job_clone, self_clone))
     //             .await
     //             .unwrap();
     //     }
-    //     job_response.sequence_number += 1;
-    //     if job_response.sequence_number > MAX_GATEWAY_RETRIES {
-    //         info!("Job ID: {:?}, Max retries reached", job_response.job_id);
+    //     response_job.sequence_number += 1;
+    //     if response_job.sequence_number > MAX_GATEWAY_RETRIES {
+    //         info!("Job ID: {:?}, Max retries reached", response_job.job_id);
     //         return Ok(());
     //     }
     //     // If gateway is already set, job_responded_handler will reassign the gateway
-    //     job_response.gateway_address = onchain_job_response.gateway_address;
-    //     self.job_responded_handler(job_response, tx).await;
+    //     response_job.gateway_address = onchain_response_job.gateway_address;
+    //     self.job_responded_handler(response_job, tx).await;
     //     Ok(())
     // }
 
@@ -918,23 +921,23 @@ impl CommonChainClient {
 
     async fn txns_to_request_chain(
         self: Arc<Self>,
-        mut rx: Receiver<(JobResponse, Arc<CommonChainClient>)>,
+        mut rx: Receiver<(ResponseJob, Arc<CommonChainClient>)>,
     ) -> Result<()> {
-        while let Some((job_response, com_chain_client)) = rx.recv().await {
-            match job_response.job_type {
+        while let Some((response_job, com_chain_client)) = rx.recv().await {
+            match response_job.job_type {
                 ReqChainJobType::JobResponded => {
                     let com_chain_client_clone = com_chain_client.clone();
-                    let job_response_clone = job_response.clone();
+                    let response_job_clone = response_job.clone();
                     com_chain_client_clone
-                        .job_response_txn(job_response_clone)
+                        .job_response_txn(response_job_clone)
                         .await;
                     com_chain_client
-                        .remove_job_response(job_response.job_key)
+                        .remove_response_job(response_job.job_key)
                         .await;
                 } // Currently, slashing is not implemented for the JobResponded event
                   // ReqChainJobType::SlashGatewayResponse => {
                   //     com_chain_client
-                  //         .reassign_gateway_response_txn(job_response)
+                  //         .reassign_gateway_response_txn(response_job)
                   //         .await;
                   // }
             }
@@ -942,17 +945,17 @@ impl CommonChainClient {
         Ok(())
     }
 
-    async fn job_response_txn(self: Arc<Self>, job_response: JobResponse) {
+    async fn job_response_txn(self: Arc<Self>, response_job: ResponseJob) {
         info!("Creating a transaction for jobResponse");
 
-        let req_chain_client = self.req_chain_clients[&job_response.req_chain_id].clone();
+        let req_chain_client = self.req_chain_clients[&response_job.req_chain_id].clone();
 
         let signature = sign_job_response_response(
             &self.enclave_signer_key,
-            job_response.job_id,
-            job_response.output.clone(),
-            job_response.total_time,
-            job_response.error_code,
+            response_job.job_id,
+            response_job.output.clone(),
+            response_job.total_time,
+            response_job.error_code,
         )
         .await
         .unwrap();
@@ -963,10 +966,10 @@ impl CommonChainClient {
 
         let txn = req_chain_client.contract.job_response(
             signature,
-            job_response.job_id,
-            job_response.output,
-            job_response.total_time,
-            job_response.error_code,
+            response_job.job_id,
+            response_job.output,
+            response_job.total_time,
+            response_job.error_code,
         );
 
         let pending_txn = txn.send().await;
@@ -993,7 +996,7 @@ impl CommonChainClient {
         );
     }
 
-    async fn remove_job_response(self: Arc<Self>, job_key: U256) {
+    async fn remove_response_job(self: Arc<Self>, job_key: U256) {
         let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_key);
     }
@@ -1083,13 +1086,13 @@ impl LogsProvider for CommonChainClient {
             Ok(vec![Log {
                 address: self.jobs_contract_addr,
                 topics: vec![
-                keccak256(
-                    "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
-                )
-                .into(),
-                H256::from_uint(&job.job_id),
-                H256::from_uint(&job.req_chain_id.into()),
-            ],
+                    keccak256(
+                        "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
+                    )
+                    .into(),
+                    H256::from_uint(&job.job_id),
+                    H256::from_uint(&job.req_chain_id.into()),
+                ],
                 data: encode(&[
                     Token::FixedBytes(
                         hex::decode(
@@ -1113,7 +1116,12 @@ impl LogsProvider for CommonChainClient {
                 ..Default::default()
             }])
         } else {
-            Ok(vec![])
+            Ok(vec![Log {
+                address: Address::default(),
+                topics: vec![H256::default(), H256::default(), H256::default()],
+                data: Bytes::default(),
+                ..Default::default()
+            }])
         }
     }
 }
@@ -1144,7 +1152,10 @@ mod serverless_executor_test {
     use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
     use crate::chain_util::get_key_for_job_id;
     use crate::constant::{MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE};
-    use crate::model::{AppState, ComChainJobType, CommonChainClient, GatewayData, Job};
+    use crate::model::{
+        AppState, ComChainJobType, CommonChainClient, GatewayData, Job, ReqChainJobType,
+        ResponseJob,
+    };
 
     // Testnet or Local blockchain (Hardhat) configurations
     const CHAIN_ID: u64 = 421614;
@@ -1574,6 +1585,27 @@ mod serverless_executor_test {
         }
     }
 
+    async fn generate_job_responded_log(job_id: Option<U256>) -> Log {
+        let job_id = job_id.unwrap_or(U256::from(1));
+
+        Log {
+            address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
+            topics: vec![
+                keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8").into(),
+                H256::from_uint(&job_id),
+                H256::from_uint(&CHAIN_ID.into()),
+            ],
+            data: encode(&[
+                Token::Bytes([].into()),
+                Token::Uint(U256::from(1000)),
+                Token::Uint((0 as u8).into()),
+                Token::Uint((1 as u8).into()),
+            ])
+            .into(),
+            ..Default::default()
+        }
+    }
+
     async fn generate_generic_job(job_id: Option<U256>, job_starttime: Option<u64>) -> Job {
         let job_id = job_id.unwrap_or(U256::from(1));
 
@@ -1601,6 +1633,23 @@ mod serverless_executor_test {
             ),
             job_owner: H160::from_str(REQ_CHAIN_CONTRACT_ADDR).unwrap(),
             job_type: ComChainJobType::JobRelay,
+            sequence_number: 1 as u8,
+            gateway_address: None,
+        }
+    }
+
+    async fn generate_generic_response_job(job_id: Option<U256>) -> ResponseJob {
+        let job_id = job_id.unwrap_or(U256::from(1));
+
+        ResponseJob {
+            job_id,
+            req_chain_id: CHAIN_ID,
+            job_key: get_key_for_job_id(job_id, CHAIN_ID).await,
+            output: Bytes::default(),
+            total_time: U256::from(1000),
+            error_code: 0 as u8,
+            output_count: 1 as u8,
+            job_type: ReqChainJobType::JobResponded,
             sequence_number: 1 as u8,
             gateway_address: None,
         }
@@ -1959,6 +2008,95 @@ mod serverless_executor_test {
 
             break;
         }
+    }
+
+    #[actix_web::test]
+    async fn test_cancel_job_with_job_id_single_active_job() {
+        let common_chain_client = Arc::from(generate_common_chain_client().await);
+
+        let job = generate_generic_job(None, None).await;
+        common_chain_client
+            .active_jobs
+            .write()
+            .unwrap()
+            .insert(job.job_key, job.clone());
+
+        assert_eq!(common_chain_client.active_jobs.read().unwrap().len(), 1);
+
+        common_chain_client
+            .clone()
+            .cancel_job_with_job_id(job.job_id, job.req_chain_id)
+            .await;
+
+        assert_eq!(common_chain_client.active_jobs.read().unwrap().len(), 0);
+    }
+
+    #[actix_web::test]
+    async fn test_cancel_job_with_job_id_multiple_active_jobs() {
+        let common_chain_client = Arc::from(generate_common_chain_client().await);
+
+        let job = generate_generic_job(None, None).await;
+        common_chain_client
+            .active_jobs
+            .write()
+            .unwrap()
+            .insert(job.job_key, job.clone());
+
+        let job2 = generate_generic_job(Some(U256::from(2)), None).await;
+        common_chain_client
+            .active_jobs
+            .write()
+            .unwrap()
+            .insert(job2.job_key, job2.clone());
+
+        assert_eq!(common_chain_client.active_jobs.read().unwrap().len(), 2);
+
+        common_chain_client
+            .clone()
+            .cancel_job_with_job_id(job.job_id, job.req_chain_id)
+            .await;
+
+        assert_eq!(common_chain_client.active_jobs.read().unwrap().len(), 1);
+        assert_eq!(
+            common_chain_client
+                .active_jobs
+                .read()
+                .unwrap()
+                .get(&job2.job_key),
+            Some(&job2)
+        );
+    }
+
+    #[actix_web::test]
+    async fn test_cancel_job_with_job_id_no_active_jobs() {
+        let common_chain_client = Arc::from(generate_common_chain_client().await);
+
+        let job = generate_generic_job(None, None).await;
+
+        assert_eq!(common_chain_client.active_jobs.read().unwrap().len(), 0);
+
+        common_chain_client
+            .clone()
+            .cancel_job_with_job_id(job.job_id, job.req_chain_id)
+            .await;
+
+        assert_eq!(common_chain_client.active_jobs.read().unwrap().len(), 0);
+    }
+
+    #[actix_web::test]
+    async fn test_get_job_from_job_responded_event() {
+        let common_chain_client = Arc::from(generate_common_chain_client().await);
+
+        let log = generate_job_responded_log(None).await;
+
+        let expected_job = generate_generic_response_job(None).await;
+
+        let job = common_chain_client
+            .get_job_from_job_responded_event(log)
+            .await
+            .unwrap();
+
+        assert_eq!(job, expected_job);
     }
 
     // TODO: tests for gateway_epoch_state_service
