@@ -352,7 +352,7 @@ contract Relay is
         bool success = false;
         if (tx.gasprice <= job.maxGasPrice) {
             (success, callbackGas) = _callBackWithLimit(
-                _jobId, job.jobOwner, job.callbackContract, job.callbackDeposit, job.codehash, job.codeInputs, _output,
+                _jobId, job.jobOwner, job.callbackContract, job.callbackGasLimit, job.codehash, job.codeInputs, _output,
                 _errorCode
             );
         }
