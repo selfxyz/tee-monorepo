@@ -975,7 +975,7 @@ describe("Jobs - Output", function () {
 			signTimestamp = await time.latest() - 540;
 
 		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
-		let tx = await jobs.connect(signers[1]).submitOutput(
+		let tx = jobs.connect(signers[1]).submitOutput(
 			signedDigest,
 			jobId,
 			output,
@@ -983,8 +983,15 @@ describe("Jobs - Output", function () {
 			errorCode,
 			signTimestamp
 		);
-		await expect(tx).to.emit(jobs, "JobResponded")
+		await expect(tx).to.emit(jobs, "JobResponded").withArgs(jobId, output, 10000, errorCode, 1)
 			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
+
+		// check usdc balance of executor
+		expect(await usdc_token.balanceOf(addrs[1])).to.eq(10000n*4n/9n);
+		// check usdc balance of payment pool
+		expect(await usdc_token.balanceOf(usdc_payment_pool)).to.eq(10000n);
+		// check usdc balance of job owner
+		expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n**6n - 10000n*2n);
 	});
 });
 
