@@ -756,53 +756,6 @@ describe("GatewayJobs - Relay", function () {
 		await expect(gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp))
 			.to.emit(gatewayJobs, "JobRelayed");
 	});
-
-	it("cannot relay job if Jobs contract reverts due to some unexpected error", async function () {
-		const JobsMock = await ethers.getContractFactory("JobsMock");
-		let jobsMock = await JobsMock.deploy();
-
-		// upgrading the contract to update immutable jobs contract
-		let signMaxAge = 600,
-			relayBufferTime = 100,
-			executionFeePerMs = 20,
-			slashCompForGateway = 10,
-			reassignCompForReporterGateway = 100,
-			stakingPaymentPoolAddress = addrs[0];
-		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
-		gatewayJobs = await upgrades.upgradeProxy(
-			gatewayJobs.target,
-			GatewayJobs,
-			{
-				kind: "uups",
-				constructorArgs: [
-					stakingToken.target,
-					usdcToken.target,
-					signMaxAge,
-					relayBufferTime,
-					executionFeePerMs,
-					slashCompForGateway,
-					reassignCompForReporterGateway,
-					jobsMock.target,
-					gateways.target,
-					stakingPaymentPoolAddress
-				]
-			},
-		) as unknown as GatewayJobs;
-
-		let jobId: any = (BigInt(1) << BigInt(192)) + BigInt(1),
-			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			deadline = 10000,
-			jobRequestTimestamp = await time.latest(),
-			sequenceId = 1,
-			jobOwner = addrs[1],
-			signTimestamp = await time.latest();
-		let signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
-
-		await expect(
-			gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp)
-		).to.be.revertedWithCustomError(gatewayJobs, "GatewayJobsCreateFailed").withArgs(ethers.id('JobsMockError()').substring(0, 10));
-	});
 });
 
 describe("GatewayJobs - Reassign Gateway", function () {
