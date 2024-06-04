@@ -195,7 +195,7 @@ impl CommonChainClient {
                                     job,
                                     tx.clone(),
                                 )
-                                .await;
+                                .await.context("Failed to handle job placed").unwrap();
                         });
                     } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
                         info!(
@@ -266,11 +266,17 @@ impl CommonChainClient {
         })
     }
 
+    // Return value meaning
+    // 1 - Selected Gateway is Self. Working on the txn.
+    // 2 - Selected Gateway is not Self. Working on Slashing.
+    // 3 - Current cycle is not ready. Added to waitlist.
+    // 4 - Job is older than the maintained block states.
+    // 5 - Error while selecting gateway.
     pub async fn job_placed_handler(
         self: Arc<Self>,
         mut job: Job,
         tx: Sender<(Job, Arc<CommonChainClient>)>,
-    ) {
+    ) -> Result<u64> {
         let req_chain_client = self.req_chain_clients[&job.req_chain_id].clone();
 
         let gateway_address = self
@@ -288,7 +294,7 @@ impl CommonChainClient {
                 job.gateway_address = Some(gateway_address);
 
                 if gateway_address == Address::zero() {
-                    return;
+                    return Ok(3);
                 }
 
                 if gateway_address == self.address {
@@ -299,21 +305,27 @@ impl CommonChainClient {
                             .unwrap()
                             .insert(job.job_key, job.clone());
                     }
-                    tx.send((job, self.clone())).await.unwrap();
+                    tx.send((job, self)).await.unwrap();
+
+                    return Ok(1);
                 } else {
-                    self.job_relayed_slash_timer(job.clone(), None, tx.clone())
-                        .await
-                        .unwrap();
+                    task::spawn(async move {
+                        self.job_relayed_slash_timer(job, None, tx).await.unwrap();
+                    });
+
+                    return Ok(2);
                 }
             }
             Err(err) => {
+                error!("Error while selecting gateway: {}", err);
                 // confirm error message
                 if err.to_string() != "Job is older than the maintained block states" {
-                    error!("Error while selecting gateway: {}", err);
-                    panic!("Error while selecting gateway: {}", err);
+                    return Ok(4);
                 }
+
+                return Ok(5);
             }
-        };
+        }
     }
 
     // Return value meaning
@@ -406,7 +418,10 @@ impl CommonChainClient {
         job.gateway_address = None;
 
         task::spawn(async move {
-            self.job_placed_handler(job.clone(), tx.clone()).await;
+            self.job_placed_handler(job, tx)
+                .await
+                .context("Failed to handle job placed")
+                .unwrap();
         });
 
         Ok(2)
@@ -1146,7 +1161,6 @@ mod serverless_executor_test {
     use rand::{Rng, SeedableRng};
     use serde_json::json;
     use tokio::sync::mpsc::channel;
-    use tokio::task;
     use tokio::time::{sleep, Duration};
 
     use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
@@ -1505,6 +1519,7 @@ mod serverless_executor_test {
     async fn add_gateway_epoch_state(
         common_chain_client: Arc<CommonChainClient>,
         num: Option<u64>,
+        add_self: Option<bool>,
     ) {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1513,25 +1528,32 @@ mod serverless_executor_test {
         let current_cycle = (ts - common_chain_client.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
             / common_chain_client.time_interval;
 
+        let add_self = add_self.unwrap_or(true);
+
         let mut gateway_epoch_state_guard =
             common_chain_client.gateway_epoch_state.write().unwrap();
-        gateway_epoch_state_guard
-            .entry(current_cycle)
-            .or_insert(BTreeMap::new())
-            .insert(
-                common_chain_client.address,
-                GatewayData {
-                    last_block_number: 5600 as u64,
-                    address: common_chain_client.address,
-                    stake_amount: U256::from(100),
-                    status: true,
-                    req_chain_ids: BTreeSet::from([CHAIN_ID]),
-                },
-            );
 
-        let num = num.unwrap_or(1);
+        let mut num = num.unwrap_or(1);
 
-        for _ in 1..num {
+        if add_self {
+            gateway_epoch_state_guard
+                .entry(current_cycle)
+                .or_insert(BTreeMap::new())
+                .insert(
+                    common_chain_client.address,
+                    GatewayData {
+                        last_block_number: 5600 as u64,
+                        address: common_chain_client.address,
+                        stake_amount: U256::from(100),
+                        status: true,
+                        req_chain_ids: BTreeSet::from([CHAIN_ID]),
+                    },
+                );
+
+            num -= 1;
+        }
+
+        for _ in 0..num {
             gateway_epoch_state_guard
                 .entry(current_cycle)
                 .or_insert(BTreeMap::new())
@@ -1707,7 +1729,7 @@ mod serverless_executor_test {
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(common_chain_client.clone(), None).await;
+        add_gateway_epoch_state(common_chain_client.clone(), None, None).await;
 
         let req_chain_client = common_chain_client.req_chain_clients[&job.req_chain_id].clone();
         let gateway_address = common_chain_client
@@ -1761,7 +1783,7 @@ mod serverless_executor_test {
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(common_chain_client.clone(), Some(5)).await;
+        add_gateway_epoch_state(common_chain_client.clone(), Some(5), None).await;
 
         let req_chain_client = common_chain_client.req_chain_clients[&job.req_chain_id].clone();
         let gateway_address = common_chain_client
@@ -1804,7 +1826,7 @@ mod serverless_executor_test {
         let mut job = generate_generic_job(None, None).await;
         job.sequence_number = 5;
 
-        add_gateway_epoch_state(common_chain_client.clone(), Some(5)).await;
+        add_gateway_epoch_state(common_chain_client.clone(), Some(5), None).await;
 
         let req_chain_client = common_chain_client.req_chain_clients[&job.req_chain_id].clone();
         let gateway_address = common_chain_client
@@ -1846,19 +1868,20 @@ mod serverless_executor_test {
 
         let mut job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(common_chain_client.clone(), None).await;
+        add_gateway_epoch_state(common_chain_client.clone(), None, None).await;
 
         let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
 
         let job_clone = job.clone();
         let common_chain_client_clone = common_chain_client.clone();
-        task::spawn(async move {
-            common_chain_client_clone
-                .job_placed_handler(job_clone, req_chain_tx.clone())
-                .await;
-        });
+        let res = common_chain_client_clone
+            .job_placed_handler(job_clone, req_chain_tx.clone())
+            .await
+            .unwrap();
 
-        while let Some((rx_job, rx_com_chain_client)) = com_chain_rx.recv().await {
+        assert_eq!(res, 1);
+
+        if let Some((rx_job, rx_com_chain_client)) = com_chain_rx.recv().await {
             job.gateway_address = Some(common_chain_client.address);
             assert_eq!(rx_job, job);
 
@@ -1871,8 +1894,42 @@ mod serverless_executor_test {
                     .get(&job.job_key),
                 Some(&rx_job)
             );
-            break;
+
+            assert_eq!(
+                rx_com_chain_client
+                    .gateway_epoch_state_waitlist
+                    .read()
+                    .unwrap()
+                    .len(),
+                0
+            );
+        } else {
+            assert!(false);
         }
+
+        assert!(com_chain_rx.recv().await.is_none());
+    }
+
+    #[actix_web::test]
+    async fn test_job_placed_handler_selected_gateway_not_self() {
+        let common_chain_client = Arc::from(generate_common_chain_client().await);
+
+        let job = generate_generic_job(None, None).await;
+
+        add_gateway_epoch_state(common_chain_client.clone(), Some(4), Some(false)).await;
+
+        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<CommonChainClient>)>(100);
+
+        let job_clone = job.clone();
+        let common_chain_client_clone = common_chain_client.clone();
+        let res = common_chain_client_clone
+            .job_placed_handler(job_clone, req_chain_tx.clone())
+            .await
+            .unwrap();
+
+        assert_eq!(res, 2);
+
+        assert!(com_chain_rx.recv().await.is_none());
     }
 
     #[actix_web::test]
@@ -1883,10 +1940,13 @@ mod serverless_executor_test {
 
         let (req_chain_tx, _) = channel::<(Job, Arc<CommonChainClient>)>(100);
 
-        common_chain_client
+        let res = common_chain_client
             .clone()
             .job_placed_handler(job.clone(), req_chain_tx.clone())
-            .await;
+            .await
+            .unwrap();
+
+        assert_eq!(res, 3);
 
         let waitlisted_jobs_hashmap = common_chain_client
             .gateway_epoch_state_waitlist
@@ -1907,7 +1967,7 @@ mod serverless_executor_test {
 
         let mut job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(common_chain_client.clone(), Some(5)).await;
+        add_gateway_epoch_state(common_chain_client.clone(), Some(5), None).await;
         job.gateway_address = Some(
             common_chain_client
                 .gateway_epoch_state
@@ -1938,7 +1998,7 @@ mod serverless_executor_test {
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
-        add_gateway_epoch_state(common_chain_client.clone(), Some(5)).await;
+        add_gateway_epoch_state(common_chain_client.clone(), Some(5), None).await;
         job.gateway_address = Some(
             common_chain_client
                 .gateway_epoch_state
@@ -1963,11 +2023,14 @@ mod serverless_executor_test {
 
         assert_eq!(res, 2);
 
-        while let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
+        if let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
             job.job_type = ComChainJobType::SlashGatewayJob;
             assert_eq!(rx_job, job);
-            break;
+        } else {
+            assert!(false);
         }
+
+        assert!(com_chain_rx.recv().await.is_none());
     }
 
     #[actix_web::test]
@@ -1976,7 +2039,7 @@ mod serverless_executor_test {
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
-        add_gateway_epoch_state(common_chain_client.clone(), Some(5)).await;
+        add_gateway_epoch_state(common_chain_client.clone(), Some(5), None).await;
         job.gateway_address = Some(
             common_chain_client
                 .gateway_epoch_state
@@ -2002,12 +2065,14 @@ mod serverless_executor_test {
 
         assert_eq!(res, 3);
 
-        while let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
+        if let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
             job.job_type = ComChainJobType::SlashGatewayJob;
             assert_eq!(rx_job, job);
-
-            break;
+        } else {
+            assert!(false);
         }
+
+        assert!(com_chain_rx.recv().await.is_none());
     }
 
     #[actix_web::test]
