@@ -1,6 +1,6 @@
-import { time } from '@nomicfoundation/hardhat-network-helpers';
+import { setNextBlockBaseFeePerGas, time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, getBigInt, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Relay, USDCoin, UserSample } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
@@ -40,6 +40,8 @@ describe("Relay - Init", function () {
     let overallTimeout: number;
     let executionFeePerMs: number;  // fee is in USDC
     let gatewayFeePerJob: number;
+	let fixedGas: number;
+	let callbackMeasureGas: number;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -53,13 +55,26 @@ describe("Relay - Init", function () {
         overallTimeout = 100;
         executionFeePerMs = 10;  // fee is in USDC
         gatewayFeePerJob = 10;
+		fixedGas = 150000;
+    	callbackMeasureGas = 4530;
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("deploys with initialization disabled", async function () {
 		const Relay = await ethers.getContractFactory("Relay");
-		const relay = await Relay.deploy(attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob);
+		const relay = await Relay.deploy(
+			attestationVerifier,
+			maxAge,
+			token,
+			globalMinTimeout,
+			globalMaxTimeout,
+			overallTimeout,
+			executionFeePerMs,
+			gatewayFeePerJob,
+			fixedGas,
+			callbackMeasureGas
+		);
 
 		await expect(
 			relay.initialize(addrs[0], [image1]),
@@ -74,7 +89,18 @@ describe("Relay - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier,
+					maxAge,
+					token,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		);
 
@@ -90,7 +116,18 @@ describe("Relay - Init", function () {
 				{
 					kind: "uups",
 					initializer: "initialize",
-					constructorArgs: [attestationVerifier, maxAge, ZeroAddress, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+					constructorArgs: [
+						attestationVerifier,
+						maxAge,
+						ZeroAddress,
+						globalMinTimeout,
+						globalMaxTimeout,
+						overallTimeout,
+						executionFeePerMs,
+						gatewayFeePerJob,
+						fixedGas,
+						callbackMeasureGas
+					]
 				},
 			)
 		).to.be.revertedWithCustomError(Relay, "RelayInvalidToken");
@@ -101,11 +138,25 @@ describe("Relay - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				Relay,
-				[ZeroAddress, [image1]],
+				[
+					ZeroAddress,
+					[image1]
+				],
 				{
 					kind: "uups",
 					initializer: "initialize",
-					constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+					constructorArgs: [
+						attestationVerifier,
+						maxAge,
+						token,
+						globalMinTimeout,
+						globalMaxTimeout,
+						overallTimeout,
+						executionFeePerMs,
+						gatewayFeePerJob,
+						fixedGas,
+						callbackMeasureGas
+					]
 				},
 			)
 		).to.be.revertedWithCustomError(Relay, "RelayZeroAddressAdmin");
@@ -120,7 +171,18 @@ describe("Relay - Init", function () {
 				{
 					kind: "uups",
 					initializer: "initialize",
-					constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, 1000, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+					constructorArgs: [
+						attestationVerifier,
+						maxAge,
+						token,
+						globalMaxTimeout,
+						globalMinTimeout,
+						overallTimeout,
+						executionFeePerMs,
+						gatewayFeePerJob,
+						fixedGas,
+						callbackMeasureGas
+					]
 				},
 			)
 		).to.be.revertedWithCustomError(Relay, "RelayInvalidGlobalTimeouts");
@@ -130,11 +192,25 @@ describe("Relay - Init", function () {
 		const Relay = await ethers.getContractFactory("Relay");
 		const relay = await upgrades.deployProxy(
 			Relay,
-			[addrs[0], [image1]],
+			[
+				addrs[0],
+				[image1]
+			],
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier,
+					maxAge,
+					token,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		);
 		await upgrades.upgradeProxy(
@@ -142,7 +218,18 @@ describe("Relay - Init", function () {
 			Relay,
 			{
 				kind: "uups",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier,
+					maxAge,
+					token,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			}
 		);
 
@@ -157,15 +244,40 @@ describe("Relay - Init", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
-			},
+				constructorArgs: [
+					attestationVerifier,
+					maxAge,
+					token,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			}
 		);
 
 		await expect(
-			upgrades.upgradeProxy(relay.target, Relay.connect(signers[1]), {
-				kind: "uups",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
-			}),
+			upgrades.upgradeProxy(
+				relay.target, Relay.connect(signers[1]),
+				{
+					kind: "uups",
+					constructorArgs: [
+						attestationVerifier,
+						maxAge,
+						token,
+						globalMinTimeout,
+						globalMaxTimeout,
+						overallTimeout,
+						executionFeePerMs,
+						gatewayFeePerJob,
+						fixedGas,
+						callbackMeasureGas
+					]
+				}
+			)
 		).to.be.revertedWithCustomError(Relay, "AccessControlUnauthorizedAccount");
 	});
 });
@@ -181,6 +293,8 @@ testERC165(
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10;
+			let fixedGas = 150000;
+			let callbackMeasureGas = 4530;
 		const Relay = await ethers.getContractFactory("Relay");
 		const relay = await upgrades.deployProxy(
 			Relay,
@@ -188,8 +302,19 @@ testERC165(
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
-			},
+				constructorArgs: [
+					attestationVerifier,
+					maxAge,
+					token,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			}
 		);
 		return relay;
 	},
@@ -227,7 +352,9 @@ describe("Relay - Whitelist/Revoke enclave", function () {
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
-			gatewayFeePerJob = 10;
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
@@ -235,7 +362,18 @@ describe("Relay - Whitelist/Revoke enclave", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier, maxAge, token, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier,
+					maxAge,
+					token,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		) as unknown as Relay;
 	});
@@ -293,8 +431,8 @@ describe("Relay - Register gateway", function () {
 
 		const USDCoin = await ethers.getContractFactory("USDCoin");
 		token = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -307,7 +445,9 @@ describe("Relay - Register gateway", function () {
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
-			gatewayFeePerJob = 10;
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
@@ -315,7 +455,18 @@ describe("Relay - Register gateway", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		) as unknown as Relay;
 
@@ -416,8 +567,8 @@ describe("Relay - Relay Job", function () {
 
 		const USDCoin = await ethers.getContractFactory("USDCoin");
 		token = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -437,7 +588,9 @@ describe("Relay - Relay Job", function () {
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
-			gatewayFeePerJob = 10;
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
@@ -445,7 +598,18 @@ describe("Relay - Relay Job", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		) as unknown as Relay;
 
@@ -470,10 +634,11 @@ describe("Relay - Relay Job", function () {
 			maxGasPrice = 100,
 			callbackDeposit = parseUnits("1"),
 			refundAccount = addrs[1],
-			callbackContract = addrs[1];
+			callbackContract = addrs[1],
+			callbackGasLimit = 10000;
 		let tx = await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, 
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.emit(relay, "JobRelayed");
@@ -491,10 +656,11 @@ describe("Relay - Relay Job", function () {
 			maxGasPrice = 100,
 			callbackDeposit = 100,
 			refundAccount = addrs[1],
-			callbackContract = addrs[1];
+			callbackContract = addrs[1],
+			callbackGasLimit = 10000;
 		let tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, 
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
@@ -502,10 +668,27 @@ describe("Relay - Relay Job", function () {
 		userTimeout = 1000 * 1000;	// 1000ms
 		tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, 
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
+	});
+
+	it("cannot relay job with insufficient callback deposit", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 100,
+			callbackDeposit = 0,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 10000;
+		let tx = relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientCallbackDeposit");
 	});
 });
 
@@ -517,6 +700,7 @@ describe("Relay - Job Response", function () {
 	let pubkeys: string[];
 	let attestationVerifier: AttestationVerifier;
 	let relay: Relay;
+	let callbackDeposit: bigint;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -526,8 +710,8 @@ describe("Relay - Job Response", function () {
 
 		const USDCoin = await ethers.getContractFactory("USDCoin");
 		token = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -547,7 +731,9 @@ describe("Relay - Job Response", function () {
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
-			gatewayFeePerJob = 10;
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
@@ -555,7 +741,18 @@ describe("Relay - Job Response", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		) as unknown as Relay;
 
@@ -569,17 +766,18 @@ describe("Relay - Job Response", function () {
 		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
-	
+
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
-			maxGasPrice = 100,
-			callbackDeposit = parseUnits("1"),
+			maxGasPrice = 1,
 			refundAccount = addrs[1],
-			callbackContract = addrs[1];
+			callbackContract = addrs[1],
+			callbackGasLimit = 0;
+		callbackDeposit = 154530n;
 		await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract,
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 	});
@@ -592,7 +790,7 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest();
-		
+
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relay, "JobResponded");
@@ -604,7 +802,7 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest() - 700;
-		
+
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
@@ -617,10 +815,10 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest();
-		
+
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
-		await expect(tx).to.emit(relay, "JobResponded"); 
+		await expect(tx).to.emit(relay, "JobResponded");
 
 		let tx2 = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx2).to.revertedWithCustomError(relay, "RelayJobNotExists");
@@ -632,10 +830,10 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest();
-		
+
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[16]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
-		await expect(tx).to.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified"); 
+		await expect(tx).to.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified");
 	});
 
 	it("cannot submit response after overall timeout is over", async function () {
@@ -645,10 +843,26 @@ describe("Relay - Job Response", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest();
-		
+
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
-		await expect(tx).to.revertedWithCustomError(relay, "RelayOverallTimeoutOver"); 
+		await expect(tx).to.revertedWithCustomError(relay, "RelayOverallTimeoutOver");
+	});
+
+	it("callback cost is greater than the deposit", async function () {
+		let jobId: any = await relay.jobCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let initBalance1 = await ethers.provider.getBalance(addrs[1]);
+		let initBalance2 = await ethers.provider.getBalance(addrs[2]);
+		await setNextBlockBaseFeePerGas(100);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = await relay.connect(signers[3]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance1 + callbackDeposit);
+		expect(await ethers.provider.getBalance(addrs[2])).to.equal(initBalance2);
 	});
 
 });
@@ -670,8 +884,8 @@ describe("Relay - Job Cancel", function () {
 
 		const USDCoin = await ethers.getContractFactory("USDCoin");
 		token = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -691,7 +905,9 @@ describe("Relay - Job Cancel", function () {
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
-			gatewayFeePerJob = 10;
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
@@ -699,7 +915,18 @@ describe("Relay - Job Cancel", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		) as unknown as Relay;
 
@@ -720,10 +947,11 @@ describe("Relay - Job Cancel", function () {
 			maxGasPrice = 100,
 			callbackDeposit = parseUnits("1"),
 			refundAccount = addrs[1],
-			callbackContract = addrs[1];
+			callbackContract = addrs[1],
+			callbackGasLimit = 10000;
 		await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract,
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 	});
@@ -736,11 +964,11 @@ describe("Relay - Job Cancel", function () {
 			totalTime = 100,
 			errorCode = 0,
 			signTimestamp = await time.latest();
-		
+
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		await expect(
 			relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp)
-		).to.emit(relay, "JobResponded"); 
+		).to.emit(relay, "JobResponded");
 
 		await expect(
 			relay.connect(signers[2]).jobCancel(jobId)
@@ -787,6 +1015,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 	let attestationVerifier: AttestationVerifier;
 	let relay: Relay;
 	let userSample: UserSample;
+	let	fixedGas: number;
 
 	before(async function () {
 		signers = await ethers.getSigners();
@@ -796,8 +1025,8 @@ describe("Relay - Job sent by UserSample contract", function () {
 
 		const USDCoin = await ethers.getContractFactory("USDCoin");
 		token = await upgrades.deployProxy(
-			USDCoin, 
-			[addrs[0]], 
+			USDCoin,
+			[addrs[0]],
 			{
 				kind: "uups",
 			}
@@ -817,7 +1046,9 @@ describe("Relay - Job sent by UserSample contract", function () {
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
 			executionFeePerMs = 10,  // fee is in USDC
-			gatewayFeePerJob = 10;
+			gatewayFeePerJob = 10,
+			callbackMeasureGas = 4530;
+		fixedGas = 150000;
 		const Relay = await ethers.getContractFactory("Relay");
 		relay = await upgrades.deployProxy(
 			Relay,
@@ -825,7 +1056,18 @@ describe("Relay - Job sent by UserSample contract", function () {
 			{
 				kind: "uups",
 				initializer: "initialize",
-				constructorArgs: [attestationVerifier.target, maxAge, token.target, globalMinTimeout, globalMaxTimeout, overallTimeout, executionFeePerMs, gatewayFeePerJob]
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
 			},
 		) as unknown as Relay;
 
@@ -853,9 +1095,10 @@ describe("Relay - Job sent by UserSample contract", function () {
 			usdcDeposit = 1000000,
 			callbackDeposit = parseUnits("1"),	// 1 eth
 			refundAccount = addrs[1],
-			callbackContract = userSample.target;
+			callbackContract = userSample.target,
+			callbackGasLimit = 20000;
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount, callbackContract,
+			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount, callbackContract, callbackGasLimit,
 			{value: callbackDeposit}
 		);
 
@@ -865,12 +1108,63 @@ describe("Relay - Job sent by UserSample contract", function () {
 			errorCode = 0,
 			signTimestamp = await time.latest();
 
+		// set tx.gasprice for next block
+		await setNextBlockBaseFeePerGas(1);
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
-		let tx = relay.connect(signers[1]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+		let initBalance = await ethers.provider.getBalance(addrs[1]);
+		let tx = relay.connect(signers[2]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relay, "JobResponded")
 			.and.to.emit(userSample, "CalledBack").withArgs(
 				jobId, callbackContract, codeHash, codeInputs, output, errorCode
 		);
+
+		let jobOwner = userSample.target;
+		// validate callback cost and refund
+		let txGasPrice = (await (await tx).wait())?.gasPrice || 0n;
+		let callbackGas = 9312; // calculated using console.log
+		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
+		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
+		expect(await ethers.provider.getBalance(jobOwner)).to.equal(callbackDeposit - callbackCost);
+
+	});
+
+	it("can submit response with gas price higher than maxGasPrice", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 100,
+			usdcDeposit = 1000000,
+			callbackDeposit = parseUnits("1"),	// 1 eth
+			refundAccount = addrs[1],
+			callbackContract = userSample.target,
+			callbackGasLimit = 20000;
+		await userSample.relayJob(
+			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount, callbackContract, callbackGasLimit,
+			{value: callbackDeposit}
+		);
+
+		let jobId: any = await relay.jobCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let initBalance = await ethers.provider.getBalance(addrs[1]);
+
+		// set tx.gasprice for next block
+		await setNextBlockBaseFeePerGas(101);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[2]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.emit(relay, "JobResponded")
+			.and.to.not.emit(userSample, "CalledBack");
+
+		// validate callback cost and refund
+		let jobOwner = userSample.target;
+		let txGasPrice = (await (await tx).wait())?.gasPrice || 0n;
+		let callbackCost = txGasPrice * (ethers.toBigInt(fixedGas));
+		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
+		expect(await ethers.provider.getBalance(jobOwner)).to.equal(callbackDeposit - callbackCost);
+
 	});
 
 	// TODO
@@ -882,7 +1176,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 	// 		callbackDeposit = 1,	// 1 wei
 	// 		refundAccount = addrs[1];
 	// 	await userSample.relayJob(
-	// 		codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, 
+	// 		codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount,
 	// 		{value: callbackDeposit}
 	// 	);
 
