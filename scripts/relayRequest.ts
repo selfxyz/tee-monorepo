@@ -64,6 +64,8 @@ async function main() {
     let overallTimeout = 120;
     let minUserDeadline = 1000;
     let maxUserDeadline = 50000;
+    let fixedGas = 150000;
+    let callbackMeasureGas = 4530;
     const Relay = await ethers.getContractFactory("Relay");
     console.log("Deploying Relay...")
     let relay = await upgrades.deployProxy(
@@ -83,7 +85,9 @@ async function main() {
                 maxUserDeadline,
                 overallTimeout,
                 executionFeePerMs,
-                gatewayFee
+                gatewayFee,
+                fixedGas,
+                callbackMeasureGas
             ]
         });
     let relay_addr = relay.target;
