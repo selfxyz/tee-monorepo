@@ -37,7 +37,9 @@ contract Relay is
         uint256 _globalMaxTimeout, // in milliseconds
         uint256 _overallTimeout,
         uint256 _executionFeePerMs, // fee is in USDC
-        uint256 _gatewayFeePerJob
+        uint256 _gatewayFeePerJob,
+        uint256 _fixedGas,
+        uint256 _callbackMeasureGas
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
@@ -51,6 +53,9 @@ contract Relay is
 
         EXECUTION_FEE_PER_MS = _executionFeePerMs;
         GATEWAY_FEE_PER_JOB = _gatewayFeePerJob;
+
+        FIXED_GAS = _fixedGas;
+        CALLBACK_MEASURE_GAS = _callbackMeasureGas;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -102,6 +107,12 @@ contract Relay is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GATEWAY_FEE_PER_JOB;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable FIXED_GAS; // Should equal to gas of jobResponse without callback - gas refunds
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable CALLBACK_MEASURE_GAS; // gas consumed for measurement of callback gas
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -223,6 +234,7 @@ contract Relay is
         bytes32 codehash;
         bytes codeInputs;
         address callbackContract;
+        uint256 callbackGasLimit;
     }
 
     mapping(uint256 => Job) public jobs;
@@ -242,7 +254,8 @@ contract Relay is
         uint256 callbackDeposit,
         address refundAccount,
         address callbackContract,
-        uint256 startTime
+        uint256 startTime,
+        uint256 callbackGasLimit
     );
 
     event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint256 errorCode, bool success);
@@ -255,6 +268,7 @@ contract Relay is
     error RelayInvalidJobOwner();
     error RelayOverallTimeoutNotOver();
     error RelayCallbackDepositTransferFailed();
+    error RelayInsufficientCallbackDeposit();
 
     //-------------------------------- internal functions start -------------------------------//
 
@@ -266,11 +280,15 @@ contract Relay is
         uint256 _callbackDeposit,
         address _refundAccount,
         address _callbackContract,
+        uint256 _callbackGasLimit,
         address _jobOwner
     ) internal {
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
         if (jobCount + 1 == (block.chainid + 1) << 192) jobCount = block.chainid << 192;
+
+        if (_maxGasPrice * (_callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) > _callbackDeposit)
+            revert RelayInsufficientCallbackDeposit();
 
         uint256 usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         jobs[++jobCount] = Job({
@@ -281,7 +299,8 @@ contract Relay is
             jobOwner: _jobOwner,
             codehash: _codehash,
             codeInputs: _codeInputs,
-            callbackContract: _callbackContract
+            callbackContract: _callbackContract,
+            callbackGasLimit: _callbackGasLimit
         });
 
         // deposit escrow amount(USDC)
@@ -297,7 +316,8 @@ contract Relay is
             _callbackDeposit,
             _refundAccount,
             _callbackContract,
-            block.timestamp
+            block.timestamp,
+            _callbackGasLimit
         );
     }
 
@@ -328,9 +348,16 @@ contract Relay is
         delete jobs[_jobId];
         _releaseEscrowAmount(enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
 
-        (bool success, uint callbackCost) = _callBackWithLimit(
-            _jobId, job.jobOwner, job.callbackContract, job.callbackDeposit, job.codehash, job.codeInputs, _output, _errorCode
-        );
+        uint256 callbackGas = 0;
+        bool success = false;
+        if (tx.gasprice <= job.maxGasPrice) {
+            (success, callbackGas) = _callBackWithLimit(
+                _jobId, job.jobOwner, job.callbackContract, job.callbackGasLimit, job.codehash, job.codeInputs, _output,
+                _errorCode
+            );
+        }
+
+        uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
 
         _releaseGasCostOnSuccess(gatewayOwners[enclaveAddress], job.jobOwner, job.callbackDeposit, callbackCost);
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
@@ -395,14 +422,14 @@ contract Relay is
         uint256 _jobId,
         address _jobOwner,
         address _callbackContract,
-        uint256 _callbackDeposit,
+        uint256 _callbackGasLimit,
         bytes32 _codehash,
         bytes memory _codeInputs,
         bytes memory _output,
         uint8 _errorCode
     ) internal returns (bool, uint) {
         uint startGas = gasleft();
-        (bool success, ) = _callbackContract.call{gas: (_callbackDeposit / tx.gasprice)}(
+        (bool success, ) = _callbackContract.call{gas: _callbackGasLimit}(
             abi.encodeWithSignature(
                 "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
                 _jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode
@@ -410,9 +437,9 @@ contract Relay is
         );
 
         // calculate callback cost
-        uint callbackCost = (startGas - gasleft()) * tx.gasprice;
+        uint callbackGas = startGas - gasleft();
 
-        return (success, callbackCost);
+        return (success, callbackGas);
     }
 
     function _releaseGasCostOnSuccess(
@@ -423,6 +450,7 @@ contract Relay is
     ) internal {
         // TODO: If paySuccess is false then deposit will be stucked forever. Find a way out.
         // transfer callback cost to gateway
+        _callbackCost = _callbackCost > _callbackDeposit ? _callbackDeposit : _callbackCost;
         (bool paySuccess, ) = _gatewayOwner.call{value: _callbackCost}("");
         // transfer remaining native asset to the jobOwner
         (paySuccess, ) = _jobOwner.call{value: _callbackDeposit - _callbackCost}("");
@@ -438,9 +466,11 @@ contract Relay is
         uint256 _userTimeout,
         uint256 _maxGasPrice,
         address _refundAccount, // Common chain slashed token will be sent to this address
-        address _callbackContract
+        address _callbackContract,
+        uint256 _callbackGasLimit
     ) external payable {
-        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _callbackContract, _msgSender());
+        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _callbackContract,
+                  _callbackGasLimit, _msgSender());
     }
 
     function jobResponse(
