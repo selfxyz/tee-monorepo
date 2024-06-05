@@ -424,12 +424,11 @@ contract Jobs is
         if (_outputCount == 0) {
             // transfer back the whole escrow amount to gateway if no output submitted
             USDC_TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);
-        } 
-        else if (_outputCount == 1) {
+        } else if (_outputCount == 1) {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted
             // transfer the expected reward of second and third submitter to payment pool
             USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executorsFee - (executorsFee * 4) / 9);
-        } 
+        }
         // if _outputCount = 2
         else {
             // Note: No need to pay job owner the remaining, it has already been paid when first output is submitted

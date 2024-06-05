@@ -352,7 +352,13 @@ contract Relay is
         bool success = false;
         if (tx.gasprice <= job.maxGasPrice) {
             (success, callbackGas) = _callBackWithLimit(
-                _jobId, job.jobOwner, job.callbackContract, job.callbackGasLimit, job.codehash, job.codeInputs, _output,
+                _jobId,
+                job.jobOwner,
+                job.callbackContract,
+                job.callbackGasLimit,
+                job.codehash,
+                job.codeInputs,
+                _output,
                 _errorCode
             );
         }
@@ -432,7 +438,12 @@ contract Relay is
         (bool success, ) = _callbackContract.call{gas: _callbackGasLimit}(
             abi.encodeWithSignature(
                 "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
-                _jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode
+                _jobId,
+                _jobOwner,
+                _codehash,
+                _codeInputs,
+                _output,
+                _errorCode
             )
         );
 
@@ -469,8 +480,17 @@ contract Relay is
         address _callbackContract,
         uint256 _callbackGasLimit
     ) external payable {
-        _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _callbackContract,
-                  _callbackGasLimit, _msgSender());
+        _relayJob(
+            _codehash,
+            _codeInputs,
+            _userTimeout,
+            _maxGasPrice,
+            msg.value,
+            _refundAccount,
+            _callbackContract,
+            _callbackGasLimit,
+            _msgSender()
+        );
     }
 
     function jobResponse(

@@ -523,10 +523,7 @@ contract Gateways is
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _slashOnReassignGateway(
-        address _oldGateway,
-        address _recipient
-    ) internal returns (uint256){
+    function _slashOnReassignGateway(address _oldGateway, address _recipient) internal returns (uint256) {
         uint256 totalComp = (gateways[_oldGateway].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
         gateways[_oldGateway].stakeAmount -= totalComp;
 
@@ -539,9 +536,7 @@ contract Gateways is
 
     //------------------------------- external functions start ---------------------------------//
 
-    function slashOnReassignGateway(
-        address _oldGateway
-    ) external onlyRole(GATEWAY_JOBS_ROLE) returns (uint256){
+    function slashOnReassignGateway(address _oldGateway) external onlyRole(GATEWAY_JOBS_ROLE) returns (uint256) {
         return _slashOnReassignGateway(_oldGateway, _msgSender());
     }
 

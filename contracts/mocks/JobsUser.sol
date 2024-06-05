@@ -17,17 +17,9 @@ contract JobsUser {
         token = IERC20(_token);
     }
 
-    event CalledBack(
-        uint256 indexed jobId,
-        bytes outputs, 
-        uint8 errorCode,
-        uint256 execTime
-    );
+    event CalledBack(uint256 indexed jobId, bytes outputs, uint8 errorCode, uint256 execTime);
 
-    event FailedCallback(
-        uint256 indexed jobId,
-        uint256 slashedAmount
-    );
+    event FailedCallback(uint256 indexed jobId, uint256 slashedAmount);
 
     function createJob(
         bytes32 _codehash,
@@ -38,29 +30,16 @@ contract JobsUser {
         token.safeIncreaseAllowance(jobs, _usdcDeposit);
 
         (bool _success, ) = jobs.call(
-            abi.encodeWithSignature(
-                "createJob(bytes32,bytes,uint256)",
-                _codehash,
-                _codeInputs,
-                _userTimeout
-            )
+            abi.encodeWithSignature("createJob(bytes32,bytes,uint256)", _codehash, _codeInputs, _userTimeout)
         );
         return _success;
     }
 
-    function oysterResultCall(
-        uint256 _jobId,
-        bytes calldata _output, 
-        uint8 _errorCode,
-        uint256 _execTime
-    ) public {
+    function oysterResultCall(uint256 _jobId, bytes calldata _output, uint8 _errorCode, uint256 _execTime) public {
         emit CalledBack(_jobId, _output, _errorCode, _execTime);
     }
 
-    function oysterFailureCall(
-        uint256 _jobId,
-        uint256 _slashedAmount
-    ) public {
+    function oysterFailureCall(uint256 _jobId, uint256 _slashedAmount) public {
         emit FailedCallback(_jobId, _slashedAmount);
     }
 
