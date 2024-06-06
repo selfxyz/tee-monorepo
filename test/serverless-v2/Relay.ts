@@ -1121,7 +1121,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		let jobOwner = userSample.target;
 		// validate callback cost and refund
 		let txGasPrice = (await (await tx).wait())?.gasPrice || 0n;
-		let callbackGas = 9312; // calculated using console.log
+		let callbackGas = 9204; // calculated using console.log
 		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
 		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
 		expect(await ethers.provider.getBalance(jobOwner)).to.equal(callbackDeposit - callbackCost);
