@@ -269,6 +269,7 @@ contract Relay is
     error RelayOverallTimeoutNotOver();
     error RelayCallbackDepositTransferFailed();
     error RelayInsufficientCallbackDeposit();
+    error RelayInsufficientMaxGasPrice();
 
     //-------------------------------- internal functions start -------------------------------//
 
@@ -286,6 +287,8 @@ contract Relay is
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
         if (jobCount + 1 == (block.chainid + 1) << 192) jobCount = block.chainid << 192;
+
+        if (_maxGasPrice < tx.gasprice) revert RelayInsufficientMaxGasPrice();
 
         if (_maxGasPrice * (_callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) > _callbackDeposit)
             revert RelayInsufficientCallbackDeposit();

@@ -636,6 +636,7 @@ describe("Relay - Relay Job", function () {
 			refundAccount = addrs[1],
 			callbackContract = addrs[1],
 			callbackGasLimit = 10000;
+		await setNextBlockBaseFeePerGas(1);
 		let tx = await relay.connect(signers[2])
 			.relayJob(
 				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
@@ -683,12 +684,32 @@ describe("Relay - Relay Job", function () {
 			refundAccount = addrs[1],
 			callbackContract = addrs[1],
 			callbackGasLimit = 10000;
+
+		await setNextBlockBaseFeePerGas(1);
+
 		let tx = relay.connect(signers[2])
 			.relayJob(
 				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientCallbackDeposit");
+	});
+
+	it("cannot relay job with invalid max gas price", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 0,
+			callbackDeposit = 100,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 10000;
+		let tx = relay.connect(signers[2])
+			.relayJob(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientMaxGasPrice");
 	});
 });
 
@@ -770,11 +791,12 @@ describe("Relay - Job Response", function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
-			maxGasPrice = 1,
+			maxGasPrice = 10,
 			refundAccount = addrs[1],
 			callbackContract = addrs[1],
 			callbackGasLimit = 0;
-		callbackDeposit = 154530n;
+		callbackDeposit = 1545300n;
+		await setNextBlockBaseFeePerGas(1);
 		await relay.connect(signers[2])
 			.relayJob(
 				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
@@ -949,6 +971,8 @@ describe("Relay - Job Cancel", function () {
 			refundAccount = addrs[1],
 			callbackContract = addrs[1],
 			callbackGasLimit = 10000;
+
+		await setNextBlockBaseFeePerGas(1);
 		await relay.connect(signers[2])
 			.relayJob(
 				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
