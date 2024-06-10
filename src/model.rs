@@ -153,5 +153,5 @@ pub struct ResponseJob {
     pub error_code: u8,
     pub job_type: GatewayJobType,
     pub gateway_address: Option<Address>,
-    pub sequence_number: u8,
+    // pub sequence_number: u8,
 }

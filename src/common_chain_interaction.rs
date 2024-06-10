@@ -846,7 +846,7 @@ impl ContractsClient {
             error_code: decoded[2].clone().into_uint().unwrap().low_u64() as u8,
             job_type: GatewayJobType::JobResponded,
             gateway_address: None,
-            sequence_number: 1,
+            // sequence_number: 1,
         })
     }
 
@@ -1781,7 +1781,6 @@ mod serverless_executor_test {
             total_time: U256::from(1000),
             error_code: 0 as u8,
             job_type: GatewayJobType::JobResponded,
-            sequence_number: 1 as u8,
             gateway_address: None,
         }
     }
