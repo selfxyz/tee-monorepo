@@ -8,7 +8,7 @@ use ethers::utils::keccak256;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
 use serde_json::json;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -26,7 +26,7 @@ async fn index() -> impl Responder {
     HttpResponse::Ok()
 }
 
-// Endpoint exposed to inject immutable executor config parameters
+// Endpoint exposed to inject immutable gateway config parameters
 #[post("/immutable-config")]
 async fn inject_immutable_config(
     Json(immutable_config): Json<ImmutableConfig>,
@@ -54,7 +54,7 @@ async fn inject_immutable_config(
     HttpResponse::Ok().body("Immutable params configured!")
 }
 
-// Endpoint exposed to inject mutable executor config parameters
+// Endpoint exposed to inject mutable gateway config parameters
 #[post("/mutable-config")]
 async fn inject_mutable_config(
     Json(mutable_config): Json<MutableConfig>,
@@ -72,7 +72,7 @@ async fn inject_mutable_config(
         ));
     }
 
-    // Initialize local wallet with operator's gas key to send signed transactions to the common chain
+    // Initialize local wallet with operator's gas key to send signed transactions to the common chain and request chains
     let gas_wallet = LocalWallet::from_bytes(&bytes32_gas_key);
     let Ok(gas_wallet) = gas_wallet else {
         return HttpResponse::BadRequest().body(format!(
@@ -90,10 +90,10 @@ async fn inject_mutable_config(
     HttpResponse::Ok().body("Mutable params configured!")
 }
 
-// Endpoint exposed to retrieve the metadata required to register the enclave on the common chain
+// Endpoint exposed to retrieve the metadata required to register the enclave on the common chain and request chains
 #[get("/signed-registration-message")]
 async fn export_signed_registration_message(
-    Json(mut signed_registration_body): Json<SignedRegistrationBody>,
+    Json(signed_registration_body): Json<SignedRegistrationBody>,
     app_state: Data<AppState>,
 ) -> impl Responder {
     // if gateway is already registered, return error
@@ -105,7 +105,12 @@ async fn export_signed_registration_message(
     }
 
     // check if event listener is active and verify the request_chain_ids
-    signed_registration_body.chain_ids.sort();
+    let chain_ids: HashSet<u64> = signed_registration_body
+        .chain_ids
+        .clone()
+        .into_iter()
+        .collect();
+
     {
         let registration_events_listener_active_guard = app_state
             .registration_events_listener_active
@@ -114,17 +119,19 @@ async fn export_signed_registration_message(
         if *registration_events_listener_active_guard == true {
             // verify that contract client request chain ids are same as the signed registration body chain ids
             let contracts_client_guard = app_state.contracts_client.lock().unwrap();
-            if let Some(contracts_client) = &*contracts_client_guard {
-                if contracts_client.request_chain_ids != signed_registration_body.chain_ids {
-                    return HttpResponse::BadRequest().json(json!({
-                        "message": "Request chain ids in the body do not match the request chain ids in the contracts client!",
-                        "request_chain_ids": contracts_client.request_chain_ids,
-                }));
+            let contracts_client = contracts_client_guard.clone();
+            if !contracts_client.is_none() {
+                let contracts_client = contracts_client.unwrap();
+                let contracts_client_chain_ids: HashSet<u64> = contracts_client
+                    .request_chain_clients
+                    .keys()
+                    .map(|x| *x)
+                    .collect();
+                if chain_ids != contracts_client_chain_ids {
+                    return HttpResponse::BadRequest().body(
+                        "Request chain ids do not match with the registered request chain ids!",
+                    );
                 }
-            } else {
-                return HttpResponse::BadRequest().body(
-                    "Contracts client not initialized yet but server is listening for events! Restart the service"
-                );
             }
         }
     }
@@ -154,14 +161,13 @@ async fn export_signed_registration_message(
     let common_chain_register_typehash =
         keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
 
-    let chain_ids: Vec<Token> = signed_registration_body
-        .chain_ids
+    let chain_ids_tokens: Vec<Token> = chain_ids
         .clone()
         .into_iter()
         .map(|x| Token::Uint(x.into()))
         .collect::<Vec<Token>>();
 
-    let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids)]).unwrap());
+    let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids_tokens)]).unwrap());
     let hash_struct = keccak256(encode(&[
         Token::FixedBytes(common_chain_register_typehash.to_vec()),
         Token::Address(enclave_owner),
@@ -269,7 +275,7 @@ async fn export_signed_registration_message(
     let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
     // iterate over all request chain ids and get their registration signatures
-    for chain_id in signed_registration_body.chain_ids.clone() {
+    for &chain_id in &chain_ids {
         // create request chain client and add it to the request chain clients map
         let signer_wallet = wallet.clone().with_chain_id(chain_id);
         // get request chain rpc url
@@ -351,7 +357,7 @@ async fn export_signed_registration_message(
             &app_state.gateways_contract_addr,
             &app_state.gateway_jobs_contract_addr,
             gateway_epoch_state,
-            signed_registration_body.chain_ids.clone(),
+            chain_ids.clone(),
             request_chain_clients,
             app_state.epoch,
             app_state.time_interval,

@@ -5,7 +5,7 @@ use ethers::types::{Address, Bytes};
 use ethers::types::{H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
@@ -97,7 +97,7 @@ pub struct ContractsClient {
     pub gateway_jobs_contract: GatewayJobsContract<HttpProvider>,
     pub request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-    pub request_chain_ids: Vec<u64>,
+    pub request_chain_ids: HashSet<u64>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
     pub epoch: u64,
     pub time_interval: u64,

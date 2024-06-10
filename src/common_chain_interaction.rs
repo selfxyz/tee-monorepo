@@ -10,7 +10,7 @@ use k256::ecdsa::SigningKey;
 use log::{error, info};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
@@ -45,7 +45,7 @@ impl ContractsClient {
         gateways_contract_addr: &H160,
         gateway_jobs_contract_addr: &H160,
         gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-        request_chain_ids: Vec<u64>,
+        request_chain_ids: HashSet<u64>,
         request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
         epoch: u64,
         time_interval: u64,
@@ -275,9 +275,9 @@ impl ContractsClient {
         tx: Sender<(Job, Arc<ContractsClient>)>,
     ) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
-        let mut req_chain_data = self.request_chain_ids.clone();
+        let chains_ids = self.request_chain_ids.clone();
 
-        while let Some(chain_id) = req_chain_data.pop() {
+        for chain_id in chains_ids {
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
 
