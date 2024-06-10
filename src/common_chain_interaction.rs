@@ -201,20 +201,19 @@ impl ContractsClient {
         }
 
         let mut common_chain_registered = false;
-        let mut req_chain_ids_not_registered = self
+        let mut req_chain_ids_not_registered: HashSet<u64> = self
             .request_chain_clients
             .clone()
             .keys()
             .cloned()
-            .collect::<Vec<u64>>();
+            .collect::<HashSet<u64>>();
         while let Some((registered_data, contracts_client, app_state)) = rx.recv().await {
             match registered_data.register_type {
                 RegisterType::CommonChain => {
                     common_chain_registered = true;
                 }
                 RegisterType::RequestChain => {
-                    req_chain_ids_not_registered
-                        .retain(|&x| x != registered_data.chain_id.unwrap());
+                    req_chain_ids_not_registered.remove(&registered_data.chain_id.unwrap());
                 }
             }
 
