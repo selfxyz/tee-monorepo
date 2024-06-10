@@ -12,19 +12,18 @@ use tokio::time;
 
 use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
-use crate::contract_abi::CommonChainGatewayContract;
-use crate::model::{CommonChainClient, GatewayData, Job};
+use crate::contract_abi::GatewaysContract;
+use crate::model::{ContractsClient, GatewayData, Job};
 use crate::HttpProvider;
 
 // Initialize the gateway epoch state
 pub async fn gateway_epoch_state_service(
     current_time: u64,
     provider: &Arc<HttpProvider>,
-    common_chain_client: Arc<CommonChainClient>,
-    tx: Sender<(Job, Arc<CommonChainClient>)>,
+    contracts_client: Arc<ContractsClient>,
+    tx: Sender<(Job, Arc<ContractsClient>)>,
 ) {
-    let current_cycle =
-        (current_time - common_chain_client.epoch) / common_chain_client.time_interval;
+    let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;
     let initial_epoch_cycle: u64;
     let mut cycle_number: u64;
     if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN {
@@ -33,10 +32,10 @@ pub async fn gateway_epoch_state_service(
         initial_epoch_cycle = 1;
     };
     {
-        let contract_address_clone = common_chain_client.gateway_contract_addr.clone();
+        let contract_address_clone = contracts_client.gateways_contract_addr.clone();
         let provider_clone = provider.clone();
-        let com_chain_gateway_contract_clone = common_chain_client.gateway_contract.clone();
-        let gateway_epoch_state_clone = Arc::clone(&common_chain_client.gateway_epoch_state);
+        let com_chain_gateway_contract_clone = contracts_client.gateways_contract.clone();
+        let gateway_epoch_state_clone = Arc::clone(&contracts_client.gateway_epoch_state);
 
         cycle_number = initial_epoch_cycle;
         while cycle_number <= current_cycle {
@@ -44,8 +43,8 @@ pub async fn gateway_epoch_state_service(
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs()
-                - common_chain_client.epoch)
-                / common_chain_client.time_interval;
+                - contracts_client.epoch)
+                / contracts_client.time_interval;
 
             if _current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
                 cycle_number = _current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
@@ -57,8 +56,8 @@ pub async fn gateway_epoch_state_service(
                 com_chain_gateway_contract_clone.clone(),
                 &gateway_epoch_state_clone,
                 cycle_number,
-                common_chain_client.epoch,
-                common_chain_client.time_interval,
+                contracts_client.epoch,
+                contracts_client.time_interval,
             )
             .await;
 
@@ -70,30 +69,26 @@ pub async fn gateway_epoch_state_service(
                 continue;
             }
 
-            callback_for_gateway_epoch_waitlist(
-                common_chain_client.clone(),
-                cycle_number,
-                tx.clone(),
-            )
-            .await;
+            callback_for_gateway_epoch_waitlist(contracts_client.clone(), cycle_number, tx.clone())
+                .await;
 
             cycle_number += 1;
         }
     }
 
     let last_cycle_timestamp =
-        common_chain_client.epoch + (current_cycle * common_chain_client.time_interval);
+        contracts_client.epoch + (current_cycle * contracts_client.time_interval);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
-    let until_epoch = Duration::from_secs(last_cycle_timestamp + common_chain_client.time_interval);
+    let until_epoch = Duration::from_secs(last_cycle_timestamp + contracts_client.time_interval);
 
     if until_epoch > now {
         let sleep_duration = until_epoch - now;
         tokio::time::sleep(sleep_duration).await;
     }
 
-    let mut interval = time::interval(Duration::from_secs(common_chain_client.time_interval));
+    let mut interval = time::interval(Duration::from_secs(contracts_client.time_interval));
 
     loop {
         interval.tick().await;
@@ -103,21 +98,21 @@ pub async fn gateway_epoch_state_service(
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs()
-                - common_chain_client.epoch)
-                / common_chain_client.time_interval;
+                - contracts_client.epoch)
+                / contracts_client.time_interval;
 
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + cycle_number {
                 cycle_number = current_cycle - GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1;
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
-                common_chain_client.gateway_contract_addr.clone(),
+                contracts_client.gateways_contract_addr.clone(),
                 &provider.clone(),
-                common_chain_client.gateway_contract.clone(),
-                &common_chain_client.gateway_epoch_state,
+                contracts_client.gateways_contract.clone(),
+                &contracts_client.gateway_epoch_state,
                 cycle_number,
-                common_chain_client.epoch,
-                common_chain_client.time_interval,
+                contracts_client.epoch,
+                contracts_client.time_interval,
             )
             .await;
 
@@ -130,19 +125,15 @@ pub async fn gateway_epoch_state_service(
                 continue;
             }
 
-            callback_for_gateway_epoch_waitlist(
-                common_chain_client.clone(),
-                cycle_number,
-                tx.clone(),
-            )
-            .await;
+            callback_for_gateway_epoch_waitlist(contracts_client.clone(), cycle_number, tx.clone())
+                .await;
 
             let _current_cycle = (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs()
-                - common_chain_client.epoch)
-                / common_chain_client.time_interval;
+                - contracts_client.epoch)
+                / contracts_client.time_interval;
 
             if cycle_number == _current_cycle {
                 break;
@@ -150,9 +141,9 @@ pub async fn gateway_epoch_state_service(
             cycle_number += 1;
         }
         prune_old_cycle_states(
-            &common_chain_client.gateway_epoch_state,
-            common_chain_client.epoch,
-            common_chain_client.time_interval,
+            &contracts_client.gateway_epoch_state,
+            contracts_client.epoch,
+            contracts_client.time_interval,
         )
         .await;
 
@@ -163,7 +154,7 @@ pub async fn gateway_epoch_state_service(
 pub async fn generate_gateway_epoch_state_for_cycle(
     contract_address: Address,
     provider: &Arc<HttpProvider>,
-    com_chain_gateway_contract: CommonChainGatewayContract<HttpProvider>,
+    com_chain_gateway_contract: GatewaysContract<HttpProvider>,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     cycle_number: u64,
     epoch: u64,
@@ -295,7 +286,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     let gateway_addresses: Vec<Address> = current_cycle_state_epoch.keys().cloned().collect();
 
     for address in gateway_addresses {
-        let (_, stake_amount, _, status) = com_chain_gateway_contract
+        let (_, stake_amount, _, _) = com_chain_gateway_contract
             .gateways(address)
             .block(BlockId::from(to_block_number))
             .call()
@@ -305,7 +296,6 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         let current_cycle_gateway_data = current_cycle_state_epoch.get_mut(&address).unwrap();
 
         current_cycle_gateway_data.stake_amount = stake_amount;
-        current_cycle_gateway_data.status = status;
     }
 
     // Write current cycle state to the gateway epoch state
@@ -345,8 +335,8 @@ async fn process_gateway_registered_event(
 
     if let Token::Array(array_tokens) = decoded[0].clone() {
         for token in array_tokens {
-            if let Token::Uint(req_chain_id) = token {
-                req_chain_ids.insert(U256::from(req_chain_id).as_u64());
+            if let Token::Uint(request_chain_id) = token {
+                req_chain_ids.insert(U256::from(request_chain_id).as_u64());
             }
         }
     }
@@ -357,7 +347,6 @@ async fn process_gateway_registered_event(
             last_block_number: to_block_number,
             address,
             stake_amount: U256::zero(), // gateways call is used to get the stake amount
-            status: true,
             req_chain_ids,
         },
     );
@@ -457,25 +446,23 @@ async fn prune_old_cycle_states(
 }
 
 async fn callback_for_gateway_epoch_waitlist(
-    common_chain_client: Arc<CommonChainClient>,
+    contracts_client: Arc<ContractsClient>,
     cycle_number: u64,
-    tx: Sender<(Job, Arc<CommonChainClient>)>,
+    tx: Sender<(Job, Arc<ContractsClient>)>,
 ) {
-    let mut waitlist_handle = common_chain_client
+    let mut waitlist_handle = contracts_client
         .gateway_epoch_state_waitlist
         .write()
         .unwrap();
     if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
-        let common_chain_client_clone = common_chain_client.clone();
+        let contracts_client_clone = contracts_client.clone();
         let tx_clone = tx.clone();
         tokio::spawn(async move {
             for job in job_list {
-                common_chain_client_clone
+                contracts_client_clone
                     .clone()
                     .job_placed_handler(job, tx_clone.clone())
-                    .await
-                    .context("Failed to handle job")
-                    .unwrap();
+                    .await;
             }
         });
     }

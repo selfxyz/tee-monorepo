@@ -13,14 +13,15 @@ use anyhow::Context;
 use clap::Parser;
 use ethers::prelude::*;
 use ethers::providers::Provider;
+use ethers::utils::public_key_to_address;
 use k256::ecdsa::SigningKey;
-use std::collections::BTreeMap;
 use std::error::Error;
-use std::sync::{Arc, RwLock};
 use tokio::fs;
 
-use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
-use crate::model::{AppState, ConfigManager, GatewayData};
+use crate::api_impl::{
+    export_signed_registration_message, index, inject_immutable_config, inject_mutable_config,
+};
+use crate::model::{AppState, ConfigManager};
 
 type HttpProvider = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
@@ -44,10 +45,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let config_manager = ConfigManager::new(&args.config_file);
     let config = config_manager.load_config().unwrap();
 
-    let enclave_pub_key = fs::read(config.enclave_public_key)
-        .await
-        .context("Failed to read the enclave signer key")?;
-
     let enclave_signer_key = SigningKey::from_slice(
         fs::read(config.enclave_secret_key)
             .await
@@ -56,34 +53,36 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     )
     .context("Invalid enclave signer key")?;
 
-    let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
-        Arc::new(RwLock::new(BTreeMap::new()));
+    let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());
 
     // Create a Appstate
     let app_data = Data::new(AppState {
         enclave_signer_key,
+        enclave_address,
         wallet: None.into(),
-        common_chain_id: config.com_chain_id,
-        common_chain_http_url: config.com_chain_http_url,
-        common_chain_ws_url: config.com_chain_ws_url,
-        gateway_contract_addr: config.gateway_contract_addr,
-        job_contract_addr: config.job_contract_addr,
-        chain_list: vec![].into(),
+        common_chain_id: config.common_chain_id,
+        common_chain_http_url: config.common_chain_http_url,
+        common_chain_ws_url: config.common_chain_ws_url,
+        gateways_contract_addr: config.gateways_contract_addr,
+        gateway_jobs_contract_addr: config.gateway_jobs_contract_addr,
+        request_chain_data: vec![].into(),
         registered: false.into(),
-        enclave_pub_key: enclave_pub_key.into(),
-        gateway_epoch_state,
         epoch: config.epoch,
         time_interval: config.time_interval,
-        common_chain_client: None.into(),
+        enclave_owner: H160::zero().into(),
+        immutable_params_injected: false.into(),
+        mutable_params_injected: false.into(),
+        registration_events_listener_active: false.into(),
+        contracts_client: None.into(),
     });
     // Start a http server
     let server = HttpServer::new(move || {
         App::new()
             .app_data(app_data.clone())
             .service(index)
-            .service(inject_key)
-            .service(register_enclave)
-            .service(deregister_enclave)
+            .service(inject_immutable_config)
+            .service(inject_mutable_config)
+            .service(export_signed_registration_message)
     })
     .bind(("0.0.0.0", args.port))
     .context(format!("could not bind to port {}", args.port))?

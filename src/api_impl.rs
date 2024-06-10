@@ -1,90 +1,254 @@
+use abi::encode;
 use actix_web::web::{Data, Json};
-use actix_web::{delete, get, post, HttpResponse, Responder};
+use actix_web::{get, post, HttpResponse, Responder};
 use anyhow::Context;
 use ethers::abi::{encode_packed, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
-use hex::FromHex;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
-use std::collections::HashMap;
+use serde_json::json;
+use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contract_abi::{CommonChainGatewayContract, RequestChainContract};
+use crate::contract_abi::{GatewaysContract, RelayContract};
 use crate::model::{
-    AppState, CommonChainClient, InjectKeyInfo, RegisterEnclaveInfo, RequestChainClient,
-    RequestChainData,
+    AppState, ContractsClient, GatewayData, ImmutableConfig, MutableConfig, RequestChainClient,
+    RequestChainData, SignedRegistrationBody,
 };
 
 #[get("/")]
 async fn index() -> impl Responder {
+    info!("Ping successful!");
     HttpResponse::Ok()
 }
 
-#[post("/inject-key")]
-async fn inject_key(Json(key): Json<InjectKeyInfo>, app_state: Data<AppState>) -> impl Responder {
-    let mut wallet_gaurd = app_state.wallet.lock().unwrap();
-
-    if wallet_gaurd.is_some() {
-        return HttpResponse::BadRequest().body("Secret key has already been injected");
+// Endpoint exposed to inject immutable executor config parameters
+#[post("/immutable-config")]
+async fn inject_immutable_config(
+    Json(immutable_config): Json<ImmutableConfig>,
+    app_state: Data<AppState>,
+) -> impl Responder {
+    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
+    if *immutable_params_injected_guard == true {
+        return HttpResponse::BadRequest().body("Immutable params already configured!");
     }
 
-    let mut bytes32_key = [0u8; 32];
-    if let Err(err) = hex::decode_to_slice(&key.operator_secret[2..], &mut bytes32_key) {
+    let owner_address = H160::from_str(&immutable_config.owner_address_hex);
+    let Ok(owner_address) = owner_address else {
         return HttpResponse::BadRequest().body(format!(
-            "Failed to hex decode the key into 32 bytes: {}",
+            "Invalid owner address provided: {:?}",
+            owner_address.unwrap_err()
+        ));
+    };
+
+    // Initialize owner address for the enclave
+    *app_state.enclave_owner.lock().unwrap() = owner_address;
+    *immutable_params_injected_guard = true;
+
+    info!("Immutable params configured!");
+
+    HttpResponse::Ok().body("Immutable params configured!")
+}
+
+// Endpoint exposed to inject mutable executor config parameters
+#[post("/mutable-config")]
+async fn inject_mutable_config(
+    Json(mutable_config): Json<MutableConfig>,
+    app_state: Data<AppState>,
+) -> impl Responder {
+    let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
+
+    let mut wallet_gaurd = app_state.wallet.lock().unwrap();
+
+    let mut bytes32_gas_key = [0u8; 32];
+    if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
+        return HttpResponse::BadRequest().body(format!(
+            "Failed to hex decode the gas private key into 32 bytes: {:?}",
             err
         ));
     }
 
-    let signer_wallet = LocalWallet::from_bytes(&bytes32_key);
-    let Ok(signer_wallet) = signer_wallet else {
+    // Initialize local wallet with operator's gas key to send signed transactions to the common chain
+    let gas_wallet = LocalWallet::from_bytes(&bytes32_gas_key);
+    let Ok(gas_wallet) = gas_wallet else {
         return HttpResponse::BadRequest().body(format!(
-            "Invalid secret key provided: {}",
-            signer_wallet.unwrap_err()
+            "Invalid gas private key provided: {:?}",
+            gas_wallet.unwrap_err()
         ));
     };
-    let signer_wallet = signer_wallet.with_chain_id(app_state.common_chain_id);
+    let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
+    *wallet_gaurd = Some(gas_wallet);
 
-    *wallet_gaurd = Some(signer_wallet);
+    *mutable_params_injected_guard = true;
 
-    HttpResponse::Ok().body("Secret key injected successfully")
+    info!("Mutable params configured!");
+
+    HttpResponse::Ok().body("Mutable params configured!")
 }
 
-#[post("/register")]
-async fn register_enclave(
-    Json(enclave_info): Json<RegisterEnclaveInfo>,
+// Endpoint exposed to retrieve the metadata required to register the enclave on the common chain
+#[get("/signed-registration-message")]
+async fn export_signed_registration_message(
+    Json(mut signed_registration_body): Json<SignedRegistrationBody>,
     app_state: Data<AppState>,
 ) -> impl Responder {
-    let mut is_registered = app_state.registered.lock().unwrap();
-    if *is_registered {
-        return HttpResponse::BadRequest().body("Enclave has already been registered.");
+    // if gateway is already registered, return error
+    {
+        let is_registered = app_state.registered.lock().unwrap();
+        if *is_registered {
+            return HttpResponse::BadRequest().body("Enclave has already been registered.");
+        }
     }
+
+    // check if event listener is active and verify the request_chain_ids
+    signed_registration_body.chain_ids.sort();
+    {
+        let registration_events_listener_active_guard = app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap();
+        if *registration_events_listener_active_guard == true {
+            // verify that contract client request chain ids are same as the signed registration body chain ids
+            let contracts_client_guard = app_state.contracts_client.lock().unwrap();
+            if let Some(contracts_client) = &*contracts_client_guard {
+                if contracts_client.request_chain_ids != signed_registration_body.chain_ids {
+                    return HttpResponse::BadRequest().json(json!({
+                        "message": "Request chain ids in the body do not match the request chain ids in the contracts client!",
+                        "request_chain_ids": contracts_client.request_chain_ids,
+                }));
+                }
+            } else {
+                return HttpResponse::BadRequest().body(
+                    "Contracts client not initialized yet but server is listening for events! Restart the service"
+                );
+            }
+        }
+    }
+
+    // if immutable or mutable params are not configured, return error
+    if *app_state.immutable_params_injected.lock().unwrap() == false {
+        return HttpResponse::BadRequest().body("Immutable params not configured yet!");
+    }
+
+    // if mutable params are not configured, return error
+    if *app_state.mutable_params_injected.lock().unwrap() == false {
+        return HttpResponse::BadRequest().body("Mutable params not configured yet!");
+    }
+
+    // if wallet is not configured, return error
     let Some(wallet) = app_state.wallet.lock().unwrap().clone() else {
-        return HttpResponse::BadRequest().body("Operator secret key not injected yet!");
+        return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
-    // Convert hexadecimal string into bytes
-    let Ok(attestation) = hex::decode(&enclave_info.attestation[2..]) else {
-        return HttpResponse::BadRequest().body("Invalid format of attestation.");
-    };
-    let Ok(pcr_0) = hex::decode(&enclave_info.pcr_0[2..]) else {
-        return HttpResponse::BadRequest().body("Invalid format of pcr_0.");
-    };
-    let Ok(pcr_1) = hex::decode(&enclave_info.pcr_1[2..]) else {
-        return HttpResponse::BadRequest().body("Invalid format of pcr_1.");
-    };
-    let Ok(pcr_2) = hex::decode(&enclave_info.pcr_2[2..]) else {
-        return HttpResponse::BadRequest().body("Invalid format of pcr_2.");
-    };
+    // generate common chain signature
+    let enclave_owner = app_state.enclave_owner.lock().unwrap().clone();
+    let sign_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
 
+    let common_chain_register_typehash =
+        keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
+
+    let chain_ids: Vec<Token> = signed_registration_body
+        .chain_ids
+        .clone()
+        .into_iter()
+        .map(|x| Token::Uint(x.into()))
+        .collect::<Vec<Token>>();
+
+    let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids)]).unwrap());
+    let hash_struct = keccak256(encode(&[
+        Token::FixedBytes(common_chain_register_typehash.to_vec()),
+        Token::Address(enclave_owner),
+        Token::FixedBytes(chain_ids_bytes.into()),
+        Token::Uint(sign_timestamp.into()),
+    ]));
+
+    let gateways_domain_separator = keccak256(encode(&[
+        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.Gateways").to_vec()),
+        Token::FixedBytes(keccak256("1").to_vec()),
+    ]));
+
+    let digest = encode_packed(&[
+        Token::String("\x19\x01".to_string()),
+        Token::FixedBytes(gateways_domain_separator.to_vec()),
+        Token::FixedBytes(hash_struct.to_vec()),
+    ]);
+
+    let Ok(digest) = digest else {
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to encode the registration message for signing: {:?}",
+            digest.unwrap_err()
+        ));
+    };
+    let digest = keccak256(digest);
+
+    // Sign the digest using enclave key
+    let sig = app_state
+        .enclave_signer_key
+        .sign_prehash_recoverable(&digest);
+    let Ok((rs, v)) = sig else {
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to sign the registration message using enclave key: {:?}",
+            sig.unwrap_err()
+        ));
+    };
+    let common_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
+
+    // generate request chain signatures
     let signer_wallet = wallet.clone().with_chain_id(app_state.common_chain_id);
     let signer_address = signer_wallet.address();
 
-    let mut chain_list: Vec<RequestChainData> = vec![];
-    let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
+    // create request chain signature and add it to the request chain signatures map
+    let request_chain_register_typehash =
+        keccak256("Register(address owner,uint256 signTimestamp)");
+    let hash_struct = keccak256(encode(&[
+        Token::FixedBytes(request_chain_register_typehash.to_vec()),
+        Token::Address(enclave_owner),
+        Token::Uint(sign_timestamp.into()),
+    ]));
 
+    let request_chain_domain_separator = keccak256(encode(&[
+        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
+        Token::FixedBytes(keccak256("1").to_vec()),
+    ]));
+
+    let digest = encode_packed(&[
+        Token::String("\x19\x01".to_string()),
+        Token::FixedBytes(request_chain_domain_separator.to_vec()),
+        Token::FixedBytes(hash_struct.to_vec()),
+    ]);
+
+    let Ok(digest) = digest else {
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to encode the registration message for signing: {:?}",
+            digest.unwrap_err()
+        ));
+    };
+
+    let digest = keccak256(digest);
+
+    // Sign the digest using enclave key
+    let sig = app_state
+        .enclave_signer_key
+        .sign_prehash_recoverable(&digest);
+    let Ok((rs, v)) = sig else {
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to sign the registration message using enclave key: {:?}",
+            sig.unwrap_err()
+        ));
+    };
+
+    let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
+
+    // Create GatewaysContract instance
     let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
     let Ok(http_rpc_client) = http_rpc_client else {
         return HttpResponse::InternalServerError().body(format!(
@@ -98,23 +262,30 @@ async fn register_enclave(
             .with_signer(signer_wallet.clone())
             .nonce_manager(signer_address),
     );
+    let gateways_contract =
+        GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
 
-    let gateway_contract =
-        CommonChainGatewayContract::new(app_state.gateway_contract_addr, http_rpc_client.clone());
+    let mut request_chain_data: Vec<RequestChainData> = vec![];
+    let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
-    for chain in enclave_info.chain_list.clone() {
-        let signer_wallet = wallet.clone().with_chain_id(chain);
+    // iterate over all request chain ids and get their registration signatures
+    for chain_id in signed_registration_body.chain_ids.clone() {
+        // create request chain client and add it to the request chain clients map
+        let signer_wallet = wallet.clone().with_chain_id(chain_id);
         // get request chain rpc url
-        let (contract_address, http_rpc_url, ws_rpc_url) = gateway_contract
-            .request_chains(chain.into())
+        let (contract_address, http_rpc_url, ws_rpc_url) = gateways_contract
+            .request_chains(chain_id.into())
             .await
             .context("Failed to get request chain data")
             .unwrap();
-        let http_rpc_client = Provider::<Http>::try_connect(http_rpc_url.as_str()).await;
+        let http_rpc_url: String = http_rpc_url.to_string();
+        let ws_rpc_url: String = ws_rpc_url.to_string();
+
+        let http_rpc_client = Provider::<Http>::try_connect(&http_rpc_url).await;
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the request chain {} http rpc server {}: {}",
-                chain,
+                chain_id,
                 http_rpc_url,
                 http_rpc_client.unwrap_err()
             ));
@@ -125,249 +296,89 @@ async fn register_enclave(
                 .with_signer(signer_wallet)
                 .nonce_manager(signer_address),
         );
-        // prepare transaction
-        let contract = RequestChainContract::new(contract_address, http_rpc_client.clone());
-        let txn = contract.register_gateway(
-            attestation.clone().into(),
-            app_state.enclave_pub_key.clone().into(),
-            pcr_0.clone().into(),
-            pcr_1.clone().into(),
-            pcr_2.clone().into(),
-            enclave_info.timestamp.into(),
-        );
+        let contract = RelayContract::new(contract_address, http_rpc_client.clone());
 
-        let pending_txn = txn.send().await;
-        let Ok(pending_txn) = pending_txn else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to send transaction for registering the enclave on request chain {}: {}",
-                chain,
-                pending_txn.unwrap_err()
-            ));
-        };
+        let request_chain_block_number = http_rpc_client
+            .get_block_number()
+            .await
+            .context("Failed to get the latest block number of the request chain")
+            .unwrap()
+            .as_u64();
 
-        let txn_hash = pending_txn.tx_hash();
-        let Ok(Some(_txn_receipt)) = pending_txn.confirmations(1).await else {
-            // TODO: FIX CONFIRMATIONS REQUIRED
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to confirm transaction on request chain {} with hash {}",
-                chain, txn_hash
-            ));
-        };
-        chain_list.push(RequestChainData {
-            chain_id: chain.into(),
+        request_chain_data.push(RequestChainData {
+            chain_id: chain_id.into(),
             contract_address,
-            http_rpc_url: http_rpc_url.to_string(),
+            http_rpc_url,
+            ws_rpc_url: ws_rpc_url.clone(),
         });
 
-        // Http RPC client for RPC
-        let req_chain_client = Arc::from(RequestChainClient {
-            chain_id: chain,
-            contract_address: contract_address,
+        let request_chain_client = Arc::from(RequestChainClient {
+            chain_id,
+            contract_address,
             contract,
-            ws_rpc_url: ws_rpc_url.to_string(),
+            ws_rpc_url,
+            request_chain_start_block_number: request_chain_block_number,
         });
-        request_chain_clients.insert(chain, req_chain_client);
+        request_chain_clients.insert(chain_id, request_chain_client);
     }
 
-    let token_list = Token::Array(
-        enclave_info
-            .chain_list
-            .clone()
-            .into_iter()
-            .map(|x| Token::Uint(x.into()))
-            .collect::<Vec<Token>>(),
-    );
-    let encoded_chain_ids = encode_packed(&[token_list]).unwrap();
-    let hashed_chain_ids = keccak256(&encoded_chain_ids);
-
-    let sig = app_state
-        .enclave_signer_key
-        .sign_prehash_recoverable(&hashed_chain_ids);
-    let Ok((rs, v)) = sig else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to sign the chain ID list: {}",
-            sig.unwrap_err()
-        ));
-    };
-
-    let Ok(signature) = Bytes::from_hex(hex::encode(rs.to_bytes().append(27 + v.to_byte()))) else {
-        return HttpResponse::InternalServerError()
-            .body("Failed to parse the signature into eth bytes");
-    };
-
-    let txn = gateway_contract.register_gateway(
-        attestation.into(),
-        app_state.enclave_pub_key.clone().into(),
-        pcr_0.into(),
-        pcr_1.into(),
-        pcr_2.into(),
-        enclave_info.timestamp.into(),
-        enclave_info
-            .chain_list
-            .clone()
-            .into_iter()
-            .map(|x| U256::from(x))
-            .collect(),
-        signature,
-        enclave_info.stake_amount.into(),
-    );
-
-    let pending_txn = txn.send().await;
-    let Ok(pending_txn) = pending_txn else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to send transaction for registering the enclave on common chain: {}",
-            pending_txn.unwrap_err()
-        ));
-    };
-
-    let txn_hash = pending_txn.tx_hash();
-    let Ok(Some(txn_receipt)) = pending_txn.confirmations(1).await else {
-        // TODO: FIX CONFIRMATIONS REQUIRED
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to confirm transaction on common chain with hash {}",
-            txn_hash
-        ));
-    };
-
-    *is_registered = true;
     app_state
-        .chain_list
+        .request_chain_data
         .lock()
         .unwrap()
-        .append(&mut chain_list.clone());
+        .append(&mut request_chain_data.clone());
 
-    let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
+    let mut registration_events_listener_active_guard = app_state
+        .registration_events_listener_active
+        .lock()
+        .unwrap();
+    if *registration_events_listener_active_guard == false {
+        let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
+            return HttpResponse::InternalServerError().body(format!("Failed to fetch the latest block number of the common chain for initiating event listening!"));
+        };
 
-    // Start contract event listner
-    let contract_client = CommonChainClient::new(
-        app_state.enclave_signer_key.clone(),
-        app_state.enclave_pub_key.clone().into(),
-        signer_wallet,
-        &app_state.common_chain_ws_url,
-        http_rpc_client.clone(),
-        &app_state.gateway_contract_addr,
-        &app_state.job_contract_addr,
-        app_state.gateway_epoch_state.clone(),
-        enclave_info.chain_list,
-        app_state.epoch,
-        app_state.time_interval,
-        request_chain_clients,
-        gateway_state_epoch_waitlist,
-    )
-    .await;
+        let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
+            Arc::new(RwLock::new(BTreeMap::new()));
+        let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
-    let mut common_chain_client_guard = app_state.common_chain_client.lock().unwrap();
-    *common_chain_client_guard = Some(contract_client.clone());
+        let contract_client = ContractsClient::new(
+            enclave_owner,
+            app_state.enclave_signer_key.clone(),
+            app_state.enclave_address,
+            signer_wallet,
+            &app_state.common_chain_ws_url,
+            http_rpc_client.clone(),
+            &app_state.gateways_contract_addr,
+            &app_state.gateway_jobs_contract_addr,
+            gateway_epoch_state,
+            signed_registration_body.chain_ids.clone(),
+            request_chain_clients,
+            app_state.epoch,
+            app_state.time_interval,
+            gateway_state_epoch_waitlist,
+            common_chain_block_number.as_u64(),
+        )
+        .await;
 
-    let common_chain_client = Arc::new(contract_client.clone());
+        let mut contracts_client_guard = app_state.contracts_client.lock().unwrap();
+        *contracts_client_guard = Some(contract_client.clone());
 
-    // Listen for new jobs and handles them.
-    info!("Starting the contract event listener.");
+        let contract_client = Arc::new(contract_client);
 
-    tokio::spawn(async move {
-        let _ = common_chain_client.run(http_rpc_client).await;
-    });
+        let app_state_clone = app_state.clone();
+        tokio::spawn(async move {
+            contract_client.wait_for_registration(app_state_clone).await;
+        });
 
-    HttpResponse::Ok().body(format!(
-        "Enclave Node successfully registered on the common chain block {}, hash {}",
-        txn_receipt.block_number.unwrap_or(0.into()),
-        txn_receipt.transaction_hash
-    ))
-}
-
-#[delete("/deregister")]
-async fn deregister_enclave(app_state: Data<AppState>) -> impl Responder {
-    let mut is_registered = app_state.registered.lock().unwrap();
-    if !*is_registered {
-        return HttpResponse::BadRequest().body("Enclave is not registered yet.");
+        *registration_events_listener_active_guard = true;
+        drop(registration_events_listener_active_guard);
     }
 
-    let Some(signer_wallet) = app_state.wallet.lock().unwrap().clone() else {
-        return HttpResponse::BadRequest().body("Operator secret key not injected yet!");
-    };
-    let signer_address = signer_wallet.address();
-
-    let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
-    let Ok(http_rpc_client) = http_rpc_client else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to connect to the http rpc server {}: {}",
-            app_state.common_chain_http_url,
-            http_rpc_client.unwrap_err()
-        ));
-    };
-    let http_rpc_client = Arc::new(
-        http_rpc_client
-            .with_signer(signer_wallet.clone())
-            .nonce_manager(signer_address),
-    );
-
-    let gateway_contract =
-        CommonChainGatewayContract::new(app_state.gateway_contract_addr, http_rpc_client.clone());
-
-    let txn = gateway_contract.deregister_gateway(app_state.enclave_pub_key.clone().into());
-    let pending_txn = txn.send().await;
-    let Ok(pending_txn) = pending_txn else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to send transaction for deregistering the enclave node: {}",
-            pending_txn.unwrap_err()
-        ));
-    };
-
-    let txn_hash = pending_txn.tx_hash();
-    let Ok(Some(txn_receipt)) = pending_txn.confirmations(1).await else {
-        // TODO: FIX CONFIRMATIONS REQUIRED
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to confirm transaction with hash {}",
-            txn_hash
-        ));
-    };
-
-    for chain in app_state.chain_list.lock().unwrap().clone() {
-        let signer_wallet = signer_wallet.clone().with_chain_id(chain.chain_id);
-
-        let http_rpc_client = Provider::<Http>::try_connect(chain.http_rpc_url.as_str()).await;
-        let Ok(http_rpc_client) = http_rpc_client else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to connect to the http rpc server {}: {}",
-                chain.http_rpc_url,
-                http_rpc_client.unwrap_err()
-            ));
-        };
-
-        let http_rpc_client = Arc::new(
-            http_rpc_client
-                .with_signer(signer_wallet)
-                .nonce_manager(signer_address),
-        );
-
-        let contract = RequestChainContract::new(chain.contract_address, Arc::new(http_rpc_client));
-
-        let txn = contract.deregister_gateway(app_state.enclave_pub_key.clone().into());
-
-        let pending_txn = txn.send().await;
-        let Ok(pending_txn) = pending_txn else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to send transaction for deregistering the enclave node: {}",
-                pending_txn.unwrap_err()
-            ));
-        };
-
-        let txn_hash = pending_txn.tx_hash();
-        let Ok(Some(_txn_receipt)) = pending_txn.confirmations(1).await else {
-            // TODO: FIX CONFIRMATIONS REQUIRED
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to confirm transaction with hash {}",
-                txn_hash
-            ));
-        };
-    }
-
-    *is_registered = false;
-    app_state.chain_list.lock().unwrap().clear();
-
-    HttpResponse::Ok().body(format!(
-        "Enclave Node successfully deregistered from the common chain block {}, hash {}",
-        txn_receipt.block_number.unwrap_or(0.into()),
-        txn_receipt.transaction_hash
-    ))
+    HttpResponse::Ok().json(json!({
+        "owner": enclave_owner,
+        "sign_timestamp": sign_timestamp,
+        "chain_ids": signed_registration_body.chain_ids,
+        "common_chain_signature": common_chain_signature,
+        "request_chain_signature": request_chain_signature,
+    }))
 }

@@ -1,5 +1,5 @@
 use ethers::contract::abigen;
 
-abigen!(CommonChainGatewayContract, "./CommonChainGateway.json",);
-abigen!(RequestChainContract, "./RequestChainContract.json",);
-abigen!(CommonChainJobsContract, "./CommonChainJobs.json",);
+abigen!(GatewaysContract, "./Gateways.json",);
+abigen!(RelayContract, "./Relay.json",);
+abigen!(GatewayJobsContract, "./GatewayJobs.json",);
