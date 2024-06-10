@@ -446,7 +446,7 @@ impl ContractsClient {
                     tx.send((job, self)).await.unwrap();
                 } else {
                     task::spawn(async move {
-                        self.job_relayed_slash_timer(job, None, tx).await.unwrap();
+                        self.job_relayed_slash_timer(job, None, tx).await;
                     });
                 }
             }
@@ -456,17 +456,13 @@ impl ContractsClient {
         }
     }
 
-    // Return value meaning
-    // 1 - JobRelayed event triggered
-    // 2 - JobRelayed event not triggered, retrying
-    // 3 - Max retries reached
     #[async_recursion]
     async fn job_relayed_slash_timer(
         self: Arc<Self>,
         mut job: Job,
         mut job_timeout: Option<u64>,
         tx: Sender<(Job, Arc<ContractsClient>)>,
-    ) -> Result<u64> {
+    ) {
         if job_timeout.is_none() {
             job_timeout = Some(REQUEST_RELAY_TIMEOUT);
         }
@@ -479,7 +475,8 @@ impl ContractsClient {
         let logs = self
             .common_chain_job_relayed_logs(job.clone())
             .await
-            .context("Failed to get logs")?;
+            .context("Failed to get logs")
+            .unwrap();
 
         for log in logs {
             let topics = log.topics.clone();
@@ -522,7 +519,7 @@ impl ContractsClient {
                         "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
                         job.job_id, job_id
                     );
-                    return Ok(1);
+                    return;
                 }
             }
         }
@@ -541,15 +538,13 @@ impl ContractsClient {
         job.sequence_number += 1;
         if job.sequence_number > MAX_GATEWAY_RETRIES {
             info!("Job ID: {:?}, Max retries reached", job.job_id);
-            return Ok(3);
+            return;
         }
         job.gateway_address = None;
 
         task::spawn(async move {
             self.job_placed_handler(job, tx).await;
         });
-
-        Ok(2)
     }
 
     async fn select_gateway_for_job_id(
@@ -2118,14 +2113,13 @@ mod serverless_executor_test {
                 .address,
         );
 
-        let (req_chain_tx, _com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
 
-        let res = contracts_client
-            .job_relayed_slash_timer(job, Some(1 as u64), req_chain_tx)
-            .await
-            .unwrap();
+        contracts_client
+            .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
+            .await;
 
-        assert_eq!(res, 1);
+        assert!(com_chain_rx.recv().await.is_none());
     }
 
     #[actix_web::test]
@@ -2151,13 +2145,10 @@ mod serverless_executor_test {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
 
-        let res = contracts_client
+        contracts_client
             .clone()
             .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
-            .await
-            .unwrap();
-
-        assert_eq!(res, 2);
+            .await;
 
         if let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
             job.job_type = GatewayJobType::SlashGatewayJob;
@@ -2193,13 +2184,10 @@ mod serverless_executor_test {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
 
-        let res = contracts_client
+        contracts_client
             .clone()
             .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
-            .await
-            .unwrap();
-
-        assert_eq!(res, 3);
+            .await;
 
         if let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
             job.job_type = GatewayJobType::SlashGatewayJob;
