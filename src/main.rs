@@ -15,6 +15,7 @@ use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::public_key_to_address;
 use k256::ecdsa::SigningKey;
+use std::collections::HashSet;
 use std::error::Error;
 use tokio::fs;
 
@@ -65,6 +66,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         common_chain_ws_url: config.common_chain_ws_url,
         gateways_contract_addr: config.gateways_contract_addr,
         gateway_jobs_contract_addr: config.gateway_jobs_contract_addr,
+        request_chain_ids: HashSet::new().into(),
         request_chain_data: vec![].into(),
         registered: false.into(),
         epoch: config.epoch,
@@ -73,7 +75,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         immutable_params_injected: false.into(),
         mutable_params_injected: false.into(),
         registration_events_listener_active: false.into(),
-        contracts_client: None.into(),
     });
     // Start a http server
     let server = HttpServer::new(move || {

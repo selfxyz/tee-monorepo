@@ -23,6 +23,7 @@ pub struct AppState {
     pub common_chain_ws_url: String,
     pub gateways_contract_addr: Address,
     pub gateway_jobs_contract_addr: Address,
+    pub request_chain_ids: Mutex<HashSet<u64>>,
     pub request_chain_data: Mutex<Vec<RequestChainData>>,
     pub registered: Mutex<bool>,
     pub epoch: u64,
@@ -31,7 +32,6 @@ pub struct AppState {
     pub immutable_params_injected: Mutex<bool>,
     pub mutable_params_injected: Mutex<bool>,
     pub registration_events_listener_active: Mutex<bool>,
-    pub contracts_client: Mutex<Option<ContractsClient>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

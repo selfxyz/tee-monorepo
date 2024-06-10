@@ -1265,32 +1265,30 @@ impl LogsProvider for ContractsClient {
 
 #[cfg(test)]
 mod serverless_executor_test {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
     use std::str::FromStr;
-    use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    use actix_web::body::MessageBody;
-    use actix_web::dev::{ServiceFactory, ServiceRequest, ServiceResponse};
-    use actix_web::web::Data;
-    use actix_web::{http, test, App, Error};
-    use ethers::abi::{encode, Token};
-    use ethers::prelude::*;
-    use ethers::types::{Address, Bytes as EthBytes};
-    use ethers::utils::keccak256;
-    use ethers::utils::public_key_to_address;
-    use k256::ecdsa::SigningKey;
-    use rand::rngs::{OsRng, StdRng};
-    use rand::{Rng, SeedableRng};
-    use serde_json::json;
-    use tokio::sync::mpsc::channel;
-    use tokio::time::{sleep, Duration};
-
-    use crate::api_impl::{
-        export_signed_registration_message, index, inject_immutable_config, inject_mutable_config,
+    use abi::{encode, Token};
+    use actix_web::{
+        body::MessageBody,
+        dev::{ServiceFactory, ServiceRequest, ServiceResponse},
+        http, test, App, Error,
     };
-    use crate::constant::{MAX_GATEWAY_RETRIES, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE};
-    use crate::model::{AppState, ContractsClient, GatewayData, GatewayJobType, Job, ResponseJob};
+    use ethers::types::{Address, Bytes as EthBytes, H160};
+    use ethers::utils::public_key_to_address;
+    use rand::rngs::OsRng;
+    use serde_json::json;
+    use tokio::time::sleep;
+
+    use crate::{
+        api_impl::{
+            export_signed_registration_message, index, inject_immutable_config,
+            inject_mutable_config,
+        },
+        contract_abi::RelayContract,
+    };
+
+    use super::*;
 
     // Testnet or Local blockchain (Hardhat) configurations
     const CHAIN_ID: u64 = 421614;
@@ -1298,7 +1296,7 @@ mod serverless_executor_test {
     const WS_URL: &str = "wss://arbitrum-sepolia.infura.io/ws/v3/cd72f20b9fd544f8a5b8da706441e01c";
     const GATEWAY_CONTRACT_ADDR: &str = "0x819d9b4087D88359B6d7fFcd16F17A13Ca79fd0E";
     const JOB_CONTRACT_ADDR: &str = "0xAc6Ae536203a3ec290ED4aA1d3137e6459f4A963";
-    const REQ_CHAIN_CONTRACT_ADDR: &str = "0xaF7E4CB6B3729C65c4a9a63d89Ae04e97C9093C4";
+    const RELAY_CONTRACT_ADDR: &str = "0xaF7E4CB6B3729C65c4a9a63d89Ae04e97C9093C4";
     const WALLET_PRIVATE_KEY: &str =
         "0x083f09e4d950da6eee7eac93ba7fa046d12eb3c8ca4e4ba92487ae3526e87bda";
     const REGISTER_ATTESTATION: &str = "0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462cfa7554f87ba13620037695d62a381a2d8";
@@ -1324,13 +1322,13 @@ mod serverless_executor_test {
             common_chain_ws_url: WS_URL.to_owned(),
             gateways_contract_addr: GATEWAY_CONTRACT_ADDR.parse::<Address>().unwrap(),
             gateway_jobs_contract_addr: JOB_CONTRACT_ADDR.parse::<Address>().unwrap(),
+            request_chain_ids: HashSet::new().into(),
             request_chain_data: vec![].into(),
             registered: false.into(),
             registration_events_listener_active: false.into(),
             epoch: EPOCH,
             time_interval: TIME_INTERVAL,
             enclave_owner: H160::zero().into(),
-            contracts_client: None.into(),
             immutable_params_injected: false.into(),
             mutable_params_injected: false.into(),
         })
@@ -1626,7 +1624,60 @@ mod serverless_executor_test {
 
         test::call_service(&app, req).await;
 
-        let contracts_client = app_state.contracts_client.lock().unwrap().clone().unwrap();
+        let enclave_owner = app_state.enclave_owner.lock().unwrap().clone();
+
+        let wallet = app_state.wallet.lock().unwrap().clone().unwrap();
+        let signer_wallet = wallet.clone().with_chain_id(app_state.common_chain_id);
+
+        let signer_address = signer_wallet.address();
+        let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url)
+            .await
+            .unwrap();
+
+        let http_rpc_client = Arc::new(
+            http_rpc_client
+                .with_signer(signer_wallet.clone())
+                .nonce_manager(signer_address),
+        );
+
+        let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
+            Arc::new(RwLock::new(BTreeMap::new()));
+        let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
+
+        let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
+
+        let contract = RelayContract::new(
+            H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
+            http_rpc_client.clone(),
+        );
+
+        let request_chain_client = Arc::from(RequestChainClient {
+            chain_id: CHAIN_ID,
+            contract_address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
+            contract,
+            ws_rpc_url: WS_URL.to_owned(),
+            request_chain_start_block_number: 0,
+        });
+        request_chain_clients.insert(CHAIN_ID, request_chain_client);
+
+        let contracts_client = ContractsClient::new(
+            enclave_owner,
+            app_state.enclave_signer_key.clone(),
+            app_state.enclave_address,
+            signer_wallet,
+            &app_state.common_chain_ws_url,
+            http_rpc_client.clone(),
+            &app_state.gateways_contract_addr,
+            &app_state.gateway_jobs_contract_addr,
+            gateway_epoch_state,
+            [CHAIN_ID].into(),
+            request_chain_clients,
+            app_state.epoch,
+            app_state.time_interval,
+            gateway_state_epoch_waitlist,
+            0,
+        )
+        .await;
 
         contracts_client
     }
@@ -1688,7 +1739,7 @@ mod serverless_executor_test {
         let job_id = job_id.unwrap_or(U256::from(1));
 
         Log {
-            address: H160::from_str(REQ_CHAIN_CONTRACT_ADDR).unwrap(),
+            address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
                 keccak256(
                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
@@ -1766,7 +1817,7 @@ mod serverless_executor_test {
                         .as_secs(),
                 ),
             ),
-            job_owner: H160::from_str(REQ_CHAIN_CONTRACT_ADDR).unwrap(),
+            job_owner: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             job_type: GatewayJobType::JobRelay,
             sequence_number: 1 as u8,
             gateway_address: None,
@@ -1813,7 +1864,7 @@ mod serverless_executor_test {
         let contracts_client = Arc::from(generate_contracts_client().await);
 
         let log = Log {
-            address: H160::from_str(REQ_CHAIN_CONTRACT_ADDR).unwrap(),
+            address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
                 keccak256(
                     "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
