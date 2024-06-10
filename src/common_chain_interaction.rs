@@ -602,6 +602,7 @@ impl ContractsClient {
                 .req_chain_ids
                 .contains(&req_chain_client.chain_id)
                 && gateway_data.stake_amount.as_u64() > MIN_GATEWAY_STAKE
+                && gateway_data.draining == false
             {
                 gateway_data_of_req_chain.push(gateway_data.clone());
                 total_stake += gateway_data.stake_amount.as_u64();
@@ -1660,6 +1661,7 @@ mod serverless_executor_test {
                         address: contracts_client.enclave_address,
                         stake_amount: U256::from(100),
                         req_chain_ids: BTreeSet::from([CHAIN_ID]),
+                        draining: false,
                     },
                 );
 
@@ -1677,6 +1679,7 @@ mod serverless_executor_test {
                         address: Address::random(),
                         stake_amount: U256::from(100),
                         req_chain_ids: BTreeSet::from([CHAIN_ID]),
+                        draining: false,
                     },
                 );
         }

@@ -286,7 +286,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     let gateway_addresses: Vec<Address> = current_cycle_state_epoch.keys().cloned().collect();
 
     for address in gateway_addresses {
-        let (_, stake_amount, _, _) = com_chain_gateway_contract
+        let (_, stake_amount, draining, _) = com_chain_gateway_contract
             .gateways(address)
             .block(BlockId::from(to_block_number))
             .call()
@@ -296,6 +296,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         let current_cycle_gateway_data = current_cycle_state_epoch.get_mut(&address).unwrap();
 
         current_cycle_gateway_data.stake_amount = stake_amount;
+        current_cycle_gateway_data.draining = draining;
     }
 
     // Write current cycle state to the gateway epoch state
@@ -348,6 +349,7 @@ async fn process_gateway_registered_event(
             address,
             stake_amount: U256::zero(), // gateways call is used to get the stake amount
             req_chain_ids,
+            draining: false,
         },
     );
 }

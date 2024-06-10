@@ -81,6 +81,7 @@ pub struct GatewayData {
     pub address: Address,
     pub stake_amount: U256,
     pub req_chain_ids: BTreeSet<u64>,
+    pub draining: bool,
 }
 
 #[derive(Debug, Clone)]
