@@ -118,16 +118,6 @@ pub async fn get_block_number_by_timestamp(
     None
 }
 
-pub fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
-    if pub_key.len() != 64 {
-        return Err(anyhow!("Invalid public key length"));
-    }
-
-    let hash = keccak256(pub_key);
-    let addr_bytes: [u8; 20] = hash[12..].try_into()?;
-    Ok(Address::from_slice(&addr_bytes))
-}
-
 pub async fn sign_relay_job_request(
     signer_key: &SigningKey,
     job_id: U256,
