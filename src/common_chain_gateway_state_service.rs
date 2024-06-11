@@ -473,7 +473,9 @@ async fn callback_for_gateway_epoch_waitlist(
                 common_chain_client_clone
                     .clone()
                     .job_placed_handler(job, tx_clone.clone())
-                    .await;
+                    .await
+                    .context("Failed to handle job")
+                    .unwrap();
             }
         });
     }

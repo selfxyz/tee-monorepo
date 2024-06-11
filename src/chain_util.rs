@@ -6,11 +6,30 @@ use ethers::utils::keccak256;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::{error, info};
+use std::future::Future;
 use std::sync::Arc;
 use tokio::time;
 
 use crate::constant::WAIT_BEFORE_CHECKING_BLOCK;
+use crate::model::{Job, RequestChainClient};
 use crate::HttpProvider;
+
+pub trait LogsProvider {
+    fn common_chain_jobs<'a>(
+        &'a self,
+    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>>;
+
+    fn req_chain_jobs<'a>(
+        &'a self,
+        req_chain_ws_client: &'a Provider<Ws>,
+        req_chain_client: &'a RequestChainClient,
+    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>>;
+
+    fn common_chain_job_relayed_logs<'a>(
+        &'a self,
+        job: Job,
+    ) -> impl Future<Output = Result<Vec<Log>>>;
+}
 
 pub async fn get_block_number_by_timestamp(
     provider: &Arc<HttpProvider>,

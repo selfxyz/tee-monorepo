@@ -16,8 +16,7 @@ use ethers::providers::Provider;
 use k256::ecdsa::SigningKey;
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use tokio::fs;
 
 use crate::api_impl::{deregister_enclave, index, inject_key, register_enclave};
@@ -75,6 +74,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         gateway_epoch_state,
         epoch: config.epoch,
         time_interval: config.time_interval,
+        common_chain_client: None.into(),
     });
     // Start a http server
     let server = HttpServer::new(move || {
