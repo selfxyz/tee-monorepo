@@ -1,5 +1,5 @@
 use abi::encode;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use ethers::abi::{encode_packed, FixedBytes, Token};
 use ethers::prelude::*;
 use ethers::types::{Address, U256};
