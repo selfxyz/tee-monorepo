@@ -1,11 +1,10 @@
 {
   "com_chain_id": 31337,
-  "com_chain_ws_url": "ws://127.0.0.1:8545/",
+  "common_chain_ws_url": "ws://127.0.0.1:8545/",
   "com_chain_http_url": "http://127.0.0.1:8545/",
   "gateway_contract_addr": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
   "job_contract_addr": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
   "enclave_secret_key": "./enclave_secret_key",
-  "enclave_public_key": "./enclave_public_key",
   "epoch": 1713433800,
   "time_interval": 20
 }

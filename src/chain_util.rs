@@ -1,3 +1,4 @@
+use abi::encode;
 use anyhow::{anyhow, Result};
 use ethers::abi::{encode_packed, FixedBytes, Token};
 use ethers::prelude::*;
@@ -8,6 +9,7 @@ use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::{error, info};
 use std::future::Future;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time;
 
 use crate::constant::WAIT_BEFORE_CHECKING_BLOCK;
@@ -126,89 +128,188 @@ pub fn pub_key_to_address(pub_key: &[u8]) -> Result<Address> {
     Ok(Address::from_slice(&addr_bytes))
 }
 
-pub async fn get_key_for_job_id(job_id: U256, req_chain_id: u64) -> U256 {
-    let req_chain_id = U256::from(req_chain_id);
-    let hash = keccak256(format!("{}-{}", job_id, req_chain_id));
-    U256::from_big_endian(&hash)
-}
-
-pub async fn sign_relay_job_response(
+pub async fn sign_relay_job_request(
     signer_key: &SigningKey,
     job_id: U256,
-    req_chain_id: U256,
     codehash: &FixedBytes,
     code_inputs: &Bytes,
-    deadline: U256,
-    job_owner: &Address,
-    sequence_number: u8,
+    user_timeout: U256,
     job_start_time: U256,
-) -> Option<String> {
+    sequence_number: u8,
+    job_owner: &Address,
+) -> Option<(String, u64)> {
+    let sign_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let relay_job_typehash = keccak256(
+            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestamp)"
+        );
+
+    let code_inputs_hash = keccak256(code_inputs);
+
     let token_list = [
-        Token::Array(vec![Token::Uint(job_id), Token::Uint(req_chain_id)]),
+        Token::FixedBytes(relay_job_typehash.to_vec()),
+        Token::Uint(job_id),
         Token::FixedBytes(codehash.clone()),
-        Token::Bytes(code_inputs.to_vec()),
-        Token::Array(vec![Token::Uint(deadline), Token::Uint(job_start_time)]),
-        Token::FixedBytes(vec![sequence_number]),
+        Token::FixedBytes(code_inputs_hash.to_vec()),
+        Token::Uint(user_timeout),
+        Token::Uint(job_start_time),
+        Token::Uint(sequence_number.into()),
         Token::Address(*job_owner),
+        Token::Uint(sign_timestamp.into()),
     ];
-    let encoded_args = encode_packed(&token_list).unwrap();
-    let hash = keccak256(&encoded_args);
-    let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
-        eprintln!("Failed to sign the response: {}", err);
-        err
-    }) else {
+
+    let hash_struct = keccak256(encode(&token_list));
+
+    let gateway_jobs_domain_separator = keccak256(encode(&[
+        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.GatewayJobs").to_vec()),
+        Token::FixedBytes(keccak256("1").to_vec()),
+    ]));
+
+    let digest = encode_packed(&[
+        Token::String("\x19\x01".to_string()),
+        Token::FixedBytes(gateway_jobs_domain_separator.to_vec()),
+        Token::FixedBytes(hash_struct.to_vec()),
+    ]);
+
+    let Ok(digest) = digest else {
+        eprintln!("Failed to encode the digest: {:#?}", digest.err());
+        return None;
+    };
+    let digest = keccak256(digest);
+
+    // Sign the digest using enclave key
+    let sig = signer_key.sign_prehash_recoverable(&digest);
+    let Ok((rs, v)) = sig else {
+        eprintln!("Failed to sign the digest: {:#?}", sig.err());
         return None;
     };
 
-    Some(hex::encode(rs.to_bytes().append(27 + v.to_byte())))
+    Some((
+        hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec()),
+        sign_timestamp,
+    ))
 }
 
-pub async fn sign_reassign_gateway_relay_response(
+pub async fn sign_reassign_gateway_relay_request(
     signer_key: &SigningKey,
     job_id: U256,
     gateway_operator_old: &Address,
-) -> Option<String> {
+    job_owner: &Address,
+    sequence_number: u8,
+    job_start_time: U256,
+) -> Option<(String, u64)> {
+    let sign_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let reassign_gateway_relay_typehash = keccak256(
+            "ReassignGateway(uint256 jobId,address gatewayOld,address jobOwner,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestamp)"
+        );
+
     let token_list = [
-        Token::Array(vec![Token::Uint(job_id)]),
+        Token::FixedBytes(reassign_gateway_relay_typehash.to_vec()),
+        Token::Uint(job_id),
         Token::Address(*gateway_operator_old),
+        Token::Address(*job_owner),
+        Token::Uint(sequence_number.into()),
+        Token::Uint(job_start_time),
+        Token::Uint(sign_timestamp.into()),
     ];
 
-    let encoded_args = encode_packed(&token_list).unwrap();
-    let hash = keccak256(&encoded_args);
+    let hash_struct = keccak256(encode(&token_list));
 
-    let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
-        eprintln!("Failed to sign the response: {}", err);
-        err
-    }) else {
+    let gateway_jobs_domain_separator = keccak256(encode(&[
+        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.GatewayJobs").to_vec()),
+        Token::FixedBytes(keccak256("1").to_vec()),
+    ]));
+
+    let digest = encode_packed(&[
+        Token::String("\x19\x01".to_string()),
+        Token::FixedBytes(gateway_jobs_domain_separator.to_vec()),
+        Token::FixedBytes(hash_struct.to_vec()),
+    ]);
+
+    let Ok(digest) = digest else {
+        eprintln!("Failed to encode the digest: {:#?}", digest.err());
+        return None;
+    };
+    let digest = keccak256(digest);
+
+    // Sign the digest using enclave key
+    let sig = signer_key.sign_prehash_recoverable(&digest);
+    let Ok((rs, v)) = sig else {
+        eprintln!("Failed to sign the digest: {:#?}", sig.err());
         return None;
     };
 
-    Some(hex::encode(rs.to_bytes().append(27 + v.to_byte())))
+    Some((
+        hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec()),
+        sign_timestamp,
+    ))
 }
 
-pub async fn sign_job_response_response(
+pub async fn sign_job_response_request(
     signer_key: &SigningKey,
     job_id: U256,
     output: Bytes,
     total_time: U256,
     error_code: u8,
-) -> Option<String> {
+) -> Option<(String, u64)> {
+    let sign_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let job_response_typehash = keccak256(
+        "JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)"
+    );
+
+    let output_hash = keccak256(output);
+
     let token_list = [
-        Token::Array(vec![Token::Uint(job_id)]),
-        Token::Bytes(output.to_vec()),
-        Token::Array(vec![Token::Uint(total_time)]),
-        Token::FixedBytes(vec![error_code]),
+        Token::FixedBytes(job_response_typehash.to_vec()),
+        Token::Uint(job_id),
+        Token::FixedBytes(output_hash.to_vec()),
+        Token::Uint(total_time),
+        Token::Uint(error_code.into()),
+        Token::Uint(sign_timestamp.into()),
     ];
 
-    let encoded_args = encode_packed(&token_list).unwrap();
-    let hash = keccak256(&encoded_args);
+    let hash_struct = keccak256(encode(&token_list));
 
-    let Ok((rs, v)) = signer_key.sign_prehash_recoverable(&hash).map_err(|err| {
-        eprintln!("Failed to sign the response: {}", err);
-        err
-    }) else {
+    let gateway_jobs_domain_separator = keccak256(encode(&[
+        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
+        Token::FixedBytes(keccak256("1").to_vec()),
+    ]));
+
+    let digest = encode_packed(&[
+        Token::String("\x19\x01".to_string()),
+        Token::FixedBytes(gateway_jobs_domain_separator.to_vec()),
+        Token::FixedBytes(hash_struct.to_vec()),
+    ]);
+
+    let Ok(digest) = digest else {
+        eprintln!("Failed to encode the digest: {:#?}", digest.err());
+        return None;
+    };
+    let digest = keccak256(digest);
+
+    // Sign the digest using enclave key
+    let sig = signer_key.sign_prehash_recoverable(&digest);
+    let Ok((rs, v)) = sig else {
+        eprintln!("Failed to sign the digest: {:#?}", sig.err());
         return None;
     };
 
-    Some(hex::encode(rs.to_bytes().append(27 + v.to_byte())))
+    Some((
+        hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec()),
+        sign_timestamp,
+    ))
 }
