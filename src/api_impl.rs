@@ -123,11 +123,11 @@ async fn export_signed_registration_message(
             .unwrap();
         if *registration_events_listener_active_guard == true {
             // verify that the app state request chain ids are same as the signed registration body chain ids
-            let contracts_client_guard = app_state.request_chain_ids.lock().unwrap();
-            if *contracts_client_guard != chain_ids {
+            let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
+            if *request_chain_ids_guard != chain_ids {
                 return HttpResponse::BadRequest().json(json!({
                         "message": "Request chain ids mismatch!",
-                        "chain_ids": *contracts_client_guard,
+                        "chain_ids": *request_chain_ids_guard,
                 }));
             }
         }
