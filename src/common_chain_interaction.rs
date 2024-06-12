@@ -699,7 +699,7 @@ impl ContractsClient {
         let pending_txn = txn.send().await;
         let Ok(pending_txn) = pending_txn else {
             error!(
-                "Failed to confirm transaction {} for job relay to CommonChain",
+                "Failed to submit transaction {} for job relay to CommonChain",
                 pending_txn.unwrap_err()
             );
             return;
@@ -750,7 +750,7 @@ impl ContractsClient {
         let pending_txn = txn.send().await;
         let Ok(pending_txn) = pending_txn else {
             error!(
-                "Failed to confirm transaction {} for reassign gateway relay to CommonChain",
+                "Failed to submit transaction {} for reassign gateway relay to CommonChain",
                 pending_txn.unwrap_err()
             );
             return;
@@ -1005,7 +1005,15 @@ impl ContractsClient {
 
         // scope for the write lock
         {
-            self.active_jobs.write().unwrap().remove(&job_id);
+            let job = self.active_jobs.write().unwrap().remove(&job_id);
+            if job.is_some() {
+                info!(
+                    "Job ID: {:?} - removed from active jobs",
+                    job.unwrap().job_id
+                );
+            } else {
+                info!("Job ID: {:?} - not found in active jobs", job_id);
+            }
         }
     }
 
@@ -1105,7 +1113,7 @@ impl ContractsClient {
         let pending_txn = txn.send().await;
         let Ok(pending_txn) = pending_txn else {
             error!(
-                "Failed to confirm transaction {} for job response to RequestChain",
+                "Failed to submit transaction {} for job response to RequestChain",
                 pending_txn.unwrap_err()
             );
             return;
