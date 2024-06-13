@@ -492,20 +492,13 @@ impl ContractsClient {
                 .unwrap();
 
                 let job_id = log.topics[1].into_uint();
-                let request_chain_id = log.topics[2].into_uint().low_u64();
-                let tx_hash = decoded[0].clone().into_fixed_bytes().unwrap();
-                let code_input: Vec<u8> = decoded[1].clone().into_bytes().unwrap().into();
-                let user_timeout = decoded[2].clone().into_uint().unwrap();
-                let job_owner = decoded[3].clone().into_address().unwrap();
-                let gateway_operator = decoded[4].clone().into_address().unwrap();
+                let job_owner = decoded[1].clone().into_address().unwrap();
+                let gateway_operator = decoded[2].clone().into_address().unwrap();
 
                 if job_id == job.job_id
-                    && request_chain_id == job.request_chain_id
-                    && tx_hash == job.tx_hash
-                    && code_input == job.code_input
-                    && user_timeout == job.user_timeout
                     && job_owner == job.job_owner
                     && gateway_operator != Address::zero()
+                    && gateway_operator != job.gateway_address.unwrap()
                 {
                     info!(
                         "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
@@ -1200,10 +1193,9 @@ impl LogsProvider for ContractsClient {
             .address(self.gateway_jobs_contract_addr)
             .select(common_chain_start_block_number..)
             .topic0(vec![keccak256(
-                "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
+                "JobRelayed(uint256,uint256,address,address)",
             )])
-            .topic1(job.job_id)
-            .topic2(U256::from(job.request_chain_id));
+            .topic1(job.job_id);
 
         let logs = self
             .common_chain_ws_provider
@@ -1218,37 +1210,19 @@ impl LogsProvider for ContractsClient {
     async fn gateways_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
         use ethers::abi::{encode, Token};
         use ethers::prelude::*;
-        use serde_json::json;
 
         if job.job_id == U256::from(1) {
             Ok(vec![Log {
                 address: self.gateway_jobs_contract_addr,
                 topics: vec![
-                    keccak256(
-                        "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
-                    )
-                    .into(),
+                    keccak256("JobRelayed(uint256,uint256,address,address)").into(),
                     H256::from_uint(&job.job_id),
-                    H256::from_uint(&job.request_chain_id.into()),
                 ],
                 data: encode(&[
-                    Token::FixedBytes(
-                        hex::decode(
-                            "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e"
-                                .to_owned(),
-                        )
-                        .unwrap(),
-                    ),
-                    Token::Bytes(
-                        serde_json::to_vec(&json!({
-                            "num": 10
-                        }))
-                        .unwrap(),
-                    ),
-                    Token::Uint(2000.into()),
+                    Token::Uint(job.job_id),
+                    Token::Uint(U256::from(100)),
                     Token::Address(job.job_owner),
                     Token::Address(job.gateway_address.unwrap()),
-                    Token::Array(vec![]),
                 ])
                 .into(),
                 ..Default::default()
