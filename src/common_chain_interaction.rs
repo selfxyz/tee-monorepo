@@ -472,27 +472,20 @@ impl ContractsClient {
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
         let logs = self
-            .common_chain_job_relayed_logs(job.clone())
+            .gateways_job_relayed_logs(job.clone())
             .await
             .context("Failed to get logs")
             .unwrap();
 
         for log in logs {
             let topics = log.topics.clone();
-            if topics[0]
-                == keccak256(
-                    "JobRelayed(uint256,uint256,bytes32,bytes,uint256,address,address,address[])",
-                )
-                .into()
-            {
+            if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
                 let decoded = decode(
                     &vec![
-                        ParamType::FixedBytes(32),
-                        ParamType::Bytes,
+                        ParamType::Uint(256),
                         ParamType::Uint(256),
                         ParamType::Address,
                         ParamType::Address,
-                        ParamType::Array(Box::new(ParamType::Address)),
                     ],
                     &log.data.0,
                 )
@@ -1199,7 +1192,7 @@ impl LogsProvider for ContractsClient {
     }
 
     #[cfg(not(test))]
-    async fn common_chain_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
+    async fn gateways_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
 
@@ -1222,7 +1215,7 @@ impl LogsProvider for ContractsClient {
     }
 
     #[cfg(test)]
-    async fn common_chain_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
+    async fn gateways_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
         use ethers::abi::{encode, Token};
         use ethers::prelude::*;
         use serde_json::json;

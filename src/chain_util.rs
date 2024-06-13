@@ -27,10 +27,7 @@ pub trait LogsProvider {
         req_chain_client: &'a RequestChainClient,
     ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>>;
 
-    fn common_chain_job_relayed_logs<'a>(
-        &'a self,
-        job: Job,
-    ) -> impl Future<Output = Result<Vec<Log>>>;
+    fn gateways_job_relayed_logs<'a>(&'a self, job: Job) -> impl Future<Output = Result<Vec<Log>>>;
 }
 
 pub async fn get_block_number_by_timestamp(
