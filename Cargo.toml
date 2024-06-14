@@ -15,6 +15,7 @@ config = "0.14.0"
 ethers = { git = "https://github.com/gakonst/ethers-rs", features = ["ws", "rustls", "abigen"] }
 hex = "0.4.3"
 k256 = "0.13.3"
+lazy_static = "1.4.0"
 log = "0.4.21"
 rand = { version = "0.8.5", features = ["std_rng"] }
 serde = "1.0.159"
