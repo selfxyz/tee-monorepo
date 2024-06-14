@@ -799,10 +799,7 @@ impl ContractsClient {
             } else if topics[0]
                 == keccak256("GatewayReassigned(uint256,address,address,uint8)").into()
             {
-                info!(
-                    "Request Chain ID: {:?}, GatewayReassigned jobID: {:?}",
-                    log.topics[2], log.topics[1]
-                );
+                info!("GatewayReassigned jobID: {:?}", log.topics[1]);
                 let self_clone = Arc::clone(&self);
                 let req_chain_tx = req_chain_tx.clone();
                 task::spawn(async move {
