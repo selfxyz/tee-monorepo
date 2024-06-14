@@ -3180,6 +3180,7 @@ dependencies = [
  "ethers",
  "hex",
  "k256",
+ "lazy_static",
  "log",
  "rand",
  "serde",
