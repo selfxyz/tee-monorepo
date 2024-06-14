@@ -100,6 +100,7 @@ pub struct ContractsClient {
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_ids: HashSet<u64>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
+    pub current_jobs: Arc<RwLock<HashMap<U256, Job>>>,
     pub epoch: u64,
     pub time_interval: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,

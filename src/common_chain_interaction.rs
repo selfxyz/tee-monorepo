@@ -88,6 +88,7 @@ impl ContractsClient {
             gateway_epoch_state,
             request_chain_ids,
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
+            current_jobs: Arc::new(RwLock::new(HashMap::new())),
             epoch,
             time_interval,
             gateway_epoch_state_waitlist,
@@ -257,7 +258,9 @@ impl ContractsClient {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
         let self_clone = Arc::clone(&self);
-        self_clone.handle_all_req_chain_events(req_chain_tx).await?;
+        self_clone
+            .handle_all_req_chain_events(req_chain_tx.clone())
+            .await?;
 
         // setup for the listening events on Common Chain and calling Request Chain functions
         let (com_chain_tx, req_chain_rx) = channel::<(ResponseJob, Arc<ContractsClient>)>(100);
@@ -265,7 +268,8 @@ impl ContractsClient {
         tokio::spawn(async move {
             let _ = self_clone.txns_to_request_chain(req_chain_rx).await;
         });
-        self.handle_all_com_chain_events(com_chain_tx).await?;
+        self.handle_all_com_chain_events(com_chain_tx, req_chain_tx)
+            .await?;
         Ok(())
     }
 
@@ -444,6 +448,13 @@ impl ContractsClient {
                     }
                     tx.send((job, self)).await.unwrap();
                 } else {
+                    // scope for the write lock
+                    {
+                        self.current_jobs
+                            .write()
+                            .unwrap()
+                            .insert(job.job_id, job.clone());
+                    }
                     task::spawn(async move {
                         self.job_relayed_slash_timer(job, None, tx).await;
                     });
@@ -458,7 +469,7 @@ impl ContractsClient {
     #[async_recursion]
     async fn job_relayed_slash_timer(
         self: Arc<Self>,
-        mut job: Job,
+        job: Job,
         mut job_timeout: Option<u64>,
         tx: Sender<(Job, Arc<ContractsClient>)>,
     ) {
@@ -504,6 +515,10 @@ impl ContractsClient {
                         "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
                         job.job_id, job_id
                     );
+                    // scope for the write lock
+                    {
+                        self.current_jobs.write().unwrap().remove(&job.job_id);
+                    }
                     return;
                 }
             }
@@ -512,24 +527,9 @@ impl ContractsClient {
         info!("Job ID: {:?}, JobRelayed event not triggered", job.job_id);
 
         // slash the previous gateway
-        {
-            let self_clone = self.clone();
-            let mut job_clone = job.clone();
-            job_clone.job_type = GatewayJobType::SlashGatewayJob;
-            let tx_clone = tx.clone();
-            tx_clone.send((job_clone, self_clone)).await.unwrap();
-        }
-
-        job.sequence_number += 1;
-        if job.sequence_number > MAX_GATEWAY_RETRIES {
-            info!("Job ID: {:?}, Max retries reached", job.job_id);
-            return;
-        }
-        job.gateway_address = None;
-
-        task::spawn(async move {
-            self.job_placed_handler(job, tx).await;
-        });
+        let mut job_clone = job.clone();
+        job_clone.job_type = GatewayJobType::SlashGatewayJob;
+        tx.send((job_clone, self)).await.unwrap();
     }
 
     async fn select_gateway_for_job_id(
@@ -586,7 +586,7 @@ impl ContractsClient {
             if gateway_data
                 .req_chain_ids
                 .contains(&req_chain_client.chain_id)
-                && gateway_data.stake_amount.as_u64() > MIN_GATEWAY_STAKE
+                && gateway_data.stake_amount > *MIN_GATEWAY_STAKE
                 && gateway_data.draining == false
             {
                 gateway_data_of_req_chain.push(gateway_data.clone());
@@ -627,6 +627,10 @@ impl ContractsClient {
         // scope for the write lock
         {
             self.active_jobs.write().unwrap().remove(&job_id);
+        }
+        // scope for the write lock
+        {
+            self.current_jobs.write().unwrap().remove(&job_id);
         }
     }
 
@@ -759,7 +763,8 @@ impl ContractsClient {
 
     async fn handle_all_com_chain_events(
         self: Arc<Self>,
-        tx: Sender<(ResponseJob, Arc<ContractsClient>)>,
+        com_chain_tx: Sender<(ResponseJob, Arc<ContractsClient>)>,
+        req_chain_tx: Sender<(Job, Arc<ContractsClient>)>,
     ) -> Result<()> {
         let mut stream = self.common_chain_jobs().await.unwrap();
 
@@ -772,7 +777,7 @@ impl ContractsClient {
                     log.topics[1]
                 );
                 let self_clone = Arc::clone(&self);
-                let tx = tx.clone();
+                let com_chain_tx = com_chain_tx.clone();
                 task::spawn(async move {
                     let response_job = self_clone
                         .clone()
@@ -780,7 +785,9 @@ impl ContractsClient {
                         .await
                         .context("Failed to decode event")
                         .unwrap();
-                    self_clone.job_responded_handler(response_job, tx).await;
+                    self_clone
+                        .job_responded_handler(response_job, com_chain_tx)
+                        .await;
                 });
             } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
                 info!("JobResourceUnavailable event triggered");
@@ -796,8 +803,11 @@ impl ContractsClient {
                     log.topics[2], log.topics[1]
                 );
                 let self_clone = Arc::clone(&self);
+                let req_chain_tx = req_chain_tx.clone();
                 task::spawn(async move {
-                    self_clone.gateway_reassigned_handler(log).await;
+                    self_clone
+                        .gateway_reassigned_handler(log, req_chain_tx)
+                        .await;
                 });
             } else {
                 error!("Unknown event: {:?}", log);
@@ -1003,18 +1013,12 @@ impl ContractsClient {
         }
     }
 
-    async fn gateway_reassigned_handler(self: Arc<Self>, log: Log) {
+    async fn gateway_reassigned_handler(
+        self: Arc<Self>,
+        log: Log,
+        req_chain_tx: Sender<(Job, Arc<ContractsClient>)>,
+    ) {
         let job_id = log.topics[1].into_uint();
-
-        // Check if job belongs to the enclave
-        let active_jobs_guard = self.active_jobs.read().unwrap();
-        let job = active_jobs_guard.get(&job_id);
-        if job.is_none() {
-            return;
-        }
-
-        let job = job.unwrap().clone();
-        drop(active_jobs_guard);
 
         let types = vec![ParamType::Address, ParamType::Address, ParamType::Uint(8)];
         let decoded = decode(&types, &log.data.0).unwrap();
@@ -1022,18 +1026,49 @@ impl ContractsClient {
         let old_gateway = decoded[0].clone().into_address().unwrap();
         let sequence_number = decoded[2].clone().into_uint().unwrap().low_u64() as u8;
 
-        if old_gateway != self.enclave_address {
-            return;
+        let mut job: Job;
+
+        if old_gateway == self.enclave_address {
+            let active_jobs_guard = self.active_jobs.read().unwrap();
+            let active_job = active_jobs_guard.get(&job_id);
+            if active_job.is_some() {
+                job = active_job.unwrap().clone();
+                drop(active_jobs_guard);
+            } else {
+                return;
+            }
+        } else {
+            let current_jobs_guard = self.current_jobs.read().unwrap();
+            let current_job = current_jobs_guard.get(&job_id);
+            if current_job.is_some() {
+                job = current_job.unwrap().clone();
+                drop(current_jobs_guard);
+            } else {
+                return;
+            }
         }
 
         if job.sequence_number != sequence_number {
             return;
         }
 
-        // scope for the write lock
+        // scope for wrtie lock
         {
             self.active_jobs.write().unwrap().remove(&job_id);
+            self.current_jobs.write().unwrap().remove(&job_id);
         }
+
+        job.sequence_number += 1;
+        if job.sequence_number > MAX_GATEWAY_RETRIES {
+            info!("Job ID: {:?}, Max retries reached", job.job_id);
+            return;
+        }
+        job.gateway_address = None;
+
+        let self_clone = Arc::clone(&self);
+        task::spawn(async move {
+            self_clone.job_placed_handler(job, req_chain_tx).await;
+        });
     }
 
     async fn txns_to_request_chain(
