@@ -24,8 +24,8 @@ use crate::chain_util::{
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN, MAX_GATEWAY_RETRIES, MIN_GATEWAY_STAKE,
-    OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
+    MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::contract_abi::{GatewayJobsContract, GatewaysContract};
 use crate::model::{
@@ -576,8 +576,8 @@ impl ContractsClient {
         // create a weighted probability distribution for gateways based on stake amount
         // For example, if there are 3 gateways with stake amounts 100, 200, 300
         // then the distribution array will be [100, 300, 600]
-        let mut stake_distribution: Vec<u64> = vec![];
-        let mut total_stake: u64 = 0;
+        let mut stake_distribution: Vec<u128> = vec![];
+        let mut total_stake: u128 = 0;
         let mut gateway_data_of_req_chain: Vec<GatewayData> = vec![];
         if all_gateways_data.is_empty() {
             return Err(anyhow::Error::msg("No Gateways Registered"));
@@ -590,7 +590,8 @@ impl ContractsClient {
                 && gateway_data.draining == false
             {
                 gateway_data_of_req_chain.push(gateway_data.clone());
-                total_stake += gateway_data.stake_amount.as_u64();
+                total_stake +=
+                    (gateway_data.stake_amount / *GATEWAY_STAKE_ADJUSTMENT_FACTOR).as_u128();
                 stake_distribution.push(total_stake);
             }
         }
