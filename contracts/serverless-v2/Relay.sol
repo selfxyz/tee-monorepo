@@ -351,20 +351,12 @@ contract Relay is
         delete jobs[_jobId];
         _releaseEscrowAmount(enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
 
-        uint256 callbackGas = 0;
-        bool success = false;
-        if (tx.gasprice <= job.maxGasPrice) {
-            (success, callbackGas) = _callBackWithLimit(
-                _jobId,
-                job.jobOwner,
-                job.callbackContract,
-                job.callbackGasLimit,
-                job.codehash,
-                job.codeInputs,
-                _output,
-                _errorCode
-            );
-        }
+        (bool success, uint256 callbackGas) = _callBackWithLimit(
+            _jobId,
+            job,
+            _output,
+            _errorCode
+        );
 
         uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
 
@@ -434,31 +426,26 @@ contract Relay is
 
     function _callBackWithLimit(
         uint256 _jobId,
-        address _jobOwner,
-        address _callbackContract,
-        uint256 _callbackGasLimit,
-        bytes32 _codehash,
-        bytes memory _codeInputs,
+        Job memory _job,
         bytes calldata _output,
         uint8 _errorCode
-    ) internal returns (bool, uint) {
-        uint startGas = gasleft();
-        (bool success, ) = _callbackContract.call{gas: _callbackGasLimit}(
-            abi.encodeWithSignature(
-                "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
-                _jobId,
-                _jobOwner,
-                _codehash,
-                _codeInputs,
-                _output,
-                _errorCode
-            )
-        );
-
-        // calculate callback cost
-        uint callbackGas = startGas - gasleft();
-
-        return (success, callbackGas);
+    ) internal returns (bool success, uint callbackGas) {
+        if (tx.gasprice <= _job.maxGasPrice) {
+            uint startGas = gasleft();
+            (success, ) = _job.callbackContract.call{gas: _job.callbackGasLimit}(
+                abi.encodeWithSignature(
+                    "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
+                    _jobId,
+                    _job.jobOwner,
+                    _job.codehash,
+                    _job.codeInputs,
+                    _output,
+                    _errorCode
+                )
+            );
+            // calculate callback cost
+            callbackGas = startGas - gasleft();
+        }
     }
 
     function _releaseGasCostOnSuccess(

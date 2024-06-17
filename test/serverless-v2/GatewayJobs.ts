@@ -882,7 +882,7 @@ describe("GatewayJobs - Reassign Gateway", function () {
         	noOfNodesToSelect = 3,
         	executorFeePerMs = 10,
         	stakingRewardPerMs = 10,
-        	stakingPaymentPoolAddress = addrs[0],
+        	stakingPaymentPoolAddress = addrs[4],
         	usdcPaymentPoolAddress = addrs[0];
 		const Jobs = await ethers.getContractFactory("Jobs");
 		jobs = await upgrades.deployProxy(
@@ -947,6 +947,8 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		let amount = parseUnits("1000");	// 1000 POND
 		await stakingToken.transfer(addrs[1], amount);
 		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
+		await stakingToken.transfer(addrs[2], amount);
+		await stakingToken.connect(signers[2]).approve(gateways.target, amount);
 		await stakingToken.connect(signers[1]).approve(executors.target, amount);
 
 		amount = parseUnits("1000", 6);		// 1000 USDC
@@ -964,8 +966,8 @@ describe("GatewayJobs - Reassign Gateway", function () {
 
 		// 2nd gateway
 		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
-		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
-		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+		signedDigest = await createGatewaySignature(addrs[2], chainIds, signTimestamp, wallets[16]);
+		await gateways.connect(signers[2]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
 
 		// REGISTER EXECUTORS
 		let execStakeAmount = parseUnits("10"),	// 10 POND
@@ -993,12 +995,24 @@ describe("GatewayJobs - Reassign Gateway", function () {
 			gatewayKeyOld = addrs[15],
 			sequenceId = 1,
 			jobRequestTimestamp = await time.latest() + 100,
-			jobOwner = addrs[1],
+			jobOwner = addrs[3],
 			signTimestamp = await time.latest();
 
+		let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[4]);
+		let reporterGatewayInitialBal = await stakingToken.balanceOf(addrs[2]);
+		let failedGatewayStakedAmt = (await gateways.gateways(addrs[15])).stakeAmount;
+
 		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
-		let tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		let tx = await gatewayJobs.connect(signers[2]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[4]);
+		let reporterGatewayFinalBal = await stakingToken.balanceOf(addrs[2]);
+		let reassignCompForReporterGateway = await gatewayJobs.REASSIGN_COMP_FOR_REPORTER_GATEWAY();
+		let slashedAmount = failedGatewayStakedAmt * await gateways.SLASH_PERCENT_IN_BIPS() / await gateways.SLASH_MAX_BIPS();
+		
+		expect(reporterGatewayFinalBal - reporterGatewayInitialBal).to.eq(reassignCompForReporterGateway);
+		expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount - reassignCompForReporterGateway);
 	});
 
 	it("cannot reassign if job already relayed", async function () {
@@ -1093,17 +1107,30 @@ describe("GatewayJobs - Reassign Gateway", function () {
 			gatewayKeyOld = addrs[15],
 			sequenceId = 1,
 			jobRequestTimestamp = await time.latest() + 100,
-			jobOwner = addrs[1],
+			jobOwner = addrs[3],
 			signTimestamp = await time.latest();
 
 		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
-		let tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		let tx = await gatewayJobs.connect(signers[2]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		// Reassign 2nd time
+		let jobOwnerInitialBal = await stakingToken.balanceOf(jobOwner);
+		let reporterGatewayInitialBal = await stakingToken.balanceOf(addrs[2]);
+		let failedGatewayStakedAmt = (await gateways.gateways(addrs[15])).stakeAmount;
 
 		sequenceId = 2;
 		signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
-		tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		tx = await gatewayJobs.connect(signers[2]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		let jobOwnerFinalBal = await stakingToken.balanceOf(jobOwner);
+		let reporterGatewayFinalBal = await stakingToken.balanceOf(addrs[2]);
+		let reassignCompForReporterGateway = await gatewayJobs.REASSIGN_COMP_FOR_REPORTER_GATEWAY();
+		let slashedAmount = failedGatewayStakedAmt * await gateways.SLASH_PERCENT_IN_BIPS() / await gateways.SLASH_MAX_BIPS();
+		
+		expect(reporterGatewayFinalBal - reporterGatewayInitialBal).to.eq(reassignCompForReporterGateway);
+		expect(jobOwnerFinalBal - jobOwnerInitialBal).to.eq(slashedAmount - reassignCompForReporterGateway);
 	});
 
 	it("cannot reassign 3rd time if job still not relayed by previously reassigned gateways", async function () {
@@ -1272,13 +1299,15 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 
 		// Register Executors. Owner is addrs[1]
 		let amount = 10n**20n;	// 100 POND
+		await stakingToken.transfer(addrs[0], amount);
+		await stakingToken.connect(signers[0]).approve(gateways.target, amount);
 		await stakingToken.transfer(addrs[1], amount);
 		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
 		await stakingToken.connect(signers[1]).approve(executors.target, amount);
 
 		amount = parseUnits("1000", 6);	// 100 USDC
-		await usdcToken.transfer(addrs[1], amount);
-		await usdcToken.connect(signers[1]).approve(gatewayJobs.target, amount);
+		await usdcToken.transfer(addrs[0], amount);
+		await usdcToken.connect(signers[0]).approve(gatewayJobs.target, amount);
 
 		let jobCapacity = 20, stakeAmount = 10n**19n;
 		const timestamp = await time.latest() * 1000;
@@ -1287,13 +1316,13 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 		let signTimestamp = await time.latest();
 		// 1st gateway
 		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
-		let signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[15]);
-		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+		let signedDigest = await createGatewaySignature(addrs[0], chainIds, signTimestamp, wallets[15]);
+		await gateways.connect(signers[0]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
 
 		// 2nd gateway
 		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
-		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
-		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+		signedDigest = await createGatewaySignature(addrs[0], chainIds, signTimestamp, wallets[16]);
+		await gateways.connect(signers[0]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
 
 		// REGISTER EXECUTORS
 		for (let index = 0; index < 3; index++) {
@@ -1318,9 +1347,9 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 			deadline = 10000,
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
-			jobOwner = addrs[1];
+			jobOwner = addrs[3];
 		signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp, wallets[15]);
-		await gatewayJobs.connect(signers[1]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp);
+		await gatewayJobs.connect(signers[0]).relayJob(signedDigest, jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, signTimestamp);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1332,6 +1361,9 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 			errorCode = 0,
 			signTimestamp = await time.latest() - 540;
 
+		let executorInitialBal = await usdcToken.balanceOf(addrs[1]);
+		// let jobOwnerInitialBal = await usdcToken.balanceOf(gatewayJobs.target);
+			
 		let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
 		let tx = jobs.connect(signers[1]).submitOutput(
 			signedDigest,
@@ -1344,6 +1376,16 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 		await expect(tx).to.emit(jobs, "JobResponded")
 			.and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true)
 			.and.to.emit(gatewayJobs, "JobResponded");
+
+		let executorFinalBal = await usdcToken.balanceOf(addrs[1]);
+		// let jobOwnerFinalBal = await usdcToken.balanceOf(gatewayJobs.target);
+
+		// check usdc balance of executor
+		expect(executorFinalBal - executorInitialBal).to.eq(100n*4n/9n);
+		// check usdc balance of payment pool
+		expect(await usdcToken.balanceOf(usdcPaymentPool)).to.eq(100n);
+		// // check usdc balance of job owner
+		// expect(jobOwnerFinalBal - jobOwnerInitialBal).to.eq(100n*2n);
 	});
 
 	it("cannot call oysterResultCall on second output submit", async function () {

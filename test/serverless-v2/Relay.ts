@@ -1115,7 +1115,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
-			maxGasPrice = 100,
+			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
 			usdcDeposit = 1000000,
 			callbackDeposit = parseUnits("1"),	// 1 eth
 			refundAccount = addrs[1],
@@ -1143,9 +1143,12 @@ describe("Relay - Job sent by UserSample contract", function () {
 		);
 
 		let jobOwner = userSample.target;
+		let txReceipt = await (await tx).wait();
+		console.log("FIXED_GAS : ", txReceipt?.gasUsed);
 		// validate callback cost and refund
-		let txGasPrice = (await (await tx).wait())?.gasPrice || 0n;
-		let callbackGas = 9204; // calculated using console.log
+		let txGasPrice = txReceipt?.gasPrice || 0n;
+		let callbackGas = 9246; // calculated using console.log
+		console.log("txGasPrice: ", txGasPrice);
 		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
 		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
 		expect(await ethers.provider.getBalance(jobOwner)).to.equal(callbackDeposit - callbackCost);
@@ -1156,9 +1159,9 @@ describe("Relay - Job sent by UserSample contract", function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
-			maxGasPrice = 100,
+			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
 			usdcDeposit = 1000000,
-			callbackDeposit = parseUnits("1"),	// 1 eth
+			callbackDeposit = parseUnits("101"),	// 1 eth
 			refundAccount = addrs[1],
 			callbackContract = userSample.target,
 			callbackGasLimit = 20000;
@@ -1176,7 +1179,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		let initBalance = await ethers.provider.getBalance(addrs[1]);
 
 		// set tx.gasprice for next block
-		await setNextBlockBaseFeePerGas(101);
+		await setNextBlockBaseFeePerGas(maxGasPrice + 10n);
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relay.connect(signers[2]).jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relay, "JobResponded")

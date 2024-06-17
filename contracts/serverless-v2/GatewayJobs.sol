@@ -55,7 +55,7 @@ contract GatewayJobs is
         REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
         JOB_MANAGER = _jobMgr;
         GATEWAYS = _gateways;
-        STAKING_PAYMENY_POOL = _stakingPaymentPoolAddress;
+        STAKING_PAYMENT_POOL = _stakingPaymentPoolAddress;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -120,7 +120,7 @@ contract GatewayJobs is
     Gateways public immutable GATEWAYS;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    address public immutable STAKING_PAYMENY_POOL;
+    address public immutable STAKING_PAYMENT_POOL;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
@@ -321,7 +321,7 @@ contract GatewayJobs is
         STAKING_TOKEN.safeTransfer(_reporterGateway, REASSIGN_COMP_FOR_REPORTER_GATEWAY);
         if (_sequenceId == 1) {
             // if sequenceId = 1, keep the comp in payment pool
-            STAKING_TOKEN.safeTransfer(STAKING_PAYMENY_POOL, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
+            STAKING_TOKEN.safeTransfer(STAKING_PAYMENT_POOL, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);
         } else {
             // if sequenceId = 2, transfer comp to jobOwner
             STAKING_TOKEN.safeTransfer(_jobOwner, slashedAmount - REASSIGN_COMP_FOR_REPORTER_GATEWAY);

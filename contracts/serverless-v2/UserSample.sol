@@ -37,11 +37,11 @@ contract UserSample {
         address _refundAccount,
         address _callbackContract,
         uint256 _callbackGasLimit
-    ) external payable returns (bool success) {
+    ) external payable returns (bool) {
         // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
 
-        (bool _success, ) = relayAddress.call{value: msg.value}(
+        (bool success, ) = relayAddress.call{value: msg.value}(
             abi.encodeWithSignature(
                 "relayJob(bytes32,bytes,uint256,uint256,address,address,uint256)",
                 _codehash,
@@ -53,7 +53,7 @@ contract UserSample {
                 _callbackGasLimit
             )
         );
-        return _success;
+        return success;
     }
 
     function oysterResultCall(

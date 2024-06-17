@@ -1188,7 +1188,7 @@ describe("Gateways - Slash on reassign gateway", function () {
 			slashCompForGateway = 10,
 			signMaxAge = 600,
 			jobs = addrs[1],
-			stakingPaymentPoolAddress = addrs[1];
+			stakingPaymentPoolAddress = addrs[4];
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		gatewayJobs = await upgrades.deployProxy(
 			GatewayJobs,
@@ -1226,6 +1226,8 @@ describe("Gateways - Slash on reassign gateway", function () {
 		let amount = parseUnits("1000");	// 1000 POND
 		await stakingToken.transfer(addrs[1], amount);
 		await stakingToken.connect(signers[1]).approve(gateways.target, amount);
+		await stakingToken.transfer(addrs[2], amount);
+		await stakingToken.connect(signers[2]).approve(gateways.target, amount);
 
 		// REGISTER GATEWAYS
 		let timestamp = await time.latest() * 1000,
@@ -1238,8 +1240,8 @@ describe("Gateways - Slash on reassign gateway", function () {
 
 		// 2nd gateway
 		[signature, attestation] = await createAttestation(pubkeys[16], image3, wallets[14], timestamp - 540000);
-		signedDigest = await createGatewaySignature(addrs[1], chainIds, signTimestamp, wallets[16]);
-		await gateways.connect(signers[1]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
+		signedDigest = await createGatewaySignature(addrs[2], chainIds, signTimestamp, wallets[16]);
+		await gateways.connect(signers[2]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1249,12 +1251,24 @@ describe("Gateways - Slash on reassign gateway", function () {
 			gatewayKeyOld = addrs[15],
 			sequenceId = 1,
 			jobRequestTimestamp = await time.latest() + 100,
-			jobOwner = addrs[1],
+			jobOwner = addrs[3],
 			signTimestamp = await time.latest();
 
+		let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[4]);
+		let reporterGatewayInitialBal = await stakingToken.balanceOf(addrs[2]);
+		let failedGatewayStakedAmt = (await gateways.gateways(addrs[15])).stakeAmount;
+
 		let signedDigest = await createReassignGatewaySignature(jobId, gatewayKeyOld, jobOwner, sequenceId, jobRequestTimestamp, signTimestamp, wallets[16]);
-		let tx = await gatewayJobs.connect(signers[1]).reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
+		let tx = await gatewayJobs.reassignGatewayRelay(gatewayKeyOld, jobId, signedDigest, sequenceId, jobRequestTimestamp, jobOwner, signTimestamp);
 		await expect(tx).to.emit(gatewayJobs, "GatewayReassigned");
+
+		let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[4]);
+		let reporterGatewayFinalBal = await stakingToken.balanceOf(addrs[2]);
+		let reassignCompForReporterGateway = await gatewayJobs.REASSIGN_COMP_FOR_REPORTER_GATEWAY();
+		let slashedAmount = failedGatewayStakedAmt * await gateways.SLASH_PERCENT_IN_BIPS() / await gateways.SLASH_MAX_BIPS();
+		
+		expect(reporterGatewayFinalBal - reporterGatewayInitialBal).to.eq(reassignCompForReporterGateway);
+		expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount - reassignCompForReporterGateway);
 	});
 
 	it("cannot reassign if not called by GatewayJobs contract", async function () {
