@@ -175,10 +175,14 @@ contract GatewayJobs is
     error GatewayJobsSignatureTooOld();
     error GatewayJobsCreateFailed(bytes reason);
 
+    //-------------------------------- admin functions start ----------------------------------//
+
     function setJobAllowance() external onlyRole(DEFAULT_ADMIN_ROLE) {
         // increasing allowance to be used while relaying jobs
         USDC_TOKEN.safeIncreaseAllowance(address(JOB_MANAGER), type(uint256).max);
     }
+
+    //-------------------------------- admin functions end ----------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
