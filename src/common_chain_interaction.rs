@@ -687,28 +687,39 @@ impl ContractsClient {
             sign_timestamp.into(),
         );
 
-        let pending_txn = txn.send().await;
-        let Ok(pending_txn) = pending_txn else {
-            error!(
-                "Failed to submit transaction {} for job relay to CommonChain",
-                pending_txn.unwrap_err()
-            );
-            return;
-        };
+        for i in 0..3 {
+            let pending_txn = txn.send().await;
+            let Ok(pending_txn) = pending_txn else {
+                let err = pending_txn.unwrap_err();
 
-        let txn_hash = pending_txn.tx_hash();
-        let Ok(Some(_)) = pending_txn.confirmations(1).await else {
-            error!(
-                "Failed to confirm transaction {} for job relay to CommonChain",
+                let err_string = format!("{:#?}", err);
+                if err_string.contains("Transaction nonce too low") {
+                    // Handle the specific error case
+                    error!("Error: Transaction nonce too low. {err}. Retrying - {i} of 3");
+                    continue;
+                }
+                error!(
+                    "Failed to submit transaction {} for job relay to CommonChain",
+                    err
+                );
+                return;
+            };
+
+            let txn_hash = pending_txn.tx_hash();
+            let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+                error!(
+                    "Failed to confirm transaction {} for job relay to CommonChain",
+                    txn_hash
+                );
+                return;
+            };
+
+            info!(
+                "Transaction {} confirmed for job relay to CommonChain",
                 txn_hash
             );
             return;
-        };
-
-        info!(
-            "Transaction {} confirmed for job relay to CommonChain",
-            txn_hash
-        );
+        }
     }
 
     async fn reassign_gateway_relay_txn(self: Arc<Self>, job: Job) {
@@ -738,28 +749,40 @@ impl ContractsClient {
             sign_timestamp.into(),
         );
 
-        let pending_txn = txn.send().await;
-        let Ok(pending_txn) = pending_txn else {
-            error!(
-                "Failed to submit transaction {} for reassign gateway relay to CommonChain",
-                pending_txn.unwrap_err()
-            );
-            return;
-        };
+        for i in 0..3 {
+            let pending_txn = txn.send().await;
+            let Ok(pending_txn) = pending_txn else {
+                let err = pending_txn.unwrap_err();
 
-        let txn_hash = pending_txn.tx_hash();
-        let Ok(Some(_)) = pending_txn.confirmations(1).await else {
-            error!(
-                "Failed to confirm transaction {} for reassign gateway relay to CommonChain",
+                let err_string = format!("{:#?}", err);
+                if err_string.contains("Transaction nonce too low") {
+                    // Handle the specific error case
+                    error!("Error: Transaction nonce too low. {err}. Retrying - {i} of 3");
+                    continue;
+                }
+
+                error!(
+                    "Failed to submit transaction {} for reassign gateway relay to CommonChain",
+                    err
+                );
+                return;
+            };
+
+            let txn_hash = pending_txn.tx_hash();
+            let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+                error!(
+                    "Failed to confirm transaction {} for reassign gateway relay to CommonChain",
+                    txn_hash
+                );
+                return;
+            };
+
+            info!(
+                "Transaction {} confirmed for reassign gateway relay to CommonChain",
                 txn_hash
             );
             return;
-        };
-
-        info!(
-            "Transaction {} confirmed for reassign gateway relay to CommonChain",
-            txn_hash
-        );
+        }
     }
 
     async fn handle_all_com_chain_events(
@@ -1129,28 +1152,40 @@ impl ContractsClient {
             sign_timestamp.into(),
         );
 
-        let pending_txn = txn.send().await;
-        let Ok(pending_txn) = pending_txn else {
-            error!(
-                "Failed to submit transaction {} for job response to RequestChain",
-                pending_txn.unwrap_err()
-            );
-            return;
-        };
+        for i in 0..3 {
+            let pending_txn = txn.send().await;
+            let Ok(pending_txn) = pending_txn else {
+                let err = pending_txn.unwrap_err();
 
-        let txn_hash = pending_txn.tx_hash();
-        let Ok(Some(_)) = pending_txn.confirmations(1).await else {
-            error!(
-                "Failed to confirm transaction {} for job response to RequestChain",
+                let err_string = format!("{:#?}", err);
+                if err_string.contains("Transaction nonce too low") {
+                    // Handle the specific error case
+                    error!("Error: Transaction nonce too low. {err}. Retrying - {i} of 3");
+                    continue;
+                }
+
+                error!(
+                    "Failed to submit transaction {} for job response to RequestChain",
+                    err
+                );
+                return;
+            };
+
+            let txn_hash = pending_txn.tx_hash();
+            let Ok(Some(_)) = pending_txn.confirmations(1).await else {
+                error!(
+                    "Failed to confirm transaction {} for job response to RequestChain",
+                    txn_hash
+                );
+                return;
+            };
+
+            info!(
+                "Transaction {} confirmed for job response to RequestChain",
                 txn_hash
             );
             return;
-        };
-
-        info!(
-            "Transaction {} confirmed for job response to RequestChain",
-            txn_hash
-        );
+        }
     }
 
     async fn remove_response_job(self: Arc<Self>, job_id: U256) {
