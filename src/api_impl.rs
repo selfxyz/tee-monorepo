@@ -389,7 +389,7 @@ async fn export_signed_registration_message(
 
 // Endpoint exposed to retrieve gateway enclave details
 #[get("/gateway-details")]
-async fn get_executor_details(app_state: Data<AppState>) -> impl Responder {
+async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
     if *app_state.immutable_params_injected.lock().unwrap() == false {
         return HttpResponse::BadRequest().body("Immutable params not configured yet!");
     }

@@ -1333,10 +1333,7 @@ mod serverless_executor_test {
     use tokio::time::sleep;
 
     use crate::{
-        api_impl::{
-            export_signed_registration_message, index, inject_immutable_config,
-            inject_mutable_config,
-        },
+        api_impl::{get_gateway_details, index, inject_immutable_config, inject_mutable_config},
         contract_abi::RelayContract,
     };
 
@@ -1349,8 +1346,8 @@ mod serverless_executor_test {
     const GATEWAY_CONTRACT_ADDR: &str = "0x819d9b4087D88359B6d7fFcd16F17A13Ca79fd0E";
     const JOB_CONTRACT_ADDR: &str = "0xAc6Ae536203a3ec290ED4aA1d3137e6459f4A963";
     const RELAY_CONTRACT_ADDR: &str = "0xaF7E4CB6B3729C65c4a9a63d89Ae04e97C9093C4";
-    const WALLET_PRIVATE_KEY: &str =
-        "0x083f09e4d950da6eee7eac93ba7fa046d12eb3c8ca4e4ba92487ae3526e87bda";
+    const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+    const GAS_WALLET_KEY: &str = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
     const REGISTER_ATTESTATION: &str = "0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462cfa7554f87ba13620037695d62a381a2d8";
     const REGISTER_PCR_0: &str = "0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462";
     const REGISTER_PCR_1: &str = "0xbcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f";
@@ -1403,19 +1400,19 @@ mod serverless_executor_test {
             .service(index)
             .service(inject_immutable_config)
             .service(inject_mutable_config)
-            .service(export_signed_registration_message)
+            .service(get_gateway_details)
     }
 
-    // Test the various response cases for the 'inject_key' endpoint
+    // Test the various response cases for the 'immutable-config' endpoint
     #[actix_web::test]
     async fn inject_immutable_config_test() {
         let app = test::init_service(new_app(generate_app_state().await)).await;
 
         // Inject invalid hex private key string
         let req = test::TestRequest::post()
-            .uri("/inject-key")
+            .uri("/immutable-config")
             .set_json(&json!({
-                "operator_secret": "0x32255"
+                "owner_address_hex": "0x32255"
             }))
             .to_request();
 
@@ -1424,30 +1421,14 @@ mod serverless_executor_test {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Failed to hex decode the key into 32 bytes: Odd number of digits".as_bytes()
-        );
-
-        // Inject invalid length private key
-        let req = test::TestRequest::post()
-            .uri("/inject-key")
-            .set_json(&json!({
-                "operator_secret": "0x322c322c322c332c352c35"
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Failed to hex decode the key into 32 bytes: Invalid string length"
+            "Invalid owner address provided: Invalid input length".as_bytes()
         );
 
         // Inject invalid private(signing) key
         let req = test::TestRequest::post()
-            .uri("/inject-key")
+            .uri("/immutable-config")
             .set_json(&json!({
-                "operator_secret": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                "owner_address_hex": "0xzfffffffffffffffffffffffffffffffffffffff"
             }))
             .to_request();
 
@@ -1456,14 +1437,14 @@ mod serverless_executor_test {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid secret key provided: signature error"
+            "Invalid owner address provided: Invalid character 'z' at position 0".as_bytes()
         );
 
         // Inject a valid private key
         let req = test::TestRequest::post()
-            .uri("/inject-key")
+            .uri("/immutable-config")
             .set_json(&json!({
-                "operator_secret": WALLET_PRIVATE_KEY
+                "owner_address_hex": OWNER_ADDRESS
             }))
             .to_request();
 
@@ -1472,14 +1453,14 @@ mod serverless_executor_test {
         assert_eq!(resp.status(), http::StatusCode::OK);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Secret key injected successfully"
+            "Immutable params configured!"
         );
 
         // Inject the valid private key again
         let req = test::TestRequest::post()
-            .uri("/inject-key")
+            .uri("/immutable-config")
             .set_json(&json!({
-                "operator_secret": WALLET_PRIVATE_KEY
+                "owner_address_hex": OWNER_ADDRESS
             }))
             .to_request();
 
@@ -1488,13 +1469,100 @@ mod serverless_executor_test {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Secret key has already been injected"
+            "Immutable params already configured!"
+        );
+    }
+
+    // Test the various response cases for the 'mutable-config' endpoint
+    #[actix_web::test]
+    async fn inject_mutable_config_test() {
+        let app = test::init_service(new_app(generate_app_state().await)).await;
+
+        // Inject invalid hex private key string
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": "0x32255"
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Failed to hex decode the gas private key into 32 bytes: OddLength".as_bytes()
+        );
+
+        // Inject invalid private(signing) key
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffff"
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Failed to hex decode the gas private key into 32 bytes: InvalidStringLength"
+                .as_bytes()
+        );
+
+        // Inject a valid private key
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
+        );
+
+        // Inject the valid private key again
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
+        );
+
+        // Inject another valid private key
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
         );
     }
 
     // Test the various response cases for the 'register_enclave' & 'deregister_enclave' endpoint
     #[actix_web::test]
-    async fn register_deregister_enclave_test() {
+    async fn register_enclave_test() {
         let app = test::init_service(new_app(generate_app_state().await)).await;
 
         // Register the executor without injecting the operator's private key
@@ -1532,9 +1600,9 @@ mod serverless_executor_test {
 
         // Inject a valid private key into the enclave
         let req = test::TestRequest::post()
-            .uri("/inject-key")
+            .uri("/immutable-config")
             .set_json(&json!({
-                "operator_secret": WALLET_PRIVATE_KEY
+                "owner_address_hex": OWNER_ADDRESS
             }))
             .to_request();
 
@@ -1652,9 +1720,9 @@ mod serverless_executor_test {
         let app = test::init_service(new_app(app_state.clone())).await;
 
         let req = test::TestRequest::post()
-            .uri("/inject-key")
+            .uri("/immutable-config")
             .set_json(&json!({
-                "operator_secret": WALLET_PRIVATE_KEY
+                "owner_address_hex": OWNER_ADDRESS
             }))
             .to_request();
 
