@@ -386,3 +386,21 @@ async fn export_signed_registration_message(
         "request_chain_signature": request_chain_signature,
     }))
 }
+
+// Endpoint exposed to retrieve gateway enclave details
+#[get("/gateway-details")]
+async fn get_executor_details(app_state: Data<AppState>) -> impl Responder {
+    if *app_state.immutable_params_injected.lock().unwrap() == false {
+        return HttpResponse::BadRequest().body("Immutable params not configured yet!");
+    }
+
+    if *app_state.mutable_params_injected.lock().unwrap() == false {
+        return HttpResponse::BadRequest().body("Mutable params not configured yet!");
+    }
+
+    HttpResponse::Ok().json(json!({
+        "enclave_address": app_state.enclave_address,
+        "owner_address": *app_state.enclave_owner.lock().unwrap(),
+        "gas_address": app_state.wallet.lock().unwrap().clone().unwrap().address(),
+    }))
+}
