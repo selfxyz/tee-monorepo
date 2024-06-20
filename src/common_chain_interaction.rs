@@ -693,9 +693,12 @@ impl ContractsClient {
                 let err = pending_txn.unwrap_err();
 
                 let err_string = format!("{:#?}", err);
-                if err_string.contains("Transaction nonce too low") {
+                if err_string.contains("code: -32000") {
                     // Handle the specific error case
-                    error!("Error: Transaction nonce too low. {err}. Retrying - {i} of 3");
+                    error!(
+                        "Error: Transaction nonce too low. {}. Retrying - {} of 3",
+                        err, i
+                    );
                     continue;
                 }
                 error!(
@@ -755,9 +758,12 @@ impl ContractsClient {
                 let err = pending_txn.unwrap_err();
 
                 let err_string = format!("{:#?}", err);
-                if err_string.contains("Transaction nonce too low") {
+                if err_string.contains("code: -32000") {
                     // Handle the specific error case
-                    error!("Error: Transaction nonce too low. {err}. Retrying - {i} of 3");
+                    error!(
+                        "Error: Transaction nonce too low. {}. Retrying - {} of 3",
+                        err, i
+                    );
                     continue;
                 }
 
@@ -1158,9 +1164,12 @@ impl ContractsClient {
                 let err = pending_txn.unwrap_err();
 
                 let err_string = format!("{:#?}", err);
-                if err_string.contains("Transaction nonce too low") {
+                if err_string.contains("code: -32000") {
                     // Handle the specific error case
-                    error!("Error: Transaction nonce too low. {err}. Retrying - {i} of 3");
+                    error!(
+                        "Error: Transaction nonce too low. {}. Retrying - {} of 3",
+                        err, i
+                    );
                     continue;
                 }
 
