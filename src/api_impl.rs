@@ -116,20 +116,18 @@ async fn export_signed_registration_message(
         return HttpResponse::BadRequest().body("Atleast one request chain id is required!");
     }
 
-    {
-        let registration_events_listener_active_guard = app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap();
-        if *registration_events_listener_active_guard == true {
-            // verify that the app state request chain ids are same as the signed registration body chain ids
-            let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
-            if *request_chain_ids_guard != chain_ids {
-                return HttpResponse::BadRequest().json(json!({
-                        "message": "Request chain ids mismatch!",
-                        "chain_ids": *request_chain_ids_guard,
-                }));
-            }
+    let registration_events_listener_active_guard = app_state
+        .registration_events_listener_active
+        .lock()
+        .unwrap();
+    if *registration_events_listener_active_guard == true {
+        // verify that the app state request chain ids are same as the signed registration body chain ids
+        let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
+        if *request_chain_ids_guard != chain_ids {
+            return HttpResponse::BadRequest().json(json!({
+                    "message": "Request chain ids mismatch!",
+                    "chain_ids": *request_chain_ids_guard,
+            }));
         }
     }
 
