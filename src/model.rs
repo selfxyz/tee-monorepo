@@ -92,8 +92,6 @@ pub struct ContractsClient {
     pub enclave_address: Address,
     pub common_chain_ws_provider: Provider<Ws>,
     pub common_chain_http_provider: Arc<HttpProvider>,
-    pub gateways_contract_addr: H160,
-    pub gateway_jobs_contract_addr: H160,
     pub gateways_contract: GatewaysContract<HttpProvider>,
     pub gateway_jobs_contract: GatewayJobsContract<HttpProvider>,
     pub request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,

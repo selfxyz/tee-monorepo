@@ -54,12 +54,12 @@ impl ContractsClient {
     ) -> Self {
         info!("Initializing Contracts Client...");
         let gateways_contract = GatewaysContract::new(
-            gateways_contract_addr.clone(),
+            gateways_contract_addr.into(),
             common_chain_http_provider.clone(),
         );
 
         let gateway_jobs_contract = GatewayJobsContract::new(
-            gateway_jobs_contract_addr.clone(),
+            gateway_jobs_contract_addr.into(),
             common_chain_http_provider.clone(),
         );
 
@@ -80,8 +80,6 @@ impl ContractsClient {
             enclave_address,
             common_chain_ws_provider,
             common_chain_http_provider,
-            gateway_jobs_contract_addr: *gateway_jobs_contract_addr,
-            gateways_contract_addr: *gateways_contract_addr,
             gateways_contract,
             gateway_jobs_contract,
             request_chain_clients,
@@ -104,7 +102,7 @@ impl ContractsClient {
         let common_chain_block_number = *self.common_chain_start_block_number.lock().unwrap();
 
         let common_chain_registered_filter = Filter::new()
-            .address(self.gateways_contract_addr)
+            .address(self.gateways_contract.address())
             .select(common_chain_block_number..)
             .topic0(vec![keccak256(
                 "GatewayRegistered(address,address,uint256[])",
@@ -1210,7 +1208,7 @@ impl LogsProvider for ContractsClient {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
         let event_filter: Filter = Filter::new()
-            .address(self.gateway_jobs_contract_addr)
+            .address(self.gateway_jobs_contract.address())
             .select(common_chain_start_block_number..)
             .topic0(vec![
                 keccak256("JobResponded(uint256,bytes,uint256,uint8)"),
@@ -1267,7 +1265,7 @@ impl LogsProvider for ContractsClient {
             self.common_chain_start_block_number.lock().unwrap().clone();
 
         let job_relayed_event_filter = Filter::new()
-            .address(self.gateway_jobs_contract_addr)
+            .address(self.gateway_jobs_contract.address())
             .select(common_chain_start_block_number..)
             .topic0(vec![keccak256(
                 "JobRelayed(uint256,uint256,address,address)",
@@ -1290,7 +1288,7 @@ impl LogsProvider for ContractsClient {
 
         if job.job_id == U256::from(1) {
             Ok(vec![Log {
-                address: self.gateway_jobs_contract_addr,
+                address: self.gateway_jobs_contract.address(),
                 topics: vec![
                     keccak256("JobRelayed(uint256,uint256,address,address)").into(),
                     H256::from_uint(&job.job_id),
@@ -1320,7 +1318,7 @@ mod serverless_executor_test {
     use std::collections::BTreeSet;
     use std::str::FromStr;
 
-    use abi::{encode, Token};
+    use abi::{encode, encode_packed, Token};
     use actix_web::{
         body::MessageBody,
         dev::{ServiceFactory, ServiceRequest, ServiceResponse},
@@ -1328,12 +1326,18 @@ mod serverless_executor_test {
     };
     use ethers::types::{Address, Bytes as EthBytes, H160};
     use ethers::utils::public_key_to_address;
+    use k256::ecdsa::SigningKey;
+    use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
     use rand::rngs::OsRng;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
     use tokio::time::sleep;
 
     use crate::{
-        api_impl::{get_gateway_details, index, inject_immutable_config, inject_mutable_config},
+        api_impl::{
+            export_signed_registration_message, get_gateway_details, index,
+            inject_immutable_config, inject_mutable_config,
+        },
         contract_abi::RelayContract,
     };
 
@@ -1356,6 +1360,15 @@ mod serverless_executor_test {
     const REGISTER_STAKE_AMOUNT: usize = 100;
     const EPOCH: u64 = 1713433800;
     const TIME_INTERVAL: u64 = 300;
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct ExportResponse {
+        owner: H160,
+        sign_timestamp: usize,
+        chain_ids: Vec<u64>,
+        common_chain_signature: String,
+        request_chain_signature: String,
+    }
 
     // Generate test app state
     async fn generate_app_state() -> Data<AppState> {
@@ -1400,15 +1413,17 @@ mod serverless_executor_test {
             .service(index)
             .service(inject_immutable_config)
             .service(inject_mutable_config)
+            .service(export_signed_registration_message)
             .service(get_gateway_details)
     }
 
     // Test the various response cases for the 'immutable-config' endpoint
     #[actix_web::test]
     async fn inject_immutable_config_test() {
-        let app = test::init_service(new_app(generate_app_state().await)).await;
+        let app_state = generate_app_state().await;
+        let app = test::init_service(new_app(app_state.clone())).await;
 
-        // Inject invalid hex private key string
+        // Inject invalid hex address string
         let req = test::TestRequest::post()
             .uri("/immutable-config")
             .set_json(&json!({
@@ -1423,8 +1438,11 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Invalid owner address provided: Invalid input length".as_bytes()
         );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
 
-        // Inject invalid private(signing) key
+        // Inject invalid hex character address
         let req = test::TestRequest::post()
             .uri("/immutable-config")
             .set_json(&json!({
@@ -1439,8 +1457,11 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Invalid owner address provided: Invalid character 'z' at position 0".as_bytes()
         );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
 
-        // Inject a valid private key
+        // Inject a valid address
         let req = test::TestRequest::post()
             .uri("/immutable-config")
             .set_json(&json!({
@@ -1455,8 +1476,14 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Immutable params configured!"
         );
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(
+            *app_state.enclave_owner.lock().unwrap(),
+            H160::from_str(OWNER_ADDRESS).unwrap()
+        );
 
-        // Inject the valid private key again
+        // Inject the valid address again
         let req = test::TestRequest::post()
             .uri("/immutable-config")
             .set_json(&json!({
@@ -1471,12 +1498,27 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Immutable params already configured!"
         );
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(
+            *app_state.enclave_owner.lock().unwrap(),
+            H160::from_str(OWNER_ADDRESS).unwrap()
+        );
+    }
+
+    fn wallet_from_hex(hex: &str) -> LocalWallet {
+        let mut bytes32 = [0u8; 32];
+        let _ = hex::decode_to_slice(hex, &mut bytes32);
+        LocalWallet::from_bytes(&bytes32)
+            .unwrap()
+            .with_chain_id(CHAIN_ID)
     }
 
     // Test the various response cases for the 'mutable-config' endpoint
     #[actix_web::test]
     async fn inject_mutable_config_test() {
-        let app = test::init_service(new_app(generate_app_state().await)).await;
+        let app_state = generate_app_state().await;
+        let app = test::init_service(new_app(app_state.clone())).await;
 
         // Inject invalid hex private key string
         let req = test::TestRequest::post()
@@ -1493,6 +1535,9 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Failed to hex decode the gas private key into 32 bytes: OddLength".as_bytes()
         );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(*app_state.wallet.lock().unwrap(), None);
 
         // Inject invalid private(signing) key
         let req = test::TestRequest::post()
@@ -1510,6 +1555,273 @@ mod serverless_executor_test {
             "Failed to hex decode the gas private key into 32 bytes: InvalidStringLength"
                 .as_bytes()
         );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+
+        // Inject invalid gas private key hex string (not ecdsa valid key)
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })"
+        );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+
+        // Inject a valid private key for gas wallet
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
+        );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(
+            *app_state.wallet.lock().unwrap(),
+            Some(wallet_from_hex(GAS_WALLET_KEY))
+        );
+
+        // Inject a valid private key for gas wallet again
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
+        );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(
+            *app_state.wallet.lock().unwrap(),
+            Some(wallet_from_hex(GAS_WALLET_KEY))
+        );
+
+        const GAS_WALLET_KEY_2: &str =
+            "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+
+        // Inject another valid private key for gas wallet
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY_2
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
+        );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert_eq!(
+            *app_state.wallet.lock().unwrap(),
+            Some(wallet_from_hex(GAS_WALLET_KEY_2))
+        );
+    }
+
+    fn recover_key(
+        chain_ids: Vec<u64>,
+        enclave_owner: H160,
+        sign_timestamp: usize,
+        common_chain_signature: String,
+        request_chain_signature: String,
+        verifying_key: VerifyingKey,
+    ) -> bool {
+        let common_chain_register_typehash =
+            keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
+
+        let chain_ids = chain_ids.into_iter().collect::<BTreeSet<u64>>();
+        let chain_ids_tokens: Vec<Token> = chain_ids
+            .clone()
+            .into_iter()
+            .map(|x| Token::Uint(x.into()))
+            .collect::<Vec<Token>>();
+        let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids_tokens)]).unwrap());
+        let hash_struct = keccak256(encode(&[
+            Token::FixedBytes(common_chain_register_typehash.to_vec()),
+            Token::Address(enclave_owner),
+            Token::FixedBytes(chain_ids_bytes.into()),
+            Token::Uint(sign_timestamp.into()),
+        ]));
+
+        let domain_separator = keccak256(encode(&[
+            Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+            Token::FixedBytes(keccak256("marlin.oyster.Gateways").to_vec()),
+            Token::FixedBytes(keccak256("1").to_vec()),
+        ]));
+
+        let digest = encode_packed(&[
+            Token::String("\x19\x01".to_string()),
+            Token::FixedBytes(domain_separator.to_vec()),
+            Token::FixedBytes(hash_struct.to_vec()),
+        ])
+        .unwrap();
+        let digest = keccak256(digest);
+
+        let signature = Signature::from_slice(
+            hex::decode(&common_chain_signature[0..128])
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let v =
+            RecoveryId::try_from((hex::decode(&common_chain_signature[128..]).unwrap()[0]) - 27)
+                .unwrap();
+        let common_chain_recovered_key =
+            VerifyingKey::recover_from_prehash(&digest, &signature, v).unwrap();
+
+        if common_chain_recovered_key != verifying_key {
+            return false;
+        }
+
+        // create request chain signature and add it to the request chain signatures map
+        let request_chain_register_typehash =
+            keccak256("Register(address owner,uint256 signTimestamp)");
+        let hash_struct = keccak256(encode(&[
+            Token::FixedBytes(request_chain_register_typehash.to_vec()),
+            Token::Address(enclave_owner),
+            Token::Uint(sign_timestamp.into()),
+        ]));
+
+        let request_chain_domain_separator = keccak256(encode(&[
+            Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+            Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
+            Token::FixedBytes(keccak256("1").to_vec()),
+        ]));
+
+        let digest = encode_packed(&[
+            Token::String("\x19\x01".to_string()),
+            Token::FixedBytes(request_chain_domain_separator.to_vec()),
+            Token::FixedBytes(hash_struct.to_vec()),
+        ])
+        .unwrap();
+        let digest = keccak256(digest);
+
+        let signature = Signature::from_slice(
+            hex::decode(&request_chain_signature[0..128])
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let v =
+            RecoveryId::try_from((hex::decode(&request_chain_signature[128..]).unwrap()[0]) - 27)
+                .unwrap();
+        let request_chain_recovered_key =
+            VerifyingKey::recover_from_prehash(&digest, &signature, v).unwrap();
+
+        if request_chain_recovered_key != verifying_key {
+            return false;
+        }
+
+        true
+    }
+
+    // Test the various response cases for the 'register_enclave' & 'deregister_enclave' endpoint
+    #[actix_web::test]
+    async fn export_signed_registration_message_test() {
+        let app_state = generate_app_state().await;
+        let app = test::init_service(new_app(app_state.clone())).await;
+
+        // Register the executor without injecting the operator's address or gas key
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({
+                "chain_ids": [CHAIN_ID]
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Immutable params not configured yet!"
+        );
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
+
+        // Inject a valid address into the enclave
+        let req = test::TestRequest::post()
+            .uri("/immutable-config")
+            .set_json(&json!({
+                "owner_address_hex": OWNER_ADDRESS
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Immutable params configured!"
+        );
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
+
+        // Register the executor without injecting a gas key
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({
+                "chain_ids": [CHAIN_ID]
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params not configured yet!"
+        );
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Inject a valid private key
         let req = test::TestRequest::post()
@@ -1526,153 +1838,110 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Mutable params configured!"
         );
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        // Inject the valid private key again
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
+        // Register the enclave with invalid chain id
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
             .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
-
-        // Inject another valid private key
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
-    }
-
-    // Test the various response cases for the 'register_enclave' & 'deregister_enclave' endpoint
-    #[actix_web::test]
-    async fn register_enclave_test() {
-        let app = test::init_service(new_app(generate_app_state().await)).await;
-
-        // Register the executor without injecting the operator's private key
-        let req = test::TestRequest::post()
-            .uri("/register")
-            .set_json(&json!({
-                "attestation": REGISTER_ATTESTATION,
-                "pcr_0": REGISTER_PCR_0,
-                "pcr_1": REGISTER_PCR_1,
-                "pcr_2": REGISTER_PCR_2,
-                "timestamp": REGISTER_TIMESTAMP,
-                "stake_amount": REGISTER_STAKE_AMOUNT,
-                "request_chain_data": [CHAIN_ID]
+                "chain_ids": ["invalid u64"]
             }))
             .to_request();
 
         let resp = test::call_service(&app, req).await;
 
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Operator secret key not injected yet!"
-        );
+        assert!(resp.into_body().try_into_bytes().unwrap().starts_with(
+            "Json deserialize error: invalid type: string \"invalid u64\"".as_bytes()
+        ));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        // Deregister the enclave without even injecting the private key
-        let req = test::TestRequest::delete().uri("/deregister").to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Enclave is not registered yet."
-        );
-
-        // Inject a valid private key into the enclave
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Secret key injected successfully"
-        );
-
-        // Deregister the enclave before even registering it
-        let req = test::TestRequest::delete().uri("/deregister").to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Enclave is not registered yet."
-        );
-
-        // Register the enclave with an invalid attestation hex string
-        let req = test::TestRequest::post()
-            .uri("/register")
-            .set_json(&json!({
-                "attestation": "0x32255",
-                "pcr_0": "0x",
-                "pcr_1": "0x",
-                "pcr_2": "0x",
-                "timestamp": 2160,
-                "stake_amount": 100,
-                "request_chain_data": [CHAIN_ID]
-            }))
+        // Register the enclave with no chain_ids field in json
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({}))
             .to_request();
 
         let resp = test::call_service(&app, req).await;
 
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid format of attestation."
-        );
-
-        // Register the enclave with valid data points
-        let req = test::TestRequest::post()
-            .uri("/register")
-            .set_json(&json!({
-                "attestation": REGISTER_ATTESTATION,
-                "pcr_0": REGISTER_PCR_0,
-                "pcr_1": REGISTER_PCR_1,
-                "pcr_2": REGISTER_PCR_2,
-                "timestamp": REGISTER_TIMESTAMP,
-                "stake_amount": REGISTER_STAKE_AMOUNT,
-                "request_chain_data": [CHAIN_ID]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
         assert!(resp
             .into_body()
             .try_into_bytes()
             .unwrap()
-            .starts_with("Enclave Node successfully registered on the common chain".as_bytes()));
+            .starts_with("Json deserialize error: missing field `chain_ids`".as_bytes()));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
+
+        println!("Registering the enclave with valid data points");
+
+        // Register the enclave with valid data points
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({
+                    "chain_ids": [CHAIN_ID]
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        println!("Response:Got");
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+
+        let response: Result<ExportResponse, serde_json::Error> =
+            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+        assert!(response.is_ok());
+
+        let mut chain_id_set: HashSet<u64> = HashSet::new();
+        chain_id_set.insert(CHAIN_ID);
+
+        let verifying_key = app_state.enclave_signer_key.verifying_key().to_owned();
+
+        let response = response.unwrap();
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), chain_id_set);
+        assert_eq!(response.owner, *app_state.enclave_owner.lock().unwrap());
+        assert_eq!(response.common_chain_signature.len(), 130);
+        assert_eq!(response.request_chain_signature.len(), 130);
+        assert!(recover_key(
+            vec![CHAIN_ID],
+            *app_state.enclave_owner.lock().unwrap(),
+            response.sign_timestamp,
+            response.common_chain_signature,
+            response.request_chain_signature,
+            verifying_key
+        ));
 
         // Register the enclave again before deregistering
-        let req = test::TestRequest::post()
-            .uri("/register")
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
             .set_json(&json!({
                 "attestation": REGISTER_ATTESTATION,
                 "pcr_0": REGISTER_PCR_0,
@@ -1730,7 +1999,7 @@ mod serverless_executor_test {
 
         // Register the enclave again before deregistering
         let req = test::TestRequest::post()
-            .uri("/register")
+            .uri("/signed-registration-message")
             .set_json(&json!({
                 "attestation": REGISTER_ATTESTATION,
                 "pcr_0": REGISTER_PCR_0,
