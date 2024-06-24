@@ -53,13 +53,11 @@ impl ContractsClient {
         common_chain_block_number: u64,
     ) -> Self {
         info!("Initializing Contracts Client...");
-        let gateways_contract = GatewaysContract::new(
-            gateways_contract_addr.into(),
-            common_chain_http_provider.clone(),
-        );
+        let gateways_contract =
+            GatewaysContract::new(*gateways_contract_addr, common_chain_http_provider.clone());
 
         let gateway_jobs_contract = GatewayJobsContract::new(
-            gateway_jobs_contract_addr.into(),
+            *gateway_jobs_contract_addr,
             common_chain_http_provider.clone(),
         );
 
