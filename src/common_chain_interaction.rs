@@ -1131,9 +1131,9 @@ impl ContractsClient {
         while let Some(response_job) = rx.recv().await {
             match response_job.job_type {
                 GatewayJobType::JobResponded => {
-                    let response_job_clone = response_job.clone();
-                    self.clone().job_response_txn(response_job_clone).await;
-                    self.clone().remove_response_job(response_job.job_id).await;
+                    let response_job_job_id = response_job.job_id.clone();
+                    self.clone().job_response_txn(response_job).await;
+                    self.clone().remove_response_job(response_job_job_id).await;
                 }
                 // Currently, slashing is not implemented for the JobResponded event
                 // GatewayJobType::SlashGatewayResponse => {
