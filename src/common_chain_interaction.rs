@@ -591,15 +591,17 @@ impl ContractsClient {
             }
         }
 
+        if all_gateways_data.is_empty() {
+            return Err(anyhow::Error::msg("No Gateways Registered"));
+        }
+
         // create a weighted probability distribution for gateways based on stake amount
         // For example, if there are 3 gateways with stake amounts 100, 200, 300
         // then the distribution array will be [100, 300, 600]
         let mut stake_distribution: Vec<u128> = vec![];
         let mut total_stake: u128 = 0;
-        let mut gateway_data_of_req_chain: Vec<GatewayData> = vec![];
-        if all_gateways_data.is_empty() {
-            return Err(anyhow::Error::msg("No Gateways Registered"));
-        }
+        let mut gateway_addresses_of_req_chain: Vec<H160> = vec![];
+
         for gateway_data in all_gateways_data.iter() {
             if gateway_data
                 .req_chain_ids
@@ -607,11 +609,17 @@ impl ContractsClient {
                 && gateway_data.stake_amount > *MIN_GATEWAY_STAKE
                 && gateway_data.draining == false
             {
-                gateway_data_of_req_chain.push(gateway_data.clone());
+                gateway_addresses_of_req_chain.push(gateway_data.address.clone());
                 total_stake +=
                     (gateway_data.stake_amount / *GATEWAY_STAKE_ADJUSTMENT_FACTOR).as_u128();
                 stake_distribution.push(total_stake);
             }
+        }
+
+        if total_stake == 0 {
+            return Err(anyhow::Error::msg(
+                "No Gateways available for the request chain",
+            ));
         }
 
         // random number between 1 to total_stake from the eed for the weighted random selection.
@@ -630,14 +638,14 @@ impl ContractsClient {
             Ok(index) => index,
             Err(index) => index,
         };
-        let selected_gateway = &gateway_data_of_req_chain[index];
+        let selected_gateway_address = gateway_addresses_of_req_chain[index];
 
         info!(
             "Job ID: {:?}, Gateway Address: {:?}",
-            job.job_id, selected_gateway.address
+            job.job_id, selected_gateway_address
         );
 
-        Ok(selected_gateway.address)
+        Ok(selected_gateway_address)
     }
 
     async fn cancel_job_with_job_id(self: Arc<Self>, job_id: U256) {
