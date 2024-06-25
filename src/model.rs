@@ -90,7 +90,7 @@ pub struct ContractsClient {
     pub signer: LocalWallet,
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
-    pub common_chain_ws_provider: Provider<Ws>,
+    pub common_chain_ws_url: String,
     pub common_chain_http_provider: Arc<HttpProvider>,
     pub gateways_contract: GatewaysContract<HttpProvider>,
     pub gateway_jobs_contract: GatewayJobsContract<HttpProvider>,

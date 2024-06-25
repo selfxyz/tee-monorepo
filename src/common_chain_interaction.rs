@@ -63,20 +63,12 @@ impl ContractsClient {
 
         info!("Gateway Data fetched. Contracts Client Initialized");
 
-        let common_chain_ws_provider = Provider::<Ws>::connect_with_reconnects(
-            common_chain_ws_url,
-            5,
-        )
-        .await
-        .context("Failed to connect to the chain websocket provider. Please check the chain url.")
-        .unwrap();
-
         ContractsClient {
             enclave_owner,
             signer,
             enclave_signer_key,
             enclave_address,
-            common_chain_ws_provider,
+            common_chain_ws_url: common_chain_ws_url.to_string(),
             common_chain_http_provider,
             gateways_contract,
             gateway_jobs_contract,
@@ -95,7 +87,7 @@ impl ContractsClient {
     pub async fn wait_for_registration(self: Arc<Self>, app_state: Data<AppState>) {
         info!("Waiting for registration on the Common Chain and all Request Chains...");
         // create a channel to communicate with the main thread
-        let (tx, mut rx) = channel::<(RegisteredData, Arc<ContractsClient>, Data<AppState>)>(100);
+        let (tx, mut rx) = channel::<RegisteredData>(100);
 
         let common_chain_block_number = *self.common_chain_start_block_number.lock().unwrap();
 
@@ -110,36 +102,45 @@ impl ContractsClient {
 
         let tx_clone = tx.clone();
         let self_clone = Arc::clone(&self);
-        let app_state_clone = app_state.clone();
         task::spawn(async move {
-            let mut common_chain_stream = self_clone
-                .common_chain_ws_provider
-                .subscribe_logs(&common_chain_registered_filter)
-                .await
-                .context("failed to subscribe to events on the Common Chain")
-                .unwrap();
+            'socket_loop: loop {
+                let common_chain_ws_provider =
+                    match Provider::<Ws>::connect(&self_clone.common_chain_ws_url).await {
+                        Ok(common_chain_ws_provider) => common_chain_ws_provider,
+                        Err(err) => {
+                            error!(
+                                "Failed to connect to the common chain websocket provider: {}",
+                                err
+                            );
+                            continue;
+                        }
+                    };
 
-            while let Some(log) = common_chain_stream.next().await {
-                if log.removed.unwrap_or(true) {
-                    continue;
-                }
-
-                *self_clone.common_chain_start_block_number.lock().unwrap() = log
-                    .block_number
-                    .unwrap_or(common_chain_block_number.into())
-                    .as_u64();
-
-                let registered_data = RegisteredData {
-                    register_type: RegisterType::CommonChain,
-                    chain_id: None,
-                };
-                tx_clone
-                    .send((registered_data, self_clone.clone(), app_state_clone))
+                let mut common_chain_stream = common_chain_ws_provider
+                    .subscribe_logs(&common_chain_registered_filter)
                     .await
+                    .context("failed to subscribe to events on the Common Chain")
                     .unwrap();
 
-                info!("Common Chain Registered");
-                break;
+                while let Some(log) = common_chain_stream.next().await {
+                    if log.removed.unwrap_or(true) {
+                        continue;
+                    }
+
+                    *self_clone.common_chain_start_block_number.lock().unwrap() = log
+                        .block_number
+                        .unwrap_or(common_chain_block_number.into())
+                        .as_u64();
+
+                    let registered_data = RegisteredData {
+                        register_type: RegisterType::CommonChain,
+                        chain_id: None,
+                    };
+                    tx_clone.send(registered_data).await.unwrap();
+
+                    info!("Common Chain Registered");
+                    break 'socket_loop;
+                }
             }
         });
 
@@ -154,45 +155,48 @@ impl ContractsClient {
                 .topic1(self.enclave_owner)
                 .topic2(self.enclave_address);
 
-            let self_clone = Arc::clone(&self);
-            let app_state_clone = app_state.clone();
             let tx_clone = tx.clone();
             let request_chain_client_clone = request_chain_client.clone();
             task::spawn(async move {
-                let request_chain_ws_provider = Provider::<Ws>::connect_with_reconnects(
-                    request_chain_client_clone.ws_rpc_url.clone(),
-                    5,
-                )
-                .await
-                .context(
-                    "Failed to connect to the request chain websocket provider. Please check the chain url.",
-                )
-                .unwrap();
-
-                let mut request_chain_stream = request_chain_ws_provider
-                    .subscribe_logs(&request_chain_registered_filter)
+                'socket_loop: loop {
+                    let request_chain_ws_provider = match Provider::<Ws>::connect(
+                        request_chain_client_clone.ws_rpc_url.clone(),
+                    )
                     .await
-                    .context("failed to subscribe to events on the Request Chain")
-                    .unwrap();
-
-                while let Some(log) = request_chain_stream.next().await {
-                    if log.removed.unwrap_or(true) {
-                        continue;
-                    }
-
-                    let registered_data = RegisteredData {
-                        register_type: RegisterType::RequestChain,
-                        chain_id: Some(request_chain_client.chain_id),
+                    {
+                        Ok(request_chain_ws_provider) => request_chain_ws_provider,
+                        Err(err) => {
+                            error!(
+                                "Failed to connect to the request chain websocket provider: {}",
+                                err
+                            );
+                            continue;
+                        }
                     };
-                    tx_clone
-                        .send((registered_data, self_clone, app_state_clone))
+
+                    let mut request_chain_stream = request_chain_ws_provider
+                        .subscribe_logs(&request_chain_registered_filter)
                         .await
+                        .context("failed to subscribe to events on the Request Chain")
                         .unwrap();
-                    info!(
-                        "Request Chain ID: {:?} Registered",
-                        request_chain_client.chain_id
-                    );
-                    break;
+
+                    while let Some(log) = request_chain_stream.next().await {
+                        if log.removed.unwrap_or(true) {
+                            continue;
+                        }
+
+                        let registered_data = RegisteredData {
+                            register_type: RegisterType::RequestChain,
+                            chain_id: Some(request_chain_client.chain_id),
+                        };
+                        tx_clone.send(registered_data).await.unwrap();
+
+                        info!(
+                            "Request Chain ID: {:?} Registered",
+                            request_chain_client.chain_id
+                        );
+                        break 'socket_loop;
+                    }
                 }
             });
         }
@@ -204,7 +208,7 @@ impl ContractsClient {
             .keys()
             .cloned()
             .collect::<HashSet<u64>>();
-        while let Some((registered_data, contracts_client, app_state)) = rx.recv().await {
+        while let Some(registered_data) = rx.recv().await {
             match registered_data.register_type {
                 RegisterType::CommonChain => {
                     common_chain_registered = true;
@@ -220,7 +224,7 @@ impl ContractsClient {
                 *app_state.registered.lock().unwrap() = true;
                 // Start the ContractsClient service
                 tokio::spawn(async move {
-                    let _ = contracts_client.run().await;
+                    let _ = self.run().await;
                 });
                 break;
             }
@@ -229,27 +233,28 @@ impl ContractsClient {
 
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn Error>> {
         // setup for the listening events on Request Chain and calling Common Chain functions
-        let (req_chain_tx, com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
-        let self_clone = Arc::clone(&self);
+        let (req_chain_tx, com_chain_rx) = channel::<Job>(100);
         // Start the gateway epoch state service
         {
             let service_start_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let contract_client_clone = self.clone();
+            let contracts_client_clone = self.clone();
             let tx_clone = req_chain_tx.clone();
             let common_chain_http_provider_clone = self.common_chain_http_provider.clone();
             tokio::spawn(async move {
                 gateway_epoch_state_service(
                     service_start_time,
                     &common_chain_http_provider_clone,
-                    contract_client_clone,
+                    contracts_client_clone,
                     tx_clone,
                 )
                 .await;
             });
         }
+
+        let self_clone = Arc::clone(&self);
         tokio::spawn(async move {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
@@ -259,20 +264,17 @@ impl ContractsClient {
             .await?;
 
         // setup for the listening events on Common Chain and calling Request Chain functions
-        let (com_chain_tx, req_chain_rx) = channel::<(ResponseJob, Arc<ContractsClient>)>(100);
+        let (com_chain_tx, req_chain_rx) = channel::<ResponseJob>(100);
         let self_clone = Arc::clone(&self);
         tokio::spawn(async move {
             let _ = self_clone.txns_to_request_chain(req_chain_rx).await;
         });
         self.handle_all_com_chain_events(com_chain_tx, req_chain_tx)
-            .await?;
+            .await;
         Ok(())
     }
 
-    async fn handle_all_req_chain_events(
-        self: Arc<Self>,
-        tx: Sender<(Job, Arc<ContractsClient>)>,
-    ) -> Result<()> {
+    async fn handle_all_req_chain_events(self: Arc<Self>, tx: Sender<Job>) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
         let chains_ids = self.request_chain_ids.clone();
 
@@ -280,82 +282,93 @@ impl ContractsClient {
             let self_clone = Arc::clone(&self);
             let tx_clone = tx.clone();
 
-            let req_chain_ws_client = Provider::<Ws>::connect_with_reconnects(
-                    self_clone.request_chain_clients[&chain_id].ws_rpc_url.clone(),
-                    5,
-                ).await
-                .context(
-                    "Failed to connect to the request chain websocket provider. Please check the chain url.",
-                )?;
-
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
-                let mut stream = self_clone
-                    .req_chain_jobs(
-                        &req_chain_ws_client,
-                        &self_clone.request_chain_clients[&chain_id],
+                loop {
+                    let req_chain_ws_client = match Provider::<Ws>::connect(
+                        self_clone.request_chain_clients[&chain_id]
+                            .ws_rpc_url
+                            .clone(),
                     )
                     .await
-                    .unwrap();
-
-                while let Some(log) = stream.next().await {
-                    let topics = log.topics.clone();
-
-                    if let Some(is_removed) = log.removed {
-                        if is_removed {
+                    {
+                        Ok(req_chain_ws_client) => req_chain_ws_client,
+                        Err(err) => {
+                            error!(
+                                "Failed to connect to the request chain websocket provider: {}",
+                                err
+                            );
                             continue;
                         }
-                    } else {
-                        continue;
-                    }
+                    };
 
-                    if topics[0]
+                    let mut stream = self_clone
+                        .req_chain_jobs(
+                            &req_chain_ws_client,
+                            &self_clone.request_chain_clients[&chain_id],
+                        )
+                        .await
+                        .unwrap();
+
+                    while let Some(log) = stream.next().await {
+                        let topics = log.topics.clone();
+
+                        if let Some(is_removed) = log.removed {
+                            if is_removed {
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+
+                        if topics[0]
                         == keccak256(
                             "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
                         )
                         .into()
-                    {
-                        info!(
-                            "Request Chain ID: {:?}, JobPlace jobID: {:?}",
-                            chain_id, log.topics[1]
-                        );
+                        {
+                            info!(
+                                "Request Chain ID: {:?}, JobPlace jobID: {:?}",
+                                chain_id, log.topics[1]
+                            );
 
-                        let self_clone = Arc::clone(&self_clone);
-                        let tx = tx_clone.clone();
-                        task::spawn(async move {
-                            // TODO: what to do in case of error? Let it panic or return None?
-                            let job = self_clone.clone()
-                                .get_job_from_job_relay_event(
-                                    log,
-                                    1 as u8,
-                                    chain_id
-                                )
-                                .await
-                                .context("Failed to get Job from Log")
-                                .unwrap();
-                            self_clone.job_placed_handler(
-                                    job,
-                                    tx.clone(),
-                                )
-                                .await;
-                        });
-                    } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
-                        info!(
-                            "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
-                            chain_id, log.topics[1]
-                        );
+                            let self_clone = Arc::clone(&self_clone);
+                            let tx = tx_clone.clone();
+                            task::spawn(async move {
+                                // TODO: what to do in case of error? Let it panic or return None?
+                                let job = self_clone.clone()
+                                    .get_job_from_job_relay_event(
+                                        log,
+                                        1u8,
+                                        chain_id
+                                    )
+                                    .await
+                                    .context("Failed to get Job from Log")
+                                    .unwrap();
+                                self_clone.job_placed_handler(
+                                        job,
+                                        tx.clone(),
+                                    )
+                                    .await;
+                            });
+                        } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
+                            info!(
+                                "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
+                                chain_id, log.topics[1]
+                            );
 
-                        let self_clone = Arc::clone(&self_clone);
-                        task::spawn(async move {
-                            self_clone.cancel_job_with_job_id(
-                                log.topics[1].into_uint(),
-                            ).await;
-                        });
-                    } else {
-                        error!(
-                            "Request Chain ID: {:?}, Unknown event: {:?}",
-                            chain_id, log
-                        );
+                            let self_clone = Arc::clone(&self_clone);
+                            task::spawn(async move {
+                                self_clone.cancel_job_with_job_id(
+                                    log.topics[1].into_uint(),
+                                ).await;
+                            });
+                        } else {
+                            error!(
+                                "Request Chain ID: {:?}, Unknown event: {:?}",
+                                chain_id, log
+                            );
+                        }
                     }
                 }
             });
@@ -409,11 +422,7 @@ impl ContractsClient {
         })
     }
 
-    pub async fn job_placed_handler(
-        self: Arc<Self>,
-        mut job: Job,
-        tx: Sender<(Job, Arc<ContractsClient>)>,
-    ) {
+    pub async fn job_placed_handler(self: Arc<Self>, mut job: Job, tx: Sender<Job>) {
         let req_chain_client = self.request_chain_clients[&job.request_chain_id].clone();
 
         let gateway_address = self
@@ -442,7 +451,7 @@ impl ContractsClient {
                             .unwrap()
                             .insert(job.job_id, job.clone());
                     }
-                    tx.send((job, self)).await.unwrap();
+                    tx.send(job).await.unwrap();
                 } else {
                     // scope for the write lock
                     {
@@ -467,7 +476,7 @@ impl ContractsClient {
         self: Arc<Self>,
         job: Job,
         mut job_timeout: Option<u64>,
-        tx: Sender<(Job, Arc<ContractsClient>)>,
+        tx: Sender<Job>,
     ) {
         if job_timeout.is_none() {
             job_timeout = Some(REQUEST_RELAY_TIMEOUT);
@@ -478,54 +487,70 @@ impl ContractsClient {
         // get_logs might not provide the latest logs for the latest block
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
-        let logs = self
-            .gateways_job_relayed_logs(job.clone())
-            .await
-            .context("Failed to get logs")
-            .unwrap();
 
-        for log in logs {
-            let topics = log.topics.clone();
-            if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
-                let decoded = decode(
-                    &vec![
-                        ParamType::Uint(256),
-                        ParamType::Uint(256),
-                        ParamType::Address,
-                        ParamType::Address,
-                    ],
-                    &log.data.0,
-                )
+        loop {
+            let common_chain_ws_provider =
+                match Provider::<Ws>::connect(&self.common_chain_ws_url).await {
+                    Ok(common_chain_ws_provider) => common_chain_ws_provider,
+                    Err(err) => {
+                        error!(
+                            "Failed to connect to the common chain websocket provider: {}",
+                            err
+                        );
+                        continue;
+                    }
+                };
+
+            let logs = self
+                .gateways_job_relayed_logs(job.clone(), &common_chain_ws_provider)
+                .await
+                .context("Failed to get logs")
                 .unwrap();
 
-                let job_id = log.topics[1].into_uint();
-                let job_owner = decoded[1].clone().into_address().unwrap();
-                let gateway_operator = decoded[2].clone().into_address().unwrap();
+            for log in logs {
+                let topics = log.topics.clone();
+                if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
+                    let decoded = decode(
+                        &vec![
+                            ParamType::Uint(256),
+                            ParamType::Uint(256),
+                            ParamType::Address,
+                            ParamType::Address,
+                        ],
+                        &log.data.0,
+                    )
+                    .unwrap();
 
-                if job_id == job.job_id
-                    && job_owner == job.job_owner
-                    && gateway_operator != Address::zero()
-                    && gateway_operator != job.gateway_address.unwrap()
-                {
-                    info!(
-                        "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
-                        job.job_id, job_id
-                    );
-                    // scope for the write lock
+                    let job_id = log.topics[1].into_uint();
+                    let job_owner = decoded[1].clone().into_address().unwrap();
+                    let gateway_operator = decoded[2].clone().into_address().unwrap();
+
+                    if job_id == job.job_id
+                        && job_owner == job.job_owner
+                        && gateway_operator != Address::zero()
+                        && gateway_operator != job.gateway_address.unwrap()
                     {
-                        self.current_jobs.write().unwrap().remove(&job.job_id);
+                        info!(
+                            "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
+                            job.job_id, job_id
+                        );
+                        // scope for the write lock
+                        {
+                            self.current_jobs.write().unwrap().remove(&job.job_id);
+                        }
+                        return;
                     }
-                    return;
                 }
             }
+
+            info!("Job ID: {:?}, JobRelayed event not triggered", job.job_id);
+
+            // slash the previous gateway
+            let mut job_clone = job.clone();
+            job_clone.job_type = GatewayJobType::SlashGatewayJob;
+            tx.send(job_clone).await.unwrap();
+            break;
         }
-
-        info!("Job ID: {:?}, JobRelayed event not triggered", job.job_id);
-
-        // slash the previous gateway
-        let mut job_clone = job.clone();
-        job_clone.job_type = GatewayJobType::SlashGatewayJob;
-        tx.send((job_clone, self)).await.unwrap();
     }
 
     async fn select_gateway_for_job_id(
@@ -631,24 +656,20 @@ impl ContractsClient {
         }
     }
 
-    async fn txns_to_common_chain(
-        self: Arc<Self>,
-        mut rx: Receiver<(Job, Arc<ContractsClient>)>,
-    ) -> Result<()> {
-        while let Some((job, com_chain_client)) = rx.recv().await {
+    async fn txns_to_common_chain(self: Arc<Self>, mut rx: Receiver<Job>) {
+        while let Some(job) = rx.recv().await {
             match job.job_type {
                 GatewayJobType::JobRelay => {
-                    com_chain_client.relay_job_txn(job).await;
+                    self.clone().relay_job_txn(job).await;
                 }
                 GatewayJobType::SlashGatewayJob => {
-                    com_chain_client.reassign_gateway_relay_txn(job).await;
+                    self.clone().reassign_gateway_relay_txn(job).await;
                 }
                 _ => {
                     error!("Unknown job type: {:?}", job.job_type);
                 }
             }
         }
-        Ok(())
     }
 
     async fn relay_job_txn(self: Arc<Self>, job: Job) {
@@ -789,55 +810,69 @@ impl ContractsClient {
 
     async fn handle_all_com_chain_events(
         self: Arc<Self>,
-        com_chain_tx: Sender<(ResponseJob, Arc<ContractsClient>)>,
-        req_chain_tx: Sender<(Job, Arc<ContractsClient>)>,
-    ) -> Result<()> {
-        let mut stream = self.common_chain_jobs().await.unwrap();
+        com_chain_tx: Sender<ResponseJob>,
+        req_chain_tx: Sender<Job>,
+    ) {
+        loop {
+            let common_chain_ws_provider =
+                match Provider::<Ws>::connect(&self.common_chain_ws_url).await {
+                    Ok(common_chain_ws_provider) => common_chain_ws_provider,
+                    Err(err) => {
+                        error!(
+                            "Failed to connect to the common chain websocket provider: {}",
+                            err
+                        );
+                        continue;
+                    }
+                };
+            let mut stream = self
+                .common_chain_jobs(&common_chain_ws_provider)
+                .await
+                .unwrap();
 
-        while let Some(log) = stream.next().await {
-            let topics = log.topics.clone();
+            while let Some(log) = stream.next().await {
+                let topics = log.topics.clone();
 
-            if topics[0] == keccak256("JobResponded(uint256,bytes,uint256,uint8)").into() {
-                info!(
-                    "JobResponded event triggered for job ID: {:?}",
-                    log.topics[1]
-                );
-                let self_clone = Arc::clone(&self);
-                let com_chain_tx = com_chain_tx.clone();
-                task::spawn(async move {
-                    let response_job = self_clone
-                        .clone()
-                        .get_job_from_job_responded_event(log)
-                        .await
-                        .context("Failed to decode event")
-                        .unwrap();
-                    self_clone
-                        .job_responded_handler(response_job, com_chain_tx)
-                        .await;
-                });
-            } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
-                info!("JobResourceUnavailable event triggered");
-                let self_clone = Arc::clone(&self);
-                task::spawn(async move {
-                    self_clone.job_resource_unavailable_handler(log).await;
-                });
-            } else if topics[0]
-                == keccak256("GatewayReassigned(uint256,address,address,uint8)").into()
-            {
-                info!("GatewayReassigned jobID: {:?}", log.topics[1]);
-                let self_clone = Arc::clone(&self);
-                let req_chain_tx = req_chain_tx.clone();
-                task::spawn(async move {
-                    self_clone
-                        .gateway_reassigned_handler(log, req_chain_tx)
-                        .await;
-                });
-            } else {
-                error!("Unknown event: {:?}", log);
+                if topics[0] == keccak256("JobResponded(uint256,bytes,uint256,uint8)").into() {
+                    info!(
+                        "JobResponded event triggered for job ID: {:?}",
+                        log.topics[1]
+                    );
+                    let self_clone = Arc::clone(&self);
+                    let com_chain_tx = com_chain_tx.clone();
+                    task::spawn(async move {
+                        let response_job = self_clone
+                            .clone()
+                            .get_job_from_job_responded_event(log)
+                            .await
+                            .context("Failed to decode event")
+                            .unwrap();
+                        self_clone
+                            .job_responded_handler(response_job, com_chain_tx)
+                            .await;
+                    });
+                } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
+                    info!("JobResourceUnavailable event triggered");
+                    let self_clone = Arc::clone(&self);
+                    task::spawn(async move {
+                        self_clone.job_resource_unavailable_handler(log).await;
+                    });
+                } else if topics[0]
+                    == keccak256("GatewayReassigned(uint256,address,address,uint8)").into()
+                {
+                    info!("GatewayReassigned jobID: {:?}", log.topics[1]);
+                    let self_clone = Arc::clone(&self);
+                    let req_chain_tx = req_chain_tx.clone();
+                    task::spawn(async move {
+                        self_clone
+                            .gateway_reassigned_handler(log, req_chain_tx)
+                            .await;
+                    });
+                } else {
+                    error!("Unknown event: {:?}", log);
+                }
             }
         }
-
-        Ok(())
     }
 
     async fn get_job_from_job_responded_event(self: Arc<Self>, log: Log) -> Result<ResponseJob> {
@@ -872,7 +907,7 @@ impl ContractsClient {
     async fn job_responded_handler(
         self: Arc<Self>,
         mut response_job: ResponseJob,
-        tx: Sender<(ResponseJob, Arc<ContractsClient>)>,
+        tx: Sender<ResponseJob>,
     ) {
         // let req_chain_client =
         //     self.request_chain_clients[&response_job.request_chain_id.to_string()].clone();
@@ -920,7 +955,7 @@ impl ContractsClient {
             //     response_job.gateway_address = Some(gateway_address);
             // }
             // if response_job.gateway_address.unwrap() == self.enclave_address {
-            tx.send((response_job, self.clone())).await.unwrap();
+            tx.send(response_job).await.unwrap();
             // } else {
             //     self.job_responded_slash_timer(response_job.clone(), tx.clone())
             //         .await
@@ -946,7 +981,7 @@ impl ContractsClient {
     // async fn job_responded_slash_timer(
     //     self: Arc<Self>,
     //     mut response_job: ResponseJob,
-    //     tx: Sender<(ResponseJob, Arc<ContractsClient>)>,
+    //     tx: Sender<ResponseJob>,
     // ) -> Result<()> {
     //     time::sleep(Duration::from_secs(RESPONSE_RELAY_TIMEOUT)).await;
     //     // get request chain client
@@ -987,12 +1022,11 @@ impl ContractsClient {
     //     // The same function used with the JobRelayed event won't work here.
     //     // For now, use the same function.
     //     {
-    //         let self_clone = self.clone();
     //         let mut response_job_clone = response_job.clone();
     //         response_job_clone.job_type = GatewayJobType::SlashGatewayResponse;
     //         let tx_clone = tx.clone();
     //         tx_clone
-    //             .send((response_job_clone, self_clone))
+    //             .send(response_job_clone)
     //             .await
     //             .unwrap();
     //     }
@@ -1036,11 +1070,7 @@ impl ContractsClient {
         }
     }
 
-    async fn gateway_reassigned_handler(
-        self: Arc<Self>,
-        log: Log,
-        req_chain_tx: Sender<(Job, Arc<ContractsClient>)>,
-    ) {
+    async fn gateway_reassigned_handler(self: Arc<Self>, log: Log, req_chain_tx: Sender<Job>) {
         let job_id = log.topics[1].into_uint();
 
         let types = vec![ParamType::Address, ParamType::Address, ParamType::Uint(8)];
@@ -1094,25 +1124,17 @@ impl ContractsClient {
         });
     }
 
-    async fn txns_to_request_chain(
-        self: Arc<Self>,
-        mut rx: Receiver<(ResponseJob, Arc<ContractsClient>)>,
-    ) -> Result<()> {
-        while let Some((response_job, com_chain_client)) = rx.recv().await {
+    async fn txns_to_request_chain(self: Arc<Self>, mut rx: Receiver<ResponseJob>) -> Result<()> {
+        while let Some(response_job) = rx.recv().await {
             match response_job.job_type {
                 GatewayJobType::JobResponded => {
-                    let com_chain_client_clone = com_chain_client.clone();
                     let response_job_clone = response_job.clone();
-                    com_chain_client_clone
-                        .job_response_txn(response_job_clone)
-                        .await;
-                    com_chain_client
-                        .remove_response_job(response_job.job_id)
-                        .await;
+                    self.clone().job_response_txn(response_job_clone).await;
+                    self.clone().remove_response_job(response_job.job_id).await;
                 }
                 // Currently, slashing is not implemented for the JobResponded event
                 // GatewayJobType::SlashGatewayResponse => {
-                //     com_chain_client
+                //     self.clone()
                 //         .reassign_gateway_response_txn(response_job)
                 //         .await;
                 // }
@@ -1200,7 +1222,10 @@ impl ContractsClient {
 }
 
 impl LogsProvider for ContractsClient {
-    async fn common_chain_jobs<'a>(&'a self) -> Result<SubscriptionStream<'a, Ws, Log>> {
+    async fn common_chain_jobs<'a>(
+        &'a self,
+        common_chain_ws_provider: &'a Provider<Ws>,
+    ) -> Result<SubscriptionStream<'a, Ws, Log>> {
         info!("Subscribing to events for Common Chain");
 
         let common_chain_start_block_number =
@@ -1214,8 +1239,7 @@ impl LogsProvider for ContractsClient {
                 keccak256("GatewayReassigned(uint256,address,address,uint8)"),
             ]);
 
-        let stream = self
-            .common_chain_ws_provider
+        let stream = common_chain_ws_provider
             .subscribe_logs(&event_filter)
             .await
             .context("failed to subscribe to events on the Common Chain")
@@ -1258,7 +1282,11 @@ impl LogsProvider for ContractsClient {
     }
 
     #[cfg(not(test))]
-    async fn gateways_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
+    async fn gateways_job_relayed_logs<'a>(
+        &'a self,
+        job: Job,
+        common_chain_ws_provider: &'a Provider<Ws>,
+    ) -> Result<Vec<Log>> {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
 
@@ -1270,8 +1298,7 @@ impl LogsProvider for ContractsClient {
             )])
             .topic1(job.job_id);
 
-        let logs = self
-            .common_chain_ws_provider
+        let logs = common_chain_ws_provider
             .get_logs(&job_relayed_event_filter)
             .await
             .unwrap();
@@ -1280,7 +1307,11 @@ impl LogsProvider for ContractsClient {
     }
 
     #[cfg(test)]
-    async fn gateways_job_relayed_logs<'a>(&'a self, job: Job) -> Result<Vec<Log>> {
+    async fn gateways_job_relayed_logs<'a>(
+        &'a self,
+        job: Job,
+        _common_chain_ws_provider: &'a Provider<Ws>,
+    ) -> Result<Vec<Log>> {
         use ethers::abi::{encode, Token};
         use ethers::prelude::*;
 
@@ -2422,7 +2453,7 @@ mod serverless_executor_test {
 
         add_gateway_epoch_state(contracts_client.clone(), None, None).await;
 
-        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
         let job_clone = job.clone();
         let contracts_client_clone = contracts_client.clone();
@@ -2430,13 +2461,13 @@ mod serverless_executor_test {
             .job_placed_handler(job_clone, req_chain_tx.clone())
             .await;
 
-        if let Some((rx_job, rx_contracts_client)) = com_chain_rx.recv().await {
+        if let Some(rx_job) = com_chain_rx.recv().await {
             job.gateway_address = Some(contracts_client.enclave_address);
             assert_eq!(rx_job, job);
 
-            assert_eq!(rx_contracts_client.active_jobs.read().unwrap().len(), 1);
+            assert_eq!(contracts_client.active_jobs.read().unwrap().len(), 1);
             assert_eq!(
-                rx_contracts_client
+                contracts_client
                     .active_jobs
                     .read()
                     .unwrap()
@@ -2445,7 +2476,7 @@ mod serverless_executor_test {
             );
 
             assert_eq!(
-                rx_contracts_client
+                contracts_client
                     .gateway_epoch_state_waitlist
                     .read()
                     .unwrap()
@@ -2467,7 +2498,7 @@ mod serverless_executor_test {
 
         add_gateway_epoch_state(contracts_client.clone(), Some(4), Some(false)).await;
 
-        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
         let job_clone = job.clone();
         let contracts_client_clone = contracts_client.clone();
@@ -2502,7 +2533,7 @@ mod serverless_executor_test {
 
         let job = generate_generic_job(None, None).await;
 
-        let (req_chain_tx, _) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, _) = channel::<Job>(100);
 
         contracts_client
             .clone()
@@ -2552,10 +2583,10 @@ mod serverless_executor_test {
                 .address,
         );
 
-        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
         contracts_client
-            .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
+            .job_relayed_slash_timer(job.clone(), Some(1), req_chain_tx)
             .await;
 
         assert!(com_chain_rx.recv().await.is_none());
@@ -2582,14 +2613,14 @@ mod serverless_executor_test {
                 .address,
         );
 
-        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
         contracts_client
             .clone()
             .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
             .await;
 
-        if let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
+        if let Some(rx_job) = com_chain_rx.recv().await {
             job.job_type = GatewayJobType::SlashGatewayJob;
             assert_eq!(rx_job, job);
         } else {
@@ -2621,14 +2652,14 @@ mod serverless_executor_test {
         );
         job.sequence_number = MAX_GATEWAY_RETRIES;
 
-        let (req_chain_tx, mut com_chain_rx) = channel::<(Job, Arc<ContractsClient>)>(100);
+        let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
         contracts_client
             .clone()
             .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
             .await;
 
-        if let Some((rx_job, _rx_com_chain_client)) = com_chain_rx.recv().await {
+        if let Some(rx_job) = com_chain_rx.recv().await {
             job.job_type = GatewayJobType::SlashGatewayJob;
             assert_eq!(rx_job, job);
         } else {

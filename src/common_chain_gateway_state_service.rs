@@ -21,7 +21,7 @@ pub async fn gateway_epoch_state_service(
     current_time: u64,
     provider: &Arc<HttpProvider>,
     contracts_client: Arc<ContractsClient>,
-    tx: Sender<(Job, Arc<ContractsClient>)>,
+    tx: Sender<Job>,
 ) {
     let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;
     let initial_epoch_cycle: u64;
@@ -32,7 +32,7 @@ pub async fn gateway_epoch_state_service(
         initial_epoch_cycle = 1;
     };
     {
-        let contract_address_clone = contracts_client.gateways_contract_addr.clone();
+        let contract_address_clone = contracts_client.gateways_contract.address();
         let provider_clone = provider.clone();
         let com_chain_gateway_contract_clone = contracts_client.gateways_contract.clone();
         let gateway_epoch_state_clone = Arc::clone(&contracts_client.gateway_epoch_state);
@@ -106,7 +106,7 @@ pub async fn gateway_epoch_state_service(
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
-                contracts_client.gateways_contract_addr.clone(),
+                contracts_client.gateways_contract.address(),
                 &provider.clone(),
                 contracts_client.gateways_contract.clone(),
                 &contracts_client.gateway_epoch_state,
@@ -450,20 +450,19 @@ async fn prune_old_cycle_states(
 async fn callback_for_gateway_epoch_waitlist(
     contracts_client: Arc<ContractsClient>,
     cycle_number: u64,
-    tx: Sender<(Job, Arc<ContractsClient>)>,
+    tx: Sender<Job>,
 ) {
     let mut waitlist_handle = contracts_client
         .gateway_epoch_state_waitlist
         .write()
         .unwrap();
     if let Some(job_list) = waitlist_handle.remove(&cycle_number) {
-        let contracts_client_clone = contracts_client.clone();
-        let tx_clone = tx.clone();
+        let contracts_client_clone = Arc::clone(&contracts_client);
         tokio::spawn(async move {
             for job in job_list {
                 contracts_client_clone
                     .clone()
-                    .job_placed_handler(job, tx_clone.clone())
+                    .job_placed_handler(job, tx.clone())
                     .await;
             }
         });
