@@ -1053,12 +1053,11 @@ impl ContractsClient {
         if job.is_none() {
             return;
         }
-        let job = job.unwrap().clone();
-        drop(active_jobs_guard);
-
+        let job = job.unwrap();
         if job.gateway_address.unwrap() != self.enclave_address {
             return;
         }
+        drop(active_jobs_guard);
 
         // scope for the write lock
         {
