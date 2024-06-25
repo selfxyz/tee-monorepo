@@ -405,12 +405,11 @@ impl ContractsClient {
             }
         };
 
-        let req_chain_client = self.request_chain_clients[&request_chain_id].clone();
         let job_id = log.topics[1].into_uint();
 
         Ok(Job {
             job_id,
-            request_chain_id: req_chain_client.chain_id.clone(),
+            request_chain_id,
             tx_hash: decoded[0].clone().into_fixed_bytes().unwrap(),
             code_input: decoded[1].clone().into_bytes().unwrap().into(),
             user_timeout: decoded[2].clone().into_uint().unwrap(),
