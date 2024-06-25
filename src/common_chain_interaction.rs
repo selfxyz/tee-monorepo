@@ -143,10 +143,8 @@ impl ContractsClient {
             }
         });
 
-        let request_chain_clients = self.request_chain_clients.clone();
-
         // listen to all the request chains for the GatewayRegistered event
-        for request_chain_client in request_chain_clients.values().cloned() {
+        for request_chain_client in self.request_chain_clients.values().cloned() {
             let request_chain_registered_filter = Filter::new()
                 .address(request_chain_client.contract_address)
                 .select(request_chain_client.request_chain_start_block_number..)
@@ -203,7 +201,6 @@ impl ContractsClient {
         let mut common_chain_registered = false;
         let mut req_chain_ids_not_registered: HashSet<u64> = self
             .request_chain_clients
-            .clone()
             .keys()
             .cloned()
             .collect::<HashSet<u64>>();
@@ -285,9 +282,7 @@ impl ContractsClient {
             task::spawn(async move {
                 loop {
                     let req_chain_ws_client = match Provider::<Ws>::connect(
-                        self_clone.request_chain_clients[&chain_id]
-                            .ws_rpc_url
-                            .clone(),
+                        &self_clone.request_chain_clients[&chain_id].ws_rpc_url,
                     )
                     .await
                     {
