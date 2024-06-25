@@ -1,6 +1,5 @@
 use actix_web::web::Data;
 use anyhow::{Context, Result};
-use async_recursion::async_recursion;
 use ethers::abi::{decode, Address, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
@@ -470,7 +469,6 @@ impl ContractsClient {
         }
     }
 
-    #[async_recursion]
     async fn job_relayed_slash_timer(
         self: Arc<Self>,
         job: Job,
@@ -976,7 +974,6 @@ impl ContractsClient {
 
     // TODO: Discuss with the team about the implementation of slashing for the JobResponded event
     // Currently, slashing is not implemented for the JobResponded event
-    // #[async_recursion]
     // async fn job_responded_slash_timer(
     //     self: Arc<Self>,
     //     mut response_job: ResponseJob,
