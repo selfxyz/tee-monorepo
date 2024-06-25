@@ -268,7 +268,7 @@ impl ContractsClient {
         tokio::spawn(async move {
             let _ = self_clone.txns_to_request_chain(req_chain_rx).await;
         });
-        self.handle_all_com_chain_events(com_chain_tx, req_chain_tx)
+        self.handle_all_common_chain_events(com_chain_tx, req_chain_tx)
             .await;
         Ok(())
     }
@@ -310,7 +310,7 @@ impl ContractsClient {
                         .unwrap();
 
                     while let Some(log) = stream.next().await {
-                        let topics = log.topics.clone();
+                        let ref topics = log.topics;
 
                         if let Some(is_removed) = log.removed {
                             if is_removed {
@@ -505,7 +505,7 @@ impl ContractsClient {
                 .unwrap();
 
             for log in logs {
-                let topics = log.topics.clone();
+                let ref topics = log.topics;
                 if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
                     let decoded = decode(
                         &vec![
@@ -813,7 +813,7 @@ impl ContractsClient {
         }
     }
 
-    async fn handle_all_com_chain_events(
+    async fn handle_all_common_chain_events(
         self: Arc<Self>,
         com_chain_tx: Sender<ResponseJob>,
         req_chain_tx: Sender<Job>,
@@ -836,7 +836,7 @@ impl ContractsClient {
                 .unwrap();
 
             while let Some(log) = stream.next().await {
-                let topics = log.topics.clone();
+                let ref topics = log.topics;
 
                 if topics[0] == keccak256("JobResponded(uint256,bytes,uint256,uint8)").into() {
                     info!(
