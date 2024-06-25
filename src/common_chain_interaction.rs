@@ -416,14 +416,11 @@ impl ContractsClient {
     }
 
     pub async fn job_placed_handler(self: Arc<Self>, mut job: Job, tx: Sender<Job>) {
-        let req_chain_client = self.request_chain_clients[&job.request_chain_id].clone();
-
         let gateway_address = self
             .select_gateway_for_job_id(
                 job.clone(),
                 job.starttime.as_u64(), // TODO: Update seed
                 job.sequence_number,
-                req_chain_client,
             )
             .await;
 
@@ -545,13 +542,7 @@ impl ContractsClient {
         }
     }
 
-    async fn select_gateway_for_job_id(
-        &self,
-        job: Job,
-        seed: u64,
-        skips: u8,
-        req_chain_client: Arc<RequestChainClient>,
-    ) -> Result<Address> {
+    async fn select_gateway_for_job_id(&self, job: Job, seed: u64, skips: u8) -> Result<Address> {
         let job_cycle =
             (job.starttime.as_u64() - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
@@ -598,9 +589,7 @@ impl ContractsClient {
         let mut gateway_addresses_of_req_chain: Vec<H160> = vec![];
 
         for gateway_data in all_gateways_data.iter() {
-            if gateway_data
-                .req_chain_ids
-                .contains(&req_chain_client.chain_id)
+            if gateway_data.req_chain_ids.contains(&job.request_chain_id)
                 && gateway_data.stake_amount > *MIN_GATEWAY_STAKE
                 && gateway_data.draining == false
             {
@@ -909,9 +898,6 @@ impl ContractsClient {
         mut response_job: ResponseJob,
         tx: Sender<ResponseJob>,
     ) {
-        // let req_chain_client =
-        //     self.request_chain_clients[&response_job.request_chain_id.to_string()].clone();
-
         let job: Option<Job>;
         // scope for the read lock
         {
@@ -947,7 +933,6 @@ impl ContractsClient {
             //             response_job.job_id.clone(),
             //             seed,
             //             response_job.sequence_number,
-            //             req_chain_client,
             //         )
             //         .await
             //         .context("Failed to select a gateway for the job")
@@ -985,7 +970,7 @@ impl ContractsClient {
     //     time::sleep(Duration::from_secs(RESPONSE_RELAY_TIMEOUT)).await;
     //     // get request chain client
     //     let req_chain_client =
-    //         self.request_chain_clients[&response_job.request_chain_id.to_string()].clone();
+    //         &self.request_chain_clients[&response_job.request_chain_id.to_string()];
     //     let onchain_response_job = req_chain_client
     //         .contract
     //         .jobs(response_job.job_id)
@@ -1149,7 +1134,7 @@ impl ContractsClient {
     async fn job_response_txn(self: Arc<Self>, response_job: ResponseJob) {
         info!("Creating a transaction for jobResponse");
 
-        let req_chain_client = self.request_chain_clients[&response_job.request_chain_id].clone();
+        let req_chain_client = &self.request_chain_clients[&response_job.request_chain_id];
 
         let (signature, sign_timestamp) = sign_job_response_request(
             &self.enclave_signer_key,
@@ -2308,15 +2293,8 @@ mod serverless_executor_test {
 
         add_gateway_epoch_state(contracts_client.clone(), None, None).await;
 
-        let req_chain_client =
-            contracts_client.request_chain_clients[&job.request_chain_id].clone();
         let gateway_address = contracts_client
-            .select_gateway_for_job_id(
-                job.clone(),
-                job.starttime.as_u64(),
-                job.sequence_number,
-                req_chain_client,
-            )
+            .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
             .await
             .unwrap();
 
@@ -2329,15 +2307,8 @@ mod serverless_executor_test {
 
         let job = generate_generic_job(None, None).await;
 
-        let req_chain_client =
-            contracts_client.request_chain_clients[&job.request_chain_id].clone();
         let gateway_address = contracts_client
-            .select_gateway_for_job_id(
-                job.clone(),
-                job.starttime.as_u64(),
-                job.sequence_number,
-                req_chain_client,
-            )
+            .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
             .await
             .unwrap();
 
@@ -2364,15 +2335,8 @@ mod serverless_executor_test {
 
         add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
 
-        let req_chain_client =
-            contracts_client.request_chain_clients[&job.request_chain_id].clone();
         let gateway_address = contracts_client
-            .select_gateway_for_job_id(
-                job.clone(),
-                job.starttime.as_u64(),
-                job.sequence_number,
-                req_chain_client,
-            )
+            .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
             .await
             .unwrap();
 
@@ -2408,15 +2372,8 @@ mod serverless_executor_test {
 
         add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
 
-        let req_chain_client =
-            contracts_client.request_chain_clients[&job.request_chain_id].clone();
         let gateway_address = contracts_client
-            .select_gateway_for_job_id(
-                job.clone(),
-                job.starttime.as_u64(),
-                job.sequence_number,
-                req_chain_client,
-            )
+            .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
             .await
             .unwrap();
 
