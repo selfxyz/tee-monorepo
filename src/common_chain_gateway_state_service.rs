@@ -268,7 +268,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .unwrap();
 
     for log in logs {
-        let topics = log.topics.clone();
+        let ref topics = log.topics;
 
         if topics[0] == keccak256("GatewayRegistered(address,address,uint256[])").into() {
             process_gateway_registered_event(log, to_block_number, &mut current_cycle_state_epoch)
