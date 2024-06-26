@@ -343,7 +343,7 @@ async fn process_gateway_registered_event(
     }
 
     current_cycle_state_epoch.insert(
-        address.clone(),
+        address,
         GatewayData {
             last_block_number: to_block_number,
             address,
