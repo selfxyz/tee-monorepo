@@ -254,8 +254,7 @@ impl ContractsClient {
         tokio::spawn(async move {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
-        let self_clone = Arc::clone(&self);
-        self_clone
+        let _ = &self
             .handle_all_req_chain_events(req_chain_tx.clone())
             .await?;
 
@@ -265,12 +264,13 @@ impl ContractsClient {
         tokio::spawn(async move {
             let _ = self_clone.txns_to_request_chain(req_chain_rx).await;
         });
-        self.handle_all_common_chain_events(com_chain_tx, req_chain_tx)
+        let _ = &self
+            .handle_all_common_chain_events(com_chain_tx, req_chain_tx)
             .await;
         Ok(())
     }
 
-    async fn handle_all_req_chain_events(self: Arc<Self>, tx: Sender<Job>) -> Result<()> {
+    async fn handle_all_req_chain_events(self: &Arc<Self>, tx: Sender<Job>) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
         let chains_ids = self.request_chain_ids.clone();
 
@@ -330,7 +330,7 @@ impl ContractsClient {
                             let tx = tx_clone.clone();
                             task::spawn(async move {
                                 // TODO: what to do in case of error? Let it panic or return None?
-                                let job = self_clone.clone()
+                                let job = self_clone
                                     .get_job_from_job_relay_event(
                                         log,
                                         1u8,
@@ -372,7 +372,7 @@ impl ContractsClient {
     }
 
     async fn get_job_from_job_relay_event(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         log: Log,
         sequence_number: u8,
         request_chain_id: u64,
@@ -450,8 +450,9 @@ impl ContractsClient {
                             .unwrap()
                             .insert(job.job_id, job.clone());
                     }
+                    let self_clone = Arc::clone(&self);
                     task::spawn(async move {
-                        self.job_relayed_slash_timer(job, None, tx).await;
+                        self_clone.job_relayed_slash_timer(job, None, tx).await;
                     });
                 }
             }
@@ -525,7 +526,7 @@ impl ContractsClient {
                         );
                         // scope for the write lock
                         {
-                            self.current_jobs.write().unwrap().remove(&job.job_id);
+                            let _ = self.current_jobs.write().unwrap().remove(&job.job_id);
                         }
                         return;
                     }
@@ -542,7 +543,12 @@ impl ContractsClient {
         }
     }
 
-    async fn select_gateway_for_job_id(&self, job: Job, seed: u64, skips: u8) -> Result<Address> {
+    async fn select_gateway_for_job_id(
+        self: &Arc<Self>,
+        job: Job,
+        seed: u64,
+        skips: u8,
+    ) -> Result<Address> {
         let job_cycle =
             (job.starttime.as_u64() - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
@@ -649,10 +655,10 @@ impl ContractsClient {
         while let Some(job) = rx.recv().await {
             match job.job_type {
                 GatewayJobType::JobRelay => {
-                    self.clone().relay_job_txn(job).await;
+                    self.relay_job_txn(job).await;
                 }
                 GatewayJobType::SlashGatewayJob => {
-                    self.clone().reassign_gateway_relay_txn(job).await;
+                    self.reassign_gateway_relay_txn(job).await;
                 }
                 _ => {
                     error!("Unknown job type: {:?}", job.job_type);
@@ -661,7 +667,7 @@ impl ContractsClient {
         }
     }
 
-    async fn relay_job_txn(self: Arc<Self>, job: Job) {
+    async fn relay_job_txn(self: &Arc<Self>, job: Job) {
         info!("Creating a transaction for relayJob");
         let (signature, sign_timestamp) = sign_relay_job_request(
             &self.enclave_signer_key,
@@ -731,7 +737,7 @@ impl ContractsClient {
         }
     }
 
-    async fn reassign_gateway_relay_txn(self: Arc<Self>, job: Job) {
+    async fn reassign_gateway_relay_txn(self: &Arc<Self>, job: Job) {
         info!("Creating a transaction for reassignGatewayRelay");
         let (signature, sign_timestamp) = sign_reassign_gateway_relay_request(
             &self.enclave_signer_key,
@@ -798,7 +804,7 @@ impl ContractsClient {
     }
 
     async fn handle_all_common_chain_events(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         com_chain_tx: Sender<ResponseJob>,
         req_chain_tx: Sender<Job>,
     ) {
@@ -831,7 +837,6 @@ impl ContractsClient {
                     let com_chain_tx = com_chain_tx.clone();
                     task::spawn(async move {
                         let response_job = self_clone
-                            .clone()
                             .get_job_from_job_responded_event(log)
                             .await
                             .context("Failed to decode event")
@@ -864,7 +869,7 @@ impl ContractsClient {
         }
     }
 
-    async fn get_job_from_job_responded_event(self: Arc<Self>, log: Log) -> Result<ResponseJob> {
+    async fn get_job_from_job_responded_event(self: &Arc<Self>, log: Log) -> Result<ResponseJob> {
         let job_id = log.topics[1].into_uint();
 
         // Check if job belongs to the enclave
@@ -911,7 +916,7 @@ impl ContractsClient {
         if job.is_some() {
             let job = job.unwrap();
             response_job.gateway_address = job.gateway_address;
-            self.clone().remove_job(job).await;
+            self.remove_job(job).await;
 
             // Currently, slashing is not implemented for the JobResponded event
             // } else if response_job.sequence_number > 1 {
@@ -948,7 +953,7 @@ impl ContractsClient {
         }
     }
 
-    async fn remove_job(self: Arc<Self>, job: Job) {
+    async fn remove_job(self: &Arc<Self>, job: Job) {
         let mut active_jobs = self.active_jobs.write().unwrap();
         // The retry number check is to make sure we are removing the correct job from the active jobs list
         // In a case where this txn took longer than the REQUEST_RELAY_TIMEOUT, the job might have been retried
@@ -963,7 +968,7 @@ impl ContractsClient {
     // TODO: Discuss with the team about the implementation of slashing for the JobResponded event
     // Currently, slashing is not implemented for the JobResponded event
     // async fn job_responded_slash_timer(
-    //     self: Arc<Self>,
+    //     self: &Arc<Self>,
     //     mut response_job: ResponseJob,
     //     tx: Sender<ResponseJob>,
     // ) -> Result<()> {
@@ -1088,9 +1093,12 @@ impl ContractsClient {
             return;
         }
 
-        // scope for wrtie lock
+        // scope for write lock
         {
             self.active_jobs.write().unwrap().remove(&job_id);
+        }
+        // scope for write lock
+        {
             self.current_jobs.write().unwrap().remove(&job_id);
         }
 
@@ -1112,15 +1120,13 @@ impl ContractsClient {
             match response_job.job_type {
                 GatewayJobType::JobResponded => {
                     let response_job_job_id = response_job.job_id.clone();
-                    self.clone().job_response_txn(response_job).await;
-                    self.clone()
-                        .remove_response_job_from_active_jobs(response_job_job_id)
+                    self.job_response_txn(response_job).await;
+                    self.remove_response_job_from_active_jobs(response_job_job_id)
                         .await;
                 }
                 // Currently, slashing is not implemented for the JobResponded event
                 // GatewayJobType::SlashGatewayResponse => {
-                //     self.clone()
-                //         .reassign_gateway_response_txn(response_job)
+                //     self.reassign_gateway_response_txn(response_job)
                 //         .await;
                 // }
 
@@ -1133,7 +1139,7 @@ impl ContractsClient {
         Ok(())
     }
 
-    async fn job_response_txn(self: Arc<Self>, response_job: ResponseJob) {
+    async fn job_response_txn(self: &Arc<Self>, response_job: ResponseJob) {
         info!("Creating a transaction for jobResponse");
 
         let req_chain_client = &self.request_chain_clients[&response_job.request_chain_id];
@@ -1200,7 +1206,7 @@ impl ContractsClient {
         }
     }
 
-    async fn remove_response_job_from_active_jobs(self: Arc<Self>, job_id: U256) {
+    async fn remove_response_job_from_active_jobs(self: &Arc<Self>, job_id: U256) {
         let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_id);
     }
