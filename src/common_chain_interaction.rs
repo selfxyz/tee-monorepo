@@ -989,7 +989,7 @@ impl ContractsClient {
     //         // depending on how the gateway is reassigned, the retry number might be different
     //         // can be added to event and a check below in the if condition
     //         // if retry number is added to the event,
-    //         // remove_response_job needs to be updated accordingly
+    //         // remove_response_job_from_active_jobs needs to be updated accordingly
     //         sequence_number: 1,
     //     };
     //     // if output is received and the gateway is the same as the one assigned by the common chain
@@ -1113,7 +1113,9 @@ impl ContractsClient {
                 GatewayJobType::JobResponded => {
                     let response_job_job_id = response_job.job_id.clone();
                     self.clone().job_response_txn(response_job).await;
-                    self.clone().remove_response_job(response_job_job_id).await;
+                    self.clone()
+                        .remove_response_job_from_active_jobs(response_job_job_id)
+                        .await;
                 }
                 // Currently, slashing is not implemented for the JobResponded event
                 // GatewayJobType::SlashGatewayResponse => {
@@ -1198,7 +1200,7 @@ impl ContractsClient {
         }
     }
 
-    async fn remove_response_job(self: Arc<Self>, job_id: U256) {
+    async fn remove_response_job_from_active_jobs(self: Arc<Self>, job_id: U256) {
         let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_id);
     }
