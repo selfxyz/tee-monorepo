@@ -1,5 +1,4 @@
 use ethers::abi::FixedBytes;
-use ethers::providers::{Provider, Ws};
 use ethers::signers::LocalWallet;
 use ethers::types::{Address, Bytes};
 use ethers::types::{H160, U256};
