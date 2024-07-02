@@ -62,7 +62,7 @@ pub async fn get_block_number_by_timestamp(
     }
 
     let mut count = 0;
-    let mut block_rate_per_second: u64;
+    let mut block_rate_per_second: f64;
     let mut latest_block_timestamp = 0;
 
     'less_than_block_number: while block_number > 0 {
@@ -103,15 +103,19 @@ pub async fn get_block_number_by_timestamp(
             if latest_block_timestamp == 0 {
                 latest_block_timestamp = block.timestamp.as_u64();
             }
-            // Calculate the block rate per second using the last 15 blocks
-            if count > 15 {
-                block_rate_per_second = count / (latest_block_timestamp - block.timestamp.as_u64());
+            // Calculate the block rate per second using the last 15 or greater blocks
+            // Check if the block rate per second can be calculated using latest block timestamp and block timestamp
+            if count > 15 && latest_block_timestamp - block.timestamp.as_u64() != 0 {
+                block_rate_per_second = (count as f64
+                    / (latest_block_timestamp as f64 - block.timestamp.as_u64() as f64))
+                    as f64;
                 info!("Block rate per second: {}", block_rate_per_second);
                 count = 0;
                 latest_block_timestamp = 0;
 
                 block_number = block_number
-                    - ((block.timestamp.as_u64() - target_timestamp) * block_rate_per_second)
+                    - ((block.timestamp.as_u64() - target_timestamp) as f64 * block_rate_per_second)
+                        as u64
                     + 1;
             }
         }
