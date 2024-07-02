@@ -116,7 +116,7 @@ async fn export_signed_registration_message(
         return HttpResponse::BadRequest().body("Atleast one request chain id is required!");
     }
 
-    let registration_events_listener_active_guard = app_state
+    let mut registration_events_listener_active_guard = app_state
         .registration_events_listener_active
         .lock()
         .unwrap();
@@ -329,13 +329,11 @@ async fn export_signed_registration_message(
         .unwrap()
         .append(&mut request_chain_data.clone());
 
-    let mut registration_events_listener_active_guard = app_state
-        .registration_events_listener_active
-        .lock()
-        .unwrap();
     if *registration_events_listener_active_guard == false {
         let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
-            return HttpResponse::InternalServerError().body(format!("Failed to fetch the latest block number of the common chain for initiating event listening!"));
+            return HttpResponse::InternalServerError().body(
+                format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
+            );
         };
 
         let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
@@ -370,10 +368,10 @@ async fn export_signed_registration_message(
                 .await;
         });
 
+        *app_state.request_chain_ids.lock().unwrap() = chain_ids.clone();
+
         *registration_events_listener_active_guard = true;
         drop(registration_events_listener_active_guard);
-
-        *app_state.request_chain_ids.lock().unwrap() = chain_ids.clone();
     }
 
     HttpResponse::Ok().json(json!({
