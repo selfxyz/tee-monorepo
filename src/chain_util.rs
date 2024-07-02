@@ -66,7 +66,21 @@ pub async fn get_block_number_by_timestamp(
     let mut latest_block_timestamp = 0;
 
     'less_than_block_number: while block_number > 0 {
-        let block = provider.get_block(block_number).await.unwrap().unwrap();
+        let block = provider.get_block(block_number).await;
+        if block.is_err() {
+            error!(
+                "Failed to fetch block number {}. Error: {:#?}",
+                block_number,
+                block.err()
+            );
+            continue;
+        }
+        let block = block.unwrap();
+        if block.is_none() {
+            continue;
+        }
+        let block = block.unwrap();
+
         // target_timestamp (the end bound of the interval) is excluded from the search
         if block.timestamp < U256::from(target_timestamp) {
             // Fetch the next block to confirm this is the latest block with timestamp < target_timestamp
