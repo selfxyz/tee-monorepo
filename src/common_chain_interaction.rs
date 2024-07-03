@@ -836,14 +836,28 @@ impl ContractsClient {
                     let self_clone = Arc::clone(&self);
                     let com_chain_tx = com_chain_tx.clone();
                     task::spawn(async move {
-                        let response_job = self_clone
-                            .get_job_from_job_responded_event(log)
-                            .await
-                            .context("Failed to decode event")
-                            .unwrap();
-                        self_clone
-                            .job_responded_handler(response_job, com_chain_tx)
-                            .await;
+                        let response_job_result =
+                            self_clone.get_job_from_job_responded_event(log).await;
+                        match response_job_result {
+                            Ok(response_job) => {
+                                self_clone
+                                    .job_responded_handler(response_job, com_chain_tx)
+                                    .await;
+                            }
+                            Err(err) => {
+                                if err
+                                    .to_string()
+                                    .contains("Job does not belong to the enclave")
+                                {
+                                    info!("Job does not belong to the enclave");
+                                } else {
+                                    error!(
+                                        "Error while getting job from JobResponded event: {}",
+                                        err
+                                    );
+                                }
+                            }
+                        }
                     });
                 } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
                     info!("JobResourceUnavailable event triggered");
