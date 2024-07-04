@@ -478,69 +478,54 @@ impl ContractsClient {
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
 
-        loop {
-            let common_chain_ws_provider =
-                match Provider::<Ws>::connect(&self.common_chain_ws_url).await {
-                    Ok(common_chain_ws_provider) => common_chain_ws_provider,
-                    Err(err) => {
-                        error!(
-                            "Failed to connect to the common chain websocket provider: {}",
-                            err
-                        );
-                        continue;
-                    }
-                };
+        let logs = self
+            .gateways_job_relayed_logs(job.clone(), &self.common_chain_http_provider)
+            .await
+            .context("Failed to get logs")
+            .unwrap();
 
-            let logs = self
-                .gateways_job_relayed_logs(job.clone(), &common_chain_ws_provider)
-                .await
-                .context("Failed to get logs")
+        for log in logs {
+            let ref topics = log.topics;
+            if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
+                let decoded = decode(
+                    &vec![
+                        ParamType::Uint(256),
+                        ParamType::Uint(256),
+                        ParamType::Address,
+                        ParamType::Address,
+                    ],
+                    &log.data.0,
+                )
                 .unwrap();
 
-            for log in logs {
-                let ref topics = log.topics;
-                if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
-                    let decoded = decode(
-                        &vec![
-                            ParamType::Uint(256),
-                            ParamType::Uint(256),
-                            ParamType::Address,
-                            ParamType::Address,
-                        ],
-                        &log.data.0,
-                    )
-                    .unwrap();
+                let job_id = log.topics[1].into_uint();
+                let job_owner = decoded[1].clone().into_address().unwrap();
+                let gateway_operator = decoded[2].clone().into_address().unwrap();
 
-                    let job_id = log.topics[1].into_uint();
-                    let job_owner = decoded[1].clone().into_address().unwrap();
-                    let gateway_operator = decoded[2].clone().into_address().unwrap();
-
-                    if job_id == job.job_id
-                        && job_owner == job.job_owner
-                        && gateway_operator != Address::zero()
-                        && gateway_operator != job.gateway_address.unwrap()
+                if job_id == job.job_id
+                    && job_owner == job.job_owner
+                    && gateway_operator != Address::zero()
+                    && gateway_operator != job.gateway_address.unwrap()
+                {
+                    info!(
+                        "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
+                        job.job_id, job_id
+                    );
+                    // scope for the write lock
                     {
-                        info!(
-                            "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
-                            job.job_id, job_id
-                        );
-                        // scope for the write lock
-                        {
-                            let _ = self.current_jobs.write().unwrap().remove(&job.job_id);
-                        }
-                        return;
+                        let _ = self.current_jobs.write().unwrap().remove(&job.job_id);
                     }
+                    return;
                 }
             }
-
-            info!("Job ID: {:?}, JobRelayed event not triggered", job.job_id);
-
-            // slash the previous gateway
-            let mut job_clone = job.clone();
-            job_clone.job_type = GatewayJobType::SlashGatewayJob;
-            tx.send(job_clone).await.unwrap();
-            break;
         }
+
+        info!("Job ID: {:?}, JobRelayed event not triggered", job.job_id);
+
+        // slash the previous gateway
+        let mut job_clone = job.clone();
+        job_clone.job_type = GatewayJobType::SlashGatewayJob;
+        tx.send(job_clone).await.unwrap();
     }
 
     async fn select_gateway_for_job_id(
@@ -1290,7 +1275,7 @@ impl LogsProvider for ContractsClient {
     async fn gateways_job_relayed_logs<'a>(
         &'a self,
         job: Job,
-        common_chain_ws_provider: &'a Provider<Ws>,
+        common_chain_http_provider: &'a Arc<HttpProvider>,
     ) -> Result<Vec<Log>> {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
@@ -1303,7 +1288,7 @@ impl LogsProvider for ContractsClient {
             )])
             .topic1(job.job_id);
 
-        let logs = common_chain_ws_provider
+        let logs = common_chain_http_provider
             .get_logs(&job_relayed_event_filter)
             .await
             .unwrap();
@@ -1315,7 +1300,7 @@ impl LogsProvider for ContractsClient {
     async fn gateways_job_relayed_logs<'a>(
         &'a self,
         job: Job,
-        _common_chain_ws_provider: &'a Provider<Ws>,
+        _common_chain_http_provider: &'a Arc<HttpProvider>,
     ) -> Result<Vec<Log>> {
         use ethers::abi::{encode, Token};
         use ethers::prelude::*;

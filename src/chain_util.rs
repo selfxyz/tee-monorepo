@@ -31,7 +31,7 @@ pub trait LogsProvider {
     fn gateways_job_relayed_logs<'a>(
         &'a self,
         job: Job,
-        common_chain_ws_client: &'a Provider<Ws>,
+        common_chain_ws_client: &'a Arc<HttpProvider>,
     ) -> impl Future<Output = Result<Vec<Log>>>;
 }
 
