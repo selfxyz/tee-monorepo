@@ -345,7 +345,6 @@ async fn export_signed_registration_message(
                 enclave_owner,
                 app_state.enclave_signer_key.clone(),
                 app_state.enclave_address,
-                signer_wallet,
                 &app_state.common_chain_ws_url,
                 http_rpc_client.clone(),
                 &app_state.gateways_contract_addr,

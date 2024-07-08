@@ -38,7 +38,6 @@ impl ContractsClient {
         enclave_owner: H160,
         enclave_signer_key: SigningKey,
         enclave_address: H160,
-        signer: LocalWallet,
         common_chain_ws_url: &String,
         common_chain_http_provider: Arc<HttpProvider>,
         gateways_contract_addr: &H160,
@@ -64,7 +63,6 @@ impl ContractsClient {
 
         ContractsClient {
             enclave_owner,
-            signer,
             enclave_signer_key,
             enclave_address,
             common_chain_ws_url: common_chain_ws_url.to_string(),
@@ -2073,7 +2071,6 @@ mod serverless_executor_test {
             enclave_owner,
             app_state.enclave_signer_key.clone(),
             app_state.enclave_address,
-            signer_wallet,
             &app_state.common_chain_ws_url,
             http_rpc_client.clone(),
             &app_state.gateways_contract_addr,

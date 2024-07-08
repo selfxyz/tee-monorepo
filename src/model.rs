@@ -84,7 +84,6 @@ pub struct GatewayData {
 #[derive(Debug, Clone)]
 pub struct ContractsClient {
     pub enclave_owner: Address,
-    pub signer: LocalWallet,
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
     pub common_chain_ws_url: String,
