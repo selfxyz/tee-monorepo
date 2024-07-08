@@ -17,6 +17,7 @@ use ethers::utils::public_key_to_address;
 use k256::ecdsa::SigningKey;
 use std::collections::HashSet;
 use std::error::Error;
+use std::sync::Mutex;
 use tokio::fs;
 
 use crate::api_impl::{
@@ -75,6 +76,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         immutable_params_injected: false.into(),
         mutable_params_injected: false.into(),
         registration_events_listener_active: false.into(),
+        contracts_client: Mutex::new(None),
     });
     // Start a http server
     let server = HttpServer::new(move || {

@@ -1412,6 +1412,7 @@ mod serverless_executor_test {
             enclave_owner: H160::zero().into(),
             immutable_params_injected: false.into(),
             mutable_params_injected: false.into(),
+            contracts_client: Mutex::new(None),
         })
     }
 

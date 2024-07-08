@@ -361,6 +361,8 @@ async fn export_signed_registration_message(
             .await,
         );
 
+        *app_state.contracts_client.lock().unwrap() = Some(Arc::clone(&contracts_client));
+
         let app_state_clone = app_state.clone();
         tokio::spawn(async move {
             contracts_client
