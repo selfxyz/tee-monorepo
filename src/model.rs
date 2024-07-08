@@ -1,13 +1,10 @@
 use ethers::abi::FixedBytes;
 use ethers::signers::LocalWallet;
-use ethers::types::{Address, Bytes};
-use ethers::types::{H160, U256};
+use ethers::types::{Address, Bytes, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract};
 use crate::HttpProvider;
