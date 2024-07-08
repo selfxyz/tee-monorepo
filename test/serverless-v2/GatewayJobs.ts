@@ -358,6 +358,84 @@ testERC165(
 	},
 );
 
+describe.only("GatewayJobs - Admin functions", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let stakingToken: string;
+	let usdcToken: USDCoin;
+	let gateways: string;
+	let gatewayJobs: GatewayJobs;
+
+    let jobs: string;
+	let signMaxAge: number;
+	let relayBufferTime: number;
+	let executionFeePerMs: number;
+	let slashCompForGateway: number;
+	let reassignCompForReporterGateway: number;
+	let stakingPaymentPool: string;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+
+		stakingToken = addrs[1];
+		gateways = addrs[1];
+		jobs = addrs[1];
+		signMaxAge = 600;
+		relayBufferTime = 100;
+		executionFeePerMs = 10;
+		slashCompForGateway = 10;
+		reassignCompForReporterGateway = 100;
+		stakingPaymentPool = addrs[1];
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		usdcToken = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+		gatewayJobs = await upgrades.deployProxy(
+			GatewayJobs,
+			[addrs[0]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					stakingToken,
+					usdcToken.target,
+					signMaxAge,
+					relayBufferTime,
+					executionFeePerMs,
+					slashCompForGateway,
+					reassignCompForReporterGateway,
+					jobs,
+					gateways,
+					stakingPaymentPool
+				]
+			},
+		) as unknown as GatewayJobs;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can set job allowance with admin account", async function () {
+		await expect(
+			gatewayJobs.connect(signers[1]).setJobAllowance()
+		).to.be.fulfilled;
+	});
+
+	it("cannot set job allowance without admin", async function () {
+		await expect(
+			gatewayJobs.setJobAllowance()
+		).to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
+	});
+
+});
+
 describe("GatewayJobs - Relay", function () {
 	let signers: Signer[];
 	let addrs: string[];

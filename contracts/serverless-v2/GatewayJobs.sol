@@ -167,6 +167,7 @@ contract GatewayJobs is
 
     event JobFailed(uint256 indexed jobId);
 
+    error GatewaysJobsApprovalFailed();
     error GatewayJobsRelayTimeOver();
     error GatewayJobsResourceUnavailable();
     error GatewayJobsAlreadyRelayed();
@@ -179,7 +180,9 @@ contract GatewayJobs is
 
     function setJobAllowance() external onlyRole(DEFAULT_ADMIN_ROLE) {
         // increasing allowance to be used while relaying jobs
-        USDC_TOKEN.safeIncreaseAllowance(address(JOB_MANAGER), type(uint256).max);
+        bool success = USDC_TOKEN.approve(address(JOB_MANAGER), type(uint256).max);
+        if(!success)
+            revert GatewaysJobsApprovalFailed();
     }
 
     //-------------------------------- admin functions end ----------------------------------//

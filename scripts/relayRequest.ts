@@ -1,5 +1,7 @@
-import { getBytes, Wallet } from "ethers";
+import { getBytes, parseUnits, solidityPacked, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
+import { Relay, UserSample } from "../typechain-types";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 async function main() {
     //Create Enclave Image object
@@ -203,6 +205,111 @@ async function main() {
     console.log("GatewayJobs Deployed address: ", gatewayJobsAddress);
     await gatewaysContract.grantRole(await gatewaysContract.GATEWAY_JOBS_ROLE(), gatewayJobsAddress);
 }
+
+// async function deployUserSample() {
+//     let relayAddress = "0xD02e33f98a08030B72A471Ae41e696a57cFecCc8",
+//         tokenAddress = "0xD330cF76192274bb3f10f2E574a1bDba4ED29352";
+//     const UserSample = await ethers.getContractFactory("UserSample");
+//     let userSample = await UserSample.deploy(relayAddress, tokenAddress) as unknown as UserSample;
+//     console.log("UserSample : ", userSample.target);
+//     // await token.transfer(userSample.target, 1000000);
+// }
+
+// async function executeUserSample() {
+//     const UserSample = await ethers.getContractFactory("UserSample");
+//     let userSample = await UserSample.attach("0x8B31B905dBc15dF3d31d7488A2290A3fd563b369") as unknown as UserSample;
+//     let input = {"num": 600};
+//     let input_string = JSON.stringify(input);
+//     let codeHash = '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
+//         // codeInputs = Buffer.from(input_string, 'utf-8'),
+//         codeInputs = "0x",
+//         userTimeout = 2000,
+//         maxGasPrice = parseUnits("2", 9),
+//         usdcDeposit = 5100,
+//         refundAccount = "0xF90e66D1452Be040Ca3A82387Bf6AD0c472f29Dd",
+//         callbackContract = "0x8B31B905dBc15dF3d31d7488A2290A3fd563b369",
+//         callbackGasLimit = 5000;
+
+//     let gas = await userSample.relayJob.estimateGas(
+//         codeHash, 
+//         codeInputs, 
+//         userTimeout, 
+//         maxGasPrice, 
+//         usdcDeposit, 
+//         refundAccount, 
+//         callbackContract, 
+//         callbackGasLimit,
+//         {
+//             value: parseUnits("0.01"),
+//             // gasLimit: 1000000
+//         }
+//     );
+//     console.log("gas: ", gas, codeInputs.toString());
+
+//     await userSample.relayJob(
+//         codeHash, 
+//         codeInputs, 
+//         userTimeout, 
+//         maxGasPrice, 
+//         usdcDeposit, 
+//         refundAccount, 
+//         callbackContract, 
+//         callbackGasLimit,
+//         {
+//             value: parseUnits("0.01"),
+//             gasLimit: 3500000
+//         }
+//     );
+//     console.log("Relayed");
+//     // await token.transfer(userSample.target, 1000000);
+
+//     // const Relay = await ethers.getContractFactory("Relay");
+//     // const relay = await Relay.attach("") as unknown as Relay;
+
+//     // let jobId: any = await relay.jobCount(),
+// 	// 		output = solidityPacked(["string"], ["it is the output"]),
+// 	// 		totalTime = 100,
+// 	// 		errorCode = 0,
+// 	// 		signTimestamp = await time.latest();
+
+//     // let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+//     // await relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+// }
+
+// async function createJobResponseSignature(
+// 	jobId: number,
+//     output: string,
+// 	totalTime: number,
+//     errorCode: number,
+// 	signTimestamp: number,
+// 	sourceEnclaveWallet: Wallet
+// ): Promise<string> {
+// 	const domain = {
+// 		name: 'marlin.oyster.Relay',
+// 		version: '1'
+// 	};
+
+// 	const types = {
+// 		JobResponse: [
+// 			{ name: 'jobId', type: 'uint256' },
+// 			{ name: 'output', type: 'bytes' },
+// 			{ name: 'totalTime', type: 'uint256' },
+// 			{ name: 'errorCode', type: 'uint8' },
+// 			{ name: 'signTimestamp', type: 'uint256' }
+// 		]
+// 	};
+
+// 	const value = {
+// 		jobId,
+// 		output,
+// 		totalTime,
+// 		errorCode,
+// 		signTimestamp
+// 	};
+
+// 	const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+// 	return ethers.Signature.from(sign).serialized;
+// }
 
 function normalize(key: string): string {
 	return '0x' + key.substring(4);
