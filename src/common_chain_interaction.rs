@@ -2023,6 +2023,7 @@ mod serverless_executor_test {
             contract_address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             contract: Arc::new(RwLock::new(contract)),
             ws_rpc_url: WS_URL.to_owned(),
+            http_rpc_url: HTTP_RPC_URL.to_owned(),
             request_chain_start_block_number: 0,
         });
         request_chain_clients.insert(CHAIN_ID, request_chain_client);

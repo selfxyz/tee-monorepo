@@ -81,7 +81,80 @@ async fn inject_mutable_config(
         ));
     };
     let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
-    *wallet_gaurd = Some(gas_wallet);
+    *wallet_gaurd = Some(gas_wallet.clone());
+
+    let contracts_client_guard = app_state.contracts_client.lock().unwrap();
+    if contracts_client_guard.is_some() {
+        info!("Updating Contracts Client with the new wallet address");
+        let gas_address = gas_wallet.address();
+
+        let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
+        let Ok(http_rpc_client) = http_rpc_client else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to connect to the common chain http rpc server {}: {}",
+                app_state.common_chain_http_url,
+                http_rpc_client.unwrap_err()
+            ));
+        };
+        let http_rpc_client = Arc::new(
+            http_rpc_client
+                .with_signer(gas_wallet.clone())
+                .nonce_manager(gas_address),
+        );
+
+        let gateway_jobs_contract =
+            GatewayJobsContract::new(app_state.gateway_jobs_contract_addr, http_rpc_client);
+
+        let mut gateway_jobs_contract_write_guard = contracts_client_guard
+            .as_ref()
+            .unwrap()
+            .gateway_jobs_contract
+            .write()
+            .unwrap();
+        *gateway_jobs_contract_write_guard = gateway_jobs_contract;
+
+        for request_chain_client in contracts_client_guard
+            .as_ref()
+            .unwrap()
+            .request_chain_clients
+            .values()
+        {
+            info!(
+                "Updating Request Chain Client for Chain: {}",
+                &request_chain_client.chain_id
+            );
+            let gas_wallet = gas_wallet
+                .clone()
+                .with_chain_id(request_chain_client.chain_id);
+            let http_rpc_client =
+                Provider::<Http>::try_connect(&request_chain_client.http_rpc_url).await;
+            let Ok(http_rpc_client) = http_rpc_client else {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Failed to connect to the request chain {} http rpc server {}: {}",
+                    request_chain_client.chain_id,
+                    request_chain_client.http_rpc_url,
+                    http_rpc_client.unwrap_err()
+                ));
+            };
+
+            let http_rpc_client = Arc::new(
+                http_rpc_client
+                    .with_signer(gas_wallet)
+                    .nonce_manager(gas_address),
+            );
+            let contract = RelayContract::new(
+                request_chain_client.contract_address,
+                http_rpc_client.clone(),
+            );
+
+            let mut request_chain_contract_write_guard =
+                request_chain_client.contract.write().unwrap();
+            *request_chain_contract_write_guard = contract;
+        }
+
+        drop(gateway_jobs_contract_write_guard);
+    }
+    drop(contracts_client_guard);
 
     *mutable_params_injected_guard = true;
 
@@ -145,6 +218,8 @@ async fn export_signed_registration_message(
     let Some(wallet) = app_state.wallet.lock().unwrap().clone() else {
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
+
+    let mut contracts_client_guard = app_state.contracts_client.lock().unwrap();
 
     // generate common chain signature
     let enclave_owner = app_state.enclave_owner.lock().unwrap().clone();
@@ -309,7 +384,7 @@ async fn export_signed_registration_message(
         request_chain_data.push(RequestChainData {
             chain_id: chain_id.into(),
             contract_address,
-            http_rpc_url,
+            http_rpc_url: http_rpc_url.to_owned(),
             ws_rpc_url: ws_rpc_url.clone(),
         });
 
@@ -318,6 +393,7 @@ async fn export_signed_registration_message(
             contract_address,
             contract: Arc::new(RwLock::new(contract)),
             ws_rpc_url,
+            http_rpc_url,
             request_chain_start_block_number: request_chain_block_number,
         });
         request_chain_clients.insert(chain_id, request_chain_client);
@@ -366,7 +442,8 @@ async fn export_signed_registration_message(
             )),
         });
 
-        *app_state.contracts_client.lock().unwrap() = Some(Arc::clone(&contracts_client));
+        *contracts_client_guard = Some(Arc::clone(&contracts_client));
+        drop(contracts_client_guard);
 
         let app_state_clone = app_state.clone();
         tokio::spawn(async move {
