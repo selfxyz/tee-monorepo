@@ -4,8 +4,7 @@ use ethers::prelude::*;
 use ethers::utils::keccak256;
 use log::{error, info};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::Sender;
 use tokio::time;
@@ -19,10 +18,14 @@ use crate::HttpProvider;
 // Initialize the gateway epoch state
 pub async fn gateway_epoch_state_service(
     current_time: u64,
-    provider: &Arc<HttpProvider>,
+    common_chain_rpc_http_url: String,
     contracts_client: Arc<ContractsClient>,
     tx: Sender<Job>,
 ) {
+    let provider: Provider<Http> = Provider::<Http>::try_connect(&common_chain_rpc_http_url)
+        .await
+        .unwrap();
+
     let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;
     let initial_epoch_cycle: u64;
     let mut cycle_number: u64;
@@ -153,7 +156,7 @@ pub async fn gateway_epoch_state_service(
 
 pub async fn generate_gateway_epoch_state_for_cycle(
     contract_address: Address,
-    provider: &Arc<HttpProvider>,
+    provider: &Provider<Http>,
     com_chain_gateway_contract: GatewaysContract<HttpProvider>,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     cycle_number: u64,

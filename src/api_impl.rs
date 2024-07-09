@@ -10,11 +10,11 @@ use log::info;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contract_abi::{GatewaysContract, RelayContract};
+use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract};
 use crate::model::{
     AppState, ContractsClient, GatewayData, ImmutableConfig, MutableConfig, RequestChainClient,
     RequestChainData, SignedRegistrationBody,
@@ -338,27 +338,36 @@ async fn export_signed_registration_message(
 
         let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
             Arc::new(RwLock::new(BTreeMap::new()));
-        let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
+        let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
-        let contracts_client = Arc::new(
-            ContractsClient::new(
-                enclave_owner,
-                app_state.enclave_signer_key.clone(),
-                app_state.enclave_address,
-                &app_state.common_chain_ws_url,
-                http_rpc_client.clone(),
-                &app_state.gateways_contract_addr,
-                &app_state.gateway_jobs_contract_addr,
-                gateway_epoch_state,
-                chain_ids.clone(),
-                request_chain_clients,
-                app_state.epoch,
-                app_state.time_interval,
-                gateway_state_epoch_waitlist,
-                common_chain_block_number.as_u64(),
-            )
-            .await,
+        let gateways_contract =
+            GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
+
+        let gateway_jobs_contract = GatewayJobsContract::new(
+            app_state.gateway_jobs_contract_addr,
+            http_rpc_client.clone(),
         );
+
+        let contracts_client = Arc::new(ContractsClient {
+            enclave_owner,
+            enclave_signer_key: app_state.enclave_signer_key.clone(),
+            enclave_address: app_state.enclave_address,
+            common_chain_ws_url: app_state.common_chain_ws_url.clone(),
+            common_chain_http_url: app_state.common_chain_http_url.clone(),
+            gateways_contract,
+            gateway_jobs_contract,
+            request_chain_clients,
+            gateway_epoch_state,
+            request_chain_ids: chain_ids.clone(),
+            active_jobs: Arc::new(RwLock::new(HashMap::new())),
+            current_jobs: Arc::new(RwLock::new(HashMap::new())),
+            epoch: app_state.epoch,
+            time_interval: app_state.time_interval,
+            gateway_epoch_state_waitlist,
+            common_chain_start_block_number: Arc::new(Mutex::new(
+                common_chain_block_number.as_u64(),
+            )),
+        });
 
         *app_state.contracts_client.lock().unwrap() = Some(Arc::clone(&contracts_client));
 

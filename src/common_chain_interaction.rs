@@ -5,14 +5,12 @@ use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
 use hex::FromHex;
-use k256::ecdsa::SigningKey;
 use log::{error, info};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashSet;
 use std::error::Error;
-use std::sync::RwLock;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::{task, time};
@@ -26,61 +24,12 @@ use crate::constant::{
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
     MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
 };
-use crate::contract_abi::{GatewayJobsContract, GatewaysContract};
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, RegisterType, RegisteredData,
     RequestChainClient, ResponseJob,
 };
-use crate::HttpProvider;
 
 impl ContractsClient {
-    pub async fn new(
-        enclave_owner: H160,
-        enclave_signer_key: SigningKey,
-        enclave_address: H160,
-        common_chain_ws_url: &String,
-        common_chain_http_provider: Arc<HttpProvider>,
-        gateways_contract_addr: &H160,
-        gateway_jobs_contract_addr: &H160,
-        gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
-        request_chain_ids: HashSet<u64>,
-        request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
-        epoch: u64,
-        time_interval: u64,
-        gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
-        common_chain_block_number: u64,
-    ) -> Self {
-        info!("Initializing Contracts Client...");
-        let gateways_contract =
-            GatewaysContract::new(*gateways_contract_addr, common_chain_http_provider.clone());
-
-        let gateway_jobs_contract = GatewayJobsContract::new(
-            *gateway_jobs_contract_addr,
-            common_chain_http_provider.clone(),
-        );
-
-        info!("Gateway Data fetched. Contracts Client Initialized");
-
-        ContractsClient {
-            enclave_owner,
-            enclave_signer_key,
-            enclave_address,
-            common_chain_ws_url: common_chain_ws_url.to_string(),
-            common_chain_http_provider,
-            gateways_contract,
-            gateway_jobs_contract,
-            request_chain_clients,
-            gateway_epoch_state,
-            request_chain_ids,
-            active_jobs: Arc::new(RwLock::new(HashMap::new())),
-            current_jobs: Arc::new(RwLock::new(HashMap::new())),
-            epoch,
-            time_interval,
-            gateway_epoch_state_waitlist,
-            common_chain_start_block_number: Arc::new(Mutex::new(common_chain_block_number)),
-        }
-    }
-
     pub async fn wait_for_registration(self: Arc<Self>, app_state: Data<AppState>) {
         info!("Waiting for registration on the Common Chain and all Request Chains...");
         // create a channel to communicate with the main thread
@@ -236,11 +185,11 @@ impl ContractsClient {
                 .as_secs();
             let contracts_client_clone = self.clone();
             let tx_clone = req_chain_tx.clone();
-            let common_chain_http_provider_clone = self.common_chain_http_provider.clone();
+            let common_chain_http_url_clone = self.common_chain_http_url.clone();
             tokio::spawn(async move {
                 gateway_epoch_state_service(
                     service_start_time,
-                    &common_chain_http_provider_clone,
+                    common_chain_http_url_clone,
                     contracts_client_clone,
                     tx_clone,
                 )
@@ -476,8 +425,13 @@ impl ContractsClient {
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
 
+        let common_chain_http_provider: Provider<Http> =
+            Provider::<Http>::try_connect(&self.common_chain_http_url)
+                .await
+                .unwrap();
+
         let logs = self
-            .gateways_job_relayed_logs(job.clone(), &self.common_chain_http_provider)
+            .gateways_job_relayed_logs(job.clone(), &common_chain_http_provider)
             .await
             .context("Failed to get logs")
             .unwrap();
@@ -1273,7 +1227,7 @@ impl LogsProvider for ContractsClient {
     async fn gateways_job_relayed_logs<'a>(
         &'a self,
         job: Job,
-        common_chain_http_provider: &'a Arc<HttpProvider>,
+        common_chain_http_provider: &'a Provider<Http>,
     ) -> Result<Vec<Log>> {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
@@ -1298,7 +1252,7 @@ impl LogsProvider for ContractsClient {
     async fn gateways_job_relayed_logs<'a>(
         &'a self,
         job: Job,
-        _common_chain_http_provider: &'a Arc<HttpProvider>,
+        _common_chain_http_provider: &'a Provider<Http>,
     ) -> Result<Vec<Log>> {
         use ethers::abi::{encode, Token};
         use ethers::prelude::*;
@@ -1332,8 +1286,9 @@ impl LogsProvider for ContractsClient {
 
 #[cfg(test)]
 mod serverless_executor_test {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::str::FromStr;
+    use std::sync::{Mutex, RwLock};
 
     use abi::{encode, encode_packed, Token};
     use actix_web::{
@@ -1350,6 +1305,7 @@ mod serverless_executor_test {
     use serde_json::json;
     use tokio::time::sleep;
 
+    use crate::contract_abi::{GatewayJobsContract, GatewaysContract};
     use crate::{
         api_impl::{
             export_signed_registration_message, get_gateway_details, index,
@@ -2049,7 +2005,7 @@ mod serverless_executor_test {
 
         let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
             Arc::new(RwLock::new(BTreeMap::new()));
-        let gateway_state_epoch_waitlist = Arc::new(RwLock::new(HashMap::new()));
+        let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
         let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
@@ -2067,25 +2023,32 @@ mod serverless_executor_test {
         });
         request_chain_clients.insert(CHAIN_ID, request_chain_client);
 
-        let contracts_client = ContractsClient::new(
-            enclave_owner,
-            app_state.enclave_signer_key.clone(),
-            app_state.enclave_address,
-            &app_state.common_chain_ws_url,
-            http_rpc_client.clone(),
-            &app_state.gateways_contract_addr,
-            &app_state.gateway_jobs_contract_addr,
-            gateway_epoch_state,
-            [CHAIN_ID].into(),
-            request_chain_clients,
-            app_state.epoch,
-            app_state.time_interval,
-            gateway_state_epoch_waitlist,
-            0,
-        )
-        .await;
+        let gateways_contract =
+            GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
 
-        contracts_client
+        let gateway_jobs_contract = GatewayJobsContract::new(
+            app_state.gateway_jobs_contract_addr,
+            http_rpc_client.clone(),
+        );
+
+        ContractsClient {
+            enclave_owner,
+            enclave_signer_key: app_state.enclave_signer_key.clone(),
+            enclave_address: app_state.enclave_address,
+            common_chain_ws_url: app_state.common_chain_ws_url.clone(),
+            common_chain_http_url: app_state.common_chain_http_url.clone(),
+            gateways_contract,
+            gateway_jobs_contract,
+            request_chain_clients,
+            gateway_epoch_state,
+            request_chain_ids: [CHAIN_ID].into(),
+            active_jobs: Arc::new(RwLock::new(HashMap::new())),
+            current_jobs: Arc::new(RwLock::new(HashMap::new())),
+            epoch: app_state.epoch,
+            time_interval: app_state.time_interval,
+            gateway_epoch_state_waitlist,
+            common_chain_start_block_number: Arc::new(Mutex::new(0 as u64)),
+        }
     }
 
     async fn add_gateway_epoch_state(

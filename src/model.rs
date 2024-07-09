@@ -87,7 +87,7 @@ pub struct ContractsClient {
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
     pub common_chain_ws_url: String,
-    pub common_chain_http_provider: Arc<HttpProvider>,
+    pub common_chain_http_url: String,
     pub gateways_contract: GatewaysContract<HttpProvider>,
     pub gateway_jobs_contract: GatewayJobsContract<HttpProvider>,
     pub request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,

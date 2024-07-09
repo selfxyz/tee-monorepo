@@ -8,13 +8,11 @@ use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::{error, info};
 use std::future::Future;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time;
 
 use crate::constant::WAIT_BEFORE_CHECKING_BLOCK;
 use crate::model::{Job, RequestChainClient};
-use crate::HttpProvider;
 
 pub trait LogsProvider {
     fn common_chain_jobs<'a>(
@@ -31,12 +29,12 @@ pub trait LogsProvider {
     fn gateways_job_relayed_logs<'a>(
         &'a self,
         job: Job,
-        common_chain_ws_client: &'a Arc<HttpProvider>,
+        common_chain_ws_client: &'a Provider<Http>,
     ) -> impl Future<Output = Result<Vec<Log>>>;
 }
 
 pub async fn get_block_number_by_timestamp(
-    provider: &Arc<HttpProvider>,
+    provider: &Provider<Http>,
     target_timestamp: u64,
 ) -> Option<u64> {
     let mut block_number: u64 = 0;
