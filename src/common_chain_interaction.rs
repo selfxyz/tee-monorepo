@@ -1113,7 +1113,7 @@ impl ContractsClient {
             return;
         };
 
-        let txn = req_chain_client.contract.job_response(
+        let txn = req_chain_client.contract.read().unwrap().job_response(
             signature,
             response_job.job_id,
             response_job.output,
@@ -2021,7 +2021,7 @@ mod serverless_executor_test {
         let request_chain_client = Arc::from(RequestChainClient {
             chain_id: CHAIN_ID,
             contract_address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
-            contract,
+            contract: Arc::new(RwLock::new(contract)),
             ws_rpc_url: WS_URL.to_owned(),
             request_chain_start_block_number: 0,
         });

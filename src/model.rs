@@ -114,7 +114,7 @@ pub struct RequestChainClient {
     pub chain_id: u64,
     pub contract_address: Address,
     pub ws_rpc_url: String,
-    pub contract: RelayContract<HttpProvider>,
+    pub contract: Arc<RwLock<RelayContract<HttpProvider>>>,
     pub request_chain_start_block_number: u64,
 }
 

@@ -316,7 +316,7 @@ async fn export_signed_registration_message(
         let request_chain_client = Arc::from(RequestChainClient {
             chain_id,
             contract_address,
-            contract,
+            contract: Arc::new(RwLock::new(contract)),
             ws_rpc_url,
             request_chain_start_block_number: request_chain_block_number,
         });
