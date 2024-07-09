@@ -1309,7 +1309,7 @@ mod serverless_executor_test {
     use serde_json::json;
     use tokio::time::sleep;
 
-    use crate::contract_abi::{GatewayJobsContract, GatewaysContract};
+    use crate::contract_abi::GatewayJobsContract;
     use crate::{
         api_impl::{
             export_signed_registration_message, get_gateway_details, index,

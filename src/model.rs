@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract};
+use crate::contract_abi::{GatewayJobsContract, RelayContract};
 use crate::HttpProvider;
 
 #[derive(Debug)]
