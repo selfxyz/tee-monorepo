@@ -340,9 +340,6 @@ async fn export_signed_registration_message(
             Arc::new(RwLock::new(BTreeMap::new()));
         let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
-        let gateways_contract =
-            GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
-
         let gateway_jobs_contract = GatewayJobsContract::new(
             app_state.gateway_jobs_contract_addr,
             http_rpc_client.clone(),
@@ -354,8 +351,8 @@ async fn export_signed_registration_message(
             enclave_address: app_state.enclave_address,
             common_chain_ws_url: app_state.common_chain_ws_url.clone(),
             common_chain_http_url: app_state.common_chain_http_url.clone(),
-            gateways_contract,
-            gateway_jobs_contract,
+            gateways_contract_address: app_state.gateways_contract_addr,
+            gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
             request_chain_clients,
             gateway_epoch_state,
             request_chain_ids: chain_ids.clone(),

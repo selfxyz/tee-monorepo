@@ -38,7 +38,7 @@ impl ContractsClient {
         let common_chain_block_number = *self.common_chain_start_block_number.lock().unwrap();
 
         let common_chain_registered_filter = Filter::new()
-            .address(self.gateways_contract.address())
+            .address(self.gateways_contract_address)
             .select(common_chain_block_number..)
             .topic0(vec![keccak256(
                 "GatewayRegistered(address,address,uint256[])",
@@ -624,7 +624,7 @@ impl ContractsClient {
         };
         let tx_hash: [u8; 32] = job.tx_hash[..].try_into().unwrap();
 
-        let txn = self.gateway_jobs_contract.relay_job(
+        let txn = self.gateway_jobs_contract.read().unwrap().relay_job(
             signature,
             job.job_id,
             tx_hash,
@@ -691,15 +691,19 @@ impl ContractsClient {
             return;
         };
 
-        let txn = self.gateway_jobs_contract.reassign_gateway_relay(
-            job.gateway_address.unwrap(),
-            job.job_id,
-            signature,
-            job.sequence_number,
-            job.starttime,
-            job.job_owner,
-            sign_timestamp.into(),
-        );
+        let txn = self
+            .gateway_jobs_contract
+            .read()
+            .unwrap()
+            .reassign_gateway_relay(
+                job.gateway_address.unwrap(),
+                job.job_id,
+                signature,
+                job.sequence_number,
+                job.starttime,
+                job.job_owner,
+                sign_timestamp.into(),
+            );
 
         for i in 0..3 {
             let pending_txn = txn.send().await;
@@ -1173,7 +1177,7 @@ impl LogsProvider for ContractsClient {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
         let event_filter: Filter = Filter::new()
-            .address(self.gateway_jobs_contract.address())
+            .address(self.gateway_jobs_contract.read().unwrap().address())
             .select(common_chain_start_block_number..)
             .topic0(vec![
                 keccak256("JobResponded(uint256,bytes,uint256,uint8)"),
@@ -1233,7 +1237,7 @@ impl LogsProvider for ContractsClient {
             self.common_chain_start_block_number.lock().unwrap().clone();
 
         let job_relayed_event_filter = Filter::new()
-            .address(self.gateway_jobs_contract.address())
+            .address(self.gateway_jobs_contract.read().unwrap().address())
             .select(common_chain_start_block_number..)
             .topic0(vec![keccak256(
                 "JobRelayed(uint256,uint256,address,address)",
@@ -1259,7 +1263,7 @@ impl LogsProvider for ContractsClient {
 
         if job.job_id == U256::from(1) {
             Ok(vec![Log {
-                address: self.gateway_jobs_contract.address(),
+                address: self.gateway_jobs_contract.read().unwrap().address(),
                 topics: vec![
                     keccak256("JobRelayed(uint256,uint256,address,address)").into(),
                     H256::from_uint(&job.job_id),
@@ -2037,8 +2041,8 @@ mod serverless_executor_test {
             enclave_address: app_state.enclave_address,
             common_chain_ws_url: app_state.common_chain_ws_url.clone(),
             common_chain_http_url: app_state.common_chain_http_url.clone(),
-            gateways_contract,
-            gateway_jobs_contract,
+            gateways_contract: Arc::new(RwLock::new(gateways_contract)),
+            gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
             request_chain_clients,
             gateway_epoch_state,
             request_chain_ids: [CHAIN_ID].into(),
