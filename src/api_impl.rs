@@ -81,6 +81,9 @@ async fn inject_mutable_config(
         ));
     };
     let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
+    if *wallet_gaurd == Some(gas_wallet.clone()) {
+        return HttpResponse::NotAcceptable().body(format!("The same wallet address already set."));
+    }
     *wallet_gaurd = Some(gas_wallet.clone());
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
