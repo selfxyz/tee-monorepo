@@ -380,7 +380,7 @@ contract Relay is
         address _callbackContract,
         uint256 _callbackGasLimit,
         address _jobOwner
-    ) internal returns (uint256 usdcDeposit) {
+    ) internal {
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
         if (jobCount + 1 == (block.chainid + 1) << 192) jobCount = block.chainid << 192;
@@ -390,7 +390,7 @@ contract Relay is
         if (_maxGasPrice * (_callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) > _callbackDeposit)
             revert RelayInsufficientCallbackDeposit();
 
-        usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        uint256 usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         jobs[++jobCount] = Job({
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
@@ -403,9 +403,8 @@ contract Relay is
             callbackGasLimit: _callbackGasLimit
         });
 
-        // deposit escrow amount(USDC) if the job is not from a subscription
-        if(jobToJobSubsMapping[jobCount] == 0)
-            TOKEN.safeTransferFrom(_jobOwner, address(this), usdcDeposit);
+        // deposit escrow amount(USDC)
+        TOKEN.safeTransferFrom(_jobOwner, address(this), usdcDeposit);
 
         emit JobRelayed(
             jobCount,
@@ -447,7 +446,7 @@ contract Relay is
         );
 
         delete jobs[_jobId];
-        _releaseEscrowAmount(_jobId, enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
+        _releaseEscrowAmount(enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
 
         (bool success, uint256 callbackGas) = _callBackWithLimit(
             _jobId,
@@ -458,7 +457,7 @@ contract Relay is
 
         uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
 
-        _releaseGasCostOnSuccess(_jobId, gatewayOwners[enclaveAddress], job.jobOwner, job.callbackDeposit, callbackCost);
+        _releaseGasCostOnSuccess(gatewayOwners[enclaveAddress], job.jobOwner, job.callbackDeposit, callbackCost);
         emit JobResponded(_jobId, _output, _totalTime, _errorCode, success);
     }
 
@@ -483,7 +482,6 @@ contract Relay is
     }
 
     function _releaseEscrowAmount(
-        uint256 _jobId,
         address _enclaveAddress,
         address _jobOwner,
         uint256 _totalTime,
@@ -498,13 +496,7 @@ contract Relay is
 
         // release escrow to gateway
         TOKEN.safeTransfer(gatewayOwners[_enclaveAddress], gatewayPayoutUsdc);
-
-        // if the job isn't part of job subscription
-        if(jobToJobSubsMapping[_jobId] == 0)
-            // release escrow to jobOwner
-            TOKEN.safeTransfer(_jobOwner, jobOwnerPayoutUsdc);
-        else
-            jobSubscriptions[jobSubsCount].job.usdcDeposit += jobOwnerPayoutUsdc;
+        TOKEN.safeTransfer(_jobOwner, jobOwnerPayoutUsdc);
     }
 
     function _jobCancel(uint256 _jobId) internal {
@@ -553,7 +545,6 @@ contract Relay is
     }
 
     function _releaseGasCostOnSuccess(
-        uint256 _jobId,
         address _gatewayOwner,
         address _jobOwner,
         uint256 _callbackDeposit,
@@ -563,13 +554,8 @@ contract Relay is
         // transfer callback cost to gateway
         _callbackCost = _callbackCost > _callbackDeposit ? _callbackDeposit : _callbackCost;
         (bool paySuccess, ) = _gatewayOwner.call{value: _callbackCost}("");
-        
-        // if the job isn't part of job subscription
-        if(jobToJobSubsMapping[_jobId] == 0)
-            // transfer remaining native asset to the jobOwner
-            (paySuccess, ) = _jobOwner.call{value: _callbackDeposit - _callbackCost}("");
-        else
-            jobSubscriptions[jobSubsCount].job.callbackDeposit += (_callbackDeposit - _callbackCost);
+        // transfer remaining native asset to the jobOwner
+        (paySuccess, ) = _jobOwner.call{value: _callbackDeposit - _callbackCost}("");
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -659,8 +645,6 @@ contract Relay is
 
     // jobSubsId => JobSubscription
     mapping(uint256 => JobSubscription) public jobSubscriptions;
-    // jobId => jobSubsId
-    mapping(uint256 => uint256) public jobToJobSubsMapping;
 
     uint256 public jobSubsCount;
 
@@ -675,21 +659,29 @@ contract Relay is
         address refundAccount
     );
 
-    event JobSubscriptionRelayed(
+    event JobSubsResponded(
         uint256 indexed jobSubsId,
-        address indexed relayer
+        bytes output,
+        uint256 totalTime,
+        uint256 errorCode,
+        bool success,
+        uint256 currentRuns,
+        uint256 lastRunTimestamp
     );
 
-    event JobSubscriptionUsdcDeposited(
+    event JobSubscriptionDeposited(
         uint256 indexed jobSubsId,
         address indexed depositor,
-        uint256 usdcDeposit
+        uint256 usdcDeposit,
+        uint256 callbackDeposit
     );
 
-    event JobSubscriptionUsdcWithdrawn(
+    event JobSubscriptionWithdrawn(
         uint256 indexed jobSubsId,
         address indexed withdrawer,
-        uint256 usdcWithdrawn
+        uint256 usdcAmountWithdrawn,
+        uint256 callbackAmountWithdrawn,
+        bool success
     );
 
     event JobSubsJobParamsUpdated(
@@ -705,6 +697,7 @@ contract Relay is
     );
 
     error InvalidJobSubscription();
+    error RelayInsufficientUsdcDeposit();
 
     // user will execute this to start job subscription, and internally it will also call relayJob() to relay the first job in this txn only
     function startJobSubscription(
@@ -721,102 +714,156 @@ contract Relay is
         uint256 _maxRuns,
         uint256 _terminationTimestamp
     ) external payable {
-        jobToJobSubsMapping[jobCount + 1] = ++jobSubsCount;
-        // deposit escrow amount(USDC) for the periodic jobs
-        TOKEN.safeTransferFrom(_msgSender(), address(this), _usdcDeposit);
+        // TODO: Can _terminationTimestamp = 0 and _maxRuns = 0 while starting subscription??
 
-        // TODO: Can _terminationTimestamp == 0 and _maxRuns == 0 while starting subscription??
+        if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) 
+            revert RelayInvalidUserTimeout();
 
-        uint256 usdcForFirstJob = _relayJob(_codehash, _codeInputs, _userTimeout, _maxGasPrice, msg.value, _refundAccount, _callbackContract, _callbackGasLimit, _msgSender());
+        if (_maxGasPrice < tx.gasprice) 
+            revert RelayInsufficientMaxGasPrice();
 
-        // TODO: Shall we set currentRuns and lastRunTimestamp here, or in jobResponse??
+        if (_maxGasPrice * (_callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) > msg.value)
+            revert RelayInsufficientCallbackDeposit();
 
-        jobSubscriptions[jobSubsCount] = JobSubscription({
+        uint256 minUsdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        if(_usdcDeposit < minUsdcDeposit)
+            revert RelayInsufficientUsdcDeposit();
+
+        Job memory job = Job({
+            startTime: block.timestamp,
+            maxGasPrice: _maxGasPrice,
+            usdcDeposit: _usdcDeposit,
+            callbackDeposit: msg.value,
+            jobOwner: _msgSender(),
+            codehash: _codehash,
+            codeInputs: _codeInputs,
+            callbackContract: _callbackContract,
+            callbackGasLimit: _callbackGasLimit
+        });
+
+        jobSubscriptions[++jobSubsCount] = JobSubscription({
             periodicGap: _periodicGap,
             maxRuns: _maxRuns,
             terminationTimestamp: _terminationTimestamp,
-            currentRuns: 1,
-            lastRunTimestamp: block.timestamp,
+            currentRuns: 0,
+            lastRunTimestamp: 0,
             userTimeout: _userTimeout,
             refundAccount: _refundAccount,
-            job: jobs[jobCount]
+            job: job
         });
 
-        uint256 usdcForFutureJobs = _usdcDeposit - usdcForFirstJob;
-
-        jobSubscriptions[jobSubsCount].job.usdcDeposit = usdcForFutureJobs;
-        jobSubscriptions[jobSubsCount].job.callbackDeposit = 0;
+        // deposit escrow amount(USDC) for the periodic jobs
+        TOKEN.safeTransferFrom(_msgSender(), address(this), _usdcDeposit);
 
         // emit JobSubscriptionStarted(jobSubsCount, _msgSender(), _periodicGap, _usdcDeposit, _maxRuns, _terminationTimestamp, _userTimeout, _refundAccount);
     }
 
-    // a gateway will be selected periodically to execute the scheduled job
-    // btw, anyone can call this function
-    // but if no one relays the scheduled job, then the selected gateway will be penalized
-    function relayPeriodicJob(
-        uint256 _jobSubsId
+    function jobSubsResponse(
+        bytes calldata _signature,
+        uint256 _jobSubsId,
+        bytes calldata _output,
+        uint256 _totalTime,
+        uint8 _errorCode,
+        uint256 _signTimestamp
     ) external {
         Job memory job = jobSubscriptions[_jobSubsId].job;
-        if(job.jobOwner == address(0))
+        if (job.jobOwner == address(0)) 
             revert InvalidJobSubscription();
 
-        // TODO: How to make sure the output to last relayed job is submitted?? (since job might not be deleted due to jobCancel())
+        // check time case
+        // if (block.timestamp > job.startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutOver();
 
-        // TODO: when to record currentRuns and lastRunTimestamp
-        // if(
-        //     jobSubs.currentRuns > jobSubs.maxRuns || 
-        //     jobSubs.lastRunTimestamp + jobSubs.periodicGap < jobSubs.terminationTimestamp
-        // )
-
-        jobToJobSubsMapping[jobCount + 1] = _jobSubsId;
-
-        uint256 usdcForCurrentJob = _relayJob(
-                                        job.codehash,
-                                        job.codeInputs,
-                                        jobSubscriptions[_jobSubsId].userTimeout,
-                                        job.maxGasPrice,
-                                        job.callbackDeposit,
-                                        jobSubscriptions[_jobSubsId].refundAccount,
-                                        job.callbackContract,
-                                        job.callbackGasLimit,
-                                        job.jobOwner
-                                    );
-
-        uint256 usdcForFutureJobs = jobSubscriptions[_jobSubsId].job.usdcDeposit - usdcForCurrentJob;
-        
-        jobSubscriptions[_jobSubsId].job.usdcDeposit = usdcForFutureJobs;
-        jobSubscriptions[_jobSubsId].job.callbackDeposit = 0;
+        // signature check
+        // this gateway sign verification func can be reused, just need to replace jobId with jobSubsId
+        address enclaveAddress = _verifyJobResponseSign(
+            _signature,
+            _jobSubsId,
+            _output,
+            _totalTime,
+            _errorCode,
+            _signTimestamp
+        );
 
         jobSubscriptions[_jobSubsId].currentRuns += 1;
         jobSubscriptions[_jobSubsId].lastRunTimestamp = block.timestamp;
 
-        emit JobSubscriptionRelayed(_jobSubsId, _msgSender());
+        _releaseJobSubsEscrowAmount(enclaveAddress, _totalTime, job.usdcDeposit);
+
+        (bool success, uint256 callbackGas) = _callBackWithLimit(
+            _jobSubsId,
+            job,
+            _output,
+            _errorCode
+        );
+
+        // TODO: FIXED_GAS will be different for this function
+        uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
+
+        _releaseJobSubsGasCostOnSuccess(gatewayOwners[enclaveAddress], job.callbackDeposit, callbackCost);
+        // emit JobSubsResponded(_jobSubsId, _output, _totalTime, _errorCode, success, jobSubscriptions[_jobSubsId].currentRuns, block.timestamp);
+    }
+
+    function _releaseJobSubsEscrowAmount(
+        address _enclaveAddress,
+        uint256 _totalTime,
+        uint256 _usdcDeposit
+    ) internal {
+        uint256 gatewayPayoutUsdc;
+        uint256 jobOwnerPayoutUsdc;
+        unchecked {
+            gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+            jobOwnerPayoutUsdc = _usdcDeposit - gatewayPayoutUsdc;
+        }
+
+        // release escrow to gateway
+        TOKEN.safeTransfer(gatewayOwners[_enclaveAddress], gatewayPayoutUsdc);
+
+        jobSubscriptions[jobSubsCount].job.usdcDeposit += jobOwnerPayoutUsdc;
+    }
+
+    function _releaseJobSubsGasCostOnSuccess(
+        address _gatewayOwner,
+        uint256 _callbackDeposit,
+        uint256 _callbackCost
+    ) internal {
+        // TODO: If paySuccess is false then deposit will be stucked forever. Find a way out.
+        // transfer callback cost to gateway
+        _callbackCost = _callbackCost > _callbackDeposit ? _callbackDeposit : _callbackCost;
+        (bool paySuccess, ) = _gatewayOwner.call{value: _callbackCost}("");
+
+        // transfer remaining native asset to the jobOwner
+        jobSubscriptions[jobSubsCount].job.callbackDeposit += (_callbackDeposit - _callbackCost);
     }
 
     function depositTokenForJob(
         uint256 _jobSubsId,
         uint256 _usdcDeposit
-    ) external {
+    ) external payable {
         if(jobSubscriptions[_jobSubsId].job.jobOwner == address(0))
             revert InvalidJobSubscription();
 
         TOKEN.safeTransferFrom(_msgSender(), address(this), _usdcDeposit);
 
         jobSubscriptions[_jobSubsId].job.usdcDeposit += _usdcDeposit;
-        emit JobSubscriptionUsdcDeposited(_jobSubsId, _msgSender(), _usdcDeposit);
+        jobSubscriptions[_jobSubsId].job.callbackDeposit += msg.value;
+        emit JobSubscriptionDeposited(_jobSubsId, _msgSender(), _usdcDeposit, msg.value);
     }
 
     function withdrawTokenForJob(
         uint256 _jobSubsId,
-        uint256 _usdcDeposit
+        uint256 _usdcAmount,
+        uint256 _callbackAmount
     ) external {
         if(jobSubscriptions[_jobSubsId].job.jobOwner == _msgSender())
             revert InvalidJobSubscription();
 
-        jobSubscriptions[_jobSubsId].job.usdcDeposit -= _usdcDeposit;
-        TOKEN.safeTransfer(_msgSender(), _usdcDeposit);
+        jobSubscriptions[_jobSubsId].job.usdcDeposit -= _usdcAmount;
+        jobSubscriptions[_jobSubsId].job.callbackDeposit -= _callbackAmount;
+        TOKEN.safeTransfer(_msgSender(), _usdcAmount);
+        // TODO: do we need to check this bool success
+        (bool success, ) = _msgSender().call{value: _callbackAmount}("");
 
-        emit JobSubscriptionUsdcWithdrawn(_jobSubsId, _msgSender(), _usdcDeposit);
+        emit JobSubscriptionWithdrawn(_jobSubsId, _msgSender(), _usdcAmount, _callbackAmount, success);
     }
 
     function updateJobParams(
