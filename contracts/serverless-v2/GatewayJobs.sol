@@ -167,7 +167,7 @@ contract GatewayJobs is
 
     event JobFailed(uint256 indexed jobId);
 
-    error GatewaysJobsApprovalFailed();
+    error GatewaysJobsUsdcApprovalFailed(address spender, uint256 value);
     error GatewayJobsRelayTimeOver();
     error GatewayJobsResourceUnavailable();
     error GatewayJobsAlreadyRelayed();
@@ -182,7 +182,7 @@ contract GatewayJobs is
         // increasing allowance to be used while relaying jobs
         bool success = USDC_TOKEN.approve(address(JOB_MANAGER), type(uint256).max);
         if(!success)
-            revert GatewaysJobsApprovalFailed();
+            revert GatewaysJobsUsdcApprovalFailed(address(JOB_MANAGER), type(uint256).max);
     }
 
     //-------------------------------- admin functions end ----------------------------------//
