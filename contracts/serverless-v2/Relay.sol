@@ -818,7 +818,7 @@ contract Relay is
         // release escrow to gateway
         TOKEN.safeTransfer(gatewayOwners[_enclaveAddress], gatewayPayoutUsdc);
 
-        jobSubscriptions[jobSubsCount].job.usdcDeposit += jobOwnerPayoutUsdc;
+        jobSubscriptions[jobSubsCount].job.usdcDeposit = jobOwnerPayoutUsdc;
     }
 
     function _releaseJobSubsGasCostOnSuccess(
@@ -832,7 +832,7 @@ contract Relay is
         (bool paySuccess, ) = _gatewayOwner.call{value: _callbackCost}("");
 
         // transfer remaining native asset to the jobOwner
-        jobSubscriptions[jobSubsCount].job.callbackDeposit += (_callbackDeposit - _callbackCost);
+        jobSubscriptions[jobSubsCount].job.callbackDeposit -= _callbackCost;
     }
 
     function depositTokenForJob(
