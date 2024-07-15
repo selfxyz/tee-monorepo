@@ -62,7 +62,7 @@ async fn inject_mutable_config(
 ) -> impl Responder {
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
 
-    let mut wallet_gaurd = app_state.wallet.lock().unwrap();
+    let mut wallet_guard = app_state.wallet.lock().unwrap();
 
     let mut bytes32_gas_key = [0u8; 32];
     if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
@@ -81,16 +81,16 @@ async fn inject_mutable_config(
         ));
     };
     let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
-    if *wallet_gaurd == Some(gas_wallet.clone()) {
+    if *wallet_guard == Some(gas_wallet.clone()) {
         return HttpResponse::NotAcceptable().body(format!("The same wallet address already set."));
     }
-    *wallet_gaurd = Some(gas_wallet.clone());
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
     if contracts_client_guard.is_some() {
         info!("Updating Contracts Client with the new wallet address");
         let gas_address = gas_wallet.address();
 
+        // Build Common Chain http rpc client
         let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
@@ -105,9 +105,30 @@ async fn inject_mutable_config(
                 .nonce_manager(gas_address),
         );
 
+        // Build Request Chain Client's http rpc client
+        let mut request_chain_http_rpc_clients: HashMap<u64, Provider<Http>> = HashMap::new();
+        for (chain_id, request_chain_client) in contracts_client_guard
+            .as_ref()
+            .unwrap()
+            .request_chain_clients
+            .clone()
+        {
+            let http_rpc_client =
+                Provider::<Http>::try_connect(&request_chain_client.http_rpc_url).await;
+            let Ok(http_rpc_client) = http_rpc_client else {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Failed to connect to the request chain {} http rpc server {}: {}",
+                    chain_id,
+                    request_chain_client.http_rpc_url,
+                    http_rpc_client.unwrap_err()
+                ));
+            };
+            request_chain_http_rpc_clients.insert(chain_id, http_rpc_client);
+        }
+
+        // Updating Gateway Jobs Contract's http rpc client with the new wallet address
         let gateway_jobs_contract =
             GatewayJobsContract::new(app_state.gateway_jobs_contract_addr, http_rpc_client);
-
         let mut gateway_jobs_contract_write_guard = contracts_client_guard
             .as_ref()
             .unwrap()
@@ -116,6 +137,7 @@ async fn inject_mutable_config(
             .unwrap();
         *gateway_jobs_contract_write_guard = gateway_jobs_contract;
 
+        // Updating request chain contract's http rpc client with the new wallet address
         for request_chain_client in contracts_client_guard
             .as_ref()
             .unwrap()
@@ -129,16 +151,10 @@ async fn inject_mutable_config(
             let gas_wallet = gas_wallet
                 .clone()
                 .with_chain_id(request_chain_client.chain_id);
-            let http_rpc_client =
-                Provider::<Http>::try_connect(&request_chain_client.http_rpc_url).await;
-            let Ok(http_rpc_client) = http_rpc_client else {
-                return HttpResponse::InternalServerError().body(format!(
-                    "Failed to connect to the request chain {} http rpc server {}: {}",
-                    request_chain_client.chain_id,
-                    request_chain_client.http_rpc_url,
-                    http_rpc_client.unwrap_err()
-                ));
-            };
+            let http_rpc_client = request_chain_http_rpc_clients
+                .get(&request_chain_client.chain_id)
+                .unwrap()
+                .clone();
 
             let http_rpc_client = Arc::new(
                 http_rpc_client
@@ -154,10 +170,8 @@ async fn inject_mutable_config(
                 request_chain_client.contract.write().unwrap();
             *request_chain_contract_write_guard = contract;
         }
-
-        drop(gateway_jobs_contract_write_guard);
     }
-    drop(contracts_client_guard);
+    *wallet_guard = Some(gas_wallet.clone());
 
     *mutable_params_injected_guard = true;
 
