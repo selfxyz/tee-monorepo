@@ -4,12 +4,14 @@ use ethers::abi::{decode, Address, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
+use futures_core::stream::Stream;
 use hex::FromHex;
 use log::{error, info};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
 use std::error::Error;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -23,6 +25,7 @@ use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
     MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
+    WAIT_BEFORE_CHECKING_BLOCK,
 };
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, RegisterType, RegisteredData,
@@ -227,95 +230,91 @@ impl ContractsClient {
 
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
-                loop {
-                    let req_chain_ws_client = match Provider::<Ws>::connect(
-                        &self_clone.request_chain_clients[&chain_id].ws_rpc_url,
-                    )
-                    .await
-                    {
-                        Ok(req_chain_ws_client) => req_chain_ws_client,
-                        Err(err) => {
-                            error!(
-                                "Failed to connect to the request chain websocket provider: {}",
-                                err
-                            );
-                            continue;
-                        }
-                    };
-
-                    let mut stream = self_clone
-                        .req_chain_jobs(
-                            &req_chain_ws_client,
-                            &self_clone.request_chain_clients[&chain_id],
-                        )
-                        .await
-                        .unwrap();
-
-                    while let Some(log) = stream.next().await {
-                        let ref topics = log.topics;
-
-                        if let Some(is_removed) = log.removed {
-                            if is_removed {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
-
-                        if topics[0]
-                        == keccak256(
-                            "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                        )
-                        .into()
-                        {
-                            info!(
-                                "Request Chain ID: {:?}, JobPlace jobID: {:?}",
-                                chain_id, log.topics[1]
-                            );
-
-                            let self_clone = Arc::clone(&self_clone);
-                            let tx = tx_clone.clone();
-                            task::spawn(async move {
-                                // TODO: what to do in case of error? Let it panic or return None?
-                                let job = self_clone
-                                    .get_job_from_job_relay_event(
-                                        log,
-                                        1u8,
-                                        chain_id
-                                    )
-                                    .await
-                                    .context("Failed to get Job from Log")
-                                    .unwrap();
-                                self_clone.job_placed_handler(
-                                        job,
-                                        tx.clone(),
-                                    )
-                                    .await;
-                            });
-                        } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
-                            info!(
-                                "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
-                                chain_id, log.topics[1]
-                            );
-
-                            let self_clone = Arc::clone(&self_clone);
-                            task::spawn(async move {
-                                self_clone.cancel_job_with_job_id(
-                                    log.topics[1].into_uint(),
-                                ).await;
-                            });
-                        } else {
-                            error!(
-                                "Request Chain ID: {:?}, Unknown event: {:?}",
-                                chain_id, log
-                            );
-                        }
-                    }
-                }
+                _ = self_clone
+                    .handle_single_request_chain_events(tx_clone, chain_id)
+                    .await;
             });
         }
 
         Ok(())
+    }
+
+    async fn handle_single_request_chain_events(self: &Arc<Self>, tx: Sender<Job>, chain_id: u64) {
+        loop {
+            let req_chain_ws_client =
+                match Provider::<Ws>::connect(&self.request_chain_clients[&chain_id].ws_rpc_url)
+                    .await
+                {
+                    Ok(req_chain_ws_client) => req_chain_ws_client,
+                    Err(err) => {
+                        error!(
+                            "Failed to connect to the request chain websocket provider: {}",
+                            err
+                        );
+                        continue;
+                    }
+                };
+
+            let mut stream = self
+                .req_chain_jobs(&req_chain_ws_client, &self.request_chain_clients[&chain_id])
+                .await
+                .unwrap();
+            while let Some(log) = stream.next().await {
+                let ref topics = log.topics;
+                if log.removed.unwrap_or(true) {
+                    continue;
+                }
+
+                if topics[0]
+                == keccak256(
+                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
+                )
+                .into()
+                {
+                    info!(
+                        "Request Chain ID: {:?}, JobPlace jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
+
+                    let self_clone = Arc::clone(&self);
+                    let tx_clone = tx.clone();
+                    task::spawn(async move {
+                        // TODO: what to do in case of error? Let it panic or return None?
+                        let job = self_clone
+                            .get_job_from_job_relay_event(
+                                log,
+                                1u8,
+                                chain_id
+                            )
+                            .await
+                            .context("Failed to get Job from Log")
+                            .unwrap();
+                        self_clone.job_placed_handler(
+                                job,
+                                tx_clone.clone(),
+                            )
+                            .await;
+                    });
+                } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
+                    info!(
+                        "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
+
+                    let self_clone = Arc::clone(&self);
+                    task::spawn(async move {
+                        self_clone.cancel_job_with_job_id(
+                            log.topics[1].into_uint(),
+                        ).await;
+                    });
+                } else {
+                    error!(
+                        "Request Chain ID: {:?}, Unknown event: {:?}",
+                        chain_id, log
+                    );
+                }
+            }
+        }
     }
 
     async fn get_job_from_job_relay_event(
@@ -1165,6 +1164,57 @@ impl ContractsClient {
         let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_id);
     }
+
+    async fn confirm_event(
+        &self,
+        mut log: Log,
+        http_rpc_url: &String,
+        confirmation_blocks: u64,
+        last_seen_block: Arc<AtomicU64>,
+    ) -> Log {
+        let provider: Provider<Http> = Provider::<Http>::try_connect(http_rpc_url).await.unwrap();
+        loop {
+            if last_seen_block.load(Ordering::Relaxed)
+                >= log.block_number.unwrap_or(U64::from(0)).as_u64() + confirmation_blocks
+            {
+                match provider
+                    .get_transaction_receipt(log.transaction_hash.unwrap_or(H256::zero()))
+                    .await
+                {
+                    Ok(Some(_)) => {
+                        info!("Event Confirmed");
+                        break;
+                    }
+                    Ok(None) => {
+                        info!("Event reverted due to re-org");
+                        log.removed = Some(true);
+                        break;
+                    }
+                    Err(err) => {
+                        // TODO: should we retry on all kind of error. If txn has been kicked out would it be also an
+                        // error.
+                        // TODO: check response if it's error
+                        error!("Failed to fetch transaction receipt. Error: {:#?}", err);
+                        time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                        continue;
+                    }
+                };
+            }
+            // TODO donot sleep for first time
+            time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+
+            let curr_block_number = match provider.get_block_number().await {
+                Ok(block_number) => block_number,
+                Err(err) => {
+                    error!("Failed to fetch block number. Error: {:#?}", err);
+                    time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                    continue;
+                }
+            };
+            last_seen_block.store(curr_block_number.as_u64(), Ordering::Relaxed);
+        }
+        log
+    }
 }
 
 impl LogsProvider for ContractsClient {
@@ -1198,7 +1248,7 @@ impl LogsProvider for ContractsClient {
         &'a self,
         req_chain_ws_client: &'a Provider<Ws>,
         req_chain_client: &'a RequestChainClient,
-    ) -> Result<SubscriptionStream<'a, Ws, Log>> {
+    ) -> Result<impl Stream<Item = Log> + Unpin> {
         info!(
             "Subscribing to events for Req Chain chain_id: {}",
             req_chain_client.chain_id
@@ -1224,6 +1274,16 @@ impl LogsProvider for ContractsClient {
             ))
             .unwrap();
 
+        let stream = stream
+            .then(|log| {
+                self.confirm_event(
+                    log,
+                    &req_chain_client.http_rpc_url,
+                    req_chain_client.confirmation_blocks,
+                    req_chain_client.last_seen_block.clone(),
+                )
+            })
+            .boxed();
         Ok(stream)
     }
 
@@ -2025,6 +2085,8 @@ mod serverless_executor_test {
             ws_rpc_url: WS_URL.to_owned(),
             http_rpc_url: HTTP_RPC_URL.to_owned(),
             request_chain_start_block_number: 0,
+            confirmation_blocks: 5, // Fix: test
+            last_seen_block: Arc::new(0.into()),
         });
         request_chain_clients.insert(CHAIN_ID, request_chain_client);
 

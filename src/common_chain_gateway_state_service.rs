@@ -13,7 +13,6 @@ use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
 use crate::contract_abi::GatewaysContract;
 use crate::model::{ContractsClient, GatewayData, Job};
-use crate::HttpProvider;
 
 // Initialize the gateway epoch state
 pub async fn gateway_epoch_state_service(
@@ -26,8 +25,10 @@ pub async fn gateway_epoch_state_service(
         .await
         .unwrap();
 
-    let gateways_contract_address = contracts_client.gateways_contract.read().unwrap().address();
-
+    let gateways_contract = Arc::new(GatewaysContract::new(
+        contracts_client.gateways_contract_address,
+        Arc::new(provider.clone()),
+    ));
     let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;
     let initial_epoch_cycle: u64;
     let mut cycle_number: u64;
@@ -37,9 +38,9 @@ pub async fn gateway_epoch_state_service(
         initial_epoch_cycle = 1;
     };
     {
-        let contract_address_clone = gateways_contract_address;
+        let contract_address_clone = contracts_client.gateways_contract_address;
         let provider_clone = provider.clone();
-        let com_chain_gateway_contract_clone = contracts_client.gateways_contract.clone();
+        let com_chain_gateway_contract_clone = gateways_contract.clone();
         let gateway_epoch_state_clone = Arc::clone(&contracts_client.gateway_epoch_state);
 
         cycle_number = initial_epoch_cycle;
@@ -111,9 +112,9 @@ pub async fn gateway_epoch_state_service(
             }
 
             let success = generate_gateway_epoch_state_for_cycle(
-                gateways_contract_address,
+                contracts_client.gateways_contract_address,
                 &provider.clone(),
-                contracts_client.gateways_contract.clone(),
+                gateways_contract.clone(),
                 &contracts_client.gateway_epoch_state,
                 cycle_number,
                 contracts_client.epoch,
@@ -159,7 +160,7 @@ pub async fn gateway_epoch_state_service(
 pub async fn generate_gateway_epoch_state_for_cycle(
     contract_address: Address,
     provider: &Provider<Http>,
-    com_chain_gateway_contract: Arc<RwLock<GatewaysContract<HttpProvider>>>,
+    com_chain_gateway_contract: Arc<GatewaysContract<Provider<Http>>>,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     cycle_number: u64,
     epoch: u64,
@@ -290,10 +291,8 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     // fetch the gateways mapping for the updated stakes.
     let gateway_addresses: Vec<Address> = current_cycle_state_epoch.keys().cloned().collect();
 
-    let com_chain_gateway_contract_clone = com_chain_gateway_contract.read().unwrap().clone();
-
     for address in gateway_addresses {
-        let gateways_info = com_chain_gateway_contract_clone
+        let gateways_info = com_chain_gateway_contract
             .gateways(address)
             .block(BlockId::from(to_block_number))
             .call()

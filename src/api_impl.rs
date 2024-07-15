@@ -398,6 +398,8 @@ async fn export_signed_registration_message(
             ws_rpc_url,
             http_rpc_url,
             request_chain_start_block_number: request_chain_block_number,
+            confirmation_blocks: 5, // TODO: fetch from contract
+            last_seen_block: Arc::new(0.into()),
         });
         request_chain_clients.insert(chain_id, request_chain_client);
     }
@@ -482,6 +484,9 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
     }
 
     HttpResponse::Ok().json(json!({
+        "enclave_public_key": "0x".to_string() + &hex::encode(
+            &app_state.enclave_signer_key.verifying_key().to_encoded_point(false).as_bytes()[1..]
+        ),
         "enclave_address": app_state.enclave_address,
         "owner_address": *app_state.enclave_owner.lock().unwrap(),
         "gas_address": app_state.wallet.lock().unwrap().clone().unwrap().address(),

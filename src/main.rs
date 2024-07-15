@@ -11,6 +11,7 @@ use actix_web::web::Data;
 use actix_web::{App, HttpServer};
 use anyhow::Context;
 use clap::Parser;
+use env_logger::Env;
 use ethers::prelude::*;
 use ethers::providers::Provider;
 use ethers::utils::public_key_to_address;
@@ -21,7 +22,8 @@ use std::sync::Mutex;
 use tokio::fs;
 
 use crate::api_impl::{
-    export_signed_registration_message, index, inject_immutable_config, inject_mutable_config,
+    export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
+    inject_mutable_config,
 };
 use crate::model::{AppState, ConfigManager};
 
@@ -42,6 +44,7 @@ struct Cli {
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     // Load the configuration file
     let args = Cli::parse();
     let config_manager = ConfigManager::new(&args.config_file);
@@ -86,6 +89,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             .service(inject_immutable_config)
             .service(inject_mutable_config)
             .service(export_signed_registration_message)
+            .service(get_gateway_details)
     })
     .bind(("0.0.0.0", args.port))
     .context(format!("could not bind to port {}", args.port))?

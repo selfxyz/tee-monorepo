@@ -4,6 +4,7 @@ use ethers::abi::{encode_packed, FixedBytes, Token};
 use ethers::prelude::*;
 use ethers::types::{Address, U256};
 use ethers::utils::keccak256;
+use futures_core::stream::Stream;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::{error, info};
@@ -24,7 +25,7 @@ pub trait LogsProvider {
         &'a self,
         req_chain_ws_client: &'a Provider<Ws>,
         req_chain_client: &'a RequestChainClient,
-    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>>;
+    ) -> impl Future<Output = Result<impl Stream<Item = Log> + Unpin>>;
 
     fn gateways_job_relayed_logs<'a>(
         &'a self,
@@ -125,10 +126,13 @@ pub async fn get_block_number_by_timestamp(
                 count = 0;
                 latest_block_timestamp = 0;
 
-                block_number = block_number
-                    - ((block.timestamp.as_u64() - target_timestamp) as f64 * block_rate_per_second)
-                        as u64
-                    + 1;
+                let block_go_back = ((block.timestamp.as_u64() - target_timestamp) as f64
+                    * block_rate_per_second) as u64;
+                if block_number >= block_go_back {
+                    block_number = block_number - block_go_back + 1;
+                } else {
+                    block_number = 1;
+                }
             }
         }
         block_number -= 1;
