@@ -105,8 +105,11 @@ pub async fn get_block_number_by_timestamp(
                         time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
                         continue 'next_block_check;
                     }
-                    Err(_) => {
-                        error!("Failed to fetch block number {}", next_block_number);
+                    Err(err) => {
+                        error!(
+                            "Failed to fetch block number {}. Err: {}",
+                            next_block_number, err
+                        );
                         return None;
                     }
                 }

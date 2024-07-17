@@ -250,6 +250,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
             gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
         }
+        info!("Generated gateway epoch state for cycle {}", cycle_number);
         return Ok(()); // no blocks to process
     }
 
