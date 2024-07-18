@@ -11,15 +11,14 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
 use std::error::Error;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::{task, time};
 
 use crate::chain_util::{
-    sign_job_response_request, sign_reassign_gateway_relay_request, sign_relay_job_request,
-    LogsProvider,
+    confirm_event, sign_job_response_request, sign_reassign_gateway_relay_request,
+    sign_relay_job_request, LogsProvider,
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
@@ -1164,74 +1163,6 @@ impl ContractsClient {
         let mut active_jobs = self.active_jobs.write().unwrap();
         active_jobs.remove(&job_id);
     }
-
-    async fn confirm_event(
-        &self,
-        mut log: Log,
-        http_rpc_url: &String,
-        confirmation_blocks: u64,
-        last_seen_block: Arc<AtomicU64>,
-    ) -> Log {
-        let provider: Provider<Http> = Provider::<Http>::try_connect(http_rpc_url).await.unwrap();
-
-        let log_transaction_hash = log.transaction_hash.unwrap_or(H256::zero());
-        // Verify transaction hash is of valid length and not 0
-        if log_transaction_hash.0.len() != 32 || log_transaction_hash == H256::zero() {
-            log.removed = Some(true);
-            return log;
-        }
-
-        let mut retries = 0;
-        let mut first_iteration = true;
-        loop {
-            if last_seen_block.load(Ordering::Relaxed)
-                >= log.block_number.unwrap_or(U64::from(0)).as_u64() + confirmation_blocks
-            {
-                match provider
-                    .get_transaction_receipt(log.transaction_hash.unwrap_or(H256::zero()))
-                    .await
-                {
-                    Ok(Some(_)) => {
-                        info!("Event Confirmed");
-                        break;
-                    }
-                    Ok(None) => {
-                        info!("Event reverted due to re-org");
-                        log.removed = Some(true);
-                        break;
-                    }
-                    Err(err) => {
-                        error!("Failed to fetch transaction receipt. Error: {:#?}", err);
-                        retries += 1;
-                        if retries >= MAX_TX_RECEIPT_RETRIES {
-                            error!("Max retries reached. Exiting");
-                            log.removed = Some(true);
-                            break;
-                        }
-                        time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
-                        continue;
-                    }
-                };
-            }
-
-            if first_iteration {
-                first_iteration = false;
-            } else {
-                time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
-            }
-
-            let curr_block_number = match provider.get_block_number().await {
-                Ok(block_number) => block_number,
-                Err(err) => {
-                    error!("Failed to fetch block number. Error: {:#?}", err);
-                    time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
-                    continue;
-                }
-            };
-            last_seen_block.store(curr_block_number.as_u64(), Ordering::Relaxed);
-        }
-        log
-    }
 }
 
 impl LogsProvider for ContractsClient {
@@ -1293,7 +1224,7 @@ impl LogsProvider for ContractsClient {
 
         let stream = stream
             .then(|log| {
-                self.confirm_event(
+                confirm_event(
                     log,
                     &req_chain_client.http_rpc_url,
                     req_chain_client.confirmation_blocks,
