@@ -1926,13 +1926,7 @@ mod serverless_executor_test {
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
-                "attestation": REGISTER_ATTESTATION,
-                "pcr_0": REGISTER_PCR_0,
-                "pcr_1": REGISTER_PCR_1,
-                "pcr_2": REGISTER_PCR_2,
-                "timestamp": REGISTER_TIMESTAMP,
-                "stake_amount": REGISTER_STAKE_AMOUNT,
-                "request_chain_data": [CHAIN_ID]
+                "chain_ids": [CHAIN_ID]
             }))
             .to_request();
 
