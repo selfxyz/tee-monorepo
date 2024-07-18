@@ -21,9 +21,7 @@ pub async fn gateway_epoch_state_service(
     contracts_client: Arc<ContractsClient>,
     tx: Sender<Job>,
 ) {
-    let provider: Provider<Http> = Provider::<Http>::try_connect(&common_chain_rpc_http_url)
-        .await
-        .unwrap();
+    let provider: Provider<Http> = Provider::<Http>::try_from(&common_chain_rpc_http_url).unwrap();
     let provider = Arc::new(provider);
 
     let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;

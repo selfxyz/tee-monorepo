@@ -423,9 +423,7 @@ impl ContractsClient {
         //          Problem: Extra time spent here waiting.
 
         let common_chain_http_provider: Provider<Http> =
-            Provider::<Http>::try_connect(&self.common_chain_http_url)
-                .await
-                .unwrap();
+            Provider::<Http>::try_from(&self.common_chain_http_url).unwrap();
 
         let logs = self
             .gateways_job_relayed_logs(job.clone(), &common_chain_http_provider)
@@ -2004,9 +2002,7 @@ mod serverless_executor_test {
         let signer_wallet = wallet.clone().with_chain_id(app_state.common_chain_id);
 
         let signer_address = signer_wallet.address();
-        let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url)
-            .await
-            .unwrap();
+        let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url).unwrap();
 
         let http_rpc_client = Arc::new(
             http_rpc_client
