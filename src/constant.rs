@@ -5,6 +5,7 @@ pub const REQUEST_RELAY_TIMEOUT: u64 = 15 * 60; // 15 minutes
 
 // pub const RESPONSE_RELAY_TIMEOUT: u64 = 15 * 60; // 15 minutes
 pub const MAX_GATEWAY_RETRIES: u8 = 2;
+pub const MAX_TX_RECEIPT_RETRIES: u8 = 5;
 
 pub const GATEWAY_BLOCK_STATES_TO_MAINTAIN: u64 = 5;
 pub const OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE: u64 = 4; // 4 seconds

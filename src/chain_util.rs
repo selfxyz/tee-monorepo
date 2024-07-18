@@ -4,14 +4,17 @@ use ethers::abi::{encode_packed, FixedBytes, Token};
 use ethers::prelude::*;
 use ethers::types::{Address, U256};
 use ethers::utils::keccak256;
+use futures_core::stream::Stream;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::{error, info};
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time;
 
-use crate::constant::WAIT_BEFORE_CHECKING_BLOCK;
+use crate::constant::{MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK};
 use crate::model::{Job, RequestChainClient};
 
 pub trait LogsProvider {
@@ -24,7 +27,7 @@ pub trait LogsProvider {
         &'a self,
         req_chain_ws_client: &'a Provider<Ws>,
         req_chain_client: &'a RequestChainClient,
-    ) -> impl Future<Output = Result<SubscriptionStream<'a, Ws, Log>>>;
+    ) -> impl Future<Output = Result<impl Stream<Item = Log> + Unpin>>;
 
     fn gateways_job_relayed_logs<'a>(
         &'a self,
@@ -104,8 +107,11 @@ pub async fn get_block_number_by_timestamp(
                         time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
                         continue 'next_block_check;
                     }
-                    Err(_) => {
-                        error!("Failed to fetch block number {}", next_block_number);
+                    Err(err) => {
+                        error!(
+                            "Failed to fetch block number {}. Err: {}",
+                            next_block_number, err
+                        );
                         return None;
                     }
                 }
@@ -125,10 +131,13 @@ pub async fn get_block_number_by_timestamp(
                 count = 0;
                 latest_block_timestamp = 0;
 
-                block_number = block_number
-                    - ((block.timestamp.as_u64() - target_timestamp) as f64 * block_rate_per_second)
-                        as u64
-                    + 1;
+                let block_go_back = ((block.timestamp.as_u64() - target_timestamp) as f64
+                    * block_rate_per_second) as u64;
+                if block_number >= block_go_back {
+                    block_number = block_number - block_go_back + 1;
+                } else {
+                    block_number = 1;
+                }
             }
         }
         block_number -= 1;
@@ -320,4 +329,71 @@ pub async fn sign_job_response_request(
         hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec()),
         sign_timestamp,
     ))
+}
+
+pub async fn confirm_event(
+    mut log: Log,
+    http_rpc_url: &String,
+    confirmation_blocks: u64,
+    last_seen_block: Arc<AtomicU64>,
+) -> Log {
+    let provider: Provider<Http> = Provider::<Http>::try_from(http_rpc_url).unwrap();
+
+    let log_transaction_hash = log.transaction_hash.unwrap_or(H256::zero());
+    // Verify transaction hash is of valid length and not 0
+    if log_transaction_hash == H256::zero() {
+        log.removed = Some(true);
+        return log;
+    }
+
+    let mut retries = 0;
+    let mut first_iteration = true;
+    loop {
+        if last_seen_block.load(Ordering::Relaxed)
+            >= log.block_number.unwrap_or(U64::from(0)).as_u64() + confirmation_blocks
+        {
+            match provider
+                .get_transaction_receipt(log.transaction_hash.unwrap_or(H256::zero()))
+                .await
+            {
+                Ok(Some(_)) => {
+                    info!("Event Confirmed");
+                    break;
+                }
+                Ok(None) => {
+                    info!("Event reverted due to re-org");
+                    log.removed = Some(true);
+                    break;
+                }
+                Err(err) => {
+                    error!("Failed to fetch transaction receipt. Error: {:#?}", err);
+                    retries += 1;
+                    if retries >= MAX_TX_RECEIPT_RETRIES {
+                        error!("Max retries reached. Exiting");
+                        log.removed = Some(true);
+                        break;
+                    }
+                    time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                    continue;
+                }
+            };
+        }
+
+        if first_iteration {
+            first_iteration = false;
+        } else {
+            time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+        }
+
+        let curr_block_number = match provider.get_block_number().await {
+            Ok(block_number) => block_number,
+            Err(err) => {
+                error!("Failed to fetch block number. Error: {:#?}", err);
+                time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                continue;
+            }
+        };
+        last_seen_block.store(curr_block_number.as_u64(), Ordering::Relaxed);
+    }
+    log
 }

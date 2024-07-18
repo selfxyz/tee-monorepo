@@ -21,9 +21,7 @@ pub async fn gateway_epoch_state_service(
     contracts_client: Arc<ContractsClient>,
     tx: Sender<Job>,
 ) {
-    let provider: Provider<Http> = Provider::<Http>::try_connect(&common_chain_rpc_http_url)
-        .await
-        .unwrap();
+    let provider: Provider<Http> = Provider::<Http>::try_from(&common_chain_rpc_http_url).unwrap();
     let provider = Arc::new(provider);
 
     let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;
@@ -250,6 +248,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             let mut gateway_epoch_state_guard = gateway_epoch_state.write().unwrap();
             gateway_epoch_state_guard.insert(cycle_number, current_cycle_state_epoch);
         }
+        info!("Generated gateway epoch state for cycle {}", cycle_number);
         return Ok(()); // no blocks to process
     }
 
@@ -294,10 +293,8 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     // fetch the gateways mapping for the updated stakes.
     let gateway_addresses: Vec<Address> = current_cycle_state_epoch.keys().cloned().collect();
 
-    let com_chain_gateway_contract_clone = com_chain_gateway_contract.clone();
-
     for address in gateway_addresses {
-        let gateways_info = com_chain_gateway_contract_clone
+        let gateways_info = com_chain_gateway_contract
             .gateways(address)
             .block(BlockId::from(to_block_number))
             .call()

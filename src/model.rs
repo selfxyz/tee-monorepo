@@ -4,7 +4,7 @@ use ethers::types::{Address, Bytes, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{atomic::AtomicU64, Arc, Mutex, RwLock};
 
 use crate::contract_abi::{GatewayJobsContract, RelayContract};
 use crate::HttpProvider;
@@ -117,6 +117,8 @@ pub struct RequestChainClient {
     pub http_rpc_url: String,
     pub contract: Arc<RwLock<RelayContract<HttpProvider>>>,
     pub request_chain_start_block_number: u64,
+    pub confirmation_blocks: u64,
+    pub last_seen_block: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
