@@ -23,8 +23,7 @@ use crate::chain_util::{
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
-    MAX_TX_RECEIPT_RETRIES, MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE,
-    REQUEST_RELAY_TIMEOUT, WAIT_BEFORE_CHECKING_BLOCK,
+    MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, RegisterType, RegisteredData,
