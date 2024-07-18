@@ -14,7 +14,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time;
 
-use crate::constant::{MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK};
+use crate::constant::{
+    MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK,
+};
 use crate::model::{Job, RequestChainClient};
 
 pub trait LogsProvider {
@@ -86,6 +88,8 @@ pub async fn get_block_number_by_timestamp(
         if block.timestamp < U256::from(target_timestamp) {
             // Fetch the next block to confirm this is the latest block with timestamp < target_timestamp
             let next_block_number = block_number + 1;
+
+            let mut retry_on_error = 0;
             'next_block_check: loop {
                 let next_block_result = provider.get_block(next_block_number).await;
 
@@ -112,6 +116,10 @@ pub async fn get_block_number_by_timestamp(
                             "Failed to fetch block number {}. Err: {}",
                             next_block_number, err
                         );
+                        retry_on_error += 1;
+                        if retry_on_error <= MAX_RETRY_ON_PROVIDER_ERROR {
+                            continue 'next_block_check;
+                        }
                         return None;
                     }
                 }
