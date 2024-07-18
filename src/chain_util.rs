@@ -341,7 +341,7 @@ pub async fn confirm_event(
 
     let log_transaction_hash = log.transaction_hash.unwrap_or(H256::zero());
     // Verify transaction hash is of valid length and not 0
-    if log_transaction_hash.0.len() != 32 || log_transaction_hash == H256::zero() {
+    if log_transaction_hash == H256::zero() {
         log.removed = Some(true);
         return log;
     }
