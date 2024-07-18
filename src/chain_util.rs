@@ -345,11 +345,11 @@ pub async fn confirm_event(
     confirmation_blocks: u64,
     last_seen_block: Arc<AtomicU64>,
 ) -> Log {
-    let provider: Provider<Http> = Provider::<Http>::try_connect(http_rpc_url).await.unwrap();
+    let provider: Provider<Http> = Provider::<Http>::try_from(http_rpc_url).unwrap();
 
     let log_transaction_hash = log.transaction_hash.unwrap_or(H256::zero());
     // Verify transaction hash is of valid length and not 0
-    if log_transaction_hash.0.len() != 32 || log_transaction_hash == H256::zero() {
+    if log_transaction_hash == H256::zero() {
         log.removed = Some(true);
         return log;
     }

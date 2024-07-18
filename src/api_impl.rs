@@ -91,7 +91,7 @@ async fn inject_mutable_config(
         let gas_address = gas_wallet.address();
 
         // Build Common Chain http rpc client
-        let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
+        let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the common chain http rpc server {}: {}",
@@ -113,8 +113,7 @@ async fn inject_mutable_config(
             .request_chain_clients
             .clone()
         {
-            let http_rpc_client =
-                Provider::<Http>::try_connect(&request_chain_client.http_rpc_url).await;
+            let http_rpc_client = Provider::<Http>::try_from(&request_chain_client.http_rpc_url);
             let Ok(http_rpc_client) = http_rpc_client else {
                 return HttpResponse::InternalServerError().body(format!(
                     "Failed to connect to the request chain {} http rpc server {}: {}",
@@ -342,7 +341,7 @@ async fn export_signed_registration_message(
     let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
     // Create GatewaysContract instance
-    let http_rpc_client = Provider::<Http>::try_connect(&app_state.common_chain_http_url).await;
+    let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
     let Ok(http_rpc_client) = http_rpc_client else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to connect to the common chain http rpc server {}: {}",
@@ -374,7 +373,7 @@ async fn export_signed_registration_message(
         let http_rpc_url: String = http_rpc_url.to_string();
         let ws_rpc_url: String = ws_rpc_url.to_string();
 
-        let http_rpc_client = Provider::<Http>::try_connect(&http_rpc_url).await;
+        let http_rpc_client = Provider::<Http>::try_from(&http_rpc_url);
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the request chain {} http rpc server {}: {}",
