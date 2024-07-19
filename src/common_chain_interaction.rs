@@ -1876,8 +1876,6 @@ mod serverless_executor_test {
             .unwrap());
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        println!("Registering the enclave with valid data points");
-
         // Register the enclave with valid data points
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
@@ -1887,8 +1885,6 @@ mod serverless_executor_test {
             .to_request();
 
         let resp = test::call_service(&app, req).await;
-
-        println!("Response:Got");
 
         assert_eq!(resp.status(), http::StatusCode::OK);
 
@@ -1931,6 +1927,8 @@ mod serverless_executor_test {
             .to_request();
 
         let resp = test::call_service(&app, req).await;
+
+        println!("{:#?}", resp.clone().into_body().try_into_bytes().unwrap());
 
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
