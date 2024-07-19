@@ -1295,9 +1295,9 @@ impl LogsProvider for ContractsClient {
 
 #[cfg(test)]
 mod serverless_executor_test {
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::collections::{BTreeMap, BTreeSet};
     use std::str::FromStr;
-    use std::sync::{Mutex, RwLock};
+    use std::sync::Mutex;
 
     use abi::{encode, encode_packed, Token};
     use actix_web::{
@@ -1313,13 +1313,9 @@ mod serverless_executor_test {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
 
-    use crate::contract_abi::GatewayJobsContract;
-    use crate::{
-        api_impl::{
-            export_signed_registration_message, get_gateway_details, index,
-            inject_immutable_config, inject_mutable_config,
-        },
-        contract_abi::RelayContract,
+    use crate::api_impl::{
+        export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
+        inject_mutable_config,
     };
 
     use super::*;
@@ -1333,12 +1329,6 @@ mod serverless_executor_test {
     const RELAY_CONTRACT_ADDR: &str = "0xaF7E4CB6B3729C65c4a9a63d89Ae04e97C9093C4";
     const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
     const GAS_WALLET_KEY: &str = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
-    const REGISTER_ATTESTATION: &str = "0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462cfa7554f87ba13620037695d62a381a2d8";
-    const REGISTER_PCR_0: &str = "0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462";
-    const REGISTER_PCR_1: &str = "0xbcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f";
-    const REGISTER_PCR_2: &str = "0x20caae8a6a69d9b1aecdf01a0b9c5f3eafd1f06cb51892bf47cef476935bfe77b5b75714b68a69146d650683a217c5b3";
-    const REGISTER_TIMESTAMP: usize = 1722134849000;
-    const REGISTER_STAKE_AMOUNT: usize = 100;
     const EPOCH: u64 = 1713433800;
     const TIME_INTERVAL: u64 = 300;
 
@@ -2085,7 +2075,7 @@ mod serverless_executor_test {
         );
     }
 
-    async fn generate_contracts_client() -> ContractsClient {
+    async fn generate_contracts_client() -> Arc<ContractsClient> {
         let app_state = generate_app_state().await;
         let app = test::init_service(new_app(app_state.clone())).await;
 
@@ -2107,82 +2097,19 @@ mod serverless_executor_test {
             .to_request();
         test::call_service(&app, req).await;
 
-        // Register the enclave again before deregistering
-        let req = test::TestRequest::post()
+        // Get signature with valid data points
+        let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
-                "attestation": REGISTER_ATTESTATION,
-                "pcr_0": REGISTER_PCR_0,
-                "pcr_1": REGISTER_PCR_1,
-                "pcr_2": REGISTER_PCR_2,
-                "timestamp": REGISTER_TIMESTAMP,
-                "stake_amount": REGISTER_STAKE_AMOUNT,
-                "request_chain_data": [CHAIN_ID]
+                "chain_ids": [CHAIN_ID]
             }))
             .to_request();
 
         test::call_service(&app, req).await;
 
-        let enclave_owner = app_state.enclave_owner.lock().unwrap().clone();
+        let contracts_client = app_state.contracts_client.lock().unwrap().clone().unwrap();
 
-        let wallet = app_state.wallet.lock().unwrap().clone().unwrap();
-        let signer_wallet = wallet.clone().with_chain_id(app_state.common_chain_id);
-
-        let signer_address = signer_wallet.address();
-        let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url).unwrap();
-
-        let http_rpc_client = Arc::new(
-            http_rpc_client
-                .with_signer(signer_wallet.clone())
-                .nonce_manager(signer_address),
-        );
-
-        let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
-            Arc::new(RwLock::new(BTreeMap::new()));
-        let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
-
-        let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
-
-        let contract = RelayContract::new(
-            H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
-            http_rpc_client.clone(),
-        );
-
-        let request_chain_client = Arc::from(RequestChainClient {
-            chain_id: CHAIN_ID,
-            contract_address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
-            contract: Arc::new(RwLock::new(contract)),
-            ws_rpc_url: WS_URL.to_owned(),
-            http_rpc_url: HTTP_RPC_URL.to_owned(),
-            request_chain_start_block_number: 0,
-            confirmation_blocks: 5, // Fix: test
-            last_seen_block: Arc::new(0.into()),
-        });
-        request_chain_clients.insert(CHAIN_ID, request_chain_client);
-
-        let gateway_jobs_contract = GatewayJobsContract::new(
-            app_state.gateway_jobs_contract_addr,
-            http_rpc_client.clone(),
-        );
-
-        ContractsClient {
-            enclave_owner,
-            enclave_signer_key: app_state.enclave_signer_key.clone(),
-            enclave_address: app_state.enclave_address,
-            common_chain_ws_url: app_state.common_chain_ws_url.clone(),
-            common_chain_http_url: app_state.common_chain_http_url.clone(),
-            gateways_contract_address: app_state.gateways_contract_addr,
-            gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
-            request_chain_clients,
-            gateway_epoch_state,
-            request_chain_ids: [CHAIN_ID].into(),
-            active_jobs: Arc::new(RwLock::new(HashMap::new())),
-            current_jobs: Arc::new(RwLock::new(HashMap::new())),
-            epoch: app_state.epoch,
-            time_interval: app_state.time_interval,
-            gateway_epoch_state_waitlist,
-            common_chain_start_block_number: Arc::new(Mutex::new(0 as u64)),
-        }
+        contracts_client
     }
 
     async fn add_gateway_epoch_state(
@@ -2343,7 +2270,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_get_job_from_job_relay_event() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job_starttime = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -2364,7 +2291,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_get_job_from_job_relay_event_invalid_log() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let log = Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
@@ -2389,7 +2316,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_select_gateway_for_job_id() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
@@ -2405,7 +2332,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_select_gateway_for_job_id_no_cycle_state() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
@@ -2431,7 +2358,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_select_gateway_for_job_id_multiple_gateways() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
@@ -2467,7 +2394,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_select_gateway_for_job_id_multiple_gateways_seq_number() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
         job.sequence_number = 5;
@@ -2504,7 +2431,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_job_placed_handler() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
 
@@ -2549,7 +2476,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_job_placed_handler_selected_gateway_not_self() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
@@ -2586,7 +2513,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_job_placed_handler_no_cycle_state() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
@@ -2621,7 +2548,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_job_relayed_slash_timer_txn_success() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
 
@@ -2651,7 +2578,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_job_relayed_slash_timer_txn_fail_retry() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
@@ -2689,7 +2616,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_job_relayed_slash_timer_txn_fail_max_retry() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
@@ -2728,7 +2655,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_cancel_job_with_job_id_single_active_job() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
         contracts_client
@@ -2749,7 +2676,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_cancel_job_with_job_id_multiple_active_jobs() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
         contracts_client
@@ -2785,7 +2712,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_cancel_job_with_job_id_no_active_jobs() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
@@ -2801,7 +2728,7 @@ mod serverless_executor_test {
 
     #[actix_web::test]
     async fn test_get_job_from_job_responded_event() {
-        let contracts_client = Arc::from(generate_contracts_client().await);
+        let contracts_client = generate_contracts_client().await;
 
         let log = generate_job_responded_log(None).await;
 
