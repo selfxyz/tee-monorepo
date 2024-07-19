@@ -82,7 +82,7 @@ async fn inject_mutable_config(
     };
     let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
     if *wallet_guard == Some(gas_wallet.clone()) {
-        return HttpResponse::NotAcceptable().body(format!("The same wallet address already set."));
+        return HttpResponse::NotAcceptable().body("The same wallet address already set.");
     }
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
@@ -365,11 +365,15 @@ async fn export_signed_registration_message(
         // create request chain client and add it to the request chain clients map
         let signer_wallet = wallet.clone().with_chain_id(chain_id);
         // get request chain rpc url
-        let (contract_address, http_rpc_url, ws_rpc_url) = gateways_contract
-            .request_chains(chain_id.into())
-            .await
-            .context("Failed to get request chain data")
-            .unwrap();
+        let request_chain_info = gateways_contract.request_chains(chain_id.into()).await;
+        if request_chain_info.is_err() {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to fetch the request chain data for chain id {}: {}",
+                chain_id,
+                request_chain_info.unwrap_err()
+            ));
+        }
+        let (contract_address, http_rpc_url, ws_rpc_url) = request_chain_info.unwrap();
         let http_rpc_url: String = http_rpc_url.to_string();
         let ws_rpc_url: String = ws_rpc_url.to_string();
 

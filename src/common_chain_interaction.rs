@@ -1572,7 +1572,7 @@ mod serverless_executor_test {
             Some(wallet_from_hex(GAS_WALLET_KEY))
         );
 
-        // Inject a valid private key for gas wallet again
+        // Inject the same valid private key for gas wallet again
         let req = test::TestRequest::post()
             .uri("/mutable-config")
             .set_json(&json!({
@@ -1582,10 +1582,10 @@ mod serverless_executor_test {
 
         let resp = test::call_service(&app, req).await;
 
-        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(resp.status(), http::StatusCode::NOT_ACCEPTABLE);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
+            "The same wallet address already set."
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
