@@ -1727,7 +1727,6 @@ mod serverless_executor_test {
         true
     }
 
-    // Test the various response cases for the 'register_enclave' & 'deregister_enclave' endpoint
     #[actix_web::test]
     async fn export_signed_registration_message_test() {
         let app_state = generate_app_state().await;
@@ -1917,7 +1916,7 @@ mod serverless_executor_test {
             verifying_key
         ));
 
-        // Get signature again
+        // Get signature again with the same chain ids
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
@@ -1958,12 +1957,68 @@ mod serverless_executor_test {
             response.request_chain_signature,
             verifying_key
         ));
+
+        // Get signature with a different chain id
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({
+                "chain_ids": [CHAIN_ID + 1]
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            json!({
+                    "message": "Request chain ids mismatch!",
+                    "chain_ids": [CHAIN_ID],
+            })
+            .to_string()
+            .try_into_bytes()
+            .unwrap()
+        );
+
+        // After on chain registration
+        *app_state.registered.lock().unwrap() = true;
+
+        // Get signature after registration
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({
+                "chain_ids": [CHAIN_ID]
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Enclave has already been registered."
+        );
     }
 
-    async fn generate_contracts_client() -> ContractsClient {
+    #[actix_web::test]
+    async fn get_gateway_details_test() {
         let app_state = generate_app_state().await;
         let app = test::init_service(new_app(app_state.clone())).await;
 
+        // Get gateway details without adding wallet and gas key
+        let req = test::TestRequest::get()
+            .uri("/gateway-details")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Immutable params not configured yet!"
+        );
+
+        // Inject a valid address into the enclave
         let req = test::TestRequest::post()
             .uri("/immutable-config")
             .set_json(&json!({
@@ -1971,6 +2026,85 @@ mod serverless_executor_test {
             }))
             .to_request();
 
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Immutable params configured!"
+        );
+
+        // Get gateway details without gas key
+        let req = test::TestRequest::get()
+            .uri("/gateway-details")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params not configured yet!"
+        );
+
+        // Inject a valid private gas key
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY
+            }))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.into_body().try_into_bytes().unwrap(),
+            "Mutable params configured!"
+        );
+
+        // Get gateway details
+        let req = test::TestRequest::get()
+            .uri("/gateway-details")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+
+        assert_eq!(
+            json!({
+                "enclave_public_key": "0x".to_string() + &hex::encode(
+                    &app_state.enclave_signer_key.verifying_key().to_encoded_point(false).as_bytes()[1..]
+                ),
+                "enclave_address": app_state.enclave_address,
+                "owner_address": *app_state.enclave_owner.lock().unwrap(),
+                "gas_address": app_state.wallet.lock().unwrap().clone().unwrap().address(),
+            }).to_string().try_into_bytes().unwrap(),
+            &resp.into_body().try_into_bytes().unwrap(),
+        );
+    }
+
+    async fn generate_contracts_client() -> ContractsClient {
+        let app_state = generate_app_state().await;
+        let app = test::init_service(new_app(app_state.clone())).await;
+
+        // add immutable config
+        let req = test::TestRequest::post()
+            .uri("/immutable-config")
+            .set_json(&json!({
+                "owner_address_hex": OWNER_ADDRESS
+            }))
+            .to_request();
+        test::call_service(&app, req).await;
+
+        // add mutable config
+        let req = test::TestRequest::post()
+            .uri("/mutable-config")
+            .set_json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY
+            }))
+            .to_request();
         test::call_service(&app, req).await;
 
         // Register the enclave again before deregistering
