@@ -1312,7 +1312,6 @@ mod serverless_executor_test {
     use rand::rngs::OsRng;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use tokio::time::sleep;
 
     use crate::contract_abi::GatewayJobsContract;
     use crate::{
@@ -1734,7 +1733,7 @@ mod serverless_executor_test {
         let app_state = generate_app_state().await;
         let app = test::init_service(new_app(app_state.clone())).await;
 
-        // Register the executor without injecting the operator's address or gas key
+        // Get signature without injecting the operator's address or gas key
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
@@ -1782,7 +1781,7 @@ mod serverless_executor_test {
             .unwrap());
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        // Register the executor without injecting a gas key
+        // Get signature without injecting a gas key
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
@@ -1830,7 +1829,7 @@ mod serverless_executor_test {
             .unwrap());
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        // Register the enclave with invalid chain id
+        // Get signature with invalid chain id
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
@@ -1853,7 +1852,7 @@ mod serverless_executor_test {
             .unwrap());
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        // Register the enclave with no chain_ids field in json
+        // Get signature with no chain_ids field in json
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({}))
@@ -1876,7 +1875,7 @@ mod serverless_executor_test {
             .unwrap());
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
-        // Register the enclave with valid data points
+        // Get signature with valid data points
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
@@ -1918,7 +1917,7 @@ mod serverless_executor_test {
             verifying_key
         ));
 
-        // Register the enclave again before deregistering
+        // Get signature again
         let req = test::TestRequest::get()
             .uri("/signed-registration-message")
             .set_json(&json!({
@@ -1928,35 +1927,37 @@ mod serverless_executor_test {
 
         let resp = test::call_service(&app, req).await;
 
-        println!("{:#?}", resp.clone().into_body().try_into_bytes().unwrap());
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Enclave has already been registered."
-        );
-
-        sleep(Duration::from_secs(2)).await;
-        // Deregister the enclave
-        let req = test::TestRequest::delete().uri("/deregister").to_request();
-
-        let resp = test::call_service(&app, req).await;
-
         assert_eq!(resp.status(), http::StatusCode::OK);
-        assert!(resp.into_body().try_into_bytes().unwrap().starts_with(
-            "Enclave Node successfully deregistered from the common chain".as_bytes()
+
+        let response: Result<ExportResponse, serde_json::Error> =
+            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+        assert!(response.is_ok());
+
+        let mut chain_id_set: HashSet<u64> = HashSet::new();
+        chain_id_set.insert(CHAIN_ID);
+
+        let verifying_key = app_state.enclave_signer_key.verifying_key().to_owned();
+
+        let response = response.unwrap();
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.mutable_params_injected.lock().unwrap());
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), chain_id_set);
+        assert_eq!(response.owner, *app_state.enclave_owner.lock().unwrap());
+        assert_eq!(response.common_chain_signature.len(), 130);
+        assert_eq!(response.request_chain_signature.len(), 130);
+        assert!(recover_key(
+            vec![CHAIN_ID],
+            *app_state.enclave_owner.lock().unwrap(),
+            response.sign_timestamp,
+            response.common_chain_signature,
+            response.request_chain_signature,
+            verifying_key
         ));
-
-        // Deregister the enclave again before registering it
-        let req = test::TestRequest::delete().uri("/deregister").to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Enclave is not registered yet."
-        );
     }
 
     async fn generate_contracts_client() -> ContractsClient {
