@@ -836,7 +836,17 @@ impl ContractsClient {
 
         let types = vec![ParamType::Bytes, ParamType::Uint(256), ParamType::Uint(8)];
 
-        let decoded = decode(&types, &log.data.0).unwrap();
+        let decoded = decode(&types, &log.data.0);
+        let decoded = match decoded {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                error!("Error while decoding event: {}", err);
+                return Err(anyhow::Error::msg(format!(
+                    "Error while decoding event: {}",
+                    err
+                )));
+            }
+        };
         let request_chain_id = job.request_chain_id;
 
         Ok(ResponseJob {
@@ -2289,15 +2299,13 @@ mod serverless_executor_test {
         Log {
             address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256("JobResponded(uint256,uint256,bytes,uint256,uint8,uint8").into(),
+                keccak256("JobResponded(uint256,bytes,uint8").into(),
                 H256::from_uint(&job_id),
-                H256::from_uint(&CHAIN_ID.into()),
             ],
             data: encode(&[
                 Token::Bytes([].into()),
                 Token::Uint(U256::from(1000)),
                 Token::Uint((0 as u8).into()),
-                Token::Uint((1 as u8).into()),
             ])
             .into(),
             ..Default::default()
@@ -2811,19 +2819,70 @@ mod serverless_executor_test {
     }
 
     #[actix_web::test]
-    async fn test_get_job_from_job_responded_event() {
+    async fn test_get_job_from_job_responded_event_job_not_of_enclave() {
         let contracts_client = generate_contracts_client().await;
 
         let log = generate_job_responded_log(None).await;
 
+        // let expected_job = generate_generic_response_job(None).await;
+
+        let job = contracts_client.get_job_from_job_responded_event(log).await;
+
+        assert!(job.is_err());
+        assert_eq!(
+            job.err().unwrap().to_string(),
+            "Job does not belong to the enclave"
+        );
+    }
+
+    #[actix_web::test]
+    async fn test_get_job_from_job_responded_event_job_of_enclave() {
+        let contracts_client = generate_contracts_client().await;
+
+        let log = generate_job_responded_log(None).await;
+
+        let job = generate_generic_job(None, None).await;
         let expected_job = generate_generic_response_job(None).await;
+        contracts_client
+            .active_jobs
+            .write()
+            .unwrap()
+            .insert(job.job_id, job.clone());
 
-        let job = contracts_client
-            .get_job_from_job_responded_event(log)
-            .await
-            .unwrap();
+        let job = contracts_client.get_job_from_job_responded_event(log).await;
 
-        assert_eq!(job, expected_job);
+        assert!(job.is_ok());
+        assert_eq!(job.unwrap(), expected_job);
+    }
+
+    #[actix_web::test]
+    async fn test_get_job_from_job_responded_event_job_of_enclave_invalid_log() {
+        let contracts_client = generate_contracts_client().await;
+
+        let log = Log {
+            address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
+            topics: vec![
+                keccak256("JobResponded(uint256,bytes,uint8").into(),
+                H256::from_low_u64_be(1),
+            ],
+            data: encode(&[Token::Bytes([].into()), Token::Uint(U256::from(1000))]).into(),
+            ..Default::default()
+        };
+
+        let job = generate_generic_job(None, None).await;
+        contracts_client
+            .active_jobs
+            .write()
+            .unwrap()
+            .insert(job.job_id, job.clone());
+
+        let job = contracts_client.get_job_from_job_responded_event(log).await;
+
+        assert!(job.is_err());
+        assert_eq!(
+            job.err().unwrap().to_string(),
+            "Error while decoding event: Invalid data"
+        );
     }
 
     // TODO: tests for gateway_epoch_state_service
