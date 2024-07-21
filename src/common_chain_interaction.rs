@@ -1329,6 +1329,7 @@ mod serverless_executor_test {
     const RELAY_CONTRACT_ADDR: &str = "0xaF7E4CB6B3729C65c4a9a63d89Ae04e97C9093C4";
     const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
     const GAS_WALLET_KEY: &str = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+    const GAS_WALLET_PUBLIC_ADDRESS: &str = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
     const EPOCH: u64 = 1713433800;
     const TIME_INTERVAL: u64 = 300;
 
@@ -1571,6 +1572,47 @@ mod serverless_executor_test {
             *app_state.wallet.lock().unwrap(),
             Some(wallet_from_hex(GAS_WALLET_KEY))
         );
+        assert!(!*app_state.registered.lock().unwrap());
+        assert!(app_state.contracts_client.lock().unwrap().is_none());
+        assert!(!*app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap());
+
+        // Build contracts client to verify the contracts client public address
+        let req = test::TestRequest::post()
+            .uri("/immutable-config")
+            .set_json(&json!({
+                "owner_address_hex": OWNER_ADDRESS
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        let req = test::TestRequest::get()
+            .uri("/signed-registration-message")
+            .set_json(&json!({
+                    "chain_ids": [CHAIN_ID]
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), http::StatusCode::OK);
+
+        assert_eq!(
+            app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .gateway_jobs_contract
+                .read()
+                .unwrap()
+                .client()
+                .inner()
+                .signer()
+                .address(),
+            GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
+        );
 
         // Inject the same valid private key for gas wallet again
         let req = test::TestRequest::post()
@@ -1587,15 +1629,32 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "The same wallet address already set."
         );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
         assert_eq!(
             *app_state.wallet.lock().unwrap(),
             Some(wallet_from_hex(GAS_WALLET_KEY))
         );
+        assert_eq!(
+            app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .gateway_jobs_contract
+                .read()
+                .unwrap()
+                .client()
+                .inner()
+                .signer()
+                .address(),
+            GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
+        );
 
         const GAS_WALLET_KEY_2: &str =
             "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+        const GAS_WALLET_PUBLIC_ADDRESS_2: &str = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
 
         // Inject another valid private key for gas wallet
         let req = test::TestRequest::post()
@@ -1612,11 +1671,27 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Mutable params configured!"
         );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
         assert_eq!(
             *app_state.wallet.lock().unwrap(),
             Some(wallet_from_hex(GAS_WALLET_KEY_2))
+        );
+        assert_eq!(
+            app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .gateway_jobs_contract
+                .read()
+                .unwrap()
+                .client()
+                .inner()
+                .signer()
+                .address(),
+            GAS_WALLET_PUBLIC_ADDRESS_2.parse::<Address>().unwrap()
         );
     }
 
