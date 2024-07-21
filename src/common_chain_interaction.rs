@@ -339,7 +339,10 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(anyhow::Error::msg("Error while decoding event"));
+                return Err(anyhow::Error::msg(format!(
+                    "Error while decoding event: {}",
+                    err
+                )));
             }
         };
 
@@ -2270,7 +2273,10 @@ mod serverless_executor_test {
                 Token::Uint(20.into()),
                 Token::Uint(100.into()),
                 Token::Uint(100.into()),
+                Token::Address(Address::random()),
+                Token::Address(Address::random()),
                 Token::Uint(U256::from(job_starttime)),
+                Token::Uint(1.into()),
             ])
             .into(),
             ..Default::default()
@@ -2386,7 +2392,10 @@ mod serverless_executor_test {
             .await;
 
         // expect an error
-        assert_eq!(job.err().unwrap().to_string(), "Error while decoding event");
+        assert_eq!(
+            job.err().unwrap().to_string(),
+            "Error while decoding event: Invalid data"
+        );
     }
 
     #[actix_web::test]
