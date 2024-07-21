@@ -2865,7 +2865,7 @@ mod serverless_executor_test {
                 keccak256("JobResponded(uint256,bytes,uint8").into(),
                 H256::from_low_u64_be(1),
             ],
-            data: encode(&[Token::Bytes([].into()), Token::Uint(U256::from(1000))]).into(),
+            data: encode(&[Token::Bytes([].into())]).into(),
             ..Default::default()
         };
 
