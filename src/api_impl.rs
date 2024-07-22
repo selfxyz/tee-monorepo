@@ -32,11 +32,6 @@ async fn inject_immutable_config(
     Json(immutable_config): Json<ImmutableConfig>,
     app_state: Data<AppState>,
 ) -> impl Responder {
-    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
-    if *immutable_params_injected_guard == true {
-        return HttpResponse::BadRequest().body("Immutable params already configured!");
-    }
-
     let owner_address = H160::from_str(&immutable_config.owner_address_hex);
     let Ok(owner_address) = owner_address else {
         return HttpResponse::BadRequest().body(format!(
@@ -44,6 +39,11 @@ async fn inject_immutable_config(
             owner_address.unwrap_err()
         ));
     };
+
+    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
+    if *immutable_params_injected_guard == true {
+        return HttpResponse::BadRequest().body("Immutable params already configured!");
+    }
 
     // Initialize owner address for the enclave
     *app_state.enclave_owner.lock().unwrap() = owner_address;
