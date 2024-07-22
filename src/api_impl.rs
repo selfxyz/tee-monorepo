@@ -19,6 +19,7 @@ use crate::model::{
     AppState, ContractsClient, GatewayData, ImmutableConfig, MutableConfig, RequestChainClient,
     RequestChainData, SignedRegistrationBody,
 };
+use crate::HttpProvider;
 
 #[get("/")]
 async fn index() -> impl Responder {
@@ -87,6 +88,8 @@ async fn inject_mutable_config(
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
     let contracts_client_is_some = contracts_client_guard.is_some();
     drop(contracts_client_guard);
+
+    let mut wallet_guard;
     if contracts_client_is_some {
         info!("Updating Contracts Client with the new wallet address");
         let gas_address = gas_wallet.address();
@@ -107,7 +110,8 @@ async fn inject_mutable_config(
         );
 
         // Build Request Chain Client's http rpc client
-        let mut request_chain_http_rpc_clients: HashMap<u64, Provider<Http>> = HashMap::new();
+        let mut request_chain_contract_clients: HashMap<u64, RelayContract<HttpProvider>> =
+            HashMap::new();
         let request_chain_clients_clone = app_state
             .contracts_client
             .lock()
@@ -126,13 +130,25 @@ async fn inject_mutable_config(
                     http_rpc_client.unwrap_err()
                 ));
             };
-            request_chain_http_rpc_clients.insert(*chain_id, http_rpc_client);
+            let http_rpc_client = Arc::new(
+                http_rpc_client
+                    .with_signer(gas_wallet.clone())
+                    .nonce_manager(gas_address),
+            );
+
+            let contract =
+                RelayContract::new(request_chain_client.contract_address, http_rpc_client);
+            request_chain_contract_clients.insert(*chain_id, contract);
         }
 
         // Updating Gateway Jobs Contract's http rpc client with the new wallet address
         let gateway_jobs_contract =
             GatewayJobsContract::new(app_state.gateway_jobs_contract_addr, http_rpc_client);
+
+        // Get locks on the wallet and contracts client
+        wallet_guard = app_state.wallet.lock().unwrap();
         let contracts_client_guard = app_state.contracts_client.lock().unwrap();
+
         let mut gateway_jobs_contract_write_guard = contracts_client_guard
             .as_ref()
             .unwrap()
@@ -148,30 +164,18 @@ async fn inject_mutable_config(
             .request_chain_clients
             .values()
         {
-            let gas_wallet = gas_wallet
-                .clone()
-                .with_chain_id(request_chain_client.chain_id);
-            let http_rpc_client = request_chain_http_rpc_clients
+            let contract = request_chain_contract_clients
                 .get(&request_chain_client.chain_id)
                 .unwrap()
                 .clone();
-
-            let http_rpc_client = Arc::new(
-                http_rpc_client
-                    .with_signer(gas_wallet)
-                    .nonce_manager(gas_address),
-            );
-            let contract = RelayContract::new(
-                request_chain_client.contract_address,
-                http_rpc_client.clone(),
-            );
 
             let mut request_chain_contract_write_guard =
                 request_chain_client.contract.write().unwrap();
             *request_chain_contract_write_guard = contract;
         }
+    } else {
+        wallet_guard = app_state.wallet.lock().unwrap();
     }
-    let mut wallet_guard = app_state.wallet.lock().unwrap();
     *wallet_guard = Some(gas_wallet.clone());
 
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
