@@ -212,26 +212,21 @@ async fn export_signed_registration_message(
         return HttpResponse::BadRequest().body("Atleast one request chain id is required!");
     }
 
-    let is_registration_events_listener_active = app_state
-        .registration_events_listener_active
-        .lock()
-        .unwrap()
-        .clone();
-    if is_registration_events_listener_active == true {
-        // verify that the app state request chain ids are same as the signed registration body chain ids
-        let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
-        if *request_chain_ids_guard != chain_ids {
-            return HttpResponse::BadRequest().json(json!({
-                    "message": "Request chain ids mismatch!",
-                    "chain_ids": *request_chain_ids_guard,
-            }));
-        }
-    }
-
     {
-        let mut request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
-        if request_chain_ids_guard.is_empty() {
-            *request_chain_ids_guard = chain_ids.clone();
+        let is_registration_events_listener_active = app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap()
+            .clone();
+        if is_registration_events_listener_active == true {
+            // verify that the app state request chain ids are same as the signed registration body chain ids
+            let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
+            if *request_chain_ids_guard != chain_ids {
+                return HttpResponse::BadRequest().json(json!({
+                        "message": "Request chain ids mismatch!",
+                        "chain_ids": *request_chain_ids_guard,
+                }));
+            }
         }
     }
 
@@ -260,13 +255,9 @@ async fn export_signed_registration_message(
     let common_chain_register_typehash =
         keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
 
-    let chain_ids_tokens: Vec<Token> = app_state
-        .request_chain_ids
-        .lock()
-        .unwrap()
-        .clone()
+    let chain_ids_tokens: Vec<Token> = (&chain_ids)
         .into_iter()
-        .map(|x| Token::Uint(x.into()))
+        .map(|&x| Token::Uint(x.into()))
         .collect::<Vec<Token>>();
 
     let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids_tokens)]).unwrap());
@@ -376,9 +367,8 @@ async fn export_signed_registration_message(
     let mut request_chain_data: Vec<RequestChainData> = vec![];
     let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
-    let request_chain_ids = app_state.request_chain_ids.lock().unwrap().clone();
-    // iterate over all request chain ids and get their registration signatures
-    for &chain_id in &request_chain_ids {
+    // iterate over all chain ids and get their registration signatures
+    for &chain_id in &chain_ids {
         // create request chain client and add it to the request chain clients map
         let signer_wallet = wallet.clone().with_chain_id(chain_id);
         // get request chain rpc url
@@ -438,59 +428,66 @@ async fn export_signed_registration_message(
         request_chain_clients.insert(chain_id, request_chain_client);
     }
 
-    app_state.request_chain_data.lock().unwrap().clear();
-    app_state
-        .request_chain_data
-        .lock()
-        .unwrap()
-        .extend(request_chain_data.clone());
-
-    let is_registration_events_listener_active = app_state
-        .registration_events_listener_active
-        .lock()
-        .unwrap()
-        .clone();
-
-    if is_registration_events_listener_active == false {
-        let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
-            return HttpResponse::InternalServerError().body(
+    let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
+        return HttpResponse::InternalServerError().body(
                 format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
             );
-        };
+    };
 
-        let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
-            Arc::new(RwLock::new(BTreeMap::new()));
-        let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
+    let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
+        Arc::new(RwLock::new(BTreeMap::new()));
+    let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
-        let gateway_jobs_contract = GatewayJobsContract::new(
-            app_state.gateway_jobs_contract_addr,
-            http_rpc_client.clone(),
-        );
+    let gateway_jobs_contract = GatewayJobsContract::new(
+        app_state.gateway_jobs_contract_addr,
+        http_rpc_client.clone(),
+    );
 
-        let contracts_client = Arc::new(ContractsClient {
-            enclave_owner,
-            enclave_signer_key: app_state.enclave_signer_key.clone(),
-            enclave_address: app_state.enclave_address,
-            common_chain_ws_url: app_state.common_chain_ws_url.clone(),
-            common_chain_http_url: app_state.common_chain_http_url.clone(),
-            gateways_contract_address: app_state.gateways_contract_addr,
-            gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
-            request_chain_clients,
-            gateway_epoch_state,
-            request_chain_ids,
-            active_jobs: Arc::new(RwLock::new(HashMap::new())),
-            current_jobs: Arc::new(RwLock::new(HashMap::new())),
-            epoch: app_state.epoch,
-            time_interval: app_state.time_interval,
-            gateway_epoch_state_waitlist,
-            common_chain_start_block_number: Arc::new(Mutex::new(
-                common_chain_block_number.as_u64(),
-            )),
-        });
+    let contracts_client = Arc::new(ContractsClient {
+        enclave_owner,
+        enclave_signer_key: app_state.enclave_signer_key.clone(),
+        enclave_address: app_state.enclave_address,
+        common_chain_ws_url: app_state.common_chain_ws_url.clone(),
+        common_chain_http_url: app_state.common_chain_http_url.clone(),
+        gateways_contract_address: app_state.gateways_contract_addr,
+        gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
+        request_chain_clients,
+        gateway_epoch_state,
+        request_chain_ids: chain_ids.clone(),
+        active_jobs: Arc::new(RwLock::new(HashMap::new())),
+        current_jobs: Arc::new(RwLock::new(HashMap::new())),
+        epoch: app_state.epoch,
+        time_interval: app_state.time_interval,
+        gateway_epoch_state_waitlist,
+        common_chain_start_block_number: Arc::new(Mutex::new(common_chain_block_number.as_u64())),
+    });
+
+    let mut registration_events_listener_active_guard = app_state
+        .registration_events_listener_active
+        .lock()
+        .unwrap();
+
+    let mut request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
+    if request_chain_ids_guard.is_empty() {
+        *request_chain_ids_guard = chain_ids.clone();
+    } else {
+        if *request_chain_ids_guard != chain_ids {
+            return HttpResponse::BadRequest().json(json!({
+                "message": "Request chain ids mismatch!",
+                "chain_ids": *request_chain_ids_guard,
+            }));
+        }
+    }
+
+    if *registration_events_listener_active_guard == false {
+        app_state
+            .request_chain_data
+            .lock()
+            .unwrap()
+            .extend(request_chain_data.clone());
 
         let mut contracts_client_guard = app_state.contracts_client.lock().unwrap();
         *contracts_client_guard = Some(Arc::clone(&contracts_client));
-        drop(contracts_client_guard);
 
         let app_state_clone = app_state.clone();
         tokio::spawn(async move {
@@ -499,12 +496,7 @@ async fn export_signed_registration_message(
                 .await;
         });
 
-        let mut registration_events_listener_active_guard = app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap();
         *registration_events_listener_active_guard = true;
-        drop(registration_events_listener_active_guard);
     }
 
     HttpResponse::Ok().json(json!({
