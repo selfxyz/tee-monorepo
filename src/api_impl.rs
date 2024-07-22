@@ -208,11 +208,12 @@ async fn export_signed_registration_message(
         return HttpResponse::BadRequest().body("Atleast one request chain id is required!");
     }
 
-    let mut registration_events_listener_active_guard = app_state
+    let is_registration_events_listener_active = app_state
         .registration_events_listener_active
         .lock()
-        .unwrap();
-    if *registration_events_listener_active_guard == true {
+        .unwrap()
+        .clone();
+    if is_registration_events_listener_active == true {
         // verify that the app state request chain ids are same as the signed registration body chain ids
         let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
         if *request_chain_ids_guard != chain_ids {
@@ -220,6 +221,13 @@ async fn export_signed_registration_message(
                     "message": "Request chain ids mismatch!",
                     "chain_ids": *request_chain_ids_guard,
             }));
+        }
+    }
+
+    {
+        let mut request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
+        if request_chain_ids_guard.is_empty() {
+            *request_chain_ids_guard = chain_ids.clone();
         }
     }
 
@@ -238,8 +246,6 @@ async fn export_signed_registration_message(
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
-    let mut contracts_client_guard = app_state.contracts_client.lock().unwrap();
-
     // generate common chain signature
     let enclave_owner = app_state.enclave_owner.lock().unwrap().clone();
     let sign_timestamp = SystemTime::now()
@@ -250,7 +256,10 @@ async fn export_signed_registration_message(
     let common_chain_register_typehash =
         keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
 
-    let chain_ids_tokens: Vec<Token> = chain_ids
+    let chain_ids_tokens: Vec<Token> = app_state
+        .request_chain_ids
+        .lock()
+        .unwrap()
         .clone()
         .into_iter()
         .map(|x| Token::Uint(x.into()))
@@ -363,8 +372,9 @@ async fn export_signed_registration_message(
     let mut request_chain_data: Vec<RequestChainData> = vec![];
     let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
+    let request_chain_ids = app_state.request_chain_ids.lock().unwrap().clone();
     // iterate over all request chain ids and get their registration signatures
-    for &chain_id in &chain_ids {
+    for &chain_id in &request_chain_ids {
         // create request chain client and add it to the request chain clients map
         let signer_wallet = wallet.clone().with_chain_id(chain_id);
         // get request chain rpc url
@@ -424,13 +434,20 @@ async fn export_signed_registration_message(
         request_chain_clients.insert(chain_id, request_chain_client);
     }
 
+    app_state.request_chain_data.lock().unwrap().clear();
     app_state
         .request_chain_data
         .lock()
         .unwrap()
-        .append(&mut request_chain_data.clone());
+        .extend(request_chain_data.clone());
 
-    if *registration_events_listener_active_guard == false {
+    let is_registration_events_listener_active = app_state
+        .registration_events_listener_active
+        .lock()
+        .unwrap()
+        .clone();
+
+    if is_registration_events_listener_active == false {
         let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
             return HttpResponse::InternalServerError().body(
                 format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
@@ -456,7 +473,7 @@ async fn export_signed_registration_message(
             gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
             request_chain_clients,
             gateway_epoch_state,
-            request_chain_ids: chain_ids.clone(),
+            request_chain_ids,
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
             current_jobs: Arc::new(RwLock::new(HashMap::new())),
             epoch: app_state.epoch,
@@ -467,6 +484,7 @@ async fn export_signed_registration_message(
             )),
         });
 
+        let mut contracts_client_guard = app_state.contracts_client.lock().unwrap();
         *contracts_client_guard = Some(Arc::clone(&contracts_client));
         drop(contracts_client_guard);
 
@@ -477,8 +495,10 @@ async fn export_signed_registration_message(
                 .await;
         });
 
-        *app_state.request_chain_ids.lock().unwrap() = chain_ids.clone();
-
+        let mut registration_events_listener_active_guard = app_state
+            .registration_events_listener_active
+            .lock()
+            .unwrap();
         *registration_events_listener_active_guard = true;
         drop(registration_events_listener_active_guard);
     }
