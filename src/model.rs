@@ -4,7 +4,8 @@ use ethers::types::{Address, Bytes, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{atomic::AtomicU64, Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::contract_abi::{GatewayJobsContract, RelayContract};
 use crate::HttpProvider;
@@ -21,7 +22,7 @@ pub struct AppState {
     pub gateway_jobs_contract_addr: Address,
     pub request_chain_ids: Mutex<HashSet<u64>>,
     pub request_chain_data: Mutex<Vec<RequestChainData>>,
-    pub registered: Mutex<bool>,
+    pub registered: Arc<AtomicBool>,
     pub epoch: u64,
     pub time_interval: u64,
     pub enclave_owner: Mutex<H160>,

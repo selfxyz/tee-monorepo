@@ -10,6 +10,7 @@ use log::info;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::atomic::Ordering;
 use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -194,8 +195,7 @@ async fn export_signed_registration_message(
 ) -> impl Responder {
     // if gateway is already registered, return error
     {
-        let is_registered = app_state.registered.lock().unwrap();
-        if *is_registered {
+        if app_state.registered.load(Ordering::SeqCst) {
             return HttpResponse::BadRequest().body("Enclave has already been registered.");
         }
     }

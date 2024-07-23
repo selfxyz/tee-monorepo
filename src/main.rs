@@ -18,7 +18,8 @@ use ethers::utils::public_key_to_address;
 use k256::ecdsa::SigningKey;
 use std::collections::HashSet;
 use std::error::Error;
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use tokio::fs;
 
 use crate::api_impl::{
@@ -72,7 +73,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         gateway_jobs_contract_addr: config.gateway_jobs_contract_addr,
         request_chain_ids: HashSet::new().into(),
         request_chain_data: vec![].into(),
-        registered: false.into(),
+        registered: Arc::new(AtomicBool::new(false)),
         epoch: config.epoch,
         time_interval: config.time_interval,
         enclave_owner: H160::zero().into(),

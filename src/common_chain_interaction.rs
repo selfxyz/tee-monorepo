@@ -11,6 +11,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
 use std::error::Error;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -165,7 +166,7 @@ impl ContractsClient {
             if common_chain_registered && req_chain_ids_not_registered.is_empty() {
                 // All registration completed on common chain and all request chains
                 // Mark registered in the app state
-                *app_state.registered.lock().unwrap() = true;
+                app_state.registered.store(true, Ordering::SeqCst);
                 // Start the ContractsClient service
                 tokio::spawn(async move {
                     let _ = self.run().await;
@@ -1310,6 +1311,7 @@ impl LogsProvider for ContractsClient {
 mod serverless_executor_test {
     use std::collections::{BTreeMap, BTreeSet};
     use std::str::FromStr;
+    use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
 
     use abi::{encode, encode_packed, Token};
@@ -1371,7 +1373,7 @@ mod serverless_executor_test {
             gateway_jobs_contract_addr: JOB_CONTRACT_ADDR.parse::<Address>().unwrap(),
             request_chain_ids: HashSet::new().into(),
             request_chain_data: vec![].into(),
-            registered: false.into(),
+            registered: Arc::new(AtomicBool::new(false)),
             registration_events_listener_active: false.into(),
             epoch: EPOCH,
             time_interval: TIME_INTERVAL,
@@ -1585,7 +1587,7 @@ mod serverless_executor_test {
             *app_state.wallet.lock().unwrap(),
             Some(wallet_from_hex(GAS_WALLET_KEY))
         );
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(app_state.contracts_client.lock().unwrap().is_none());
         assert!(!*app_state
             .registration_events_listener_active
@@ -1827,7 +1829,7 @@ mod serverless_executor_test {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
             .registration_events_listener_active
             .lock()
@@ -1851,7 +1853,7 @@ mod serverless_executor_test {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
             .registration_events_listener_active
             .lock()
@@ -1875,7 +1877,7 @@ mod serverless_executor_test {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
             .registration_events_listener_active
             .lock()
@@ -1899,7 +1901,7 @@ mod serverless_executor_test {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
             .registration_events_listener_active
             .lock()
@@ -1922,7 +1924,7 @@ mod serverless_executor_test {
         ));
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
             .registration_events_listener_active
             .lock()
@@ -1945,7 +1947,7 @@ mod serverless_executor_test {
             .starts_with("Json deserialize error: missing field `chain_ids`".as_bytes()));
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
             .registration_events_listener_active
             .lock()
@@ -1976,7 +1978,7 @@ mod serverless_executor_test {
         let response = response.unwrap();
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(*app_state
             .registration_events_listener_active
             .lock()
@@ -2018,7 +2020,7 @@ mod serverless_executor_test {
         let response = response.unwrap();
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(*app_state.mutable_params_injected.lock().unwrap());
-        assert!(!*app_state.registered.lock().unwrap());
+        assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(*app_state
             .registration_events_listener_active
             .lock()
@@ -2059,7 +2061,7 @@ mod serverless_executor_test {
         );
 
         // After on chain registration
-        *app_state.registered.lock().unwrap() = true;
+        app_state.registered.store(true, Ordering::SeqCst);
 
         // Get signature after registration
         let req = test::TestRequest::get()
