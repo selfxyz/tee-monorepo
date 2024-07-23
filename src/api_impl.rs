@@ -80,18 +80,14 @@ async fn inject_mutable_config(
     };
     let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
 
-    let wallet_guard = app_state.wallet.lock().unwrap();
+    let mut wallet_guard = app_state.wallet.lock().unwrap();
     if *wallet_guard == Some(gas_wallet.clone()) {
         return HttpResponse::NotAcceptable().body("The same wallet address already set.");
     }
-    drop(wallet_guard);
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
-    let contracts_client_is_some = contracts_client_guard.is_some();
-    drop(contracts_client_guard);
 
-    let mut wallet_guard;
-    if contracts_client_is_some {
+    if contracts_client_guard.is_some() {
         info!("Updating Contracts Client with the new wallet address");
         let gas_address = gas_wallet.address();
 
@@ -146,10 +142,6 @@ async fn inject_mutable_config(
         let gateway_jobs_contract =
             GatewayJobsContract::new(app_state.gateway_jobs_contract_addr, http_rpc_client);
 
-        // Get locks on the wallet and contracts client
-        wallet_guard = app_state.wallet.lock().unwrap();
-        let contracts_client_guard = app_state.contracts_client.lock().unwrap();
-
         let mut gateway_jobs_contract_write_guard = contracts_client_guard
             .as_ref()
             .unwrap()
@@ -174,8 +166,6 @@ async fn inject_mutable_config(
                 request_chain_client.contract.write().unwrap();
             *request_chain_contract_write_guard = contract;
         }
-    } else {
-        wallet_guard = app_state.wallet.lock().unwrap();
     }
     *wallet_guard = Some(gas_wallet.clone());
 
@@ -364,13 +354,10 @@ async fn export_signed_registration_message(
     let gateways_contract =
         GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
 
-    let mut request_chain_data: Vec<RequestChainData> = vec![];
-    let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
+    let mut request_chain_data: HashMap<u64, RequestChainData> = HashMap::new();
 
     // iterate over all chain ids and get their registration signatures
     for &chain_id in &chain_ids {
-        // create request chain client and add it to the request chain clients map
-        let signer_wallet = wallet.clone().with_chain_id(chain_id);
         // get request chain rpc url
         let request_chain_info = gateways_contract.request_chains(chain_id.into()).await;
         if request_chain_info.is_err() {
@@ -381,10 +368,48 @@ async fn export_signed_registration_message(
             ));
         }
         let (contract_address, http_rpc_url, ws_rpc_url) = request_chain_info.unwrap();
-        let http_rpc_url: String = http_rpc_url.to_string();
-        let ws_rpc_url: String = ws_rpc_url.to_string();
 
-        let http_rpc_client = Provider::<Http>::try_from(&http_rpc_url);
+        request_chain_data.insert(
+            chain_id,
+            RequestChainData {
+                contract_address,
+                http_rpc_url: http_rpc_url.to_string(),
+                ws_rpc_url: ws_rpc_url.to_string(),
+            },
+        );
+    }
+
+    let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
+        return HttpResponse::InternalServerError().body(
+                format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
+            );
+    };
+
+    let wallet_guard = app_state.wallet.lock().unwrap();
+    let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
+    let Ok(http_rpc_client) = http_rpc_client else {
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to connect to the common chain http rpc server {}: {}",
+            app_state.common_chain_http_url,
+            http_rpc_client.unwrap_err()
+        ));
+    };
+    let http_rpc_client = Arc::new(
+        http_rpc_client
+            .with_signer(signer_wallet.clone())
+            .nonce_manager(signer_address),
+    );
+
+    let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
+
+    for &chain_id in &chain_ids {
+        let contract_address = request_chain_data.get(&chain_id).unwrap().contract_address;
+        let http_rpc_url = &request_chain_data.get(&chain_id).unwrap().http_rpc_url;
+        let ws_rpc_url = &request_chain_data.get(&chain_id).unwrap().ws_rpc_url;
+
+        let signer_wallet = wallet_guard.clone().unwrap().with_chain_id(chain_id);
+
+        let http_rpc_client = Provider::<Http>::try_from(http_rpc_url);
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the request chain {} http rpc server {}: {}",
@@ -408,64 +433,18 @@ async fn export_signed_registration_message(
             .unwrap()
             .as_u64();
 
-        request_chain_data.push(RequestChainData {
-            chain_id: chain_id.into(),
-            contract_address,
-            http_rpc_url: http_rpc_url.to_owned(),
-            ws_rpc_url: ws_rpc_url.clone(),
-        });
-
         let request_chain_client = Arc::from(RequestChainClient {
             chain_id,
             contract_address,
             contract: Arc::new(RwLock::new(contract)),
-            ws_rpc_url,
-            http_rpc_url,
+            ws_rpc_url: ws_rpc_url.to_string(),
+            http_rpc_url: http_rpc_url.to_string(),
             request_chain_start_block_number: request_chain_block_number,
             confirmation_blocks: 5, // TODO: fetch from contract
             last_seen_block: Arc::new(0.into()),
         });
         request_chain_clients.insert(chain_id, request_chain_client);
     }
-
-    let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
-        return HttpResponse::InternalServerError().body(
-                format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
-            );
-    };
-
-    let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
-        Arc::new(RwLock::new(BTreeMap::new()));
-    let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
-
-    let gateway_jobs_contract = GatewayJobsContract::new(
-        app_state.gateway_jobs_contract_addr,
-        http_rpc_client.clone(),
-    );
-
-    let contracts_client = Arc::new(ContractsClient {
-        enclave_owner,
-        enclave_signer_key: app_state.enclave_signer_key.clone(),
-        enclave_address: app_state.enclave_address,
-        common_chain_ws_url: app_state.common_chain_ws_url.clone(),
-        common_chain_http_url: app_state.common_chain_http_url.clone(),
-        gateways_contract_address: app_state.gateways_contract_addr,
-        gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
-        request_chain_clients,
-        gateway_epoch_state,
-        request_chain_ids: chain_ids.clone(),
-        active_jobs: Arc::new(RwLock::new(HashMap::new())),
-        current_jobs: Arc::new(RwLock::new(HashMap::new())),
-        epoch: app_state.epoch,
-        time_interval: app_state.time_interval,
-        gateway_epoch_state_waitlist,
-        common_chain_start_block_number: Arc::new(Mutex::new(common_chain_block_number.as_u64())),
-    });
-
-    let mut registration_events_listener_active_guard = app_state
-        .registration_events_listener_active
-        .lock()
-        .unwrap();
 
     let mut request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
     if request_chain_ids_guard.is_empty() {
@@ -479,14 +458,44 @@ async fn export_signed_registration_message(
         }
     }
 
-    if *registration_events_listener_active_guard == false {
-        app_state
-            .request_chain_data
-            .lock()
-            .unwrap()
-            .extend(request_chain_data.clone());
+    let mut registration_events_listener_active_guard = app_state
+        .registration_events_listener_active
+        .lock()
+        .unwrap();
 
+    if *registration_events_listener_active_guard == false {
         let mut contracts_client_guard = app_state.contracts_client.lock().unwrap();
+
+        let gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>> =
+            Arc::new(RwLock::new(BTreeMap::new()));
+        let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
+
+        let gateway_jobs_contract = GatewayJobsContract::new(
+            app_state.gateway_jobs_contract_addr,
+            http_rpc_client.clone(),
+        );
+
+        let contracts_client = Arc::new(ContractsClient {
+            enclave_owner,
+            enclave_signer_key: app_state.enclave_signer_key.clone(),
+            enclave_address: app_state.enclave_address,
+            common_chain_ws_url: app_state.common_chain_ws_url.clone(),
+            common_chain_http_url: app_state.common_chain_http_url.clone(),
+            gateways_contract_address: app_state.gateways_contract_addr,
+            gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
+            request_chain_clients,
+            gateway_epoch_state,
+            request_chain_ids: chain_ids.clone(),
+            active_jobs: Arc::new(RwLock::new(HashMap::new())),
+            current_jobs: Arc::new(RwLock::new(HashMap::new())),
+            epoch: app_state.epoch,
+            time_interval: app_state.time_interval,
+            gateway_epoch_state_waitlist,
+            common_chain_start_block_number: Arc::new(Mutex::new(
+                common_chain_block_number.as_u64(),
+            )),
+        });
+
         *contracts_client_guard = Some(Arc::clone(&contracts_client));
 
         let app_state_clone = app_state.clone();

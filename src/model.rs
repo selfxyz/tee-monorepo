@@ -21,7 +21,6 @@ pub struct AppState {
     pub gateways_contract_addr: Address,
     pub gateway_jobs_contract_addr: Address,
     pub request_chain_ids: Mutex<HashSet<u64>>,
-    pub request_chain_data: Mutex<Vec<RequestChainData>>,
     pub registered: Arc<AtomicBool>,
     pub epoch: u64,
     pub time_interval: u64,
@@ -104,7 +103,6 @@ pub struct ContractsClient {
 
 #[derive(Debug, Clone)]
 pub struct RequestChainData {
-    pub chain_id: u64,
     pub contract_address: Address,
     pub http_rpc_url: String,
     pub ws_rpc_url: String,

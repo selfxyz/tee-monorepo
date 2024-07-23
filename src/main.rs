@@ -72,7 +72,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         gateways_contract_addr: config.gateways_contract_addr,
         gateway_jobs_contract_addr: config.gateway_jobs_contract_addr,
         request_chain_ids: HashSet::new().into(),
-        request_chain_data: vec![].into(),
         registered: Arc::new(AtomicBool::new(false)),
         epoch: config.epoch,
         time_interval: config.time_interval,

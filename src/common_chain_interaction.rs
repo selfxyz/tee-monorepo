@@ -1372,7 +1372,6 @@ mod serverless_executor_test {
             gateways_contract_addr: GATEWAY_CONTRACT_ADDR.parse::<Address>().unwrap(),
             gateway_jobs_contract_addr: JOB_CONTRACT_ADDR.parse::<Address>().unwrap(),
             request_chain_ids: HashSet::new().into(),
-            request_chain_data: vec![].into(),
             registered: Arc::new(AtomicBool::new(false)),
             registration_events_listener_active: false.into(),
             epoch: EPOCH,
