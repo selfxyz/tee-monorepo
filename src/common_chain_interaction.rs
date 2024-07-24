@@ -26,6 +26,7 @@ use crate::constant::{
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
     MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
 };
+use crate::error::ServerlessError;
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, RegisterType, RegisteredData,
     RequestChainClient, ResponseJob,
@@ -285,14 +286,14 @@ impl ContractsClient {
                                 1u8,
                                 chain_id
                             )
-                            .await
-                            .context("Failed to get Job from Log")
-                            .unwrap();
-                        self_clone.job_placed_handler(
-                                job,
+                            .await;
+                        if job.is_ok() {
+                            self_clone.job_placed_handler(
+                                job.unwrap(),
                                 tx_clone.clone(),
                             )
                             .await;
+                        }
                     });
                 } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
                     info!(
@@ -321,7 +322,7 @@ impl ContractsClient {
         log: Log,
         sequence_number: u8,
         request_chain_id: u64,
-    ) -> Result<Job> {
+    ) -> Result<Job, ServerlessError> {
         let types = vec![
             ParamType::FixedBytes(32),
             ParamType::Bytes,
@@ -340,10 +341,7 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(anyhow::Error::msg(format!(
-                    "Error while decoding event: {}",
-                    err
-                )));
+                return Err(ServerlessError::LogDecodingError(err));
             }
         };
 
@@ -484,7 +482,7 @@ impl ContractsClient {
         job: Job,
         seed: u64,
         skips: u8,
-    ) -> Result<Address> {
+    ) -> Result<Address, ServerlessError> {
         let job_cycle =
             (job.starttime.as_u64() - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
                 / self.time_interval;
@@ -499,9 +497,7 @@ impl ContractsClient {
             let current_cycle =
                 (ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + job_cycle {
-                return Err(anyhow::Error::msg(
-                    "Job is older than the maintained block states",
-                ));
+                return Err(ServerlessError::JobOlderThanMaintainedBlockStates);
             }
             let gateway_epoch_state_guard = self.gateway_epoch_state.read().unwrap();
             if let Some(gateway_epoch_state) = gateway_epoch_state_guard.get(&job_cycle) {
@@ -520,7 +516,7 @@ impl ContractsClient {
         }
 
         if all_gateways_data.is_empty() {
-            return Err(anyhow::Error::msg("No Gateways Registered"));
+            return Err(ServerlessError::NoGatewaysRegistered);
         }
 
         // create a weighted probability distribution for gateways based on stake amount
@@ -543,8 +539,8 @@ impl ContractsClient {
         }
 
         if total_stake == 0 {
-            return Err(anyhow::Error::msg(
-                "No Gateways available for the request chain",
+            return Err(ServerlessError::NoGatewaysAvailableForRequestChain(
+                job.request_chain_id,
             ));
         }
 
@@ -641,7 +637,7 @@ impl ContractsClient {
                 let err = pending_txn.unwrap_err();
 
                 let err_string = format!("{:#?}", err);
-                if err_string.contains("code: -32000") {
+                if err_string.contains("code: -32000") && err_string.contains("nonce") {
                     // Handle the specific error case
                     error!(
                         "Error: Transaction nonce too low. {}. Retrying - {} of 3",
@@ -710,7 +706,7 @@ impl ContractsClient {
                 let err = pending_txn.unwrap_err();
 
                 let err_string = format!("{:#?}", err);
-                if err_string.contains("code: -32000") {
+                if err_string.contains("code: -32000") && err_string.contains("nonce") {
                     // Handle the specific error case
                     error!(
                         "Error: Transaction nonce too low. {}. Retrying - {} of 3",
@@ -784,19 +780,15 @@ impl ContractsClient {
                                     .job_responded_handler(response_job, com_chain_tx)
                                     .await;
                             }
-                            Err(err) => {
-                                if err
-                                    .to_string()
-                                    .contains("Job does not belong to the enclave")
-                                {
-                                    info!("Job does not belong to the enclave");
-                                } else {
-                                    error!(
-                                        "Error while getting job from JobResponded event: {}",
-                                        err
-                                    );
+                            Err(err) => match err {
+                                ServerlessError::JobNotBelongToEnclave => {
+                                    info!("Job does not belong to the enclave")
                                 }
-                            }
+                                _ => error!(
+                                    "Error while getting job from JobResponded event: {}",
+                                    err
+                                ),
+                            },
                         }
                     });
                 } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
@@ -823,14 +815,17 @@ impl ContractsClient {
         }
     }
 
-    async fn get_job_from_job_responded_event(self: &Arc<Self>, log: Log) -> Result<ResponseJob> {
+    async fn get_job_from_job_responded_event(
+        self: &Arc<Self>,
+        log: Log,
+    ) -> Result<ResponseJob, ServerlessError> {
         let job_id = log.topics[1].into_uint();
 
         // Check if job belongs to the enclave
         let active_jobs = self.active_jobs.read().unwrap();
         let job = active_jobs.get(&job_id);
         if job.is_none() {
-            return Err(anyhow::Error::msg("Job does not belong to the enclave"));
+            return Err(ServerlessError::JobNotBelongToEnclave);
         }
 
         let job = job.unwrap();
@@ -842,10 +837,7 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(anyhow::Error::msg(format!(
-                    "Error while decoding event: {}",
-                    err
-                )));
+                return Err(ServerlessError::LogDecodingError(err));
             }
         };
         let request_chain_id = job.request_chain_id;
@@ -1137,7 +1129,7 @@ impl ContractsClient {
                 let err = pending_txn.unwrap_err();
 
                 let err_string = format!("{:#?}", err);
-                if err_string.contains("code: -32000") {
+                if err_string.contains("code: -32000") && err_string.contains("nonce") {
                     // Handle the specific error case
                     error!(
                         "Error: Transaction nonce too low. {}. Retrying - {} of 3",
@@ -1320,6 +1312,7 @@ mod serverless_executor_test {
         dev::{ServiceFactory, ServiceRequest, ServiceResponse},
         http, test, App, Error,
     };
+    use ethers::abi::Error as AbiError;
     use ethers::types::{Address, Bytes as EthBytes, H160};
     use ethers::utils::public_key_to_address;
     use k256::ecdsa::SigningKey;
@@ -2402,8 +2395,8 @@ mod serverless_executor_test {
 
         // expect an error
         assert_eq!(
-            job.err().unwrap().to_string(),
-            "Error while decoding event: Invalid data"
+            job.err().unwrap(),
+            ServerlessError::LogDecodingError(AbiError::InvalidData)
         );
     }
 
@@ -2521,6 +2514,8 @@ mod serverless_executor_test {
 
         assert_eq!(gateway_address, expected_gateway_address);
     }
+
+    // TODO: Add select gateway for job id test - Error cases
 
     #[actix_web::test]
     async fn test_job_placed_handler() {

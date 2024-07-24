@@ -5,6 +5,7 @@ mod common_chain_interaction;
 mod config;
 mod constant;
 mod contract_abi;
+mod error;
 mod model;
 
 use actix_web::web::Data;
