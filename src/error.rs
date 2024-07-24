@@ -1,10 +1,9 @@
-use ethers::abi::Error as AbiError;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum ServerlessError {
-    #[error("failed to decode log: {0}")]
-    LogDecodingError(#[from] AbiError),
+    #[error("Failed to decode log")]
+    LogDecodingError,
     #[error("Job does not belong to the enclave")]
     JobNotBelongToEnclave,
     #[error("Job is older than the maintained block states")]

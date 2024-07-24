@@ -341,7 +341,7 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(ServerlessError::LogDecodingError(err));
+                return Err(ServerlessError::LogDecodingError);
             }
         };
 
@@ -837,7 +837,7 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(ServerlessError::LogDecodingError(err));
+                return Err(ServerlessError::LogDecodingError);
             }
         };
         let request_chain_id = job.request_chain_id;
@@ -1312,7 +1312,6 @@ mod serverless_executor_test {
         dev::{ServiceFactory, ServiceRequest, ServiceResponse},
         http, test, App, Error,
     };
-    use ethers::abi::Error as AbiError;
     use ethers::types::{Address, Bytes as EthBytes, H160};
     use ethers::utils::public_key_to_address;
     use k256::ecdsa::SigningKey;
@@ -2394,10 +2393,7 @@ mod serverless_executor_test {
             .await;
 
         // expect an error
-        assert_eq!(
-            job.err().unwrap(),
-            ServerlessError::LogDecodingError(AbiError::InvalidData)
-        );
+        assert_eq!(job.err().unwrap(), ServerlessError::LogDecodingError);
     }
 
     #[actix_web::test]
