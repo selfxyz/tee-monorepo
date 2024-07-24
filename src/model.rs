@@ -25,8 +25,8 @@ pub struct AppState {
     pub epoch: u64,
     pub time_interval: u64,
     pub enclave_owner: Mutex<H160>,
-    pub immutable_params_injected: Mutex<bool>,
-    pub mutable_params_injected: Mutex<bool>,
+    pub immutable_params_injected: Arc<AtomicBool>,
+    pub mutable_params_injected: Arc<AtomicBool>,
     pub registration_events_listener_active: Mutex<bool>,
     pub contracts_client: Mutex<Option<Arc<ContractsClient>>>,
 }

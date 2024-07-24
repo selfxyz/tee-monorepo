@@ -42,14 +42,15 @@ async fn inject_immutable_config(
         ));
     };
 
-    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
-    if *immutable_params_injected_guard == true {
+    if app_state.immutable_params_injected.load(Ordering::SeqCst) {
         return HttpResponse::BadRequest().body("Immutable params already configured!");
     }
 
     // Initialize owner address for the enclave
     *app_state.enclave_owner.lock().unwrap() = owner_address;
-    *immutable_params_injected_guard = true;
+    app_state
+        .immutable_params_injected
+        .store(true, Ordering::SeqCst);
 
     info!("Immutable params configured!");
 
@@ -109,15 +110,13 @@ async fn inject_mutable_config(
         // Build Request Chain Client's http rpc client
         let mut request_chain_contract_clients: HashMap<u64, RelayContract<HttpProvider>> =
             HashMap::new();
-        let request_chain_clients_clone = app_state
-            .contracts_client
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .request_chain_clients
-            .clone();
-        for (chain_id, request_chain_client) in request_chain_clients_clone.iter() {
+        let request_chain_clients_clone: HashMap<u64, Arc<RequestChainClient>> =
+            contracts_client_guard
+                .as_ref()
+                .unwrap()
+                .request_chain_clients
+                .clone();
+        for (&chain_id, request_chain_client) in request_chain_clients_clone.iter() {
             let http_rpc_client = Provider::<Http>::try_from(&request_chain_client.http_rpc_url);
             let Ok(http_rpc_client) = http_rpc_client else {
                 return HttpResponse::InternalServerError().body(format!(
@@ -127,6 +126,8 @@ async fn inject_mutable_config(
                     http_rpc_client.unwrap_err()
                 ));
             };
+
+            let gas_wallet = gas_wallet.clone().with_chain_id(chain_id);
             let http_rpc_client = Arc::new(
                 http_rpc_client
                     .with_signer(gas_wallet.clone())
@@ -135,7 +136,7 @@ async fn inject_mutable_config(
 
             let contract =
                 RelayContract::new(request_chain_client.contract_address, http_rpc_client);
-            request_chain_contract_clients.insert(*chain_id, contract);
+            request_chain_contract_clients.insert(chain_id, contract);
         }
 
         // Updating Gateway Jobs Contract's http rpc client with the new wallet address
@@ -169,8 +170,9 @@ async fn inject_mutable_config(
     }
     *wallet_guard = Some(gas_wallet.clone());
 
-    let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
-    *mutable_params_injected_guard = true;
+    app_state
+        .mutable_params_injected
+        .store(true, Ordering::SeqCst);
 
     info!("Mutable params configured!");
 
@@ -221,12 +223,12 @@ async fn export_signed_registration_message(
     }
 
     // if immutable or mutable params are not configured, return error
-    if *app_state.immutable_params_injected.lock().unwrap() == false {
+    if !app_state.immutable_params_injected.load(Ordering::SeqCst) {
         return HttpResponse::BadRequest().body("Immutable params not configured yet!");
     }
 
     // if mutable params are not configured, return error
-    if *app_state.mutable_params_injected.lock().unwrap() == false {
+    if !app_state.mutable_params_injected.load(Ordering::SeqCst) {
         return HttpResponse::BadRequest().body("Mutable params not configured yet!");
     }
 
@@ -520,11 +522,11 @@ async fn export_signed_registration_message(
 // Endpoint exposed to retrieve gateway enclave details
 #[get("/gateway-details")]
 async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
-    if *app_state.immutable_params_injected.lock().unwrap() == false {
+    if !app_state.immutable_params_injected.load(Ordering::SeqCst) {
         return HttpResponse::BadRequest().body("Immutable params not configured yet!");
     }
 
-    if *app_state.mutable_params_injected.lock().unwrap() == false {
+    if !app_state.mutable_params_injected.load(Ordering::SeqCst) {
         return HttpResponse::BadRequest().body("Mutable params not configured yet!");
     }
 
