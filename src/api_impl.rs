@@ -401,6 +401,13 @@ async fn export_signed_registration_message(
     }
 
     let wallet_guard = app_state.wallet.lock().unwrap();
+
+    let signer_wallet = wallet_guard
+        .clone()
+        .unwrap()
+        .with_chain_id(app_state.common_chain_id);
+    let signer_address = signer_wallet.address();
+
     let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
     let Ok(http_rpc_client) = http_rpc_client else {
         return HttpResponse::InternalServerError().body(format!(
