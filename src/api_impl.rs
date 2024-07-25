@@ -204,20 +204,13 @@ async fn export_signed_registration_message(
     }
 
     {
-        let is_registration_events_listener_active = app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap()
-            .clone();
-        if is_registration_events_listener_active == true {
-            // verify that the app state request chain ids are same as the signed registration body chain ids
-            let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
-            if *request_chain_ids_guard != chain_ids {
-                return HttpResponse::BadRequest().json(json!({
-                        "message": "Request chain ids mismatch!",
-                        "chain_ids": *request_chain_ids_guard,
-                }));
-            }
+        // verify that the app state request chain ids are same as the signed registration body chain ids
+        let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
+        if !request_chain_ids_guard.is_empty() && *request_chain_ids_guard != chain_ids {
+            return HttpResponse::BadRequest().json(json!({
+                    "message": "Request chain ids mismatch!",
+                    "chain_ids": *request_chain_ids_guard,
+            }));
         }
     }
 
