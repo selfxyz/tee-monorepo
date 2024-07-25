@@ -1369,7 +1369,7 @@ mod serverless_executor_test {
             epoch: EPOCH,
             time_interval: TIME_INTERVAL,
             enclave_owner: H160::zero().into(),
-            immutable_params_injected: Arc::new(AtomicBool::new(false)),
+            immutable_params_injected: Mutex::new(false),
             mutable_params_injected: Arc::new(AtomicBool::new(false)),
             contracts_client: Mutex::new(None),
         })
@@ -1417,7 +1417,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Invalid owner address provided: Invalid input length".as_bytes()
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
 
@@ -1436,7 +1436,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Invalid owner address provided: Invalid character 'z' at position 0".as_bytes()
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
 
@@ -1455,7 +1455,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Immutable params configured!"
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.enclave_owner.lock().unwrap(),
@@ -1477,7 +1477,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Immutable params already configured!"
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.enclave_owner.lock().unwrap(),
@@ -1514,7 +1514,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Failed to hex decode the gas private key into 32 bytes: OddLength".as_bytes()
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.lock().unwrap(), None);
 
@@ -1534,7 +1534,7 @@ mod serverless_executor_test {
             "Failed to hex decode the gas private key into 32 bytes: InvalidStringLength"
                 .as_bytes()
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.lock().unwrap(), None);
 
@@ -1553,7 +1553,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Invalid gas private key provided: EcdsaError(signature::Error { source: None })"
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.lock().unwrap(), None);
 
@@ -1572,7 +1572,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Mutable params configured!"
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.wallet.lock().unwrap(),
@@ -1635,7 +1635,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "The same wallet address already set."
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.wallet.lock().unwrap(),
@@ -1677,7 +1677,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Mutable params configured!"
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.wallet.lock().unwrap(),
@@ -1818,7 +1818,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Immutable params not configured yet!"
         );
-        assert!(!app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
@@ -1842,7 +1842,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Immutable params configured!"
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
@@ -1866,7 +1866,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Mutable params not configured yet!"
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
@@ -1890,7 +1890,7 @@ mod serverless_executor_test {
             resp.into_body().try_into_bytes().unwrap(),
             "Mutable params configured!"
         );
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
@@ -1913,7 +1913,7 @@ mod serverless_executor_test {
         assert!(resp.into_body().try_into_bytes().unwrap().starts_with(
             "Json deserialize error: invalid type: string \"invalid u64\"".as_bytes()
         ));
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
@@ -1936,7 +1936,7 @@ mod serverless_executor_test {
             .try_into_bytes()
             .unwrap()
             .starts_with("Json deserialize error: missing field `chain_ids`".as_bytes()));
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(!*app_state
@@ -1967,7 +1967,7 @@ mod serverless_executor_test {
         let verifying_key = app_state.enclave_signer_key.verifying_key().to_owned();
 
         let response = response.unwrap();
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(*app_state
@@ -2009,7 +2009,7 @@ mod serverless_executor_test {
         let verifying_key = app_state.enclave_signer_key.verifying_key().to_owned();
 
         let response = response.unwrap();
-        assert!(app_state.immutable_params_injected.load(Ordering::SeqCst));
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(*app_state

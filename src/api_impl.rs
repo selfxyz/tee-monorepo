@@ -42,15 +42,14 @@ async fn inject_immutable_config(
         ));
     };
 
-    if app_state.immutable_params_injected.load(Ordering::SeqCst) {
+    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
+    if *immutable_params_injected_guard {
         return HttpResponse::BadRequest().body("Immutable params already configured!");
     }
 
     // Initialize owner address for the enclave
     *app_state.enclave_owner.lock().unwrap() = owner_address;
-    app_state
-        .immutable_params_injected
-        .store(true, Ordering::SeqCst);
+    *immutable_params_injected_guard = true;
 
     info!("Immutable params configured!");
 
@@ -223,7 +222,7 @@ async fn export_signed_registration_message(
     }
 
     // if immutable or mutable params are not configured, return error
-    if !app_state.immutable_params_injected.load(Ordering::SeqCst) {
+    if !*app_state.immutable_params_injected.lock().unwrap() {
         return HttpResponse::BadRequest().body("Immutable params not configured yet!");
     }
 
@@ -528,7 +527,7 @@ async fn export_signed_registration_message(
 // Endpoint exposed to retrieve gateway enclave details
 #[get("/gateway-details")]
 async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
-    if !app_state.immutable_params_injected.load(Ordering::SeqCst) {
+    if !*app_state.immutable_params_injected.lock().unwrap() {
         return HttpResponse::BadRequest().body("Immutable params not configured yet!");
     }
 
