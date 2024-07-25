@@ -43,7 +43,7 @@ contract UserSample is Ownable {
         address _refundAccount,
         address _callbackContract,
         uint256 _callbackGasLimit
-    ) external payable returns (bool) {
+    ) external returns (bool) {
         // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
         token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
 
