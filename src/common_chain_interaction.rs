@@ -341,7 +341,7 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(ServerlessError::LogDecodingError);
+                return Err(ServerlessError::LogDecodeFailure);
             }
         };
 
@@ -516,7 +516,7 @@ impl ContractsClient {
         }
 
         if all_gateways_data.is_empty() {
-            return Err(ServerlessError::NoGatewaysRegistered);
+            return Err(ServerlessError::NoGatewaysRegisteredInCycle(job_cycle));
         }
 
         // create a weighted probability distribution for gateways based on stake amount
@@ -539,7 +539,8 @@ impl ContractsClient {
         }
 
         if total_stake == 0 {
-            return Err(ServerlessError::NoGatewaysAvailableForRequestChain(
+            return Err(ServerlessError::NoValidGatewaysForChain(
+                job_cycle,
                 job.request_chain_id,
             ));
         }
@@ -837,7 +838,7 @@ impl ContractsClient {
             Ok(decoded) => decoded,
             Err(err) => {
                 error!("Error while decoding event: {}", err);
-                return Err(ServerlessError::LogDecodingError);
+                return Err(ServerlessError::LogDecodeFailure);
             }
         };
         let request_chain_id = job.request_chain_id;
@@ -2393,7 +2394,7 @@ mod serverless_executor_test {
             .await;
 
         // expect an error
-        assert_eq!(job.err().unwrap(), ServerlessError::LogDecodingError);
+        assert_eq!(job.err().unwrap(), ServerlessError::LogDecodeFailure);
     }
 
     #[actix_web::test]
