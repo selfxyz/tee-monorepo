@@ -781,15 +781,16 @@ impl ContractsClient {
                                     .job_responded_handler(response_job, com_chain_tx)
                                     .await;
                             }
-                            Err(err) => match err {
-                                ServerlessError::JobNotBelongToEnclave => {
-                                    info!("Job does not belong to the enclave")
+                            Err(err) => {
+                                if ServerlessError::JobNotBelongToEnclave == err {
+                                    info!("Job does not belong to the enclave");
+                                } else {
+                                    error!(
+                                        "Error while getting job from JobResponded event: {}",
+                                        err
+                                    );
                                 }
-                                _ => error!(
-                                    "Error while getting job from JobResponded event: {}",
-                                    err
-                                ),
-                            },
+                            }
                         }
                     });
                 } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
