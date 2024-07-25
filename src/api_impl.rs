@@ -232,7 +232,7 @@ async fn export_signed_registration_message(
     }
 
     // if wallet is not configured, return error
-    let Some(wallet) = app_state.wallet.lock().unwrap().clone() else {
+    if app_state.wallet.lock().unwrap().is_none() {
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
@@ -290,10 +290,6 @@ async fn export_signed_registration_message(
         ));
     };
     let common_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
-
-    // generate request chain signatures
-    let signer_wallet = wallet.clone().with_chain_id(app_state.common_chain_id);
-    let signer_address = signer_wallet.address();
 
     // create request chain signature and add it to the request chain signatures map
     let request_chain_register_typehash =
