@@ -348,11 +348,7 @@ async fn export_signed_registration_message(
             http_rpc_client.unwrap_err()
         ));
     };
-    let http_rpc_client = Arc::new(
-        http_rpc_client
-            .with_signer(signer_wallet.clone())
-            .nonce_manager(signer_address),
-    );
+    let http_rpc_client = Arc::new(http_rpc_client);
     let gateways_contract =
         GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
 
