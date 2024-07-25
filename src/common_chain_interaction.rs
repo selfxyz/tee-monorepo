@@ -781,15 +781,11 @@ impl ContractsClient {
                                     .job_responded_handler(response_job, com_chain_tx)
                                     .await;
                             }
+                            Err(ServerlessError::JobNotBelongToEnclave) => {
+                                info!("Job does not belong to the enclave");
+                            }
                             Err(err) => {
-                                if ServerlessError::JobNotBelongToEnclave == err {
-                                    info!("Job does not belong to the enclave");
-                                } else {
-                                    error!(
-                                        "Error while getting job from JobResponded event: {}",
-                                        err
-                                    );
-                                }
+                                error!("Error while getting job from JobResponded event: {}", err);
                             }
                         }
                     });
