@@ -106,6 +106,7 @@ pub struct RequestChainData {
     pub contract_address: Address,
     pub http_rpc_url: String,
     pub ws_rpc_url: String,
+    pub block_number: u64,
 }
 
 #[derive(Debug, Clone)]

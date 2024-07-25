@@ -352,7 +352,13 @@ async fn export_signed_registration_message(
     let gateways_contract =
         GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
 
-    let mut request_chain_data: HashMap<u64, RequestChainData> = HashMap::new();
+    let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
+        return HttpResponse::InternalServerError().body(
+                format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
+            );
+    };
+
+    let mut request_chains_data: HashMap<u64, RequestChainData> = HashMap::new();
 
     // iterate over all chain ids and get their registration signatures
     for &chain_id in &chain_ids {
@@ -367,21 +373,33 @@ async fn export_signed_registration_message(
         }
         let (contract_address, http_rpc_url, ws_rpc_url) = request_chain_info.unwrap();
 
-        request_chain_data.insert(
+        let http_rpc_client = Provider::<Http>::try_from(&http_rpc_url);
+        let Ok(http_rpc_client) = http_rpc_client else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to connect to the request chain {} http rpc server {}: {}",
+                chain_id,
+                http_rpc_url,
+                http_rpc_client.unwrap_err()
+            ));
+        };
+
+        let block_number = http_rpc_client
+            .get_block_number()
+            .await
+            .context("Failed to get the latest block number of the request chain")
+            .unwrap()
+            .as_u64();
+
+        request_chains_data.insert(
             chain_id,
             RequestChainData {
                 contract_address,
                 http_rpc_url: http_rpc_url.to_string(),
                 ws_rpc_url: ws_rpc_url.to_string(),
+                block_number,
             },
         );
     }
-
-    let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
-        return HttpResponse::InternalServerError().body(
-                format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
-            );
-    };
 
     let wallet_guard = app_state.wallet.lock().unwrap();
     let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
@@ -401,18 +419,16 @@ async fn export_signed_registration_message(
     let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
 
     for &chain_id in &chain_ids {
-        let contract_address = request_chain_data.get(&chain_id).unwrap().contract_address;
-        let http_rpc_url = &request_chain_data.get(&chain_id).unwrap().http_rpc_url;
-        let ws_rpc_url = &request_chain_data.get(&chain_id).unwrap().ws_rpc_url;
+        let request_chain_data = request_chains_data.get(&chain_id).unwrap();
 
         let signer_wallet = wallet_guard.clone().unwrap().with_chain_id(chain_id);
 
-        let http_rpc_client = Provider::<Http>::try_from(http_rpc_url);
+        let http_rpc_client = Provider::<Http>::try_from(&request_chain_data.http_rpc_url);
         let Ok(http_rpc_client) = http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the request chain {} http rpc server {}: {}",
                 chain_id,
-                http_rpc_url,
+                request_chain_data.http_rpc_url,
                 http_rpc_client.unwrap_err()
             ));
         };
@@ -422,22 +438,16 @@ async fn export_signed_registration_message(
                 .with_signer(signer_wallet)
                 .nonce_manager(signer_address),
         );
-        let contract = RelayContract::new(contract_address, http_rpc_client.clone());
-
-        let request_chain_block_number = http_rpc_client
-            .get_block_number()
-            .await
-            .context("Failed to get the latest block number of the request chain")
-            .unwrap()
-            .as_u64();
+        let contract =
+            RelayContract::new(request_chain_data.contract_address, http_rpc_client.clone());
 
         let request_chain_client = Arc::from(RequestChainClient {
             chain_id,
-            contract_address,
+            contract_address: request_chain_data.contract_address,
             contract: Arc::new(RwLock::new(contract)),
-            ws_rpc_url: ws_rpc_url.to_string(),
-            http_rpc_url: http_rpc_url.to_string(),
-            request_chain_start_block_number: request_chain_block_number,
+            ws_rpc_url: request_chain_data.ws_rpc_url.to_string(),
+            http_rpc_url: request_chain_data.http_rpc_url.to_string(),
+            request_chain_start_block_number: request_chain_data.block_number,
             confirmation_blocks: 5, // TODO: fetch from contract
             last_seen_block: Arc::new(0.into()),
         });
