@@ -26,3 +26,26 @@ Listens to jobs on Request Chains and puts them on the Common Chain where Execut
     "time_interval": 20
   }
   ```
+
+# How to start the service
+
+- Add Enclave Address
+  ```shell
+  curl -X POST -H "Content-Type: application/json" -d '{"owner_address_hex": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}' http://localhost:6001/immutable-config -v
+  ```
+- Add Gas Address
+  ```shell
+  curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"}' http://localhost:6001/mutable-config -v
+  ```
+- Gett signature
+  ```shell
+  curl -X GET -H "Content-Type: application/json" -d '{"chain_ids": [31337]}' http://localhost:6001/signed-registration-message -v
+  ```
+- Use the signature from the above endpoint to register on the commmon chain.
+
+# Verifying Config
+
+- Verify the Addresses on the gateway
+  ```shell
+  curl -X GET http://localhost:6001/gateway-details -v
+  ```
