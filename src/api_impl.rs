@@ -92,16 +92,17 @@ async fn inject_mutable_config(
         let gas_address = gas_wallet.address();
 
         // Build Common Chain http rpc client
-        let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
-        let Ok(http_rpc_client) = http_rpc_client else {
+        let common_chain_http_rpc_client =
+            Provider::<Http>::try_from(&app_state.common_chain_http_url);
+        let Ok(common_chain_http_rpc_client) = common_chain_http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the common chain http rpc server {}: {}",
                 app_state.common_chain_http_url,
-                http_rpc_client.unwrap_err()
+                common_chain_http_rpc_client.unwrap_err()
             ));
         };
-        let http_rpc_client = Arc::new(
-            http_rpc_client
+        let common_chain_http_rpc_client = Arc::new(
+            common_chain_http_rpc_client
                 .with_signer(gas_wallet.clone())
                 .nonce_manager(gas_address),
         );
@@ -116,31 +117,36 @@ async fn inject_mutable_config(
                 .request_chain_clients
                 .clone();
         for (&chain_id, request_chain_client) in request_chain_clients_clone.iter() {
-            let http_rpc_client = Provider::<Http>::try_from(&request_chain_client.http_rpc_url);
-            let Ok(http_rpc_client) = http_rpc_client else {
+            let request_chain_http_rpc_client =
+                Provider::<Http>::try_from(&request_chain_client.http_rpc_url);
+            let Ok(request_chain_http_rpc_client) = request_chain_http_rpc_client else {
                 return HttpResponse::InternalServerError().body(format!(
                     "Failed to connect to the request chain {} http rpc server {}: {}",
                     chain_id,
                     request_chain_client.http_rpc_url,
-                    http_rpc_client.unwrap_err()
+                    request_chain_http_rpc_client.unwrap_err()
                 ));
             };
 
             let gas_wallet = gas_wallet.clone().with_chain_id(chain_id);
-            let http_rpc_client = Arc::new(
-                http_rpc_client
+            let request_chain_http_rpc_client = Arc::new(
+                request_chain_http_rpc_client
                     .with_signer(gas_wallet.clone())
                     .nonce_manager(gas_address),
             );
 
-            let contract =
-                RelayContract::new(request_chain_client.contract_address, http_rpc_client);
+            let contract = RelayContract::new(
+                request_chain_client.contract_address,
+                request_chain_http_rpc_client,
+            );
             request_chain_contract_clients.insert(chain_id, contract);
         }
 
         // Updating Gateway Jobs Contract's http rpc client with the new wallet address
-        let gateway_jobs_contract =
-            GatewayJobsContract::new(app_state.gateway_jobs_contract_addr, http_rpc_client);
+        let gateway_jobs_contract = GatewayJobsContract::new(
+            app_state.gateway_jobs_contract_addr,
+            common_chain_http_rpc_client,
+        );
 
         let mut gateway_jobs_contract_write_guard = contracts_client_guard
             .as_ref()
@@ -328,19 +334,22 @@ async fn export_signed_registration_message(
     let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
     // Create GatewaysContract instance
-    let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
-    let Ok(http_rpc_client) = http_rpc_client else {
+    let common_chain_http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
+    let Ok(common_chain_http_rpc_client) = common_chain_http_rpc_client else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to connect to the common chain http rpc server {}: {}",
             app_state.common_chain_http_url,
-            http_rpc_client.unwrap_err()
+            common_chain_http_rpc_client.unwrap_err()
         ));
     };
-    let http_rpc_client = Arc::new(http_rpc_client);
-    let gateways_contract =
-        GatewaysContract::new(app_state.gateways_contract_addr, http_rpc_client.clone());
+    let common_chain_http_rpc_client = Arc::new(common_chain_http_rpc_client);
+    let gateways_contract = GatewaysContract::new(
+        app_state.gateways_contract_addr,
+        common_chain_http_rpc_client.clone(),
+    );
 
-    let Ok(common_chain_block_number) = http_rpc_client.get_block_number().await else {
+    let Ok(common_chain_block_number) = common_chain_http_rpc_client.get_block_number().await
+    else {
         return HttpResponse::InternalServerError().body(
                 format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
             );
@@ -397,16 +406,16 @@ async fn export_signed_registration_message(
         .with_chain_id(app_state.common_chain_id);
     let signer_address = signer_wallet.address();
 
-    let http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
-    let Ok(http_rpc_client) = http_rpc_client else {
+    let common_chain_http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
+    let Ok(common_chain_http_rpc_client) = common_chain_http_rpc_client else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to connect to the common chain http rpc server {}: {}",
             app_state.common_chain_http_url,
-            http_rpc_client.unwrap_err()
+            common_chain_http_rpc_client.unwrap_err()
         ));
     };
-    let http_rpc_client = Arc::new(
-        http_rpc_client
+    let common_chain_http_rpc_client = Arc::new(
+        common_chain_http_rpc_client
             .with_signer(signer_wallet.clone())
             .nonce_manager(signer_address),
     );
@@ -418,23 +427,26 @@ async fn export_signed_registration_message(
 
         let signer_wallet = wallet_guard.clone().unwrap().with_chain_id(chain_id);
 
-        let http_rpc_client = Provider::<Http>::try_from(&request_chain_data.http_rpc_url);
-        let Ok(http_rpc_client) = http_rpc_client else {
+        let request_chain_http_rpc_client =
+            Provider::<Http>::try_from(&request_chain_data.http_rpc_url);
+        let Ok(request_chain_http_rpc_client) = request_chain_http_rpc_client else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the request chain {} http rpc server {}: {}",
                 chain_id,
                 request_chain_data.http_rpc_url,
-                http_rpc_client.unwrap_err()
+                request_chain_http_rpc_client.unwrap_err()
             ));
         };
 
-        let http_rpc_client = Arc::new(
-            http_rpc_client
+        let request_chain_http_rpc_client = Arc::new(
+            request_chain_http_rpc_client
                 .with_signer(signer_wallet)
                 .nonce_manager(signer_address),
         );
-        let contract =
-            RelayContract::new(request_chain_data.contract_address, http_rpc_client.clone());
+        let contract = RelayContract::new(
+            request_chain_data.contract_address,
+            request_chain_http_rpc_client.clone(),
+        );
 
         let request_chain_client = Arc::from(RequestChainClient {
             chain_id,
@@ -475,7 +487,7 @@ async fn export_signed_registration_message(
 
         let gateway_jobs_contract = GatewayJobsContract::new(
             app_state.gateway_jobs_contract_addr,
-            http_rpc_client.clone(),
+            common_chain_http_rpc_client.clone(),
         );
 
         let contracts_client = Arc::new(ContractsClient {
