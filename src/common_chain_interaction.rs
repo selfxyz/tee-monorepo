@@ -130,6 +130,14 @@ impl ContractsClient {
                         .unwrap();
 
                     while let Some(log) = request_chain_stream.next().await {
+                        let log = confirm_event(
+                            log,
+                            &request_chain_client_clone.http_rpc_url,
+                            request_chain_client_clone.confirmation_blocks,
+                            request_chain_client_clone.last_seen_block.clone(),
+                        )
+                        .await;
+
                         if log.removed.unwrap_or(true) {
                             continue;
                         }
@@ -769,7 +777,7 @@ impl ContractsClient {
 
                 if topics[0] == keccak256("JobResponded(uint256,bytes,uint256,uint8)").into() {
                     info!(
-                        "JobResponded event triggered for job ID: {:?}",
+                        "JobResponded event triggered for Job ID: {:?}",
                         log.topics[1]
                     );
                     let self_clone = Arc::clone(&self);
@@ -800,7 +808,7 @@ impl ContractsClient {
                 } else if topics[0]
                     == keccak256("GatewayReassigned(uint256,address,address,uint8)").into()
                 {
-                    info!("GatewayReassigned jobID: {:?}", log.topics[1]);
+                    info!("GatewayReassigned for Job ID: {:?}", log.topics[1]);
                     let self_clone = Arc::clone(&self);
                     let req_chain_tx = req_chain_tx.clone();
                     task::spawn(async move {
