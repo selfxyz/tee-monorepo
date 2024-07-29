@@ -43,7 +43,7 @@ pub async fn get_block_number_by_timestamp(
     target_timestamp: u64,
 ) -> Option<u64> {
     let mut block_number: u64 = 0;
-    for _ in 0..20 {
+    for _ in 0..5 {
         let get_block_number_result = provider.get_block_number().await;
 
         if get_block_number_result.is_err() {
