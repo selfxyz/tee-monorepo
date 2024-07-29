@@ -168,8 +168,6 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     time_interval: u64,
 ) -> Result<(), Error> {
     // last added cycle will be the cycle number which is less than the current cycle number
-    // since this fn is run via spawn,
-    // it is possible that a greater or equal cycle number is already added
     let mut last_added_cycle: Option<u64> = None;
     let added_cycles: Vec<u64>;
     // scope for the read lock
