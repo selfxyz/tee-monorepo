@@ -65,6 +65,7 @@ impl ContractsClient {
                         }
                     };
 
+                // TODO: an error here can effect can panic the thread. What possible errors are possible?
                 let mut common_chain_stream = common_chain_ws_provider
                     .subscribe_logs(&common_chain_registered_filter)
                     .await
@@ -121,6 +122,7 @@ impl ContractsClient {
                         }
                     };
 
+                    // TODO: an error here can effect can panic the thread. What possible errors are possible?
                     let mut request_chain_stream = request_chain_ws_provider
                         .subscribe_logs(&request_chain_registered_filter)
                         .await
