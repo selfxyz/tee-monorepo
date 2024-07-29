@@ -177,7 +177,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         added_cycles = gateway_epoch_state_guard.keys().cloned().collect();
         added_cycles.sort();
     }
-    'added_cycles_check: for cycle in added_cycles.iter().rev() {
+    for cycle in added_cycles.iter().rev() {
         if *cycle < cycle_number {
             last_added_cycle = Some(cycle.clone());
             // scope for the read lock
@@ -191,11 +191,11 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                     .clone();
 
                 if gateway_cycle_map.is_empty() {
-                    continue 'added_cycles_check;
+                    continue;
                 } else {
                     from_block_number =
                         gateway_cycle_map.values().next().unwrap().last_block_number + 1;
-                    break 'added_cycles_check;
+                    break;
                 }
             }
         }
