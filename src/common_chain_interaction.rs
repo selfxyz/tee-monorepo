@@ -413,7 +413,10 @@ impl ContractsClient {
                 }
             }
             Err(err) => {
-                error!("Error while selecting gateway: {}", err);
+                error!(
+                    "Job Id: {}, Error while selecting gateway: {}",
+                    job.job_id, err
+                );
             }
         }
     }
