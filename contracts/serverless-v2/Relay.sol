@@ -265,7 +265,6 @@ contract Relay is
     error RelayInvalidUserTimeout();
     error RelayJobNotExists();
     error RelayOverallTimeoutOver();
-    error RelayInvalidJobOwner();
     error RelayOverallTimeoutNotOver();
     error RelayCallbackDepositTransferFailed();
     error RelayInsufficientCallbackDeposit();
@@ -403,9 +402,8 @@ contract Relay is
         TOKEN.safeTransfer(_jobOwner, jobOwnerPayoutUsdc);
     }
 
-    function _jobCancel(uint256 _jobId, address _jobOwner) internal {
-        Job storage job = jobs[_jobId];
-        if (job.jobOwner != _jobOwner) revert RelayInvalidJobOwner();
+    function _jobCancel(uint256 _jobId) internal {
+        Job memory job = jobs[_jobId];
 
         // check time case
         if (block.timestamp <= job.startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutNotOver();
@@ -415,10 +413,10 @@ contract Relay is
         delete jobs[_jobId];
 
         // return back escrow amount to the user
-        TOKEN.safeTransfer(_jobOwner, usdcDeposit);
+        TOKEN.safeTransfer(job.jobOwner, usdcDeposit);
 
         // return back callback deposit to the user
-        (bool success, ) = _jobOwner.call{value: callbackDeposit}("");
+        (bool success, ) = job.jobOwner.call{value: callbackDeposit}("");
         if (!success) revert RelayCallbackDepositTransferFailed();
 
         emit JobCancelled(_jobId);
@@ -500,7 +498,7 @@ contract Relay is
     }
 
     function jobCancel(uint256 _jobId) external {
-        _jobCancel(_jobId, _msgSender());
+        _jobCancel(_jobId);
     }
 
     //-------------------------------- external functions end --------------------------------//
