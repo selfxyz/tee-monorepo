@@ -169,48 +169,43 @@ pub async fn generate_gateway_epoch_state_for_cycle(
 ) -> Result<(), Error> {
     // last added cycle will be the cycle number which is less than the current cycle number
     let mut last_added_cycle: Option<u64> = None;
-    let added_cycles: Vec<u64>;
+    let mut added_cycles: Vec<u64>;
+    let mut from_block_number: u64 = 0;
     // scope for the read lock
     {
         let gateway_epoch_state_guard = gateway_epoch_state.read().unwrap();
         added_cycles = gateway_epoch_state_guard.keys().cloned().collect();
+        added_cycles.sort();
     }
-    for cycle in added_cycles.iter().rev() {
+    'added_cycles_check: for cycle in added_cycles.iter().rev() {
         if *cycle < cycle_number {
             last_added_cycle = Some(cycle.clone());
-            break;
+            // scope for the read lock
+            {
+                // get last added cycle's block number
+                let gateway_cycle_map = gateway_epoch_state
+                    .read()
+                    .unwrap()
+                    .get(&last_added_cycle.unwrap())
+                    .unwrap()
+                    .clone();
+
+                if gateway_cycle_map.is_empty() {
+                    continue 'added_cycles_check;
+                } else {
+                    from_block_number =
+                        gateway_cycle_map.values().next().unwrap().last_block_number + 1;
+                    break 'added_cycles_check;
+                }
+            }
         }
     }
     drop(added_cycles);
 
-    let from_block_number: u64;
-
-    if last_added_cycle.is_none() {
-        from_block_number = 0;
-    } else {
-        // scope for the read lock
-        {
-            // get last added cycle's block number
-            let gateway_cycle_map = gateway_epoch_state
-                .read()
-                .unwrap()
-                .get(&last_added_cycle.unwrap())
-                .unwrap()
-                .clone();
-
-            if gateway_cycle_map.is_empty() {
-                from_block_number = 0;
-            } else {
-                from_block_number =
-                    gateway_cycle_map.values().next().unwrap().last_block_number + 1;
-            }
-        }
-    }
-
     let timestamp_to_fetch = epoch + (cycle_number * time_interval);
 
+    // in case of no blocks created in this epoch cycle -
     // to_block_number can be less than from_block_number
-    // in case of no blocks created in this epoch cycle
     let mut to_block_number = get_block_number_by_timestamp(&provider, timestamp_to_fetch).await;
     if to_block_number.is_none() {
         error!(
