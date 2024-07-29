@@ -357,7 +357,7 @@ pub async fn confirm_event(
     let mut retries = 0;
     let mut first_iteration = true;
     loop {
-        if last_seen_block.load(Ordering::Relaxed)
+        if last_seen_block.load(Ordering::SeqCst)
             >= log.block_number.unwrap_or(U64::from(0)).as_u64() + confirmation_blocks
         {
             match provider
@@ -401,7 +401,7 @@ pub async fn confirm_event(
                 continue;
             }
         };
-        last_seen_block.store(curr_block_number.as_u64(), Ordering::Relaxed);
+        last_seen_block.store(curr_block_number.as_u64(), Ordering::SeqCst);
     }
     log
 }
