@@ -2434,14 +2434,16 @@ mod serverless_executor_test {
             .await
             .unwrap();
 
-        let total_stake = 100 * 5 as u64;
+        let each_gateway_stake =
+            (U256::from(2) * (*MIN_GATEWAY_STAKE)) / *GATEWAY_STAKE_ADJUSTMENT_FACTOR;
+        let total_stake = (each_gateway_stake * U256::from(5)).as_u128();
         let seed = job.starttime.as_u64();
         let mut rng = StdRng::seed_from_u64(seed);
         for _ in 0..job.sequence_number - 1 {
             let _ = rng.gen_range(1..=total_stake);
         }
         let random_number = rng.gen_range(1..=total_stake);
-        let indx = random_number / 100;
+        let indx = random_number / each_gateway_stake.as_u128();
         let expected_gateway_address = contracts_client
             .gateway_epoch_state
             .read()
@@ -2471,14 +2473,16 @@ mod serverless_executor_test {
             .await
             .unwrap();
 
-        let total_stake = 100 * 5 as u64;
+        let each_gateway_stake =
+            (U256::from(2) * (*MIN_GATEWAY_STAKE)) / *GATEWAY_STAKE_ADJUSTMENT_FACTOR;
+        let total_stake = (each_gateway_stake * U256::from(5)).as_u128();
         let seed = job.starttime.as_u64();
         let mut rng = StdRng::seed_from_u64(seed);
         for _ in 0..job.sequence_number - 1 {
             let _ = rng.gen_range(1..=total_stake);
         }
         let random_number = rng.gen_range(1..=total_stake);
-        let indx = random_number / 100;
+        let indx = random_number / each_gateway_stake.as_u128();
         let expected_gateway_address = contracts_client
             .gateway_epoch_state
             .read()
@@ -2508,9 +2512,11 @@ mod serverless_executor_test {
 
         let job_clone = job.clone();
         let contracts_client_clone = contracts_client.clone();
-        contracts_client_clone
-            .job_placed_handler(job_clone, req_chain_tx.clone())
-            .await;
+        tokio::spawn(async move {
+            contracts_client_clone
+                .job_placed_handler(job_clone, req_chain_tx.clone())
+                .await
+        });
 
         if let Some(rx_job) = com_chain_rx.recv().await {
             job.gateway_address = Some(contracts_client.enclave_address);
@@ -2549,15 +2555,14 @@ mod serverless_executor_test {
 
         add_gateway_epoch_state(contracts_client.clone(), Some(4), Some(false)).await;
 
-        let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
+        let (req_chain_tx, _com_chain_rx) = channel::<Job>(100);
 
         let job_clone = job.clone();
         let contracts_client_clone = contracts_client.clone();
+
         contracts_client_clone
             .job_placed_handler(job_clone, req_chain_tx.clone())
             .await;
-
-        assert!(com_chain_rx.recv().await.is_none());
 
         assert_eq!(
             contracts_client
@@ -2567,6 +2572,24 @@ mod serverless_executor_test {
                 .get(&job.job_id),
             None
         );
+
+        let current_jobs_guard = contracts_client.current_jobs.read().unwrap();
+        let current_job = current_jobs_guard.get(&job.job_id);
+
+        assert!(current_job.is_some());
+
+        let current_job = current_job.unwrap().clone();
+        drop(current_jobs_guard);
+
+        assert_eq!(current_job.job_id, job.job_id);
+        assert_eq!(current_job.request_chain_id, job.request_chain_id);
+        assert_eq!(current_job.tx_hash, job.tx_hash);
+        assert_eq!(current_job.code_input, job.code_input);
+        assert_eq!(current_job.user_timeout, job.user_timeout);
+        assert_eq!(current_job.starttime, job.starttime);
+        assert_eq!(current_job.job_owner, job.job_owner);
+        assert_eq!(current_job.job_type, job.job_type);
+        assert_eq!(current_job.sequence_number, job.sequence_number);
 
         assert_eq!(
             contracts_client
