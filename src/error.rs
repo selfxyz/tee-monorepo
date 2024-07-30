@@ -5,7 +5,7 @@ pub enum ServerlessError {
     #[error("Failed to decode log")]
     LogDecodeFailure,
     #[error("Job does not belong to the enclave")]
-    JobNotBelongToEnclave,
+    JobDoesNotBelongToEnclave,
     #[error("Job is older than the maintained block states")]
     JobOlderThanMaintainedBlockStates,
     #[error("No Gateways Registered in cycle: {0}")]

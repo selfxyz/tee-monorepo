@@ -553,9 +553,10 @@ impl ContractsClient {
             ));
         }
 
-        // random number between 1 to total_stake from the eed for the weighted random selection.
+        // random number between 1 to total_stake from the seed for the weighted random selection.
         // use this seed in std_rng to generate a random number between 1 to total_stake
         // skipping skips numbers from the random number generated
+        // skips comes from sequence_number of the job which starts from 1. That's why its (skips-1)
         let mut rng = StdRng::seed_from_u64(seed);
         for _ in 0..skips - 1 {
             let _ = rng.gen_range(1..=total_stake);
@@ -580,15 +581,27 @@ impl ContractsClient {
     }
 
     async fn cancel_job_with_job_id(self: Arc<Self>, job_id: U256) {
-        info!("Remove the Job ID: {:} from the active jobs list", job_id);
+        info!(
+            "Remove the Job ID: {:} from the active and current jobs list",
+            job_id
+        );
 
+        let job: Option<Job>;
         // scope for the write lock
         {
-            self.active_jobs.write().unwrap().remove(&job_id);
+            job = self.active_jobs.write().unwrap().remove(&job_id);
         }
-        // scope for the write lock
-        {
-            self.current_jobs.write().unwrap().remove(&job_id);
+        if job.is_none() {
+            let _job: Option<Job>;
+            // scope for the write lock
+            {
+                _job = self.current_jobs.write().unwrap().remove(&job_id);
+            }
+            if _job.is_some() {
+                info!("Job ID: {:?} removed from current jobs", job_id);
+            }
+        } else {
+            info!("Job ID: {:?} removed from active jobs", job_id);
         }
     }
 
@@ -648,10 +661,7 @@ impl ContractsClient {
                 let err_string = format!("{:#?}", err);
                 if err_string.contains("code: -32000") && err_string.contains("nonce") {
                     // Handle the specific error case
-                    error!(
-                        "Error: Transaction nonce too low. {}. Retrying - {} of 3",
-                        err, i
-                    );
+                    error!("Error: Nonce Error - {}. Retrying - {} of 3", err, i);
                     continue;
                 }
                 error!(
@@ -717,10 +727,7 @@ impl ContractsClient {
                 let err_string = format!("{:#?}", err);
                 if err_string.contains("code: -32000") && err_string.contains("nonce") {
                     // Handle the specific error case
-                    error!(
-                        "Error: Transaction nonce too low. {}. Retrying - {} of 3",
-                        err, i
-                    );
+                    error!("Error: Nonce Error - {}. Retrying - {} of 3", err, i);
                     continue;
                 }
 
@@ -789,7 +796,7 @@ impl ContractsClient {
                                     .job_responded_handler(response_job, com_chain_tx)
                                     .await;
                             }
-                            Err(ServerlessError::JobNotBelongToEnclave) => {
+                            Err(ServerlessError::JobDoesNotBelongToEnclave) => {
                                 info!("Job does not belong to the enclave");
                             }
                             Err(err) => {
@@ -831,7 +838,7 @@ impl ContractsClient {
         let active_jobs = self.active_jobs.read().unwrap();
         let job = active_jobs.get(&job_id);
         if job.is_none() {
-            return Err(ServerlessError::JobNotBelongToEnclave);
+            return Err(ServerlessError::JobDoesNotBelongToEnclave);
         }
 
         let job = job.unwrap();
@@ -995,29 +1002,7 @@ impl ContractsClient {
     async fn job_resource_unavailable_handler(self: Arc<Self>, log: Log) {
         let job_id = log.topics[1].into_uint();
 
-        let active_jobs_guard = self.active_jobs.read().unwrap();
-        let job = active_jobs_guard.get(&job_id);
-        if job.is_none() {
-            return;
-        }
-        let job = job.unwrap();
-        if job.gateway_address.unwrap() != self.enclave_address {
-            return;
-        }
-        drop(active_jobs_guard);
-
-        // scope for the write lock
-        {
-            let job = self.active_jobs.write().unwrap().remove(&job_id);
-            if job.is_some() {
-                info!(
-                    "Job ID: {:?} - removed from active jobs",
-                    job.unwrap().job_id
-                );
-            } else {
-                info!("Job ID: {:?} - not found in active jobs", job_id);
-            }
-        }
+        self.cancel_job_with_job_id(job_id).await;
     }
 
     async fn gateway_reassigned_handler(self: Arc<Self>, log: Log, req_chain_tx: Sender<Job>) {
@@ -1055,14 +1040,7 @@ impl ContractsClient {
             return;
         }
 
-        // scope for write lock
-        {
-            self.active_jobs.write().unwrap().remove(&job_id);
-        }
-        // scope for write lock
-        {
-            self.current_jobs.write().unwrap().remove(&job_id);
-        }
+        self.clone().cancel_job_with_job_id(job_id).await;
 
         job.sequence_number += 1;
         if job.sequence_number > MAX_GATEWAY_RETRIES {
@@ -1346,7 +1324,7 @@ mod serverless_executor_test {
     const TIME_INTERVAL: u64 = 300;
 
     #[derive(Serialize, Deserialize, Debug)]
-    struct ExportResponse {
+    struct SignedRegistrationResponse {
         owner: H160,
         sign_timestamp: usize,
         chain_ids: Vec<u64>,
@@ -1962,7 +1940,7 @@ mod serverless_executor_test {
 
         assert_eq!(resp.status(), http::StatusCode::OK);
 
-        let response: Result<ExportResponse, serde_json::Error> =
+        let response: Result<SignedRegistrationResponse, serde_json::Error> =
             serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
         assert!(response.is_ok());
 
@@ -2004,7 +1982,7 @@ mod serverless_executor_test {
 
         assert_eq!(resp.status(), http::StatusCode::OK);
 
-        let response: Result<ExportResponse, serde_json::Error> =
+        let response: Result<SignedRegistrationResponse, serde_json::Error> =
             serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
         assert!(response.is_ok());
 
