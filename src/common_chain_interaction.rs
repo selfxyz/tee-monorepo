@@ -450,12 +450,7 @@ impl ContractsClient {
             let ref topics = log.topics;
             if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
                 let decoded = decode(
-                    &vec![
-                        ParamType::Uint(256),
-                        ParamType::Uint(256),
-                        ParamType::Address,
-                        ParamType::Address,
-                    ],
+                    &vec![ParamType::Uint(256), ParamType::Address, ParamType::Address],
                     &log.data.0,
                 )
                 .unwrap();
@@ -467,7 +462,7 @@ impl ContractsClient {
                 if job_id == job.job_id
                     && job_owner == job.job_owner
                     && gateway_operator != Address::zero()
-                    && gateway_operator != job.gateway_address.unwrap()
+                    && gateway_operator == job.gateway_address.unwrap()
                 {
                     info!(
                         "Job ID: {:?}, JobRelayed event triggered for job ID: {:?}",
@@ -1291,7 +1286,6 @@ impl LogsProvider for ContractsClient {
                     H256::from_uint(&job.job_id),
                 ],
                 data: encode(&[
-                    Token::Uint(job.job_id),
                     Token::Uint(U256::from(100)),
                     Token::Address(job.job_owner),
                     Token::Address(job.gateway_address.unwrap()),
