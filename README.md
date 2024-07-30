@@ -2,7 +2,7 @@
 
 Monitors jobs on Request Chains and transfers them to the Common Chain for Executors to process. Once Executors respond to the jobs on the Common Chain, the Gateway forwards the responses back to the original Request Chain.
 
-# Installation
+# Dev Setup
 
 - Clone the repository.
 - Build the binary -
@@ -27,7 +27,7 @@ Monitors jobs on Request Chains and transfers them to the Common Chain for Execu
   }
   ```
 
-# How to start the service
+# Dev Run
 
 - Add Owner Address
   ```shell
