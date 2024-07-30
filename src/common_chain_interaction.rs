@@ -2203,7 +2203,7 @@ mod serverless_executor_test {
                     GatewayData {
                         last_block_number: 5600 as u64,
                         address: contracts_client.enclave_address,
-                        stake_amount: U256::from(100),
+                        stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
                         req_chain_ids: BTreeSet::from([CHAIN_ID]),
                         draining: false,
                     },
@@ -2221,7 +2221,7 @@ mod serverless_executor_test {
                     GatewayData {
                         last_block_number: 5600 as u64,
                         address: Address::random(),
-                        stake_amount: U256::from(100),
+                        stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
                         req_chain_ids: BTreeSet::from([CHAIN_ID]),
                         draining: false,
                     },
@@ -2854,10 +2854,7 @@ mod serverless_executor_test {
         let job = contracts_client.get_job_from_job_responded_event(log).await;
 
         assert!(job.is_err());
-        assert_eq!(
-            job.err().unwrap().to_string(),
-            "Error while decoding event: Invalid data"
-        );
+        assert_eq!(job.err().unwrap().to_string(), "Failed to decode log");
     }
 
     // TODO: tests for gateway_epoch_state_service
