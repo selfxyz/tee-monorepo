@@ -1,6 +1,6 @@
 # Oyster Serverless Gateway
 
-Listens to jobs on Request Chains and puts them on the Common Chain where Executors pick them up. Once Executors response to the jobs on the Common Chain, the Gateway submits the response to the original Request Chain of the job.
+Monitors jobs on Request Chains and transfers them to the Common Chain for Executors to process. Once Executors respond to the jobs on the Common Chain, the Gateway forwards the responses back to the original Request Chain.
 
 # Installation
 
@@ -11,7 +11,7 @@ Listens to jobs on Request Chains and puts them on the Common Chain where Execut
   ```
 - Run the binary -
   ```
-  ./target/x86_64-unknown-linux-musl/release/serverless-gateway --release
+  ./target/x86_64-unknown-linux-musl/release/serverless-gateway
   ```
 - Update the config with the contract addresses -
   ```json
@@ -29,7 +29,7 @@ Listens to jobs on Request Chains and puts them on the Common Chain where Execut
 
 # How to start the service
 
-- Add Enclave Address
+- Add Owner Address
   ```shell
   curl -X POST -H "Content-Type: application/json" -d '{"owner_address_hex": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}' http://localhost:6001/immutable-config -v
   ```
@@ -37,7 +37,7 @@ Listens to jobs on Request Chains and puts them on the Common Chain where Execut
   ```shell
   curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"}' http://localhost:6001/mutable-config -v
   ```
-- Gett signature
+- Get signature
   ```shell
   curl -X GET -H "Content-Type: application/json" -d '{"chain_ids": [31337]}' http://localhost:6001/signed-registration-message -v
   ```
@@ -49,3 +49,9 @@ Listens to jobs on Request Chains and puts them on the Common Chain where Execut
   ```shell
   curl -X GET http://localhost:6001/gateway-details -v
   ```
+
+# Running Tests
+
+```shell
+cargo test -- --nocapture --test-threads=1
+```
