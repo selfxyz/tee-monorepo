@@ -24,6 +24,7 @@ pub struct AppState {
     pub registered: Arc<AtomicBool>,
     pub epoch: u64,
     pub time_interval: u64,
+    pub offset_for_epoch: u64,
     pub enclave_owner: Mutex<H160>,
     pub immutable_params_injected: Mutex<bool>,
     pub mutable_params_injected: Arc<AtomicBool>,
@@ -70,6 +71,7 @@ pub struct Config {
     pub enclave_secret_key: String,
     pub epoch: u64,
     pub time_interval: u64,
+    pub offset_for_epoch: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +99,7 @@ pub struct ContractsClient {
     pub current_jobs: Arc<RwLock<HashMap<U256, Job>>>,
     pub epoch: u64,
     pub time_interval: u64,
+    pub offset_for_epoch: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
 }

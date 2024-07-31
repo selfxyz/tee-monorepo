@@ -505,6 +505,7 @@ async fn export_signed_registration_message(
             current_jobs: Arc::new(RwLock::new(HashMap::new())),
             epoch: app_state.epoch,
             time_interval: app_state.time_interval,
+            offset_for_epoch: app_state.offset_for_epoch,
             gateway_epoch_state_waitlist,
             common_chain_start_block_number: Arc::new(Mutex::new(
                 common_chain_block_number.as_u64(),

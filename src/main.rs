@@ -76,6 +76,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         registered: Arc::new(AtomicBool::new(false)),
         epoch: config.epoch,
         time_interval: config.time_interval,
+        offset_for_epoch: config.offset_for_epoch,
         enclave_owner: H160::zero().into(),
         immutable_params_injected: Mutex::new(false),
         mutable_params_injected: Arc::new(AtomicBool::new(false)),

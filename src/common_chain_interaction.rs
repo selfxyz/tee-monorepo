@@ -24,7 +24,7 @@ use crate::chain_util::{
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
-    MIN_GATEWAY_STAKE, OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE, REQUEST_RELAY_TIMEOUT,
+    MIN_GATEWAY_STAKE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::error::ServerlessError;
 use crate::model::{
@@ -492,8 +492,7 @@ impl ContractsClient {
         skips: u8,
     ) -> Result<Address, ServerlessError> {
         let job_cycle =
-            (job.starttime.as_u64() - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
-                / self.time_interval;
+            (job.starttime.as_u64() - self.epoch - self.offset_for_epoch) / self.time_interval;
 
         let all_gateways_data: Vec<GatewayData>;
 
@@ -502,8 +501,7 @@ impl ContractsClient {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            let current_cycle =
-                (ts - self.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE) / self.time_interval;
+            let current_cycle = (ts - self.epoch - self.offset_for_epoch) / self.time_interval;
             if current_cycle >= GATEWAY_BLOCK_STATES_TO_MAINTAIN + job_cycle {
                 return Err(ServerlessError::JobOlderThanMaintainedBlockStates);
             }
@@ -1315,6 +1313,7 @@ mod serverless_executor_test {
     const GAS_WALLET_PUBLIC_ADDRESS: &str = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
     const EPOCH: u64 = 1713433800;
     const TIME_INTERVAL: u64 = 300;
+    const OFFSET_FOR_EPCOH: u64 = 20;
 
     #[derive(Serialize, Deserialize, Debug)]
     struct SignedRegistrationResponse {
@@ -1344,6 +1343,7 @@ mod serverless_executor_test {
             registration_events_listener_active: false.into(),
             epoch: EPOCH,
             time_interval: TIME_INTERVAL,
+            offset_for_epoch: OFFSET_FOR_EPCOH,
             enclave_owner: H160::zero().into(),
             immutable_params_injected: Mutex::new(false),
             mutable_params_injected: Arc::new(AtomicBool::new(false)),
@@ -2178,7 +2178,7 @@ mod serverless_executor_test {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let current_cycle = (ts - contracts_client.epoch - OFFEST_FOR_GATEWAY_EPOCH_STATE_CYCLE)
+        let current_cycle = (ts - contracts_client.epoch - contracts_client.offset_for_epoch)
             / contracts_client.time_interval;
 
         let add_self = add_self.unwrap_or(true);
