@@ -358,7 +358,7 @@ testERC165(
 	},
 );
 
-describe.only("GatewayJobs - Admin functions", function () {
+describe("GatewayJobs - Admin functions", function () {
 	let signers: Signer[];
 	let addrs: string[];
 	let stakingToken: string;

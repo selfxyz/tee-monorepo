@@ -404,6 +404,7 @@ contract Relay is
 
     function _jobCancel(uint256 _jobId) internal {
         Job memory job = jobs[_jobId];
+        if (job.jobOwner == address(0)) revert RelayJobNotExists();
 
         // check time case
         if (block.timestamp <= job.startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutNotOver();

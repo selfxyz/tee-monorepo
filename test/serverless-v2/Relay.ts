@@ -1,6 +1,6 @@
 import { setNextBlockBaseFeePerGas, time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, getBigInt, keccak256, parseUnits, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, formatUnits, getBigInt, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Relay, USDCoin, UserSample } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
@@ -996,7 +996,7 @@ describe("Relay - Job Cancel", function () {
 
 		await expect(
 			relay.connect(signers[2]).jobCancel(jobId)
-		).to.be.revertedWithCustomError(relay, "RelayInvalidJobOwner");
+		).to.be.revertedWithCustomError(relay, "RelayJobNotExists");
 	});
 
 	it("cannot cancel before overall timeout", async function () {
@@ -1005,15 +1005,6 @@ describe("Relay - Job Cancel", function () {
 		await expect(
 			relay.connect(signers[2]).jobCancel(jobId)
 		).to.revertedWithCustomError(relay, "RelayOverallTimeoutNotOver");
-	});
-
-	it("cannot cancel from other any other account except job owner", async function () {
-		let jobId: any = await relay.jobCount();
-		await time.increase(1100);
-
-		await expect(
-			relay.jobCancel(jobId)
-		).to.revertedWithCustomError(relay, "RelayInvalidJobOwner");
 	});
 
 	it("can cancel from job owner account after overall timeout", async function () {
@@ -1026,6 +1017,15 @@ describe("Relay - Job Cancel", function () {
 
 		let job = await relay.jobs(jobId);
 		expect(job.jobOwner).to.eq(ZeroAddress);
+	});
+
+	it("can cancel from any other account except job owner", async function () {
+		let jobId: any = await relay.jobCount();
+		await time.increase(1100);
+
+		await expect(
+			await relay.jobCancel(jobId)
+		).to.emit(relay, "JobCancelled").withArgs(jobId);
 	});
 
 });
@@ -1104,7 +1104,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
 		const UserSample = await ethers.getContractFactory("UserSample");
-		userSample = await UserSample.deploy(relay.target, token.target) as unknown as UserSample;
+		userSample = await UserSample.deploy(relay.target, token.target, addrs[10]) as unknown as UserSample;
 
 		await token.transfer(userSample.target, 1000000);
 	});
@@ -1121,9 +1121,10 @@ describe("Relay - Job sent by UserSample contract", function () {
 			refundAccount = addrs[1],
 			callbackContract = userSample.target,
 			callbackGasLimit = 20000;
+		// deposit eth in UserSample contract before relaying jobs
+		await signers[4].sendTransaction({to: userSample.target, value: callbackDeposit});
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount, callbackContract, callbackGasLimit,
-			{value: callbackDeposit}
+			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, refundAccount, callbackContract, callbackGasLimit
 		);
 
 		let jobId: any = await relay.jobCount(),
@@ -1141,6 +1142,12 @@ describe("Relay - Job sent by UserSample contract", function () {
 			.and.to.emit(userSample, "CalledBack").withArgs(
 				jobId, callbackContract, codeHash, codeInputs, output, errorCode
 		);
+
+		let initBalAddrs10 = await ethers.provider.getBalance(addrs[10]);
+		await userSample.connect(signers[10]).withdrawEth();
+		let finalBalAddrs10 = await ethers.provider.getBalance(addrs[10]);
+		// console.log("user sample owner bal: ", formatUnits(finalBalAddrs10), formatUnits(initBalAddrs10))
+		expect(finalBalAddrs10).to.be.gt(initBalAddrs10);
 
 		let jobOwner = userSample.target;
 		let txReceipt = await (await tx).wait();
@@ -1165,9 +1172,9 @@ describe("Relay - Job sent by UserSample contract", function () {
 			refundAccount = addrs[1],
 			callbackContract = userSample.target,
 			callbackGasLimit = 20000;
+		await signers[0].sendTransaction({to: userSample.target, value: callbackDeposit});
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, refundAccount, callbackContract, callbackGasLimit,
-			{value: callbackDeposit}
+			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, refundAccount, callbackContract, callbackGasLimit
 		);
 
 		let jobId: any = await relay.jobCount(),
