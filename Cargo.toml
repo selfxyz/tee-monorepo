@@ -1,0 +1,27 @@
+[package]
+name = "serverless-gateway"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4.8.0"
+anyhow = "1.0.81"
+bytes = "1.6.0"
+clap = { version = "4.5.3", features = ["derive"] }
+config = "0.14.0"
+ethers = { git = "https://github.com/gakonst/ethers-rs", features = ["ws", "rustls", "abigen"] }
+env_logger = "0.11.3"
+futures-core = "0.3.30"
+hex = "0.4.3"
+k256 = "0.13.3"
+lazy_static = "1.4.0"
+log = "0.4.21"
+rand = { version = "0.8.5", features = ["std_rng"] }
+serde = "1.0.159"
+serde_derive = "1.0.193"
+serde_json = "1.0.88"
+thiserror = "1.0.63"
+tiny-keccak = "2.0.2"
+tokio = { version = "1.36.0", features = ["full"] }
