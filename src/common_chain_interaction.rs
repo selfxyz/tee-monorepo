@@ -586,17 +586,10 @@ impl ContractsClient {
             job_id
         );
 
-        let job: Option<Job>;
-        // scope for the write lock
-        {
-            job = self.active_jobs.write().unwrap().remove(&job_id);
-        }
+        let job: Option<Job> = self.active_jobs.write().unwrap().remove(&job_id);
+
         if job.is_none() {
-            let _job: Option<Job>;
-            // scope for the write lock
-            {
-                _job = self.current_jobs.write().unwrap().remove(&job_id);
-            }
+            let _job: Option<Job> = self.current_jobs.write().unwrap().remove(&job_id);
             if _job.is_some() {
                 info!("Job ID: {:?} removed from current jobs", job_id);
             }

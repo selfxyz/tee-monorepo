@@ -180,23 +180,21 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     for cycle in added_cycles.iter().rev() {
         if *cycle < cycle_number {
             last_added_cycle = Some(cycle.clone());
-            // scope for the read lock
-            {
-                // get last added cycle's block number
-                let gateway_cycle_map = gateway_epoch_state
-                    .read()
-                    .unwrap()
-                    .get(&last_added_cycle.unwrap())
-                    .unwrap()
-                    .clone();
 
-                if gateway_cycle_map.is_empty() {
-                    continue;
-                } else {
-                    from_block_number =
-                        gateway_cycle_map.values().next().unwrap().last_block_number + 1;
-                    break;
-                }
+            // get last added cycle's block number
+            let gateway_cycle_map = gateway_epoch_state
+                .read()
+                .unwrap()
+                .get(&last_added_cycle.unwrap())
+                .unwrap()
+                .clone();
+
+            if gateway_cycle_map.is_empty() {
+                continue;
+            } else {
+                from_block_number =
+                    gateway_cycle_map.values().next().unwrap().last_block_number + 1;
+                break;
             }
         }
     }
