@@ -1019,13 +1019,16 @@ describe("Relay - Job Cancel", function () {
 		expect(job.jobOwner).to.eq(ZeroAddress);
 	});
 
-	it("can cancel from any other account except job owner", async function () {
+	it("can cancel from any other account except job owner after overall timeout", async function () {
 		let jobId: any = await relay.jobCount();
 		await time.increase(1100);
 
 		await expect(
-			await relay.jobCancel(jobId)
+			relay.jobCancel(jobId)
 		).to.emit(relay, "JobCancelled").withArgs(jobId);
+
+		let job = await relay.jobs(jobId);
+		expect(job.jobOwner).to.eq(ZeroAddress);
 	});
 
 });
