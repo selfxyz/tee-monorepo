@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
-use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::contract_abi::{GatewayJobsContract, RelayContract};
 use crate::HttpProvider;
@@ -103,7 +102,8 @@ pub struct ContractsClient {
     pub offset_for_epoch: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
-    pub job_subscription_management: Arc<RwLock<JobSubscriptionManagement>>,
+    pub subscription_heap: Arc<RwLock<BinaryHeap<SubscriptionHeap>>>,
+    pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -158,14 +158,6 @@ pub struct ResponseJob {
     pub job_type: GatewayJobType,
     pub gateway_address: Option<Address>,
     // pub sequence_number: u8,
-}
-
-#[derive(Debug, Clone)]
-pub struct JobSubscriptionManagement {
-    pub subscription_heap: Arc<RwLock<BinaryHeap<SubscriptionHeap>>>,
-    pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
-    pub tx: Arc<RwLock<Sender<JobSubscriptionChannelType>>>,
-    pub rx: Arc<RwLock<Receiver<JobSubscriptionChannelType>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

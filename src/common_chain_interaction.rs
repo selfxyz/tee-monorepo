@@ -27,9 +27,9 @@ use crate::constant::{
     MIN_GATEWAY_STAKE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::error::ServerlessError;
+use crate::job_subscription_management::job_subscription_management;
 use crate::model::{
-    AppState, ContractsClient, GatewayData, GatewayJobType, Job, RegisterType, RegisteredData,
-    RequestChainClient, ResponseJob,
+    AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob
 };
 
 impl ContractsClient {
@@ -207,6 +207,15 @@ impl ContractsClient {
                     tx_clone,
                 )
                 .await;
+            });
+        }
+
+        // Start the job subscription management service
+        let (job_subscription_tx, job_subscription_rx) = channel::<JobSubscriptionChannelType>(100);
+        {
+            let contracts_client_clone = self.clone();
+            tokio::spawn(async move {
+                let _ = job_subscription_management(contracts_client_clone, job_subscription_rx).await;
             });
         }
 

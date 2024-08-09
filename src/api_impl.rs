@@ -8,7 +8,7 @@ use ethers::utils::keccak256;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
 use serde_json::json;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::RwLock;
@@ -17,8 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract};
 use crate::model::{
-    AppState, ContractsClient, GatewayData, ImmutableConfig, JobSubscriptionManagement,
-    MutableConfig, RequestChainClient, RequestChainData, SignedRegistrationBody,
+    AppState, ContractsClient, GatewayData, ImmutableConfig, MutableConfig, RequestChainClient,
+    RequestChainData, SignedRegistrationBody,
 };
 use crate::HttpProvider;
 
@@ -490,7 +490,8 @@ async fn export_signed_registration_message(
             common_chain_http_rpc_client.clone(),
         );
 
-        let job_subscription_management = Arc::new(JobSubscriptionManagement::new().await);
+        let subscription_heap = Arc::new(RwLock::new(BinaryHeap::new()));
+        let subscription_jobs = Arc::new(RwLock::new(HashMap::new()));
 
         let contracts_client = Arc::new(ContractsClient {
             enclave_owner,
@@ -512,7 +513,8 @@ async fn export_signed_registration_message(
             common_chain_start_block_number: Arc::new(Mutex::new(
                 common_chain_block_number.as_u64(),
             )),
-            job_subscription_management,
+            subscription_heap,
+            subscription_jobs,
         });
 
         *contracts_client_guard = Some(Arc::clone(&contracts_client));
