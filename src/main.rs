@@ -6,6 +6,7 @@ mod config;
 mod constant;
 mod contract_abi;
 mod error;
+mod job_subscription_management;
 mod model;
 
 use actix_web::web::Data;

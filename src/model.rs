@@ -3,9 +3,10 @@ use ethers::signers::LocalWallet;
 use ethers::types::{Address, Bytes, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::contract_abi::{GatewayJobsContract, RelayContract};
 use crate::HttpProvider;
@@ -102,6 +103,7 @@ pub struct ContractsClient {
     pub offset_for_epoch: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
+    pub job_subscription_management: Arc<RwLock<JobSubscriptionManagement>>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,4 +158,44 @@ pub struct ResponseJob {
     pub job_type: GatewayJobType,
     pub gateway_address: Option<Address>,
     // pub sequence_number: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct JobSubscriptionManagement {
+    pub subscription_heap: Arc<RwLock<BinaryHeap<SubscriptionHeap>>>,
+    pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
+    pub tx: Arc<RwLock<Sender<JobSubscriptionChannelType>>>,
+    pub rx: Arc<RwLock<Receiver<JobSubscriptionChannelType>>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum JobSubscriptionAction {
+    Add,
+    Remove,
+    ParamsUpdate,
+    TerminationParamsUpdate,
+}
+
+#[derive(Debug, Clone)]
+pub struct JobSubscriptionChannelType {
+    pub subscription_job: SubscriptionJob,
+    pub subscription_action: JobSubscriptionAction,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubscriptionJob {
+    pub subscription_id: U256,
+    pub subscriber: Address,
+    pub interval: U256,
+    pub termination_time: U256,
+    pub user_timeout: U256,
+    pub tx_hash: FixedBytes,
+    pub code_input: Bytes,
+    pub starttime: U256,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionHeap {
+    pub subscription_id: U256,
+    pub next_trigger_time: u64,
 }

@@ -298,7 +298,7 @@ impl ContractsClient {
                             )
                             .await;
                         if job.is_ok() {
-                            self_clone.job_placed_handler(
+                            self_clone.job_relayed_handler(
                                 job.unwrap(),
                                 tx_clone.clone(),
                             )
@@ -317,6 +317,22 @@ impl ContractsClient {
                             log.topics[1].into_uint(),
                         ).await;
                     });
+                } else if topics[0] == keccak256("JobSubscriptionStarted(uint256,address,uint256,uint256,uint256,uint256,address,bytes32,bytes,uint256)").into() {
+                    info!(
+                        "Request Chain ID: {:?}, JobSubscriptionStarted jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
+                } 
+                else if topics[0] == keccak256("JobSubscriptionJobParamsUpdated(uint256,bytes32,bytes)").into() {
+                    info!(
+                        "Request Chain ID: {:?}, JobSubscriptionJobParamsUpdated jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
+                } else if topics[0] == keccak256("JobSubscriptionTerminationParamsUpdated(uint256,uint256)").into() {
+                    info!(
+                        "Request Chain ID: {:?}, JobSubscriptionTerminationParamsUpdated jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
                 } else {
                     error!(
                         "Request Chain ID: {:?}, Unknown event: {:?}",
@@ -371,7 +387,7 @@ impl ContractsClient {
         })
     }
 
-    pub async fn job_placed_handler(self: Arc<Self>, mut job: Job, tx: Sender<Job>) {
+    pub async fn job_relayed_handler(self: Arc<Self>, mut job: Job, tx: Sender<Job>) {
         let gateway_address = self
             .select_gateway_for_job_id(
                 job.clone(),
@@ -1042,7 +1058,7 @@ impl ContractsClient {
 
         let self_clone = Arc::clone(&self);
         task::spawn(async move {
-            self_clone.job_placed_handler(job, req_chain_tx).await;
+            self_clone.job_relayed_handler(job, req_chain_tx).await;
         });
     }
 
@@ -1188,6 +1204,9 @@ impl LogsProvider for ContractsClient {
                     "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
                 ),
                 keccak256("JobCancelled(uint256)"),
+                keccak256("JobSubscriptionStarted(uint256,address,uint256,uint256,uint256,uint256,address,bytes32,bytes,uint256)"),
+                keccak256("JobSubscriptionJobParamsUpdated(uint256,bytes32,bytes)"),
+                keccak256("JobSubscriptionTerminationParamsUpdated(uint256,uint256)"),
             ]);
 
         // register subscription
@@ -2494,7 +2513,7 @@ mod serverless_executor_test {
     // TODO: Add select gateway for job id test - Error cases
 
     #[actix_web::test]
-    async fn test_job_placed_handler() {
+    async fn test_job_relayed_handler() {
         let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
@@ -2507,7 +2526,7 @@ mod serverless_executor_test {
         let contracts_client_clone = contracts_client.clone();
         tokio::spawn(async move {
             contracts_client_clone
-                .job_placed_handler(job_clone, req_chain_tx.clone())
+                .job_relayed_handler(job_clone, req_chain_tx.clone())
                 .await
         });
 
@@ -2541,7 +2560,7 @@ mod serverless_executor_test {
     }
 
     #[actix_web::test]
-    async fn test_job_placed_handler_selected_gateway_not_self() {
+    async fn test_job_relayed_handler_selected_gateway_not_self() {
         let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
@@ -2554,7 +2573,7 @@ mod serverless_executor_test {
         let contracts_client_clone = contracts_client.clone();
 
         contracts_client_clone
-            .job_placed_handler(job_clone, req_chain_tx.clone())
+            .job_relayed_handler(job_clone, req_chain_tx.clone())
             .await;
 
         assert_eq!(
@@ -2595,7 +2614,7 @@ mod serverless_executor_test {
     }
 
     #[actix_web::test]
-    async fn test_job_placed_handler_no_cycle_state() {
+    async fn test_job_relayed_handler_no_cycle_state() {
         let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
@@ -2604,7 +2623,7 @@ mod serverless_executor_test {
 
         contracts_client
             .clone()
-            .job_placed_handler(job.clone(), req_chain_tx.clone())
+            .job_relayed_handler(job.clone(), req_chain_tx.clone())
             .await;
 
         let waitlisted_jobs_hashmap = contracts_client

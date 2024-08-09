@@ -17,8 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract};
 use crate::model::{
-    AppState, ContractsClient, GatewayData, ImmutableConfig, MutableConfig, RequestChainClient,
-    RequestChainData, SignedRegistrationBody,
+    AppState, ContractsClient, GatewayData, ImmutableConfig, JobSubscriptionManagement,
+    MutableConfig, RequestChainClient, RequestChainData, SignedRegistrationBody,
 };
 use crate::HttpProvider;
 
@@ -490,6 +490,8 @@ async fn export_signed_registration_message(
             common_chain_http_rpc_client.clone(),
         );
 
+        let job_subscription_management = Arc::new(JobSubscriptionManagement::new().await);
+
         let contracts_client = Arc::new(ContractsClient {
             enclave_owner,
             enclave_signer_key: app_state.enclave_signer_key.clone(),
@@ -510,6 +512,7 @@ async fn export_signed_registration_message(
             common_chain_start_block_number: Arc::new(Mutex::new(
                 common_chain_block_number.as_u64(),
             )),
+            job_subscription_management,
         });
 
         *contracts_client_guard = Some(Arc::clone(&contracts_client));

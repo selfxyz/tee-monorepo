@@ -470,7 +470,7 @@ async fn callback_for_gateway_epoch_waitlist(
             for job in job_list {
                 contracts_client_clone
                     .clone()
-                    .job_placed_handler(job, tx.clone())
+                    .job_relayed_handler(job, tx.clone())
                     .await;
             }
         });
