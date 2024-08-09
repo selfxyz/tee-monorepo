@@ -177,6 +177,7 @@ pub struct JobSubscriptionChannelType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubscriptionJob {
     pub subscription_id: U256,
+    pub request_chain_id: u64,
     pub subscriber: Address,
     pub interval: U256,
     pub termination_time: U256,

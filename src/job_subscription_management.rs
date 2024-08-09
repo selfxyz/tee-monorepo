@@ -5,13 +5,13 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    sync::mpsc::Receiver,
+    sync::mpsc::{Receiver, Sender},
     time::{sleep_until, Instant},
 };
 
 use crate::model::{
-    ContractsClient, JobSubscriptionAction, JobSubscriptionChannelType, SubscriptionHeap,
-    SubscriptionJob,
+    ContractsClient, GatewayJobType, Job, JobSubscriptionAction, JobSubscriptionChannelType,
+    SubscriptionHeap, SubscriptionJob,
 };
 
 fn unix_timestamp_to_instant(timestamp: u64) -> Instant {
@@ -52,6 +52,7 @@ impl Ord for SubscriptionHeap {
 pub async fn job_subscription_management(
     contracts_client: Arc<ContractsClient>,
     mut rx: Receiver<JobSubscriptionChannelType>,
+    req_chain_tx: Sender<Job>,
 ) {
     loop {
         let next_trigger_time: Option<u64>;
@@ -92,18 +93,9 @@ pub async fn job_subscription_management(
                 }
                 let subscription = subscription.unwrap();
 
+                let req_chain_tx_clone = req_chain_tx.clone();
                 tokio::spawn(async move {
-                    let subscription_id = subscription.subscription_id;
-                    info!("Triggering subscription job with ID: {}", subscription_id);
-
-                    let subscription_jobs_guard = contracts_client_clone.subscription_jobs.read().unwrap();
-                    let subscription_job = subscription_jobs_guard.get(&subscription_id).cloned();
-                    drop(subscription_jobs_guard);
-
-                    if subscription_job.is_none() {
-                        info!("Job No longer active for Subscription - Subscription ID: {}", subscription_id);
-                        return;
-                    }
+                    trigger_subscription_job(subscription.subscription_id, contracts_client_clone, req_chain_tx_clone).await;
                 });
                 add_next_trigger_time_to_heap(&contracts_client, subscription.subscription_id.clone()).await;
             }
@@ -115,7 +107,7 @@ pub async fn job_subscription_management(
     }
 }
 
-pub async fn add_subscription_job(
+async fn add_subscription_job(
     contracts_client: &Arc<ContractsClient>,
     subscription_job: SubscriptionJob,
 ) {
@@ -127,7 +119,7 @@ pub async fn add_subscription_job(
     add_next_trigger_time_to_heap(&contracts_client, subscription_job.subscription_id).await;
 }
 
-pub async fn add_next_trigger_time_to_heap(
+async fn add_next_trigger_time_to_heap(
     contracts_client: &Arc<ContractsClient>,
     subscription_id: U256,
 ) {
@@ -164,5 +156,50 @@ pub async fn add_next_trigger_time_to_heap(
             subscription_id: subscription_job.subscription_id,
             next_trigger_time,
         });
+    }
+}
+
+async fn trigger_subscription_job(
+    subscription_id: U256,
+    contracts_client: Arc<ContractsClient>,
+    req_chain_tx: Sender<Job>,
+) {
+    info!("Triggering subscription job with ID: {}", subscription_id);
+
+    let subscription_job: Option<SubscriptionJob>;
+    {
+        let subscription_jobs_guard = contracts_client.subscription_jobs.read().unwrap();
+        subscription_job = subscription_jobs_guard.get(&subscription_id).cloned();
+    }
+
+    if subscription_job.is_none() {
+        info!(
+            "Job No longer active for Subscription - Subscription ID: {}",
+            subscription_id
+        );
+        return;
+    }
+
+    let subscription_job = subscription_job.unwrap();
+
+    let job = subscription_job_to_relay_job(subscription_job).await;
+
+    contracts_client
+        .job_relayed_handler(job, req_chain_tx)
+        .await;
+}
+
+async fn subscription_job_to_relay_job(subscription_job: SubscriptionJob) -> Job {
+    Job {
+        job_id: subscription_job.subscription_id,
+        request_chain_id: subscription_job.request_chain_id,
+        tx_hash: subscription_job.tx_hash,
+        code_input: subscription_job.code_input,
+        user_timeout: subscription_job.user_timeout,
+        starttime: subscription_job.starttime,
+        job_owner: subscription_job.subscriber,
+        job_type: GatewayJobType::JobRelay,
+        sequence_number: 1,
+        gateway_address: None,
     }
 }

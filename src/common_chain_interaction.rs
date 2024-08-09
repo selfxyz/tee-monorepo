@@ -214,8 +214,9 @@ impl ContractsClient {
         let (job_subscription_tx, job_subscription_rx) = channel::<JobSubscriptionChannelType>(100);
         {
             let contracts_client_clone = self.clone();
+            let req_chain_tx_clone = req_chain_tx.clone();
             tokio::spawn(async move {
-                let _ = job_subscription_management(contracts_client_clone, job_subscription_rx).await;
+                let _ = job_subscription_management(contracts_client_clone, job_subscription_rx, req_chain_tx_clone).await;
             });
         }
 
