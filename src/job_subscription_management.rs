@@ -139,8 +139,10 @@ async fn add_next_trigger_time_to_heap(
         .as_secs();
 
     // if the next trigger time is in the past, we need to find the next trigger time
-    while next_trigger_time <= current_time {
-        next_trigger_time += subscription_job.interval.as_u64();
+    if next_trigger_time <= current_time {
+        let how_many_intervals =
+            (current_time - next_trigger_time) / subscription_job.interval.as_u64();
+        next_trigger_time += (how_many_intervals + 1) * subscription_job.interval.as_u64();
     }
 
     if next_trigger_time > subscription_job.termination_time.as_u64() {
