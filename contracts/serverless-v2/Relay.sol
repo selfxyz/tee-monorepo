@@ -14,7 +14,7 @@ import "../interfaces/IAttestationVerifier.sol";
 
 /**
  * @title Relay Contract
- * @notice This contract manages serverless job relay and gateway registration functionalities.
+ * @notice This contract manages job relay, gateway registration, and job subscription functionalities.
  * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
  */
 contract Relay is
@@ -959,7 +959,20 @@ contract Relay is
 
     //-------------------------------- external functions start --------------------------------//
 
-    // user will execute this to start job subscription, and internally it will also call relayJob() to relay the first job in this txn only
+    /**
+     * @notice Starts a subscription for periodic job execution.
+     * @dev The subscription parameters are validated, and the necessary deposits(USDC+ETH) are made.
+     * @param _codehash The transaction hash storing the code to be executed periodically.
+     * @param _codeInputs The encrypted inputs to the code to be executed periodically.
+     * @param _userTimeout The maximum execution time allowed for each job in milliseconds.
+     * @param _maxGasPrice The maximum gas price the subscriber is willing to pay to get back the job response.
+     * @param _refundAccount The account to receive any remaining/slashed tokens.
+     * @param _callbackContract The contract address to be called upon submitting job response.
+     * @param _callbackGasLimit The gas limit for the callback function.
+     * @param _periodicGap The time gap between each job relay in milliseconds.
+     * @param _usdcDeposit The amount of USDC to be deposited for the subscription.
+     * @param _terminationTimestamp The timestamp after which no further jobs are relayed.
+     */
     function startJobSubscription(
         bytes32 _codehash,
         bytes calldata _codeInputs,
@@ -986,6 +999,16 @@ contract Relay is
         );
     }
 
+    /**
+     * @notice Function for the gateway to respond to a periodic job within a subscription.
+     * @dev The response includes output data, execution time, and error code.
+     * @param _signature The signature of the gateway enclave verifying the job response.
+     * @param _jobSubsId The unique identifier of the job subscription.
+     * @param _output The output data from the job execution.
+     * @param _totalTime The total time taken for job execution in milliseconds.
+     * @param _errorCode The error code returned from the job execution.
+     * @param _signTimestamp The timestamp at which the response was signed by the enclave.
+     */
     function jobSubsResponse(
         bytes calldata _signature,
         uint256 _jobSubsId,
@@ -997,6 +1020,12 @@ contract Relay is
         _jobSubsResponse(_signature, _jobSubsId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
+    /**
+     * @notice Deposits additional USDC and native assets(ETH) for a job subscription.
+     * @dev This function allows the subscriber to top up their subscription balance.
+     * @param _jobSubsId The unique identifier of the job subscription.
+     * @param _usdcDeposit The amount of USDC to be deposited.
+     */
     function depositForJobSubscription(
         uint256 _jobSubsId,
         uint256 _usdcDeposit
@@ -1004,6 +1033,15 @@ contract Relay is
         _depositForJobSubscription(_jobSubsId, _usdcDeposit);
     }
 
+    /**
+     * @notice Updates the job parameters for a specific job subscription.
+     * @dev This function allows the subscriber to modify the job execution code and input parameters
+     *      for an existing subscription. The new parameters will be used in subsequent
+     *      job executions within the subscription.
+     * @param _jobSubsId The unique identifier of the job subscription to be updated.
+     * @param _codehash The new transaction hash storing the code that will be executed by the enclave.
+     * @param _codeInputs The new encrypted input parameters for the code to be executed.
+     */
     function updateJobParams(
         uint256 _jobSubsId,
         bytes32 _codehash,
@@ -1012,6 +1050,15 @@ contract Relay is
         _updateJobParams(_jobSubsId, _codehash, _codeInputs);
     }
 
+    /**
+     * @notice Updates the termination parameters for a specific job subscription.
+     * @dev This function allows the subscriber to modify the termination time associated with an 
+     *      existing job subscription. It means user might have to deposit additional USDC+ETH if 
+     *      termination time is increased, and enought funds weren't deposited initially.
+     * @param _jobSubsId The unique identifier of the job subscription to be updated.
+     * @param _terminationTimestamp The new timestamp (in seconds) when the job subscription will terminate.
+     * @param _usdcDeposit The additional amount of USDC to be deposited.
+     */
     function updateJobTerminationParams(
         uint256 _jobSubsId,
         uint256 _terminationTimestamp,
