@@ -198,13 +198,13 @@ contract Relay is
      */
     event GatewayDeregistered(address indexed enclaveAddress);
 
-    /// @notice Error for when the gateway with a given enclave address is already registered.
+    /// @notice Error for when a gateway already exists in the registry.
     error RelayGatewayAlreadyExists();
-    /// @notice Error for when the msg.sender isn't the gateway owner.
-    error RelayInvalidGatewayOwner();
-    /// @notice Error for when the signature has expired.
+    /// @notice Error for when an invalid gateway address is provided.
+    error RelayInvalidGateway();
+    /// @notice Error for when the provided signature timestamp is too old.
     error RelaySignatureTooOld();
-    /// @notice Error for when a given signature hasn't been signed by the gateway enclave.
+    /// @notice Error for when the signature is from an invalid signer.
     error RelayInvalidSigner();
 
     //-------------------------------- internal functions start --------------------------------//
@@ -359,6 +359,8 @@ contract Relay is
     error RelayJobNotExists();
     /// @notice Error for when the overall timeout for a job has been exceeded.
     error RelayOverallTimeoutOver();
+    /// @notice Error for when the job owner is not valid.
+    error RelayInvalidJobOwner();
     /// @notice Error for when the overall timeout for a job has not yet been exceeded.
     error RelayOverallTimeoutNotOver();
     /// @notice Error for when the callback deposit transfer fails.
@@ -648,6 +650,19 @@ contract Relay is
 
     uint256 public jobSubsCount;
 
+    /**
+     * @notice Emitted when a job subscription is started.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param jobSubscriber The address of the job subscriber.
+     * @param periodicGap The gap between job executions in the subscription.
+     * @param usdcDeposit The USDC deposit provided for the subscription.
+     * @param terminationTimestamp The timestamp when the subscription should terminate.
+     * @param userTimeout The timeout specified by the user for the subscription.
+     * @param refundAccount The address where the refund will be sent.
+     * @param codehash The transaction hash storing the code to be executed.
+     * @param codeInputs The encrypted inputs for the code execution.
+     * @param startTime The timestamp when the subscription was started.
+     */
     event JobSubscriptionStarted(
         uint256 indexed jobSubsId,
         address indexed jobSubscriber,
@@ -661,6 +676,16 @@ contract Relay is
         uint256 startTime
     );
 
+    /**
+     * @notice Emitted when a job subscription responds with its output.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param output The output from the job execution.
+     * @param totalTime The total time taken for the job execution.
+     * @param errorCode The error code if the job failed.
+     * @param success A boolean indicating if the job was successful.
+     * @param currentRuns The number of times the job has run.
+     * @param lastRunTimestamp The timestamp of the last job run.
+     */
     event JobSubsResponded(
         uint256 indexed jobSubsId,
         bytes output,
@@ -671,6 +696,13 @@ contract Relay is
         uint256 lastRunTimestamp
     );
 
+    /**
+     * @notice Emitted when USDC or callback deposit is made for a job subscription.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param depositor The address making the deposit.
+     * @param usdcDeposit The amount of USDC deposited.
+     * @param callbackDeposit The amount of callback deposit made.
+     */
     event JobSubscriptionDeposited(
         uint256 indexed jobSubsId,
         address indexed depositor,
@@ -678,6 +710,14 @@ contract Relay is
         uint256 callbackDeposit
     );
 
+    /**
+     * @notice Emitted when funds are withdrawn from a job subscription.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param withdrawer The address withdrawing the funds.
+     * @param usdcAmountWithdrawn The amount of USDC withdrawn.
+     * @param callbackAmountWithdrawn The amount of callback deposit withdrawn.
+     * @param success A boolean indicating if the withdrawal was successful.
+     */
     event JobSubscriptionWithdrawn(
         uint256 indexed jobSubsId,
         address indexed withdrawer,
@@ -686,20 +726,34 @@ contract Relay is
         bool success
     );
 
+    /**
+     * @notice Emitted when job parameters are updated in a job subscription.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param _codehash The new code hash for the job.
+     * @param _codeInputs The new code inputs for the job.
+     */
     event JobSubsJobParamsUpdated(
         uint256 indexed jobSubsId,
         bytes32 _codehash,
         bytes _codeInputs
     );
 
+    /**
+     * @notice Emitted when termination parameters are updated in a job subscription.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param terminationTimestamp The new termination timestamp for the subscription.
+     */
     event JobSubsTerminationParamsUpdated(
         uint256 indexed jobSubsId,
         // uint256 maxRuns,
         uint256 terminationTimestamp
     );
 
+    /// @notice Error for when a job subscription is invalid.
     error InvalidJobSubscription();
+    /// @notice Error for when insufficient USDC is being deposited for a job subscription.
     error RelayInsufficientUsdcDeposit();
+    /// @notice Error for when the termination timestamp is being updated to an invalid value.
     error InvalidTerminationTimestamp();
 
     //-------------------------------- internal functions start --------------------------------//
