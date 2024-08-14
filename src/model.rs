@@ -163,7 +163,6 @@ pub struct ResponseJob {
 #[derive(Debug, Clone, PartialEq)]
 pub enum JobSubscriptionAction {
     Add,
-    Remove,
     ParamsUpdate,
     TerminationParamsUpdate,
 }

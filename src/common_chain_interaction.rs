@@ -27,7 +27,7 @@ use crate::constant::{
     MIN_GATEWAY_STAKE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::error::ServerlessError;
-use crate::job_subscription_management::job_subscription_management;
+use crate::job_subscription_management::job_subscription_manager;
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobSubscriptionAction,
     JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob,
@@ -217,7 +217,7 @@ impl ContractsClient {
             let contracts_client_clone = self.clone();
             let req_chain_tx_clone = req_chain_tx.clone();
             tokio::spawn(async move {
-                let _ = job_subscription_management(
+                let _ = job_subscription_manager(
                     contracts_client_clone,
                     job_subscription_rx,
                     req_chain_tx_clone,
@@ -367,11 +367,31 @@ impl ContractsClient {
                         "Request Chain ID: {:?}, JobSubscriptionJobParamsUpdated jobID: {:?}",
                         chain_id, log.topics[1]
                     );
+
+                    let job_subscription_tx_clone = job_subscription_tx.clone();
+
+                    tokio::spawn(async move{
+                        job_subscription_tx_clone.send(JobSubscriptionChannelType{
+                            subscription_log: log,
+                            subscription_action: JobSubscriptionAction::ParamsUpdate,
+                            request_chain_id: chain_id,
+                        }).await.unwrap();
+                    });
                 } else if topics[0] == keccak256("JobSubscriptionTerminationParamsUpdated(uint256,uint256)").into() {
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionTerminationParamsUpdated jobID: {:?}",
                         chain_id, log.topics[1]
                     );
+
+                    let job_subscription_tx_clone = job_subscription_tx.clone();
+
+                    tokio::spawn(async move{
+                        job_subscription_tx_clone.send(JobSubscriptionChannelType{
+                            subscription_log: log,
+                            subscription_action: JobSubscriptionAction::TerminationParamsUpdate,
+                            request_chain_id: chain_id,
+                        }).await.unwrap();
+                    });
                 } else {
                     error!(
                         "Request Chain ID: {:?}, Unknown event: {:?}",

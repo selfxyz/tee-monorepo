@@ -1,6 +1,6 @@
 use ethers::{
     abi::{decode, ParamType},
-    types::{BigEndianHash, Log, U256},
+    types::{BigEndianHash, Bytes, Log, U256},
 };
 use log::{error, info};
 use std::{
@@ -55,7 +55,7 @@ impl Ord for SubscriptionJobHeap {
     }
 }
 
-pub async fn job_subscription_management(
+pub async fn job_subscription_manager(
     contracts_client: Arc<ContractsClient>,
     mut rx: Receiver<JobSubscriptionChannelType>,
     req_chain_tx: Sender<Job>,
@@ -85,14 +85,35 @@ pub async fn job_subscription_management(
                             ).await;
                         });
                     }
-                    JobSubscriptionAction::Remove => {
-                        // remove_subscription_job(job_subscription_channel_data.subscription_job).await;
-                    }
                     JobSubscriptionAction::ParamsUpdate => {
-                        // update_subscription_job(job_subscription_channel_data.subscription_job).await;
+                        info!(
+                            "Updating subscription JobSubscriptionId: {}",
+                            job_subscription_channel_data.subscription_log.topics[1]
+                        );
+
+                        let contracts_client_clone = contracts_client.clone();
+
+                        tokio::spawn(async move {
+                            let _ = update_subscription_job_params(
+                                &contracts_client_clone,
+                                job_subscription_channel_data.subscription_log,
+                            ).await;
+                        });
                     }
                     JobSubscriptionAction::TerminationParamsUpdate => {
-                        // update_subscription_job_termination_params(job_subscription_channel_data.subscription_job).await;
+                        info!(
+                            "Updating termination params for subscription JobSubscriptionId: {}",
+                            job_subscription_channel_data.subscription_log.topics[1]
+                        );
+
+                        let contracts_client_clone = contracts_client.clone();
+
+                        tokio::spawn(async move {
+                            let _ = update_subscription_job_termination_params(
+                                &contracts_client_clone,
+                                job_subscription_channel_data.subscription_log
+                            ).await;
+                        });
                     }
                 }
             }
@@ -285,4 +306,96 @@ async fn subscription_job_to_relay_job(
         sequence_number: 1,
         gateway_address: None,
     }
+}
+
+async fn update_subscription_job_params(
+    contracts_client: &Arc<ContractsClient>,
+    subscription_log: Log,
+) -> Result<(), ServerlessError> {
+    let types = vec![ParamType::FixedBytes(32), ParamType::Bytes];
+
+    let decoded = decode(&types, &subscription_log.data.0);
+    let decoded = match decoded {
+        Ok(decoded) => decoded,
+        Err(e) => {
+            error!("Failed to decode subscription log: {}", e);
+            return Err(ServerlessError::LogDecodeFailure);
+        }
+    };
+
+    let subscription_id = subscription_log.topics[1].into_uint();
+
+    let subscription_job = contracts_client
+        .subscription_jobs
+        .read()
+        .unwrap()
+        .get(&subscription_id)
+        .cloned();
+
+    if subscription_job.is_none() {
+        error!(
+            "Subscription Job not found for Subscription ID: {}",
+            subscription_id
+        );
+        return Err(ServerlessError::NoSubscriptionJobFound(subscription_id));
+    }
+
+    let new_tx_hash = decoded[0].clone().into_fixed_bytes().unwrap();
+    let new_code_input: Bytes = decoded[1].clone().into_bytes().unwrap().into();
+
+    // Update the subscription job
+    // Scope for write lock on subscription_jobs
+    {
+        let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
+        let subscription_job = subscription_jobs.get_mut(&subscription_id).unwrap();
+        subscription_job.tx_hash = new_tx_hash;
+        subscription_job.code_input = new_code_input;
+    }
+
+    Ok(())
+}
+
+async fn update_subscription_job_termination_params(
+    contracts_client: &Arc<ContractsClient>,
+    subscription_log: Log,
+) -> Result<(), ServerlessError> {
+    let types = vec![ParamType::Uint(256)];
+
+    let decoded = decode(&types, &subscription_log.data.0);
+    let decoded = match decoded {
+        Ok(decoded) => decoded,
+        Err(e) => {
+            error!("Failed to decode subscription log: {}", e);
+            return Err(ServerlessError::LogDecodeFailure);
+        }
+    };
+
+    let subscription_id = subscription_log.topics[1].into_uint();
+
+    let subscription_job = contracts_client
+        .subscription_jobs
+        .read()
+        .unwrap()
+        .get(&subscription_id)
+        .cloned();
+
+    if subscription_job.is_none() {
+        error!(
+            "Subscription Job not found for Subscription ID: {}",
+            subscription_id
+        );
+        return Err(ServerlessError::NoSubscriptionJobFound(subscription_id));
+    }
+
+    let new_termination_time = decoded[0].clone().into_uint().unwrap();
+
+    // Update the subscription job
+    // Scope for write lock on subscription_jobs
+    {
+        let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
+        let subscription_job = subscription_jobs.get_mut(&subscription_id).unwrap();
+        subscription_job.termination_time = new_termination_time;
+    }
+
+    Ok(())
 }
