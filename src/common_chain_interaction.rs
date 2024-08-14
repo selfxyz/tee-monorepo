@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::{task, time};
+use tokio::time;
 
 use crate::chain_util::{
     confirm_event, sign_job_response_request, sign_reassign_gateway_relay_request,
@@ -52,7 +52,7 @@ impl ContractsClient {
 
         let tx_clone = tx.clone();
         let self_clone = Arc::clone(&self);
-        task::spawn(async move {
+        tokio::spawn(async move {
             'socket_loop: loop {
                 let common_chain_ws_provider =
                     match Provider::<Ws>::connect(&self_clone.common_chain_ws_url).await {
@@ -106,7 +106,7 @@ impl ContractsClient {
 
             let tx_clone = tx.clone();
             let request_chain_client_clone = request_chain_client.clone();
-            task::spawn(async move {
+            tokio::spawn(async move {
                 'socket_loop: loop {
                     let request_chain_ws_provider = match Provider::<Ws>::connect(
                         request_chain_client_clone.ws_rpc_url.clone(),
@@ -260,7 +260,7 @@ impl ContractsClient {
             let job_subscription_tx_clone = job_subscription_tx.clone();
 
             // Spawn a new task for each Request Chain Contract
-            task::spawn(async move {
+            tokio::spawn(async move {
                 _ = self_clone
                     .handle_single_request_chain_events(
                         req_chain_tx_clone,
@@ -318,7 +318,7 @@ impl ContractsClient {
 
                     let self_clone = Arc::clone(&self);
                     let req_chain_tx_clone = req_chain_tx.clone();
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         let job = self_clone
                             .get_job_from_job_relay_event(
                                 log,
@@ -341,7 +341,7 @@ impl ContractsClient {
                     );
 
                     let self_clone = Arc::clone(&self);
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         self_clone.cancel_job_with_job_id(
                             log.topics[1].into_uint(),
                         ).await;
@@ -354,7 +354,7 @@ impl ContractsClient {
 
                     let job_subscription_tx_clone = job_subscription_tx.clone();
 
-                    task::spawn(async move{
+                    tokio::spawn(async move{
                         job_subscription_tx_clone.send(JobSubscriptionChannelType{
                             subscription_log: log,
                             subscription_action: JobSubscriptionAction::Add,
@@ -462,7 +462,7 @@ impl ContractsClient {
                             .insert(job.job_id, job.clone());
                     }
                     let self_clone = Arc::clone(&self);
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         self_clone.job_relayed_slash_timer(job, None, tx).await;
                     });
                 }
@@ -833,7 +833,7 @@ impl ContractsClient {
                     );
                     let self_clone = Arc::clone(&self);
                     let com_chain_tx = com_chain_tx.clone();
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         let response_job_result =
                             self_clone.get_job_from_job_responded_event(log).await;
                         match response_job_result {
@@ -853,7 +853,7 @@ impl ContractsClient {
                 } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
                     info!("JobResourceUnavailable event triggered");
                     let self_clone = Arc::clone(&self);
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         self_clone.job_resource_unavailable_handler(log).await;
                     });
                 } else if topics[0]
@@ -862,7 +862,7 @@ impl ContractsClient {
                     info!("GatewayReassigned for Job ID: {:?}", log.topics[1]);
                     let self_clone = Arc::clone(&self);
                     let req_chain_tx = req_chain_tx.clone();
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         self_clone
                             .gateway_reassigned_handler(log, req_chain_tx)
                             .await;
@@ -1096,7 +1096,7 @@ impl ContractsClient {
         job.gateway_address = None;
 
         let self_clone = Arc::clone(&self);
-        task::spawn(async move {
+        tokio::spawn(async move {
             self_clone.job_relayed_handler(job, req_chain_tx).await;
         });
     }
