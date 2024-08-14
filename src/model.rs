@@ -1,6 +1,6 @@
 use ethers::abi::FixedBytes;
 use ethers::signers::LocalWallet;
-use ethers::types::{Address, Bytes, H160, U256};
+use ethers::types::{Address, Bytes, Log, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -102,7 +102,7 @@ pub struct ContractsClient {
     pub offset_for_epoch: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
-    pub subscription_heap: Arc<RwLock<BinaryHeap<SubscriptionHeap>>>,
+    pub subscription_job_heap: Arc<RwLock<BinaryHeap<SubscriptionJobHeap>>>,
     pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
 }
 
@@ -170,8 +170,9 @@ pub enum JobSubscriptionAction {
 
 #[derive(Debug, Clone)]
 pub struct JobSubscriptionChannelType {
-    pub subscription_job: SubscriptionJob,
+    pub subscription_log: Log,
     pub subscription_action: JobSubscriptionAction,
+    pub request_chain_id: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,7 +189,7 @@ pub struct SubscriptionJob {
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionHeap {
+pub struct SubscriptionJobHeap {
     pub subscription_id: U256,
     pub next_trigger_time: u64,
 }

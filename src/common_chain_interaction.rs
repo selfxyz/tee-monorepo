@@ -29,7 +29,8 @@ use crate::constant::{
 use crate::error::ServerlessError;
 use crate::job_subscription_management::job_subscription_management;
 use crate::model::{
-    AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob
+    AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobSubscriptionAction,
+    JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob,
 };
 
 impl ContractsClient {
@@ -216,7 +217,12 @@ impl ContractsClient {
             let contracts_client_clone = self.clone();
             let req_chain_tx_clone = req_chain_tx.clone();
             tokio::spawn(async move {
-                let _ = job_subscription_management(contracts_client_clone, job_subscription_rx, req_chain_tx_clone).await;
+                let _ = job_subscription_management(
+                    contracts_client_clone,
+                    job_subscription_rx,
+                    req_chain_tx_clone,
+                )
+                .await;
             });
         }
 
@@ -225,7 +231,7 @@ impl ContractsClient {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
         let _ = &self
-            .handle_all_req_chain_events(req_chain_tx.clone())
+            .handle_all_req_chain_events(req_chain_tx.clone(), job_subscription_tx)
             .await?;
 
         // setup for the listening events on Common Chain and calling Request Chain functions
@@ -240,18 +246,27 @@ impl ContractsClient {
         Ok(())
     }
 
-    async fn handle_all_req_chain_events(self: &Arc<Self>, tx: Sender<Job>) -> Result<()> {
+    async fn handle_all_req_chain_events(
+        self: &Arc<Self>,
+        req_chain_tx: Sender<Job>,
+        job_subscription_tx: Sender<JobSubscriptionChannelType>,
+    ) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
         let chains_ids = self.request_chain_ids.clone();
 
         for chain_id in chains_ids {
             let self_clone = Arc::clone(&self);
-            let tx_clone = tx.clone();
+            let req_chain_tx_clone = req_chain_tx.clone();
+            let job_subscription_tx_clone = job_subscription_tx.clone();
 
             // Spawn a new task for each Request Chain Contract
             task::spawn(async move {
                 _ = self_clone
-                    .handle_single_request_chain_events(tx_clone, chain_id)
+                    .handle_single_request_chain_events(
+                        req_chain_tx_clone,
+                        chain_id,
+                        job_subscription_tx_clone,
+                    )
                     .await;
             });
         }
@@ -259,7 +274,12 @@ impl ContractsClient {
         Ok(())
     }
 
-    async fn handle_single_request_chain_events(self: &Arc<Self>, tx: Sender<Job>, chain_id: u64) {
+    async fn handle_single_request_chain_events(
+        self: &Arc<Self>,
+        req_chain_tx: Sender<Job>,
+        chain_id: u64,
+        job_subscription_tx: Sender<JobSubscriptionChannelType>,
+    ) {
         loop {
             let req_chain_ws_client =
                 match Provider::<Ws>::connect(&self.request_chain_clients[&chain_id].ws_rpc_url)
@@ -297,9 +317,8 @@ impl ContractsClient {
                     );
 
                     let self_clone = Arc::clone(&self);
-                    let tx_clone = tx.clone();
+                    let req_chain_tx_clone = req_chain_tx.clone();
                     task::spawn(async move {
-                        // TODO: what to do in case of error? Let it panic or return None?
                         let job = self_clone
                             .get_job_from_job_relay_event(
                                 log,
@@ -310,7 +329,7 @@ impl ContractsClient {
                         if job.is_ok() {
                             self_clone.job_relayed_handler(
                                 job.unwrap(),
-                                tx_clone.clone(),
+                                req_chain_tx_clone.clone(),
                             )
                             .await;
                         }
@@ -332,7 +351,17 @@ impl ContractsClient {
                         "Request Chain ID: {:?}, JobSubscriptionStarted jobID: {:?}",
                         chain_id, log.topics[1]
                     );
-                } 
+
+                    let job_subscription_tx_clone = job_subscription_tx.clone();
+
+                    task::spawn(async move{
+                        job_subscription_tx_clone.send(JobSubscriptionChannelType{
+                            subscription_log: log,
+                            subscription_action: JobSubscriptionAction::Add,
+                            request_chain_id: chain_id,
+                        }).await.unwrap();
+                    });
+                }
                 else if topics[0] == keccak256("JobSubscriptionJobParamsUpdated(uint256,bytes32,bytes)").into() {
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionJobParamsUpdated jobID: {:?}",

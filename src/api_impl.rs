@@ -490,7 +490,7 @@ async fn export_signed_registration_message(
             common_chain_http_rpc_client.clone(),
         );
 
-        let subscription_heap = Arc::new(RwLock::new(BinaryHeap::new()));
+        let subscription_job_heap = Arc::new(RwLock::new(BinaryHeap::new()));
         let subscription_jobs = Arc::new(RwLock::new(HashMap::new()));
 
         let contracts_client = Arc::new(ContractsClient {
@@ -513,7 +513,7 @@ async fn export_signed_registration_message(
             common_chain_start_block_number: Arc::new(Mutex::new(
                 common_chain_block_number.as_u64(),
             )),
-            subscription_heap,
+            subscription_job_heap,
             subscription_jobs,
         });
 
