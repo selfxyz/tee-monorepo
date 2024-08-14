@@ -660,7 +660,7 @@ contract Relay is
      * @param userTimeout The timeout specified by the user for the subscription.
      * @param refundAccount The address where the refund will be sent.
      * @param codehash The transaction hash storing the code to be executed.
-     * @param codeInputs The encrypted inputs for the code execution.
+     * @param codeInputs The inputs for the code execution.
      * @param startTime The timestamp when the subscription was started.
      */
     event JobSubscriptionStarted(
@@ -1017,7 +1017,7 @@ contract Relay is
      * @notice Starts a subscription for periodic job execution.
      * @dev The subscription parameters are validated, and the necessary deposits(USDC+ETH) are made.
      * @param _codehash The transaction hash storing the code to be executed periodically.
-     * @param _codeInputs The encrypted inputs to the code to be executed periodically.
+     * @param _codeInputs The inputs to the code to be executed periodically.
      * @param _userTimeout The maximum execution time allowed for each job in milliseconds.
      * @param _maxGasPrice The maximum gas price the subscriber is willing to pay to get back the job response.
      * @param _refundAccount The account to receive any remaining/slashed tokens.
@@ -1094,7 +1094,7 @@ contract Relay is
      *      job executions within the subscription.
      * @param _jobSubsId The unique identifier of the job subscription to be updated.
      * @param _codehash The new transaction hash storing the code that will be executed by the enclave.
-     * @param _codeInputs The new encrypted input parameters for the code to be executed.
+     * @param _codeInputs The new input parameters for the code to be executed.
      */
     function updateJobParams(
         uint256 _jobSubsId,
