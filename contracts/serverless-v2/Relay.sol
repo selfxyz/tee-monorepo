@@ -686,7 +686,7 @@ contract Relay is
      * @param currentRuns The number of times the job has run.
      * @param lastRunTimestamp The timestamp of the last job run.
      */
-    event JobSubsResponded(
+    event JobSubscriptionResponded(
         uint256 indexed jobSubsId,
         bytes output,
         uint256 totalTime,
@@ -732,7 +732,7 @@ contract Relay is
      * @param _codehash The new code hash for the job.
      * @param _codeInputs The new code inputs for the job.
      */
-    event JobSubsJobParamsUpdated(
+    event JobSubscriptionJobParamsUpdated(
         uint256 indexed jobSubsId,
         bytes32 _codehash,
         bytes _codeInputs
@@ -743,18 +743,20 @@ contract Relay is
      * @param jobSubsId The unique identifier of the job subscription.
      * @param terminationTimestamp The new termination timestamp for the subscription.
      */
-    event JobSubsTerminationParamsUpdated(
+    event JobSubscriptionTerminationParamsUpdated(
         uint256 indexed jobSubsId,
         // uint256 maxRuns,
         uint256 terminationTimestamp
     );
 
     /// @notice Error for when a job subscription is invalid.
-    error InvalidJobSubscription();
+    error RelayInvalidJobSubscription();
     /// @notice Error for when insufficient USDC is being deposited for a job subscription.
     error RelayInsufficientUsdcDeposit();
     /// @notice Error for when the termination timestamp is being updated to an invalid value.
-    error InvalidTerminationTimestamp();
+    error RelayInvalidTerminationTimestamp();
+    /// @notice Error for when the msg.sender isn't the job subscription owner
+    error RelayNotJobSubscriptionOwner();
 
     //-------------------------------- internal functions start --------------------------------//
 
@@ -851,7 +853,7 @@ contract Relay is
     ) internal {
         Job memory job = jobSubscriptions[_jobSubsId].job;
         if (job.jobOwner == address(0)) 
-            revert InvalidJobSubscription();
+            revert RelayInvalidJobSubscription();
 
         // check time case
         // if (block.timestamp > job.startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutOver();
@@ -885,7 +887,7 @@ contract Relay is
         _releaseJobSubsGasCostOnSuccess(gatewayOwners[enclaveAddress], job.callbackDeposit, callbackCost);
 
         uint256 currentRuns = jobSubscriptions[_jobSubsId].currentRuns;
-        emit JobSubsResponded(
+        emit JobSubscriptionResponded(
             _jobSubsId,
             _output,
             _totalTime,
@@ -933,7 +935,7 @@ contract Relay is
         uint256 _usdcDeposit
     ) internal {
         if(jobSubscriptions[_jobSubsId].job.jobOwner == address(0))
-            revert InvalidJobSubscription();
+            revert RelayInvalidJobSubscription();
 
         _depositTokens(_jobSubsId, _usdcDeposit);
     }
@@ -955,7 +957,7 @@ contract Relay is
     //     uint256 _callbackAmount
     // ) external {
     //     if(jobSubscriptions[_jobSubsId].job.jobOwner == address(0))
-    //         revert InvalidJobSubscription();
+    //         revert RelayInvalidJobSubscription();
 
     //     jobSubscriptions[_jobSubsId].job.usdcDeposit -= _usdcAmount;
     //     jobSubscriptions[_jobSubsId].job.callbackDeposit -= _callbackAmount;
@@ -971,13 +973,13 @@ contract Relay is
         bytes32 _codehash,
         bytes calldata _codeInputs
     ) internal {
-        if(jobSubscriptions[_jobSubsId].job.jobOwner == address(0))
-            revert InvalidJobSubscription();
+        if(jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
+            revert RelayNotJobSubscriptionOwner();
 
         jobSubscriptions[_jobSubsId].job.codehash = _codehash;
         jobSubscriptions[_jobSubsId].job.codeInputs = _codeInputs;
 
-        emit JobSubsJobParamsUpdated(_jobSubsId, _codehash, _codeInputs);
+        emit JobSubscriptionJobParamsUpdated(_jobSubsId, _codehash, _codeInputs);
     }
 
     function _updateJobTerminationParams(
@@ -986,11 +988,11 @@ contract Relay is
         uint256 _terminationTimestamp,
         uint256 _usdcDeposit
     ) internal {
-        if(jobSubscriptions[_jobSubsId].job.jobOwner == address(0))
-            revert InvalidJobSubscription();
+        if(jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
+            revert RelayNotJobSubscriptionOwner();
 
         if(_terminationTimestamp <= block.timestamp + OVERALL_TIMEOUT)
-            revert InvalidTerminationTimestamp();
+            revert RelayInvalidTerminationTimestamp();
 
         _depositTokens(_jobSubsId, _usdcDeposit);
 
@@ -1006,7 +1008,7 @@ contract Relay is
 
         jobSubscriptions[_jobSubsId].terminationTimestamp = _terminationTimestamp;
 
-        emit JobSubsTerminationParamsUpdated(_jobSubsId, _terminationTimestamp);
+        emit JobSubscriptionTerminationParamsUpdated(_jobSubsId, _terminationTimestamp);
     }
 
     //-------------------------------- internal functions end --------------------------------//
