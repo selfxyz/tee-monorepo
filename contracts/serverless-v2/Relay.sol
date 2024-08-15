@@ -14,7 +14,7 @@ import "../interfaces/IAttestationVerifier.sol";
 
 /**
  * @title Relay Contract
- * @notice This contract manages job relay, gateway registration, and job subscription functionalities.
+ * @notice This contract manages serverless job relay, gateway registration, and job subscription functionalities.
  * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
  */
 contract Relay is
