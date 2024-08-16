@@ -712,22 +712,6 @@ contract Relay is
     );
 
     /**
-     * @notice Emitted when funds are withdrawn from a job subscription.
-     * @param jobSubsId The unique identifier of the job subscription.
-     * @param withdrawer The address withdrawing the funds.
-     * @param usdcAmountWithdrawn The amount of USDC withdrawn.
-     * @param callbackAmountWithdrawn The amount of callback deposit withdrawn.
-     * @param success A boolean indicating if the withdrawal was successful.
-     */
-    event JobSubscriptionWithdrawn(
-        uint256 indexed jobSubsId,
-        address indexed withdrawer,
-        uint256 usdcAmountWithdrawn,
-        uint256 callbackAmountWithdrawn,
-        bool success
-    );
-
-    /**
      * @notice Emitted when job parameters are updated in a job subscription.
      * @param jobSubsId The unique identifier of the job subscription.
      * @param _codehash The new code hash for the job.
@@ -750,6 +734,22 @@ contract Relay is
         uint256 terminationTimestamp
     );
 
+    /**
+     * @notice Emitted when job subscription is terminated and remaining funds are withdrawn.
+     * @param jobSubsId The unique identifier of the job subscription.
+     * @param withdrawer The address withdrawing the funds.
+     * @param usdcAmountWithdrawn The amount of USDC withdrawn.
+     * @param callbackAmountWithdrawn The amount of callback deposit withdrawn.
+     * @param success A boolean indicating if the withdrawal was successful.
+     */
+    event JobSubscriptionTerminated(
+        uint256 indexed jobSubsId,
+        address indexed withdrawer,
+        uint256 usdcAmountWithdrawn,
+        uint256 callbackAmountWithdrawn,
+        bool success
+    );
+
     /// @notice Error for when a job subscription is invalid.
     error RelayInvalidJobSubscription();
     /// @notice Error for when insufficient USDC is being deposited for a job subscription.
@@ -758,7 +758,9 @@ contract Relay is
     error RelayInvalidTerminationTimestamp();
     /// @notice Error for when the msg.sender isn't the job subscription owner
     error RelayNotJobSubscriptionOwner();
-
+    /// @notice Error for when the job subscription owner tries to terminate the subscription 
+    ///         before the termination condition is met.
+    error RelayTerminationConditionPending();
     //-------------------------------- internal functions start --------------------------------//
 
     function _startJobSubscription(
@@ -952,23 +954,6 @@ contract Relay is
         emit JobSubscriptionDeposited(_jobSubsId, _msgSender(), _usdcDeposit, msg.value);
     }
 
-    // function withdrawTokenForJob(
-    //     uint256 _jobSubsId,
-    //     uint256 _usdcAmount,
-    //     uint256 _callbackAmount
-    // ) external {
-    //     if(jobSubscriptions[_jobSubsId].job.jobOwner == address(0))
-    //         revert RelayInvalidJobSubscription();
-
-    //     jobSubscriptions[_jobSubsId].job.usdcDeposit -= _usdcAmount;
-    //     jobSubscriptions[_jobSubsId].job.callbackDeposit -= _callbackAmount;
-    //     TOKEN.safeTransfer(_msgSender(), _usdcAmount);
-    //     // TODO: do we need to check this bool success
-    //     (bool success, ) = _msgSender().call{value: _callbackAmount}("");
-
-    //     emit JobSubscriptionWithdrawn(_jobSubsId, _msgSender(), _usdcAmount, _callbackAmount, success);
-    // }
-
     function _updateJobParams(
         uint256 _jobSubsId,
         bytes32 _codehash,
@@ -1010,6 +995,27 @@ contract Relay is
         jobSubscriptions[_jobSubsId].terminationTimestamp = _terminationTimestamp;
 
         emit JobSubscriptionTerminationParamsUpdated(_jobSubsId, _terminationTimestamp);
+    }
+
+    function _terminateJobSubscription(
+        uint256 _jobSubsId
+    ) internal {
+        if(jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
+            revert RelayNotJobSubscriptionOwner();
+
+        if(block.timestamp <= jobSubscriptions[_jobSubsId].terminationTimestamp + OVERALL_TIMEOUT)
+            revert RelayTerminationConditionPending();
+
+        uint256 usdcAmount = jobSubscriptions[_jobSubsId].job.usdcDeposit;
+        uint256 callbackAmount = jobSubscriptions[_jobSubsId].job.callbackDeposit;
+
+        delete jobSubscriptions[_jobSubsId];
+
+        TOKEN.safeTransfer(_msgSender(), usdcAmount);
+        // TODO: do we need to check this bool success
+        (bool success, ) = _msgSender().call{value: callbackAmount}("");
+
+        emit JobSubscriptionTerminated(_jobSubsId, _msgSender(), usdcAmount, callbackAmount, success);
     }
 
     //-------------------------------- internal functions end --------------------------------//
@@ -1122,6 +1128,17 @@ contract Relay is
         uint256 _usdcDeposit
     ) external payable {
         _updateJobTerminationParams(_jobSubsId, _terminationTimestamp, _usdcDeposit);
+    }
+
+    /**
+     * @notice Terminates job subscription and allows remaining fund withdrawal once the termination condition is met.
+     * @dev This function deletes the job subscription data and refunds the deposited USDC and ETH, if any
+     * param _jobSubsId The unique identifier of the job subscription.
+     */
+    function terminateJobSubscription(
+        uint256 _jobSubsId
+    ) external {
+        _terminateJobSubscription(_jobSubsId);
     }
 
     //-------------------------------- external functions end --------------------------------//
