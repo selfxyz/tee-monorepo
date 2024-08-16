@@ -385,7 +385,8 @@ contract Relay is
     ) internal {
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
-        if (jobCount + 1 == (block.chainid + 1) << 192) jobCount = block.chainid << 192;
+        if (jobCount + 1 == (block.chainid << 192) | (uint256(1) << 191)) 
+            jobCount = block.chainid << 192;
 
         if (_maxGasPrice < tx.gasprice) revert RelayInsufficientMaxGasPrice();
 
