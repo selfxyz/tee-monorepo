@@ -29,7 +29,7 @@ use crate::constant::{
 use crate::error::ServerlessError;
 use crate::job_subscription_management::job_subscription_manager;
 use crate::model::{
-    AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobSubscriptionAction,
+    AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobMode, JobSubscriptionAction,
     JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob,
 };
 
@@ -443,6 +443,7 @@ impl ContractsClient {
             job_type: GatewayJobType::JobRelay,
             sequence_number,
             gateway_address: None,
+            job_mode: JobMode::Single,
         })
     }
 
@@ -920,6 +921,7 @@ impl ContractsClient {
             }
         };
         let request_chain_id = job.request_chain_id;
+        let job_mode = job.job_mode;
 
         Ok(ResponseJob {
             job_id,
@@ -929,6 +931,7 @@ impl ContractsClient {
             error_code: decoded[2].clone().into_uint().unwrap().low_u64() as u8,
             job_type: GatewayJobType::JobResponded,
             gateway_address: None,
+            job_mode,
             // sequence_number: 1,
         })
     }
@@ -1148,11 +1151,18 @@ impl ContractsClient {
     async fn job_response_txn(self: &Arc<Self>, response_job: ResponseJob) {
         info!("Creating a transaction for jobResponse");
 
+        let mut response_job_id = response_job.job_id;
+        if response_job.job_mode == JobMode::Subscription {
+            // set instance count (last 127 bits) to 0
+            let mask = U256::MAX >> 127 << 127;
+            response_job_id = response_job.job_id & mask;
+        }
+
         let req_chain_client = &self.request_chain_clients[&response_job.request_chain_id];
 
         let (signature, sign_timestamp) = sign_job_response_request(
             &self.enclave_signer_key,
-            response_job.job_id,
+            response_job_id,
             response_job.output.clone(),
             response_job.total_time,
             response_job.error_code,
@@ -1164,14 +1174,26 @@ impl ContractsClient {
             return;
         };
 
-        let txn = req_chain_client.contract.read().unwrap().job_response(
-            signature,
-            response_job.job_id,
-            response_job.output,
-            response_job.total_time,
-            response_job.error_code,
-            sign_timestamp.into(),
-        );
+        let txn;
+        if response_job.job_mode == JobMode::Single {
+            txn = req_chain_client.contract.read().unwrap().job_response(
+                signature,
+                response_job_id,
+                response_job.output,
+                response_job.total_time,
+                response_job.error_code,
+                sign_timestamp.into(),
+            );
+        } else {
+            txn = req_chain_client.contract.read().unwrap().job_subs_response(
+                signature,
+                response_job_id,
+                response_job.output,
+                response_job.total_time,
+                response_job.error_code,
+                sign_timestamp.into(),
+            );
+        }
 
         for i in 0..3 {
             let pending_txn = txn.send().await;
@@ -2387,6 +2409,7 @@ mod serverless_executor_test {
             job_type: GatewayJobType::JobRelay,
             sequence_number: 1 as u8,
             gateway_address: None,
+            job_mode: JobMode::Single,
         }
     }
 
@@ -2401,6 +2424,7 @@ mod serverless_executor_test {
             error_code: 0 as u8,
             job_type: GatewayJobType::JobResponded,
             gateway_address: None,
+            job_mode: JobMode::Single,
         }
     }
 

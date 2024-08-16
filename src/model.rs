@@ -134,6 +134,12 @@ pub enum GatewayJobType {
     // SlashGatewayResponse,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum JobMode {
+    Single,
+    Subscription,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Job {
     pub job_id: U256,
@@ -146,6 +152,7 @@ pub struct Job {
     pub job_type: GatewayJobType,
     pub sequence_number: u8,
     pub gateway_address: Option<Address>,
+    pub job_mode: JobMode,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +164,7 @@ pub struct ResponseJob {
     pub error_code: u8,
     pub job_type: GatewayJobType,
     pub gateway_address: Option<Address>,
+    pub job_mode: JobMode,
     // pub sequence_number: u8,
 }
 

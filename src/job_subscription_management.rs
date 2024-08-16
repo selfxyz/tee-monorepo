@@ -15,8 +15,8 @@ use tokio::{
 use crate::{
     error::ServerlessError,
     model::{
-        ContractsClient, GatewayJobType, Job, JobSubscriptionAction, JobSubscriptionChannelType,
-        SubscriptionJob, SubscriptionJobHeap,
+        ContractsClient, GatewayJobType, Job, JobMode, JobSubscriptionAction,
+        JobSubscriptionChannelType, SubscriptionJob, SubscriptionJobHeap,
     },
 };
 
@@ -305,6 +305,7 @@ async fn subscription_job_to_relay_job(
         job_type: GatewayJobType::JobRelay,
         sequence_number: 1,
         gateway_address: None,
+        job_mode: JobMode::Subscription,
     }
 }
 
