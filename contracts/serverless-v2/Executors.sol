@@ -13,6 +13,11 @@ import "../AttestationAutherUpgradeable.sol";
 import "./tree/TreeUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
+/**
+ * @title Executors Contract
+ * @notice Manages the registration, staking, and job assignment of execution nodes.
+ * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
+ */
 contract Executors is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
@@ -25,12 +30,21 @@ contract Executors is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
+    /// @notice Thrown when the provided ERC20 token address is zero.
     error ExecutorsZeroAddressToken();
+    /// @notice Thrown when the provided minimum stake amount is zero.
     error ExecutorsZeroMinStakeAmount();
 
+    /**
+     * @dev Initializes the logic contract without any admins, safeguarding against takeover.
+     * @param attestationVerifier The attestation verifier contract.
+     * @param maxAge Maximum age for attestations.
+     * @param _token The ERC20 token used for staking.
+     * @param _minStakeAmount Minimum stake amount required.
+     * @param _slashPercentInBips Slashing percentage in basis points.
+     * @param _slashMaxBips Maximum basis points for slashing.
+     */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
-    // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
@@ -53,20 +67,28 @@ contract Executors is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    /// @inheritdoc ERC165Upgradeable
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
+    /// @inheritdoc UUPSUpgradeable
     function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
     //-------------------------------- Initializer start --------------------------------//
 
+    /// @notice Thrown when the provided admin address is zero.
     error ExecutorsZeroAddressAdmin();
 
+    /**
+     * @dev Initializes the contract with the given admin and enclave images.
+     * @param _admin The address of the admin.
+     * @param _images Array of enclave images to initialize.
+     */
     function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
         if (_admin == address(0)) revert ExecutorsZeroAddressAdmin();
 
@@ -131,28 +153,61 @@ contract Executors is
     bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestamp)");
 
+    /// @notice Emitted when a new executor is registered.
+    /// @param enclaveAddress The address of the enclave.
+    /// @param owner The owner of the executor.
+    /// @param jobCapacity The maximum number of jobs the executor can handle.
     event ExecutorRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity);
 
+    /// @notice Emitted when an executor is deregistered.
+    /// @param enclaveAddress The address of the enclave.
     event ExecutorDeregistered(address indexed enclaveAddress);
 
+    /// @notice Emitted when an executor is drained.
+    /// @param enclaveAddress The address of the enclave.
     event ExecutorDrained(address indexed enclaveAddress);
+
+    /// @notice Emitted when an executor is revived.
+    /// @param enclaveAddress The address of the enclave.
     event ExecutorRevived(address indexed enclaveAddress);
 
+    /// @notice Emitted when stake is added to an executor.
+    /// @param enclaveAddress The address of the enclave.
+    /// @param addedAmount The amount of stake added.
     event ExecutorStakeAdded(address indexed enclaveAddress, uint256 addedAmount);
 
+    /// @notice Emitted when stake is removed from an executor.
+    /// @param enclaveAddress The address of the enclave.
+    /// @param removedAmount The amount of stake removed.
     event ExecutorStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
 
+    /// @notice Thrown when the signature timestamp has expired.
     error ExecutorsSignatureTooOld();
+    /// @notice Thrown when the signer of the registration data is invalid.
     error ExecutorsInvalidSigner();
+    /// @notice Thrown when attempting to register an executor that already exists.
     error ExecutorsExecutorAlreadyExists();
+    /// @notice Thrown when attempting to drain an executor that is already draining.
     error ExecutorsAlreadyDraining();
+    /// @notice Thrown when attempting to revive an executor that is not draining.
     error ExecutorsAlreadyRevived();
+    /// @notice Thrown when attempting to deregister or remove stake from an executor that is not draining.
     error ExecutorsNotDraining();
+    /// @notice Thrown when attempting to deregister or remove stake from an executor that has pending jobs.
     error ExecutorsHasPendingJobs();
+    /// @notice Thrown when the provided executor owner does not match the stored owner.
     error ExecutorsInvalidOwner();
 
     //-------------------------------- Admin methods start --------------------------------//
 
+    /**
+     * @notice Whitelists an enclave image for use by executors.
+     * @param PCR0 The first PCR value.
+     * @param PCR1 The second PCR value.
+     * @param PCR2 The third PCR value.
+     * @return imageId The ID of the whitelisted image.
+     * @return success Boolean indicating whether the image was successfully whitelisted.
+     */
     function whitelistEnclaveImage(
         bytes memory PCR0,
         bytes memory PCR1,
@@ -161,6 +216,11 @@ contract Executors is
         return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
+    /**
+     * @notice Revokes a previously whitelisted enclave image.
+     * @param imageId The ID of the image to revoke.
+     * @return success Boolean indicating whether the image was successfully revoked.
+     */
     function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _revokeEnclaveImage(imageId);
     }
@@ -299,6 +359,15 @@ contract Executors is
 
     //-------------------------------- external functions start ----------------------------------//
 
+    /**
+     * @notice Registers a new executor node.
+     * @param _attestationSignature The attestation signature for verification.
+     * @param _attestation The attestation details.
+     * @param _jobCapacity The maximum number of jobs the executor can handle.
+     * @param _signTimestamp The timestamp when the signature was created.
+     * @param _signature The signature to verify the registration.
+     * @param _stakeAmount The amount of stake to be deposited.
+     */
     function registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
@@ -318,18 +387,39 @@ contract Executors is
         );
     }
 
+    /**
+     * @notice Deregisters an executor node.
+     * @param _enclaveAddress The address of the executor enclave to deregister.
+     * @dev Caller must be the owner of the executor node.
+     */
     function deregisterExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
         _deregisterExecutor(_enclaveAddress);
     }
 
+    /**
+     * @notice Drains an executor node, making it inactive for new jobs.
+     * @param _enclaveAddress The address of the executor enclave to drain.
+     * @dev Caller must be the owner of the executor node.
+     */
     function drainExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
         _drainExecutor(_enclaveAddress);
     }
 
+    /**
+     * @notice Revives a previously drained executor node.
+     * @param _enclaveAddress The address of the executor enclave to revive.
+     * @dev Caller must be the owner of the executor node.
+     */
     function reviveExecutor(address _enclaveAddress) external isValidExecutorOwner(_enclaveAddress, _msgSender()) {
         _reviveExecutor(_enclaveAddress);
     }
 
+    /**
+     * @notice Adds stake to an executor node.
+     * @param _enclaveAddress The address of the executor enclave to add stake to.
+     * @param _amount The amount of stake to add.
+     * @dev Caller must be the owner of the executor node.
+     */
     function addExecutorStake(
         address _enclaveAddress,
         uint256 _amount
@@ -337,6 +427,12 @@ contract Executors is
         _addExecutorStake(_amount, _enclaveAddress);
     }
 
+    /**
+     * @notice Removes stake from an executor node.
+     * @param _enclaveAddress The address of the executor enclave to remove stake from.
+     * @param _amount The amount of stake to remove.
+     * @dev Caller must be the owner of the executor node.
+     */
     function removeExecutorStake(
         address _enclaveAddress,
         uint256 _amount
@@ -344,10 +440,19 @@ contract Executors is
         _removeExecutorStake(_amount, _enclaveAddress);
     }
 
+    /**
+     * @notice Allows only verified addresses to perform certain actions.
+     * @param _signer The address to be verified.
+     */
     function allowOnlyVerified(address _signer) external view {
         _allowOnlyVerified(_signer);
     }
 
+    /**
+     * @notice Gets the owner of a given executor node.
+     * @param _enclaveAddress The address of the executor enclave.
+     * @return The owner address of the executor node.
+     */
     function getOwner(address _enclaveAddress) external view returns (address) {
         return executors[_enclaveAddress].owner;
     }
@@ -404,16 +509,34 @@ contract Executors is
 
     //-------------------------------- external functions start ----------------------------------//
 
+    /**
+     * @notice Selects a number of executor nodes for job assignments.
+     * @dev Executors are selected randomly based on the stake distribution.
+     * @param _noOfNodesToSelect The number of nodes to select.
+     * @return selectedNodes An array of selected node addresses.
+     */
     function selectExecutors(
         uint256 _noOfNodesToSelect
     ) external onlyRole(JOBS_ROLE) returns (address[] memory selectedNodes) {
         return _selectExecutors(_noOfNodesToSelect);
     }
 
+    /**
+     * @notice Releases an executor node on job response submission, thus reducing its active jobs.
+     * @dev Can only be called by an account with the `JOBS_ROLE`.
+     * @param _enclaveAddress The address of the executor enclave to release.
+     */
     function releaseExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) {
         _releaseExecutor(_enclaveAddress);
     }
 
+    /**
+     * @notice Slashes the stake of an executor node.
+     * @dev Can only be called by an account with the `JOBS_ROLE`. This function 
+     *      triggers a slashing penalty on the specified executor node.
+     * @param _enclaveAddress The address of the executor enclave to be slashed.
+     * @return The amount of stake that was slashed from the executor node.
+     */
     function slashExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) returns (uint256) {
         return _slashExecutor(_enclaveAddress, _msgSender());
     }

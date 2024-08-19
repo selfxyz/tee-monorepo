@@ -12,6 +12,11 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
+/**
+ * @title Relay Contract
+ * @notice This contract manages serverless job relay and gateway registration functionalities.
+ * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
+ */
 contract Relay is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
@@ -23,12 +28,26 @@ contract Relay is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
+    /// @notice Error for when zero address token is provided.
     error RelayInvalidToken();
+    /// @notice Error for when global timeout values are invalid (minimum timeout is not less than maximum timeout).
     error RelayInvalidGlobalTimeouts();
 
+    /**
+     * @notice Initializes the logic contract with essential parameters and disables further 
+     * initializations of the logic contract.
+     * @param attestationVerifier The contract responsible for verifying attestations.
+     * @param maxAge The maximum age for attestations.
+     * @param _token The ERC20 token used for payments and deposits.
+     * @param _globalMinTimeout The minimum timeout value for jobs.
+     * @param _globalMaxTimeout The maximum timeout value for jobs. This refers to the max time for the executor to execute the job.
+     * @param _overallTimeout The overall timeout value for job execution. This refers to the max time for the complete lifecycle of the job request on-chain.
+     * @param _executionFeePerMs The fee per millisecond for job execution(in USDC).
+     * @param _gatewayFeePerJob The fixed fee per job for the gateway(in USDC).
+     * @param _fixedGas The fixed gas amount for job responses without callback.
+     * @param _callbackMeasureGas The gas amount used for measuring callback gas.
+     */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
-    // safeguard against takeover of the logic contract
     constructor(
         IAttestationVerifier attestationVerifier,
         uint256 maxAge,
@@ -60,20 +79,28 @@ contract Relay is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    /// @inheritdoc ERC165Upgradeable
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
+    /// @inheritdoc UUPSUpgradeable
     function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
     //-------------------------------- Initializer start --------------------------------//
 
+    /// @notice Error for when zero address is provided for the admin.
     error RelayZeroAddressAdmin();
 
+    /**
+     * @notice Initializes the Relay contract with the specified admin and enclave images.
+     * @param _admin The address to be granted the DEFAULT_ADMIN_ROLE.
+     * @param _images The initial enclave images to be whitelisted.
+     */
     function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
         if (_admin == address(0)) revert RelayZeroAddressAdmin();
 
@@ -125,6 +152,13 @@ contract Relay is
 
     //-------------------------------- Admin methods start --------------------------------//
 
+    /** 
+     * @notice Whitelist an enclave image for use by gateways.
+     * @param PCR0 The first PCR value of the enclave image.
+     * @param PCR1 The second PCR value of the enclave image.
+     * @param PCR2 The third PCR value of the enclave image.
+     * @return Computed image id and true if the image was freshly whitelisted, false otherwise.
+     */
     function whitelistEnclaveImage(
         bytes calldata PCR0,
         bytes calldata PCR1,
@@ -133,6 +167,11 @@ contract Relay is
         return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
+    /** 
+     * @notice Revoke an enclave image.
+     * @param imageId Image to be revoked.
+     * @return true if the image was freshly revoked, false otherwise.
+     */
     function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _revokeEnclaveImage(imageId);
     }
@@ -146,8 +185,17 @@ contract Relay is
 
     bytes32 private constant REGISTER_TYPEHASH = keccak256("Register(address owner,uint256 signTimestamp)");
 
+    /**
+     * @notice Emitted when a gateway is successfully registered.
+     * @param owner The address of the owner of the enclave.
+     * @param enclaveAddress The address of the enclave being registered.
+     */
     event GatewayRegistered(address indexed owner, address indexed enclaveAddress);
 
+    /**
+     * @notice Emitted when a gateway is successfully deregistered.
+     * @param enclaveAddress The address of the enclave being deregistered.
+     */
     event GatewayDeregistered(address indexed enclaveAddress);
 
     error RelayGatewayAlreadyExists();
@@ -206,6 +254,14 @@ contract Relay is
 
     //-------------------------------- external functions start --------------------------------//
 
+    /**
+     * @notice Registers a gateway by providing attestation and signature details.
+     * @dev This function verifies the enclave key and signature before registering the gateway.
+     * @param _attestationSignature The attestation signature from the enclave.
+     * @param _attestation The attestation details including the enclave public key.
+     * @param _signature The signature from the enclave for registering the gateway.
+     * @param _signTimestamp The timestamp at which the enclave signed the registration.
+     */
     function registerGateway(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
@@ -215,6 +271,11 @@ contract Relay is
         _registerGateway(_attestationSignature, _attestation, _signature, _signTimestamp, _msgSender());
     }
 
+    /**
+     * @notice Deregisters a gateway by its enclave address.
+     * @dev This function checks the caller's ownership of the gateway before deregistration.
+     * @param _enclaveAddress The address of the enclave to be deregistered.
+     */
     function deregisterGateway(address _enclaveAddress) external {
         _deregisterGateway(_enclaveAddress, _msgSender());
     }
@@ -244,6 +305,20 @@ contract Relay is
     bytes32 private constant JOB_RESPONSE_TYPEHASH =
         keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
 
+    /**
+     * @notice Emitted when a job is successfully relayed.
+     * @param jobId The unique identifier of the job.
+     * @param codehash The transaction hash storing the code to be executed.
+     * @param codeInputs The inputs for the code execution.
+     * @param userTimeout The timeout specified by the user for the job.
+     * @param maxGasPrice The maximum gas price allowed for the job.
+     * @param usdcDeposit The USDC deposit provided for the job.
+     * @param callbackDeposit The callback deposit provided for the job.
+     * @param refundAccount The address where the refund will be sent.
+     * @param callbackContract The address of the callback contract.
+     * @param startTime The timestamp when the job was started.
+     * @param callbackGasLimit The gas limit for the callback execution.
+     */
     event JobRelayed(
         uint256 indexed jobId,
         bytes32 codehash,
@@ -258,16 +333,35 @@ contract Relay is
         uint256 callbackGasLimit
     );
 
+    /**
+     * @notice Emitted when a job responds with its output.
+     * @param jobId The unique identifier of the job.
+     * @param output The output from the job execution.
+     * @param totalTime The total time taken for the job execution.
+     * @param errorCode The error code if the job failed.
+     * @param success A boolean indicating if the job was successful.
+     */
     event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint256 errorCode, bool success);
 
+    /**
+     * @notice Emitted when a job is cancelled.
+     * @param jobId The unique identifier of the job being cancelled.
+     */
     event JobCancelled(uint256 indexed jobId);
 
+    /// @notice Error for when an invalid user timeout is provided.
     error RelayInvalidUserTimeout();
+    /// @notice Error for when a job does not exist.
     error RelayJobNotExists();
+    /// @notice Error for when the overall timeout for a job has been exceeded.
     error RelayOverallTimeoutOver();
+    /// @notice Error for when the overall timeout for a job has not yet been exceeded.
     error RelayOverallTimeoutNotOver();
+    /// @notice Error for when the callback deposit transfer fails.
     error RelayCallbackDepositTransferFailed();
+    /// @notice Error for when there is insufficient callback deposit.
     error RelayInsufficientCallbackDeposit();
+    /// @notice Error for when the maximum gas price provided is insufficient.
     error RelayInsufficientMaxGasPrice();
 
     //-------------------------------- internal functions start -------------------------------//
@@ -465,6 +559,18 @@ contract Relay is
 
     //-------------------------------- external functions start --------------------------------//
 
+    /**
+     * @notice Function for users to relay a job to the enclave for execution.
+     * @dev The job parameters are validated before relaying to the enclave.
+     *      The job escrow amount (USDC+ETH) is transferred to the contract.
+     * @param _codehash The transaction hash storing the code to be executed by the enclave.
+     * @param _codeInputs The excrypted inputs to the code to be executed.
+     * @param _userTimeout The maximum execution time allowed for the job in milliseconds.
+     * @param _maxGasPrice The maximum gas price the job owner is willing to pay, to get back the job response.
+     * @param _refundAccount The account to receive any slashed tokens.
+     * @param _callbackContract The contract address to be called upon submitting job response.
+     * @param _callbackGasLimit The gas limit for the callback function.
+     */
     function relayJob(
         bytes32 _codehash,
         bytes calldata _codeInputs,
@@ -487,6 +593,16 @@ contract Relay is
         );
     }
 
+    /**
+     * @notice Function for gateways to respond to a job that has been executed by the enclave.
+     * @dev The response includes output data, execution time, and error code.
+     * @param _signature The signature of the gateway enclave.
+     * @param _jobId The unique identifier of the job.
+     * @param _output The output data from the job execution.
+     * @param _totalTime The total time taken for job execution in milliseconds.
+     * @param _errorCode The error code returned from the job execution.
+     * @param _signTimestamp The timestamp at which the response was signed by the enclave.
+     */
     function jobResponse(
         bytes calldata _signature,
         uint256 _jobId,
@@ -498,6 +614,11 @@ contract Relay is
         _jobResponse(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
+    /**
+     * @notice Cancels a job whose response hasn't been submitted and the deadline is over.
+     * @dev The function can be called by any user but ensures that the overall timeout has been reached before cancellation.
+     * @param _jobId The unique identifier of the job to be cancelled.
+     */
     function jobCancel(uint256 _jobId) external {
         _jobCancel(_jobId);
     }

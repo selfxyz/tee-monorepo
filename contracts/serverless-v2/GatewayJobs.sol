@@ -12,6 +12,12 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./Gateways.sol";
 import "./Jobs.sol";
 
+/**
+ * @title GatewayJobs Contract
+ * @dev This contract interacts with Jobs contract for job relay and response, and also slashes and 
+        reassigns gateway in case they fail to relay the job request. 
+ * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
+ */
 contract GatewayJobs is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
@@ -22,12 +28,25 @@ contract GatewayJobs is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
+    /// @notice Error for when zero address is provided for staking token.
     error GatewayJobsZeroAddressStakingToken();
+    /// @notice Error for when zero address is provided for USDC token.
     error GatewayJobsZeroAddressUsdcToken();
 
+    /**
+     * @notice Initializes the logic contract without any admins to safeguard against takeover of the logic contract.
+     * @param _stakingToken The staking token used in the system.
+     * @param _usdcToken The USDC token used for payments.
+     * @param _signMaxAge The maximum age of a valid signature in seconds.
+     * @param _relayBufferTime The buffer time allowed for relaying jobs.
+     * @param _executionFeePerMs The execution fee per millisecond.
+     * @param _slashCompForGateway The slashed amount component given to the gateway when all the selected executors fails to submit the job response.
+     * @param _reassignCompForReporterGateway The compensation for the gateway that reports the reassignment.
+     * @param _jobMgr The job manager contract.
+     * @param _gateways The gateways contract.
+     * @param _stakingPaymentPoolAddress The address of the staking payment pool.
+     */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
-    // safeguard against takeover of the logic contract
     constructor(
         IERC20 _stakingToken,
         IERC20 _usdcToken,
@@ -60,20 +79,27 @@ contract GatewayJobs is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    /// @inheritdoc ERC165Upgradeable
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
+    /// @inheritdoc UUPSUpgradeable
     function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
     //-------------------------------- Initializer start --------------------------------//
 
+    /// @notice Error for when zero address is provided for the admin address.
     error GatewayJobsZeroAddressAdmin();
 
+    /**
+     * @notice Initializes the contract, setting the admin and configuring roles.
+     * @param _admin The address to be granted the admin role.
+     */
     function initialize(address _admin) public initializer {
         if (_admin == address(0)) revert GatewayJobsZeroAddressAdmin();
 
@@ -157,27 +183,70 @@ contract GatewayJobs is
             "ReassignGateway(uint256 jobId,address gatewayOld,address jobOwner,uint8 sequenceId,uint256 jobRequestTimestamp,uint256 signTimestamp)"
         );
 
+    /**
+     * @notice Emitted when a job is relayed by a gateway.
+     * @param jobId The ID of the job.
+     * @param execJobId The ID of the execution job.
+     * @param jobOwner The address of the job owner.
+     * @param gateway The address of the gateway.
+     */
     event JobRelayed(uint256 indexed jobId, uint256 execJobId, address jobOwner, address gateway);
 
+    /**
+     * @notice Emitted when a job's resource is unavailable.
+     * @param jobId The ID of the job.
+     * @param gateway The address of the gateway that reported the unavailability.
+     */
     event JobResourceUnavailable(uint256 indexed jobId, address indexed gateway);
 
+    /**
+     * @notice Emitted when a gateway is reassigned to a job.
+     * @param jobId The ID of the job.
+     * @param prevGateway The address of the previous gateway.
+     * @param reporterGateway The address of the gateway that reported the reassignment.
+     * @param sequenceId The sequence ID of the reassignment.
+     */
     event GatewayReassigned(uint256 indexed jobId, address prevGateway, address reporterGateway, uint8 sequenceId);
 
+    /**
+     * @notice Emitted when a job has been responded to after execution.
+     * @param jobId The ID of the job.
+     * @param output The output data from the job execution.
+     * @param totalTime The total time taken for the job execution, in milliseconds.
+     * @param errorCode The error code returned from the job execution.
+     */
     event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint8 errorCode);
 
+    /**
+     * @notice Emitted when a job has failed.
+     * @param jobId The ID of the job.
+     */
     event JobFailed(uint256 indexed jobId);
 
+    // @notice Error for when USDC token approval fails.
     error GatewaysJobsUsdcApprovalFailed(address spender, uint256 value);
+    // @notice Error for when the relay time for a job has passed.
     error GatewayJobsRelayTimeOver();
+    // @notice Error for when the job resource is unavailable.
     error GatewayJobsResourceUnavailable();
+    // @notice Error for when a job has already been relayed.
     error GatewayJobsAlreadyRelayed();
+    // @notice Error for when the relay sequence ID is invalid.
     error GatewayJobsInvalidRelaySequenceId();
+    // @notice Error for when the chain is unsupported.
     error GatewayJobsUnsupportedChain();
+    // @notice Error for when the job signature is too old.
     error GatewayJobsSignatureTooOld();
+    /// @notice Error for when job creation fails with a reason.
+    /// @param reason The reason for the job creation failure.
     error GatewayJobsCreateFailed(bytes reason);
 
     //-------------------------------- admin functions start ----------------------------------//
 
+    /**
+     * @notice Sets the job allowance for the USDC token, allowing the JOB_MANAGER to spend it.
+     * @dev Only callable by an account with the DEFAULT_ADMIN_ROLE.
+     */
     function setJobAllowance() external onlyRole(DEFAULT_ADMIN_ROLE) {
         // increasing allowance to be used while relaying jobs
         bool success = USDC_TOKEN.approve(address(JOB_MANAGER), type(uint256).max);
@@ -374,6 +443,19 @@ contract GatewayJobs is
 
     //-------------------------------- external functions start --------------------------------//
 
+    /**
+     * @notice Function to relay a job from a gateway.
+     * @dev Can only be called by a gateway registered in the Gateways contract.
+     * @param _signature The signature verifying the job details.
+     * @param _jobId The ID of the job to be relayed.
+     * @param _codehash The hash of the job's code.
+     * @param _codeInputs The inputs to the job's code.
+     * @param _deadline The deadline for job execution in milliseconds.
+     * @param _jobRequestTimestamp The timestamp when the job was requested.
+     * @param _sequenceId The sequence ID of the job relay.
+     * @param _jobOwner The address of the job owner.
+     * @param _signTimestamp The timestamp when the signature was created.
+     */
     function relayJob(
         bytes memory _signature,
         uint256 _jobId,
@@ -399,6 +481,17 @@ contract GatewayJobs is
         );
     }
 
+    /**
+     * @notice Reassigns a gateway for a job relay. This function facilitates the reassignment by verifying the provided signature and updating the job's gateway.
+     * @dev Can only be called by a registered gateway.
+     * @param _gatewayOld The address of the previous gateway that was assigned to the job.
+     * @param _jobId The ID of the job that needs a gateway reassignment.
+     * @param _signature The signature provided to verify the job reassignment details.
+     * @param _sequenceId The sequence ID associated with the job relay, used for tracking the order of operations.
+     * @param _jobRequestTimestamp The timestamp when the job was initially requested.
+     * @param _jobOwner The address of the owner of the job.
+     * @param _signTimestamp The timestamp when the signature was created.
+     */
     function reassignGatewayRelay(
         address _gatewayOld,
         uint256 _jobId,
@@ -463,6 +556,14 @@ contract GatewayJobs is
 
     //------------------------------- external functions start ---------------------------------//
 
+    /**
+     * @notice External function to call the internal _oysterResultCall function after a job has been executed.
+     * @dev Can only be called by an address with the JOBS_ROLE.
+     * @param _jobId The ID of the job that was executed.
+     * @param _output The output data from the job execution.
+     * @param _errorCode The error code returned from the job execution. 0 indicates success, while non-zero values indicate specific errors.
+     * @param _totalTime The total time taken for the job execution, in milliseconds.
+     */
     function oysterResultCall(
         uint256 _jobId,
         bytes memory _output,
@@ -472,6 +573,12 @@ contract GatewayJobs is
         _oysterResultCall(_jobId, _output, _errorCode, _totalTime);
     }
 
+    /**
+     * @notice External function to call the internal _oysterFailureCall function after a job has failed.
+     * @dev Can only be called by an address with the JOBS_ROLE.
+     * @param _jobId The ID of the job that failed.
+     * @param _slashAmount The amount of tokens to be slashed due to the failure.
+     */
     function oysterFailureCall(uint256 _jobId, uint256 _slashAmount) external onlyRole(JOBS_ROLE) {
         _oysterFailureCall(_jobId, _slashAmount);
     }

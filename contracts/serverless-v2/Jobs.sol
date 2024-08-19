@@ -10,6 +10,11 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./Executors.sol";
 
+/**
+ * @title Jobs Contract
+ * @dev This contract manages job creation, execution, and reward distribution. 
+ * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
+ */
 contract Jobs is
     Initializable, // initializer
     ContextUpgradeable, // _msgSender, _msgData
@@ -20,12 +25,25 @@ contract Jobs is
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
+    /// @notice Thrown when the staking token address is zero.
     error JobsZeroAddressStakingToken();
+    /// @notice Thrown when the USDC token address is zero.
     error JobsZeroAddressUsdcToken();
 
+    /**
+     * @dev Initializes the logic contract without any admins and safeguards against a potential takeover.
+     * @param _stakingToken The address of the staking token contract(POND).
+     * @param _usdcToken The address of the USDC token contract.
+     * @param _signMaxAge The maximum age of a valid signature in seconds.
+     * @param _executionBufferTime The buffer time allowed for job execution in milliseconds.
+     * @param _noOfNodesToSelect The number of executor nodes to select for a job.
+     * @param _executorFeePerMs The fee paid to executors per millisecond.
+     * @param _stakingRewardPerMs The staking reward per millisecond, paid to the payment pool.
+     * @param _stakingPaymentPoolAddress The address of the staking payment pool.
+     * @param _usdcPaymentPoolAddress The address of the USDC payment pool.
+     * @param _executors The Executors contract responsible for selecting executors.
+     */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    // initializes the logic contract without any admins
-    // safeguard against takeover of the logic contract
     constructor(
         IERC20 _stakingToken,
         IERC20 _usdcToken,
@@ -61,20 +79,27 @@ contract Jobs is
 
     //-------------------------------- Overrides start --------------------------------//
 
+    /// @inheritdoc ERC165Upgradeable
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
+    /// @inheritdoc UUPSUpgradeable
     function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     //-------------------------------- Overrides end --------------------------------//
 
     //-------------------------------- Initializer start --------------------------------//
 
+    /// @notice Thrown when the admin address is zero.
     error JobsZeroAddressAdmin();
 
+    /**
+     * @dev Initializes the contract with the specified admin address.
+     * @param _admin The address of the admin.
+     */
     function initialize(address _admin) public initializer {
         if (_admin == address(0)) revert JobsZeroAddressAdmin();
 
@@ -145,6 +170,15 @@ contract Jobs is
     bytes32 private constant SUBMIT_OUTPUT_TYPEHASH =
         keccak256("SubmitOutput(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
 
+    /**
+     * @dev Emitted when a new job is created.
+     * @param jobId The ID of the job created.
+     * @param jobOwner The address of the job owner.
+     * @param codehash The transaction hash storing the job code.
+     * @param codeInputs The inputs to the job code.
+     * @param deadline The deadline for the job in milliseconds.
+     * @param selectedExecutors The selected executors for the job.
+     */
     event JobCreated(
         uint256 indexed jobId,
         address indexed jobOwner,
@@ -154,20 +188,47 @@ contract Jobs is
         address[] selectedExecutors
     );
 
+    /**
+     * @dev Emitted when an output is submitted for a job.
+     * @param jobId The ID of the job.
+     * @param output The output data.
+     * @param totalTime The total time taken to execute the job in milliseconds.
+     * @param errorCode The error code associated with the job execution.
+     * @param outputCount The number of outputs submitted for the job.
+     */
     event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint8 errorCode, uint8 outputCount);
 
+    /**
+     * @dev Emitted when the job result callback is called.
+     * @param jobId The ID of the job.
+     * @param callback_success Boolean indicating if the callback was successful.
+     */
     event JobResultCallbackCalled(uint256 indexed jobId, bool callback_success);
 
+    /**
+     * @dev Emitted when the job failure callback is called.
+     * @param jobId The ID of the job.
+     * @param callback_success Boolean indicating if the callback was successful.
+     */
     event JobFailureCallbackCalled(uint256 indexed jobId, bool callback_success);
 
+    /// @notice Thrown when the relay time has passed.
     error JobsRelayTimeOver();
+    /// @notice Thrown when the provided sequence ID is invalid.
     error JobsInvalidSequenceId();
+    /// @notice Thrown when the job has already been relayed.
     error JobsJobAlreadyRelayed();
+    /// @notice Thrown when the chain is unsupported.
     error JobsUnsupportedChain();
+    /// @notice Thrown when the signature is too old.
     error JobsSignatureTooOld();
+    /// @notice Thrown when the job execution time has passed.
     error JobsExecutionTimeOver();
+    /// @notice Thrown when the executor is not selected for the job.
     error JobsNotSelectedExecutor();
+    /// @notice Thrown when the executor has already submitted output for the job.
     error JobsExecutorAlreadySubmittedOutput();
+    /// @notice Thrown when there are unavailable resources to execute the job.
     error JobsUnavailableResources();
 
     //-------------------------------- internal functions start --------------------------------//
@@ -334,6 +395,13 @@ contract Jobs is
 
     //-------------------------------- external functions start --------------------------------//
 
+    /**
+     * @notice Creates a new job with the specified parameters.
+     * @param _codehash The hash of the job code.
+     * @param _codeInputs The inputs to the job code.
+     * @param _deadline The deadline for the job in milliseconds.
+     * @return jobId The ID of the job created.
+     */
     function createJob(
         bytes32 _codehash,
         bytes memory _codeInputs,
@@ -342,6 +410,15 @@ contract Jobs is
         return _createJob(_codehash, _codeInputs, _deadline, _msgSender());
     }
 
+    /**
+     * @notice Submits the output for a job.
+     * @param _signature The signature of the executor.
+     * @param _jobId The ID of the job.
+     * @param _output The output data.
+     * @param _totalTime The total time taken to execute the job in milliseconds.
+     * @param _errorCode The error code associated with the job execution.
+     * @param _signTimestamp The timestamp of the signature.
+     */
     function submitOutput(
         bytes memory _signature,
         uint256 _jobId,
@@ -359,9 +436,16 @@ contract Jobs is
 
     //-------------------------------- Timeout start --------------------------------//
 
+    /**
+     * @notice Emitted when an executor is slashed due to execution timeout.
+     * @param jobId The ID of the job.
+     * @param enclaveAddress The address of the slashed executor.
+     */
     event SlashedOnExecutionTimeout(uint256 indexed jobId, address indexed enclaveAddress);
 
+    /// @notice Thrown when the job ID is invalid.
     error JobsInvalidJob();
+    /// @notice Thrown when the job deadline has not yet passed.
     error JobsDeadlineNotOver();
 
     //-------------------------------- internal functions start ----------------------------------//
@@ -441,6 +525,12 @@ contract Jobs is
 
     //-------------------------------- external functions start ----------------------------------//
 
+    /**
+     * @notice Slashes executors for a job if the execution has timed out.
+     * @dev This function is called externally to trigger the slashing mechanism for a 
+     *      job when the execution time has exceeded the allowed deadline plus buffer time.
+     * @param _jobId The ID of the job for which executors are to be slashed.
+     */
     function slashOnExecutionTimeout(uint256 _jobId) external {
         _slashOnExecutionTimeout(_jobId);
     }
@@ -449,6 +539,11 @@ contract Jobs is
 
     //-------------------------------- Timeout end --------------------------------//
 
+    /**
+     * @notice Retrieves the list of executors selected for a specific job.
+     * @param _jobId The ID of the job for which to retrieve the selected executors.
+     * @return An array of addresses representing the executors selected for the job.
+     */
     function getSelectedExecutors(uint256 _jobId) external view returns (address[] memory) {
         return jobs[_jobId].selectedExecutors;
     }
