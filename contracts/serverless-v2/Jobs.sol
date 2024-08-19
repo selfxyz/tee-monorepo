@@ -38,8 +38,8 @@ contract Jobs is
      * @param _executionBufferTime The buffer time allowed for job execution in milliseconds.
      * @param _noOfNodesToSelect The number of executor nodes to select for a job.
      * @param _executorFeePerMs The fee paid to executors per millisecond.
-     * @param _stakingRewardPerMs The staking reward per millisecond.
-     * @param _stakingPaymentPoolAddress The address of the payment pool contibution account.
+     * @param _stakingRewardPerMs The staking reward per millisecond, paid to the payment pool.
+     * @param _stakingPaymentPoolAddress The address of the staking payment pool.
      * @param _usdcPaymentPoolAddress The address of the USDC payment pool.
      * @param _executors The Executors contract responsible for selecting executors.
      */

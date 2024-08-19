@@ -310,7 +310,7 @@ contract Relay is
      * @dev It follows this scheme - 
      *      | Chain ID (64 bit) | 0 (1 bit) | job_id (191 bits) |
      *      First 64 bits represent the chainId.
-     *      65th bit is fixed as 0.
+     *      65th bit is fixed as 0, which represents an individual job.
      *      Last 191 bits refers to the job id, and increments each time a new job is relayed.
      *      If job_id reaches its max value, then we reset the job_id to zero.
      */
@@ -664,7 +664,7 @@ contract Relay is
      * @dev It follows this scheme - 
      *      | Chain ID (64)| 1 (1 bit) | sub_id (64 bits) | instance_count (127) |
      *      First 64 bits represent the chainId.
-     *      65th bit is fixed as 1.
+     *      65th bit is fixed as 1, which represents a job subscription.
      *      Next 64 bits are reserved for subscription id, and increments each time a new job subscrtiption is started.
      *      Last 127 bits are fixed as all zeros.
      *      If sub_id reaches its max value, then we reset the sub_id to zero.
