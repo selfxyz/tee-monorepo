@@ -113,6 +113,7 @@ contract Relay is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
         jobCount = block.chainid << 192;
+        jobSubsCount = (block.chainid << 192) | uint256(1) << 191;
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -304,6 +305,15 @@ contract Relay is
 
     mapping(uint256 => Job) public jobs;
 
+    /**
+     * @notice Tracks the jobs count.
+     * @dev It follows this scheme - 
+     *      | Chain ID (64 bit) | 0 (1 bit) | job_id (191 bits) |
+     *      First 64 bits represent the chainId.
+     *      65th bit is fixed as 0.
+     *      Last 191 bits refers to the job id, and increments each time a new job is relayed.
+     *      If job_id reaches its max value, then we reset the job_id to zero.
+     */
     uint256 public jobCount;
 
     bytes32 private constant JOB_RESPONSE_TYPEHASH =
@@ -649,6 +659,16 @@ contract Relay is
     // jobSubsId => JobSubscription
     mapping(uint256 => JobSubscription) public jobSubscriptions;
 
+    /**
+     * @notice Tracks the job subscriptions count.
+     * @dev It follows this scheme - 
+     *      | Chain ID (64)| 1 (1 bit) | sub_id (64 bits) | instance_count (127) |
+     *      First 64 bits represent the chainId.
+     *      65th bit is fixed as 1.
+     *      Next 64 bits are reserved for subscription id, and increments each time a new job subscrtiption is started.
+     *      Last 127 bits are fixed as all zeros.
+     *      If sub_id reaches its max value, then we reset the sub_id to zero.
+     */
     uint256 public jobSubsCount;
 
     /**
@@ -777,6 +797,9 @@ contract Relay is
     ) internal {
         // TODO: Can _terminationTimestamp = 0 and _maxRuns = 0 while starting subscription??
 
+        if(_terminationTimestamp <= block.timestamp)
+            revert RelayInvalidTerminationTimestamp();
+
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) 
             revert RelayInvalidUserTimeout();
 
@@ -822,7 +845,12 @@ contract Relay is
         uint256 _periodicGap,
         uint256 _terminationTimestamp
     ) internal {
-        jobSubscriptions[++jobSubsCount] = JobSubscription({
+        uint256 subId = (jobSubsCount >> 127) & ((1 << 64) - 1);
+        if(subId == 2**64 - 1)
+            jobSubsCount = (block.chainid << 192) | uint256(1) << 191;
+        jobSubsCount += (uint256(1) << 127);
+
+        jobSubscriptions[jobSubsCount] = JobSubscription({
             periodicGap: _periodicGap,
             terminationTimestamp: _terminationTimestamp,
             currentRuns: 0,
@@ -998,9 +1026,10 @@ contract Relay is
     }
 
     function _terminateJobSubscription(
-        uint256 _jobSubsId
+        uint256 _jobSubsId,
+        address _jobOwner
     ) internal {
-        if(jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
+        if(jobSubscriptions[_jobSubsId].job.jobOwner != _jobOwner)
             revert RelayNotJobSubscriptionOwner();
 
         if(block.timestamp <= jobSubscriptions[_jobSubsId].terminationTimestamp + OVERALL_TIMEOUT)
@@ -1011,11 +1040,11 @@ contract Relay is
 
         delete jobSubscriptions[_jobSubsId];
 
-        TOKEN.safeTransfer(_msgSender(), usdcAmount);
+        TOKEN.safeTransfer(_jobOwner, usdcAmount);
         // TODO: do we need to check this bool success
-        (bool success, ) = _msgSender().call{value: callbackAmount}("");
+        (bool success, ) = _jobOwner.call{value: callbackAmount}("");
 
-        emit JobSubscriptionTerminated(_jobSubsId, _msgSender(), usdcAmount, callbackAmount, success);
+        emit JobSubscriptionTerminated(_jobSubsId, _jobOwner, usdcAmount, callbackAmount, success);
     }
 
     //-------------------------------- internal functions end --------------------------------//
@@ -1138,7 +1167,7 @@ contract Relay is
     function terminateJobSubscription(
         uint256 _jobSubsId
     ) external {
-        _terminateJobSubscription(_jobSubsId);
+        _terminateJobSubscription(_jobSubsId, _msgSender());
     }
 
     //-------------------------------- external functions end --------------------------------//
