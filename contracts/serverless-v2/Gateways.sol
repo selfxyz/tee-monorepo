@@ -110,9 +110,6 @@ contract Gateways is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable DRAINING_TIME_DURATION;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
-
     /// @notice The slashing percentage in basis points(an integer in the range 0-10^6)
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_PERCENT_IN_BIPS;
