@@ -36,6 +36,11 @@ pub trait LogsProvider {
         job: Job,
         common_chain_http_provider: &'a Provider<Http>,
     ) -> impl Future<Output = Result<Vec<Log>>>;
+
+    fn request_chain_historic_subscription_jobs<'a>(
+        &'a self,
+        req_chain_client: &'a RequestChainClient,
+    ) -> impl Future<Output = Result<Vec<Log>>>;
 }
 
 pub async fn get_block_number_by_timestamp(

@@ -23,13 +23,19 @@ use crate::chain_util::{
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
-    MIN_GATEWAY_STAKE, REQUEST_RELAY_TIMEOUT,
+    COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
+    COMMON_CHAIN_JOB_RELAYED_EVENT, COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT,
+    COMMON_CHAIN_JOB_RESPONDED_EVENT, GATEWAY_BLOCK_STATES_TO_MAINTAIN,
+    GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES, MIN_GATEWAY_STAKE,
+    REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT, REQUEST_CHAIN_JOB_CANCELLED_EVENT,
+    REQUEST_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT, REQUEST_RELAY_TIMEOUT,
 };
 use crate::error::ServerlessError;
 use crate::job_subscription_management::{
-    add_subscription_job, job_subscription_manager, update_subscription_job_params,
-    update_subscription_job_termination_params,
+    add_subscription_job, job_subscription_manager, process_historic_job_subscriptions,
+    update_subscription_job_params, update_subscription_job_termination_params,
 };
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobMode, JobSubscriptionAction,
@@ -47,9 +53,7 @@ impl ContractsClient {
         let common_chain_registered_filter = Filter::new()
             .address(self.gateways_contract_address)
             .select(common_chain_block_number..)
-            .topic0(vec![keccak256(
-                "GatewayRegistered(address,address,uint256[])",
-            )])
+            .topic0(vec![keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT)])
             .topic1(self.enclave_address)
             .topic2(self.enclave_owner);
 
@@ -103,7 +107,7 @@ impl ContractsClient {
             let request_chain_registered_filter = Filter::new()
                 .address(request_chain_client.contract_address)
                 .select(request_chain_client.request_chain_start_block_number..)
-                .topic0(vec![keccak256("GatewayRegistered(address,address)")])
+                .topic0(vec![keccak256(REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT)])
                 .topic1(self.enclave_owner)
                 .topic2(self.enclave_address);
 
@@ -219,6 +223,15 @@ impl ContractsClient {
         {
             let contracts_client_clone = self.clone();
             let req_chain_tx_clone = req_chain_tx.clone();
+
+            tokio::spawn(async move {
+                process_historic_job_subscriptions(&contracts_client_clone, req_chain_tx_clone)
+                    .await;
+            });
+
+            let contracts_client_clone = self.clone();
+            let req_chain_tx_clone = req_chain_tx.clone();
+
             tokio::spawn(async move {
                 let _ = job_subscription_manager(
                     contracts_client_clone,
@@ -308,12 +321,7 @@ impl ContractsClient {
                     continue;
                 }
 
-                if topics[0]
-                == keccak256(
-                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                )
-                .into()
-                {
+                if topics[0] == keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into() {
                     info!(
                         "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                         chain_id, log.topics[1]
@@ -323,21 +331,15 @@ impl ContractsClient {
                     let req_chain_tx_clone = req_chain_tx.clone();
                     tokio::spawn(async move {
                         let job = self_clone
-                            .get_job_from_job_relay_event(
-                                log,
-                                1u8,
-                                chain_id
-                            )
+                            .get_job_from_job_relay_event(log, 1u8, chain_id)
                             .await;
                         if job.is_ok() {
-                            self_clone.job_relayed_handler(
-                                job.unwrap(),
-                                req_chain_tx_clone.clone(),
-                            )
-                            .await;
+                            self_clone
+                                .job_relayed_handler(job.unwrap(), req_chain_tx_clone.clone())
+                                .await;
                         }
                     });
-                } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
+                } else if topics[0] == keccak256(REQUEST_CHAIN_JOB_CANCELLED_EVENT).into() {
                     info!(
                         "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
                         chain_id, log.topics[1]
@@ -345,11 +347,13 @@ impl ContractsClient {
 
                     let self_clone = Arc::clone(&self);
                     tokio::spawn(async move {
-                        self_clone.cancel_job_with_job_id(
-                            log.topics[1].into_uint(),
-                        ).await;
+                        self_clone
+                            .cancel_job_with_job_id(log.topics[1].into_uint())
+                            .await;
                     });
-                } else if topics[0] == keccak256("JobSubscriptionStarted(uint256,address,uint256,uint256,uint256,uint256,address,bytes32,bytes,uint256)").into() {
+                } else if topics[0]
+                    == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into()
+                {
                     let subscription_id: H160 = log.topics[1].into();
 
                     info!(
@@ -357,22 +361,25 @@ impl ContractsClient {
                         chain_id, subscription_id
                     );
 
-                    let _ = add_subscription_job(
-                        &self,
-                        log,
-                        chain_id
-                    ).await;
-
+                    let self_clone = Arc::clone(&self);
+                    let req_chain_tx_clone = req_chain_tx.clone();
                     let job_subscription_tx_clone = job_subscription_tx.clone();
 
-                    tokio::spawn(async move{
-                        job_subscription_tx_clone.send(JobSubscriptionChannelType{
-                            subscription_action: JobSubscriptionAction::Add,
-                            subscription_id
-                        }).await.unwrap();
+                    tokio::spawn(async move {
+                        let _ =
+                            add_subscription_job(&self_clone, log, chain_id, req_chain_tx_clone)
+                                .await;
+                        job_subscription_tx_clone
+                            .send(JobSubscriptionChannelType {
+                                subscription_action: JobSubscriptionAction::Add,
+                                subscription_id,
+                            })
+                            .await
+                            .unwrap();
                     });
-                }
-                else if topics[0] == keccak256("JobSubscriptionJobParamsUpdated(uint256,bytes32,bytes)").into() {
+                } else if topics[0]
+                    == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
+                {
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionJobParamsUpdated jobID: {:?}",
                         chain_id, log.topics[1]
@@ -381,12 +388,12 @@ impl ContractsClient {
                     let self_clone = Arc::clone(&self);
 
                     tokio::spawn(async move {
-                        let _ = update_subscription_job_params(
-                            &self_clone,
-                            log,
-                        ).await;
+                        let _ = update_subscription_job_params(&self_clone, log).await;
                     });
-                } else if topics[0] == keccak256("JobSubscriptionTerminationParamsUpdated(uint256,uint256)").into() {
+                } else if topics[0]
+                    == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT)
+                        .into()
+                {
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionTerminationParamsUpdated jobID: {:?}",
                         chain_id, log.topics[1]
@@ -394,16 +401,10 @@ impl ContractsClient {
 
                     let self_clone = Arc::clone(&self);
                     tokio::spawn(async move {
-                        let _ = update_subscription_job_termination_params(
-                            &self_clone,
-                            log
-                        ).await;
+                        let _ = update_subscription_job_termination_params(&self_clone, log).await;
                     });
                 } else {
-                    error!(
-                        "Request Chain ID: {:?}, Unknown event: {:?}",
-                        chain_id, log
-                    );
+                    error!("Request Chain ID: {:?}, Unknown event: {:?}", chain_id, log);
                 }
             }
         }
@@ -531,7 +532,7 @@ impl ContractsClient {
 
         for log in logs {
             let ref topics = log.topics;
-            if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
+            if topics[0] == keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into() {
                 let decoded = decode(
                     &vec![ParamType::Uint(256), ParamType::Address, ParamType::Address],
                     &log.data.0,
@@ -854,7 +855,7 @@ impl ContractsClient {
             while let Some(log) = stream.next().await {
                 let ref topics = log.topics;
 
-                if topics[0] == keccak256("JobResponded(uint256,bytes,uint256,uint8)").into() {
+                if topics[0] == keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT).into() {
                     info!(
                         "JobResponded event triggered for Job ID: {:?}",
                         log.topics[1]
@@ -878,15 +879,14 @@ impl ContractsClient {
                             }
                         }
                     });
-                } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
+                } else if topics[0] == keccak256(COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT).into()
+                {
                     info!("JobResourceUnavailable event triggered");
                     let self_clone = Arc::clone(&self);
                     tokio::spawn(async move {
                         self_clone.job_resource_unavailable_handler(log).await;
                     });
-                } else if topics[0]
-                    == keccak256("GatewayReassigned(uint256,address,address,uint8)").into()
-                {
+                } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT).into() {
                     info!("GatewayReassigned for Job ID: {:?}", log.topics[1]);
                     let self_clone = Arc::clone(&self);
                     let req_chain_tx = req_chain_tx.clone();
@@ -1260,9 +1260,9 @@ impl LogsProvider for ContractsClient {
             .address(self.gateway_jobs_contract.read().unwrap().address())
             .select(common_chain_start_block_number..)
             .topic0(vec![
-                keccak256("JobResponded(uint256,bytes,uint256,uint8)"),
-                keccak256("JobResourceUnavailable(uint256,address)"),
-                keccak256("GatewayReassigned(uint256,address,address,uint8)"),
+                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT),
+                keccak256(COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT),
+                keccak256(COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT),
             ]);
 
         let stream = common_chain_ws_provider
@@ -1288,13 +1288,11 @@ impl LogsProvider for ContractsClient {
             .address(req_chain_client.contract_address)
             .select(req_chain_client.request_chain_start_block_number..)
             .topic0(vec![
-                keccak256(
-                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                ),
-                keccak256("JobCancelled(uint256)"),
-                keccak256("JobSubscriptionStarted(uint256,address,uint256,uint256,uint256,uint256,address,bytes32,bytes,uint256)"),
-                keccak256("JobSubscriptionJobParamsUpdated(uint256,bytes32,bytes)"),
-                keccak256("JobSubscriptionTerminationParamsUpdated(uint256,uint256)"),
+                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_CANCELLED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
             ]);
 
         // register subscription
@@ -1332,9 +1330,7 @@ impl LogsProvider for ContractsClient {
         let job_relayed_event_filter = Filter::new()
             .address(self.gateway_jobs_contract.read().unwrap().address())
             .select(common_chain_start_block_number..)
-            .topic0(vec![keccak256(
-                "JobRelayed(uint256,uint256,address,address)",
-            )])
+            .topic0(vec![keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT)])
             .topic1(job.job_id);
 
         let logs = common_chain_http_provider
@@ -1358,7 +1354,7 @@ impl LogsProvider for ContractsClient {
             Ok(vec![Log {
                 address: self.gateway_jobs_contract.read().unwrap().address(),
                 topics: vec![
-                    keccak256("JobRelayed(uint256,uint256,address,address)").into(),
+                    keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into(),
                     H256::from_uint(&job.job_id),
                 ],
                 data: encode(&[
@@ -1377,6 +1373,25 @@ impl LogsProvider for ContractsClient {
                 ..Default::default()
             }])
         }
+    }
+
+    async fn request_chain_historic_subscription_jobs<'a>(
+        &'a self,
+        req_chain_client: &'a RequestChainClient,
+    ) -> Result<Vec<Log>> {
+        let event_filter = Filter::new()
+            .address(req_chain_client.contract_address)
+            .topic0(vec![
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
+            ]);
+
+        let http_provider = Provider::<Http>::try_from(&req_chain_client.http_rpc_url).unwrap();
+
+        let logs = http_provider.get_logs(&event_filter).await.unwrap();
+
+        Ok(logs)
     }
 }
 
@@ -2335,10 +2350,7 @@ mod serverless_executor_test {
         Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256(
-                   "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                )
-                .into(),
+                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
                 H256::from_uint(&job_id),
             ],
             data: encode(&[
@@ -2375,7 +2387,7 @@ mod serverless_executor_test {
         Log {
             address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256("JobResponded(uint256,bytes,uint8").into(),
+                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT).into(),
                 H256::from_uint(&job_id),
             ],
             data: encode(&[
@@ -2463,10 +2475,7 @@ mod serverless_executor_test {
         let log = Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256(
-                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                )
-                .into(),
+                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
                 H256::from_uint(&U256::from(1)),
             ],
             data: EthBytes::from(vec![0x00]),
@@ -2962,7 +2971,7 @@ mod serverless_executor_test {
         let log = Log {
             address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256("JobResponded(uint256,bytes,uint8").into(),
+                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT).into(),
                 H256::from_low_u64_be(1),
             ],
             data: encode(&[Token::Bytes([].into())]).into(),

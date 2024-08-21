@@ -1,6 +1,7 @@
 use ethers::{
     abi::{decode, ParamType},
     types::{BigEndianHash, Bytes, Log, U256},
+    utils::keccak256,
 };
 use log::{error, info};
 use std::{
@@ -13,6 +14,12 @@ use tokio::{
 };
 
 use crate::{
+    chain_util::LogsProvider,
+    constant::{
+        GATEWAY_BLOCK_STATES_TO_MAINTAIN, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+        REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+        REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT,
+    },
     error::ServerlessError,
     model::{
         ContractsClient, GatewayJobType, Job, JobMode, JobSubscriptionAction,
@@ -52,6 +59,64 @@ impl Ord for SubscriptionJobHeap {
         self.next_trigger_time
             .cmp(&other.next_trigger_time)
             .reverse()
+    }
+}
+
+pub async fn process_historic_job_subscriptions(
+    contracts_client: &Arc<ContractsClient>,
+    req_chain_tx: Sender<Job>,
+) {
+    info!("Processing Historic Job Subscriptions on Request Chains");
+
+    for request_chain_id in contracts_client.request_chain_ids.clone() {
+        let contracts_client_clone = contracts_client.clone();
+        let req_chain_tx_clone = req_chain_tx.clone();
+
+        tokio::spawn(async move {
+            process_historic_subscription_jobs_on_request_chain(
+                &contracts_client_clone,
+                request_chain_id,
+                req_chain_tx_clone,
+            )
+            .await;
+        });
+    }
+}
+
+pub async fn process_historic_subscription_jobs_on_request_chain(
+    contracts_client: &Arc<ContractsClient>,
+    request_chain_id: u64,
+    req_chain_tx: Sender<Job>,
+) {
+    let logs = contracts_client
+        .request_chain_historic_subscription_jobs(
+            contracts_client
+                .request_chain_clients
+                .get(&request_chain_id)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    for log in logs {
+        if log.topics[0] == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into() {
+            add_subscription_job(
+                contracts_client,
+                log,
+                request_chain_id,
+                req_chain_tx.clone(),
+            )
+            .await
+            .unwrap();
+        } else if log.topics[0]
+            == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
+        {
+            let _ = update_subscription_job_params(contracts_client, log).await;
+        } else if log.topics[0]
+            == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT).into()
+        {
+            let _ = update_subscription_job_termination_params(contracts_client, log).await;
+        }
     }
 }
 
@@ -98,14 +163,36 @@ pub async fn job_subscription_manager(
                 let subscription = subscription.unwrap();
 
                 let req_chain_tx_clone = req_chain_tx.clone();
-                let subscription_clone = subscription.clone();
+
+                let subscription_job: Option<SubscriptionJob>;
+                // Scope for read lock on subscription_jobs
+                {
+                    let subscription_jobs_guard = contracts_client.subscription_jobs.read().unwrap();
+                    subscription_job = subscription_jobs_guard
+                        .get(&subscription.subscription_id)
+                        .cloned();
+                }
+
+                if subscription_job.is_none() {
+                    info!(
+                        "Job No longer active for Subscription - Subscription ID: {}",
+                        subscription.subscription_id
+                    );
+                    return;
+                }
+
                 tokio::spawn(async move {
-                    trigger_subscription_job(subscription_clone, contracts_client_clone, req_chain_tx_clone).await;
+                    trigger_subscription_job(
+                        subscription_job.unwrap(),
+                        subscription.next_trigger_time,
+                        contracts_client_clone,
+                        req_chain_tx_clone
+                    ).await;
                 });
                 add_next_trigger_time_to_heap(
                     &contracts_client,
                     subscription.subscription_id.clone(),
-                    Some(subscription.next_trigger_time)
+                    subscription.next_trigger_time
                 ).await;
             }
             else => {
@@ -120,6 +207,7 @@ pub async fn add_subscription_job(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
     request_chain_id: u64,
+    req_chain_tx: Sender<Job>,
 ) -> Result<(), ServerlessError> {
     let types = vec![
         ParamType::Uint(256),
@@ -153,43 +241,105 @@ pub async fn add_subscription_job(
         starttime: decoded[7].clone().into_uint().unwrap().into(),
     };
 
+    let current_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    if subscription_job.termination_time.as_u64() < current_timestamp {
+        info!(
+            "Subscription Job has reached termination time - Subscription ID: {}",
+            subscription_job.subscription_id
+        );
+        return Ok(());
+    }
+
     // Scope for write lock on subscription_jobs
     {
         let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
         subscription_jobs.insert(subscription_job.subscription_id, subscription_job.clone());
     }
 
-    add_next_trigger_time_to_heap(&contracts_client, subscription_job.subscription_id, None).await;
+    let minimum_timestamp_for_job = current_timestamp
+        - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+        - contracts_client.offset_for_epoch;
+
+    if subscription_job.starttime.as_u64() >= minimum_timestamp_for_job {
+        let contracts_client_clone = contracts_client.clone();
+        let subscription_job_clone = subscription_job.clone();
+
+        tokio::spawn(async move {
+            trigger_subscription_job(
+                subscription_job_clone,
+                subscription_job.starttime.as_u64(),
+                contracts_client_clone,
+                req_chain_tx,
+            )
+        });
+    }
+
+    add_next_trigger_time_to_heap(
+        &contracts_client,
+        subscription_job.subscription_id,
+        subscription_job.starttime.as_u64(),
+    )
+    .await;
     Ok(())
 }
 
 async fn add_next_trigger_time_to_heap(
     contracts_client: &Arc<ContractsClient>,
     subscription_id: U256,
-    previous_trigger_time: Option<u64>,
+    previous_trigger_time: u64,
 ) {
-    let subscription_job: SubscriptionJob = contracts_client
+    let subscription_job = contracts_client
         .subscription_jobs
         .read()
         .unwrap()
         .get(&subscription_id)
-        .cloned()
-        .unwrap();
+        .cloned();
 
-    let next_trigger_time = {
-        if previous_trigger_time.is_some() {
-            previous_trigger_time.unwrap() + subscription_job.interval.as_u64()
-        } else {
-            (subscription_job.starttime + subscription_job.interval).as_u64()
-        }
-    };
+    if subscription_job.is_none() {
+        error!(
+            "Subscription Job not found for Subscription ID: {}",
+            subscription_id
+        );
+        return;
+    }
+
+    let subscription_job = subscription_job.unwrap();
+
+    let mut next_trigger_time = previous_trigger_time + subscription_job.interval.as_u64();
 
     if next_trigger_time > subscription_job.termination_time.as_u64() {
         info!(
             "Subscription Job has reached termination time - Subscription ID: {}",
             subscription_job.subscription_id
         );
+        // Scope for write lock on subscription_jobs
+        {
+            let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
+            subscription_jobs.remove(&subscription_id);
+        }
         return;
+    }
+
+    let current_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let minimum_timestamp_for_job = current_timestamp
+        - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+        - contracts_client.offset_for_epoch;
+
+    if next_trigger_time < minimum_timestamp_for_job {
+        let instance_count = ((minimum_timestamp_for_job - subscription_job.starttime.as_u64())
+            / subscription_job.interval.as_u64())
+            + 1;
+
+        next_trigger_time = subscription_job.starttime.as_u64()
+            + instance_count * subscription_job.interval.as_u64();
     }
 
     // Scope for write lock on subscription_job_heap
@@ -203,34 +353,17 @@ async fn add_next_trigger_time_to_heap(
 }
 
 async fn trigger_subscription_job(
-    subscription: SubscriptionJobHeap,
+    subscription_job: SubscriptionJob,
+    trigger_timestamp: u64,
     contracts_client: Arc<ContractsClient>,
     req_chain_tx: Sender<Job>,
 ) {
     info!(
         "Triggering subscription job with ID: {}",
-        subscription.subscription_id
+        subscription_job.subscription_id
     );
 
-    let subscription_job: Option<SubscriptionJob>;
-    {
-        let subscription_jobs_guard = contracts_client.subscription_jobs.read().unwrap();
-        subscription_job = subscription_jobs_guard
-            .get(&subscription.subscription_id)
-            .cloned();
-    }
-
-    if subscription_job.is_none() {
-        info!(
-            "Job No longer active for Subscription - Subscription ID: {}",
-            subscription.subscription_id
-        );
-        return;
-    }
-
-    let subscription_job = subscription_job.unwrap();
-
-    let job = subscription_job_to_relay_job(subscription_job, subscription.next_trigger_time).await;
+    let job = subscription_job_to_relay_job(subscription_job, trigger_timestamp).await;
 
     contracts_client
         .job_relayed_handler(job, req_chain_tx)
