@@ -27,7 +27,10 @@ use crate::constant::{
     MIN_GATEWAY_STAKE, REQUEST_RELAY_TIMEOUT,
 };
 use crate::error::ServerlessError;
-use crate::job_subscription_management::job_subscription_manager;
+use crate::job_subscription_management::{
+    add_subscription_job, job_subscription_manager, update_subscription_job_params,
+    update_subscription_job_termination_params,
+};
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobMode, JobSubscriptionAction,
     JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob,
@@ -347,18 +350,25 @@ impl ContractsClient {
                         ).await;
                     });
                 } else if topics[0] == keccak256("JobSubscriptionStarted(uint256,address,uint256,uint256,uint256,uint256,address,bytes32,bytes,uint256)").into() {
+                    let subscription_id: H160 = log.topics[1].into();
+
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionStarted jobID: {:?}",
-                        chain_id, log.topics[1]
+                        chain_id, subscription_id
                     );
+
+                    let _ = add_subscription_job(
+                        &self,
+                        log,
+                        chain_id
+                    ).await;
 
                     let job_subscription_tx_clone = job_subscription_tx.clone();
 
                     tokio::spawn(async move{
                         job_subscription_tx_clone.send(JobSubscriptionChannelType{
-                            subscription_log: log,
                             subscription_action: JobSubscriptionAction::Add,
-                            request_chain_id: chain_id,
+                            subscription_id
                         }).await.unwrap();
                     });
                 }
@@ -368,14 +378,13 @@ impl ContractsClient {
                         chain_id, log.topics[1]
                     );
 
-                    let job_subscription_tx_clone = job_subscription_tx.clone();
+                    let self_clone = Arc::clone(&self);
 
-                    tokio::spawn(async move{
-                        job_subscription_tx_clone.send(JobSubscriptionChannelType{
-                            subscription_log: log,
-                            subscription_action: JobSubscriptionAction::ParamsUpdate,
-                            request_chain_id: chain_id,
-                        }).await.unwrap();
+                    tokio::spawn(async move {
+                        let _ = update_subscription_job_params(
+                            &self_clone,
+                            log,
+                        ).await;
                     });
                 } else if topics[0] == keccak256("JobSubscriptionTerminationParamsUpdated(uint256,uint256)").into() {
                     info!(
@@ -383,14 +392,12 @@ impl ContractsClient {
                         chain_id, log.topics[1]
                     );
 
-                    let job_subscription_tx_clone = job_subscription_tx.clone();
-
-                    tokio::spawn(async move{
-                        job_subscription_tx_clone.send(JobSubscriptionChannelType{
-                            subscription_log: log,
-                            subscription_action: JobSubscriptionAction::TerminationParamsUpdate,
-                            request_chain_id: chain_id,
-                        }).await.unwrap();
+                    let self_clone = Arc::clone(&self);
+                    tokio::spawn(async move {
+                        let _ = update_subscription_job_termination_params(
+                            &self_clone,
+                            log
+                        ).await;
                     });
                 } else {
                     error!(

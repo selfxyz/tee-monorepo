@@ -73,47 +73,9 @@ pub async fn job_subscription_manager(
                 match job_subscription_channel_data.subscription_action {
                     JobSubscriptionAction::Add => {
                         info!(
-                            "Adding new subscription JobSubscriptionId: {}",
-                            job_subscription_channel_data.subscription_log.topics[1]
+                            "Added new subscription JobSubscriptionId: {}",
+                            job_subscription_channel_data.subscription_id
                         );
-                        let contracts_client_clone = contracts_client.clone();
-                        tokio::spawn(async move {
-                            let _ = add_subscription_job(
-                                &contracts_client_clone,
-                                job_subscription_channel_data.subscription_log,
-                                job_subscription_channel_data.request_chain_id
-                            ).await;
-                        });
-                    }
-                    JobSubscriptionAction::ParamsUpdate => {
-                        info!(
-                            "Updating subscription JobSubscriptionId: {}",
-                            job_subscription_channel_data.subscription_log.topics[1]
-                        );
-
-                        let contracts_client_clone = contracts_client.clone();
-
-                        tokio::spawn(async move {
-                            let _ = update_subscription_job_params(
-                                &contracts_client_clone,
-                                job_subscription_channel_data.subscription_log,
-                            ).await;
-                        });
-                    }
-                    JobSubscriptionAction::TerminationParamsUpdate => {
-                        info!(
-                            "Updating termination params for subscription JobSubscriptionId: {}",
-                            job_subscription_channel_data.subscription_log.topics[1]
-                        );
-
-                        let contracts_client_clone = contracts_client.clone();
-
-                        tokio::spawn(async move {
-                            let _ = update_subscription_job_termination_params(
-                                &contracts_client_clone,
-                                job_subscription_channel_data.subscription_log
-                            ).await;
-                        });
                     }
                 }
             }
@@ -154,7 +116,7 @@ pub async fn job_subscription_manager(
     }
 }
 
-async fn add_subscription_job(
+pub async fn add_subscription_job(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
     request_chain_id: u64,
@@ -191,6 +153,7 @@ async fn add_subscription_job(
         starttime: decoded[7].clone().into_uint().unwrap().into(),
     };
 
+    // Scope for write lock on subscription_jobs
     {
         let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
         subscription_jobs.insert(subscription_job.subscription_id, subscription_job.clone());
@@ -213,25 +176,13 @@ async fn add_next_trigger_time_to_heap(
         .cloned()
         .unwrap();
 
-    let mut next_trigger_time = {
+    let next_trigger_time = {
         if previous_trigger_time.is_some() {
             previous_trigger_time.unwrap() + subscription_job.interval.as_u64()
         } else {
             (subscription_job.starttime + subscription_job.interval).as_u64()
         }
     };
-
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // if the next trigger time is in the past, we need to find the next trigger time
-    if next_trigger_time <= current_time {
-        let how_many_intervals =
-            (current_time - next_trigger_time) / subscription_job.interval.as_u64();
-        next_trigger_time += (how_many_intervals + 1) * subscription_job.interval.as_u64();
-    }
 
     if next_trigger_time > subscription_job.termination_time.as_u64() {
         info!(
@@ -240,6 +191,8 @@ async fn add_next_trigger_time_to_heap(
         );
         return;
     }
+
+    // Scope for write lock on subscription_job_heap
     {
         let mut subscription_job_heap = contracts_client.subscription_job_heap.write().unwrap();
         subscription_job_heap.push(SubscriptionJobHeap {
@@ -309,7 +262,7 @@ async fn subscription_job_to_relay_job(
     }
 }
 
-async fn update_subscription_job_params(
+pub async fn update_subscription_job_params(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
 ) -> Result<(), ServerlessError> {
@@ -356,7 +309,7 @@ async fn update_subscription_job_params(
     Ok(())
 }
 
-async fn update_subscription_job_termination_params(
+pub async fn update_subscription_job_termination_params(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
 ) -> Result<(), ServerlessError> {

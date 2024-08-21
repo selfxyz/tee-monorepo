@@ -1,6 +1,6 @@
 use ethers::abi::FixedBytes;
 use ethers::signers::LocalWallet;
-use ethers::types::{Address, Bytes, Log, H160, U256};
+use ethers::types::{Address, Bytes, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -171,15 +171,12 @@ pub struct ResponseJob {
 #[derive(Debug, Clone, PartialEq)]
 pub enum JobSubscriptionAction {
     Add,
-    ParamsUpdate,
-    TerminationParamsUpdate,
 }
 
 #[derive(Debug, Clone)]
 pub struct JobSubscriptionChannelType {
-    pub subscription_log: Log,
     pub subscription_action: JobSubscriptionAction,
-    pub request_chain_id: u64,
+    pub subscription_id: H160,
 }
 
 #[derive(Debug, Clone, PartialEq)]
