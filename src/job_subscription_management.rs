@@ -105,6 +105,7 @@ pub async fn process_historic_subscription_jobs_on_request_chain(
                 log,
                 request_chain_id,
                 req_chain_tx.clone(),
+                true,
             )
             .await
             .unwrap();
@@ -192,7 +193,8 @@ pub async fn job_subscription_manager(
                 add_next_trigger_time_to_heap(
                     &contracts_client,
                     subscription.subscription_id.clone(),
-                    subscription.next_trigger_time
+                    subscription.next_trigger_time,
+                    false,
                 ).await;
             }
             else => {
@@ -208,6 +210,7 @@ pub async fn add_subscription_job(
     subscription_log: Log,
     request_chain_id: u64,
     req_chain_tx: Sender<Job>,
+    is_historic_log: bool,
 ) -> Result<(), ServerlessError> {
     let types = vec![
         ParamType::Uint(256),
@@ -260,14 +263,20 @@ pub async fn add_subscription_job(
         subscription_jobs.insert(subscription_job.subscription_id, subscription_job.clone());
     }
 
-    let minimum_timestamp_for_job = current_timestamp
-        - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
-        - contracts_client.offset_for_epoch;
+    let mut to_trigger_first_instance = true;
+    if is_historic_log {
+        let minimum_timestamp_for_job = current_timestamp
+            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+            - contracts_client.offset_for_epoch;
 
-    if subscription_job.starttime.as_u64() >= minimum_timestamp_for_job {
+        if subscription_job.starttime.as_u64() < minimum_timestamp_for_job {
+            to_trigger_first_instance = false;
+        }
+    }
+
+    if to_trigger_first_instance {
         let contracts_client_clone = contracts_client.clone();
         let subscription_job_clone = subscription_job.clone();
-
         tokio::spawn(async move {
             trigger_subscription_job(
                 subscription_job_clone,
@@ -282,6 +291,7 @@ pub async fn add_subscription_job(
         &contracts_client,
         subscription_job.subscription_id,
         subscription_job.starttime.as_u64(),
+        is_historic_log,
     )
     .await;
     Ok(())
@@ -291,6 +301,7 @@ async fn add_next_trigger_time_to_heap(
     contracts_client: &Arc<ContractsClient>,
     subscription_id: U256,
     previous_trigger_time: u64,
+    is_historic_log: bool,
 ) {
     let subscription_job = contracts_client
         .subscription_jobs
@@ -324,22 +335,25 @@ async fn add_next_trigger_time_to_heap(
         return;
     }
 
-    let current_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    if is_historic_log {
+        let current_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-    let minimum_timestamp_for_job = current_timestamp
-        - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
-        - contracts_client.offset_for_epoch;
+        let minimum_timestamp_for_job = current_timestamp
+            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+            - contracts_client.offset_for_epoch;
 
-    if next_trigger_time < minimum_timestamp_for_job {
-        let instance_count = ((minimum_timestamp_for_job - subscription_job.starttime.as_u64())
-            / subscription_job.interval.as_u64())
-            + 1;
+        if next_trigger_time < minimum_timestamp_for_job {
+            let instance_count = ((minimum_timestamp_for_job
+                - subscription_job.starttime.as_u64())
+                / subscription_job.interval.as_u64())
+                + 1;
 
-        next_trigger_time = subscription_job.starttime.as_u64()
-            + instance_count * subscription_job.interval.as_u64();
+            next_trigger_time = subscription_job.starttime.as_u64()
+                + instance_count * subscription_job.interval.as_u64();
+        }
     }
 
     // Scope for write lock on subscription_job_heap
