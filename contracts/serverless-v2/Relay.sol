@@ -882,18 +882,21 @@ contract Relay is
         uint8 _errorCode,
         uint256 _signTimestamp
     ) internal {
-        Job memory job = jobSubscriptions[_jobSubsId].job;
-        if (job.jobOwner == address(0)) 
+        JobSubscription memory jobSubs = jobSubscriptions[_jobSubsId];
+        if (jobSubs.job.jobOwner == address(0)) 
             revert RelayInvalidJobSubscription();
 
-        // check time case
-        // if (block.timestamp > job.startTime + OVERALL_TIMEOUT) revert RelayOverallTimeoutOver();
+        // getting the virtual start time of the job subscription current run
+        uint256 jobStartTime = jobSubs.job.startTime + (jobSubs.currentRuns * jobSubs.periodicGap);
+        if(block.timestamp > jobStartTime + OVERALL_TIMEOUT)
+            revert RelayOverallTimeoutOver();
 
+        // adjusting currentRuns to last 127 bits of jobSubsId to prevent txn replay
+        uint256 jobId = _jobSubsId | (jobSubs.currentRuns + 1);
         // signature check
-        // this gateway sign verification func can be reused, just need to replace jobId with jobSubsId
         address enclaveAddress = _verifyJobResponseSign(
             _signature,
-            _jobSubsId,
+            jobId,
             _output,
             _totalTime,
             _errorCode,
@@ -903,11 +906,11 @@ contract Relay is
         jobSubscriptions[_jobSubsId].currentRuns += 1;
         jobSubscriptions[_jobSubsId].lastRunTimestamp = block.timestamp;
 
-        _releaseJobSubsEscrowAmount(enclaveAddress, _totalTime, job.usdcDeposit);
+        _releaseJobSubsEscrowAmount(enclaveAddress, _totalTime, jobSubs.job.usdcDeposit);
 
         (bool success, uint256 callbackGas) = _callBackWithLimit(
             _jobSubsId,
-            job,
+            jobSubs.job,
             _output,
             _errorCode
         );
@@ -915,7 +918,7 @@ contract Relay is
         // TODO: FIXED_GAS will be different for this function
         uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
 
-        _releaseJobSubsGasCostOnSuccess(gatewayOwners[enclaveAddress], job.callbackDeposit, callbackCost);
+        _releaseJobSubsGasCostOnSuccess(gatewayOwners[enclaveAddress], jobSubs.job.callbackDeposit, callbackCost);
 
         uint256 currentRuns = jobSubscriptions[_jobSubsId].currentRuns;
         emit JobSubscriptionResponded(
