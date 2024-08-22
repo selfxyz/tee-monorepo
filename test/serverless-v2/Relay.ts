@@ -1236,6 +1236,829 @@ describe("Relay - Job sent by UserSample contract", function () {
 
 });
 
+describe("Relay - Start Job Subscription", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let token: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+
+		await token.transfer(addrs[2], 10000000);
+		await token.connect(signers[2]).approve(relay.target, 10000000);
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can start job subscription", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 100,
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 1000000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 20;
+		await setNextBlockBaseFeePerGas(1);
+		let tx = await relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.emit(relay, "JobSubscriptionStarted");
+
+		let key = await relay.jobSubsCount();
+		let jobSubs = await relay.jobSubscriptions(key);
+
+		expect(jobSubs.job.jobOwner).to.eq(addrs[2]);
+	});
+
+	it("cannot start job subscription with invalid termination timestamp", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 100,
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 1000000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() - 10;
+		let tx = relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidTerminationTimestamp");
+	});
+
+	it("cannot start job subscription with invalid user timeout", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 500,
+			maxGasPrice = 100,
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 1000000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 20;
+		let tx = relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
+
+		userTimeout = 1000 * 1000;	// 1000ms
+		tx = relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
+	});
+
+	it("cannot start job subscription with insufficient callback deposit", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 100,
+			callbackDeposit = 0,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 1000000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 20;
+
+		await setNextBlockBaseFeePerGas(1);
+
+		let tx = relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientCallbackDeposit");
+	});
+
+	it("cannot start job subscription with invalid max gas price", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 0,
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 1000000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 20;
+		let tx = relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientMaxGasPrice");
+	});
+
+	it("cannot start job subscription with insufficient usdc deposit", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = parseUnits("1", 9),
+			callbackDeposit = parseUnits("1"),
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 1000000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 50;
+		let tx = relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientUsdcDeposit");
+	});
+});
+
+describe("Relay - Job Subscription Response", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let token: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+	let callbackDeposit: bigint;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+
+		await token.transfer(addrs[2], 10000000);
+		await token.connect(signers[2]).approve(relay.target, 10000000);
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 10,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 0,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 20;
+		callbackDeposit = parseUnits("1");
+		await setNextBlockBaseFeePerGas(1);
+		await relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can submit response", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createJobResponseSignature(jobSubsId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobSubsResponse(signedDigest, jobSubsId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.emit(relay, "JobSubscriptionResponded");
+
+		let jobSubs = await relay.jobSubscriptions(jobSubsId);
+		expect(jobSubs.currentRuns).to.eq(1);
+	});
+
+	it("cannot submit response for an invalid job subscription", async function () {
+		let jobSubsId = 1,
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createJobResponseSignature(jobSubsId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobSubsResponse(signedDigest, jobSubsId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidJobSubscription");
+	});
+
+	it("cannot submit response with expired signature", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest() - 700;
+
+		let signedDigest = await createJobResponseSignature(jobSubsId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[1]).jobSubsResponse(signedDigest, jobSubsId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.revertedWithCustomError(relay, "RelaySignatureTooOld");
+	});
+
+	it("cannot submit output from unverified gateway", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let signedDigest = await createJobResponseSignature(jobSubsId, output, totalTime, errorCode, signTimestamp, wallets[16]);
+		let tx = relay.connect(signers[1]).jobSubsResponse(signedDigest, jobSubsId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified");
+	});
+
+	it("callback cost is greater than the deposit", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let initBalance1 = await ethers.provider.getBalance(addrs[1]);
+		let initBalance2 = await ethers.provider.getBalance(addrs[2]);
+		await setNextBlockBaseFeePerGas(1e14);
+		let signedDigest = await createJobResponseSignature(jobSubsId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		await relay.connect(signers[3]).jobSubsResponse(signedDigest, jobSubsId, output, totalTime, errorCode, signTimestamp);
+		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance1 + callbackDeposit);
+		expect(await ethers.provider.getBalance(addrs[2])).to.equal(initBalance2);
+	});
+
+});
+
+describe("Relay - Job Subscription Deposit", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let token: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+	let callbackDeposit: bigint;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+
+		await token.transfer(addrs[2], 10000000);
+		await token.connect(signers[2]).approve(relay.target, 10000000);
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 10,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 0,
+			periodicGap = 50,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 100;
+		callbackDeposit = parseUnits("1", 7);
+		await setNextBlockBaseFeePerGas(1);
+		await relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can deposit USDC and ETH later", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			usdcDeposit = 2000000n;
+		let jobSubsInitial = await relay.jobSubscriptions(jobSubsId);
+
+		let tx = relay.connect(signers[2])
+			.depositForJobSubscription(jobSubsId, usdcDeposit, 
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.emit(relay, "JobSubscriptionDeposited")
+			.withArgs(jobSubsId, addrs[2], usdcDeposit, callbackDeposit);
+
+		let jobSubsFinal = await relay.jobSubscriptions(jobSubsId);
+		expect(jobSubsFinal.job.usdcDeposit).to.eq(jobSubsInitial.job.usdcDeposit + usdcDeposit);
+		expect(jobSubsFinal.job.callbackDeposit).to.eq(jobSubsInitial.job.callbackDeposit + callbackDeposit);
+	});
+
+	it("cannot deposit assets later for invalid job subsription", async function () {
+		let jobSubsId = 1,
+			usdcDeposit = 2000000n;
+
+		let tx = relay.connect(signers[2])
+			.depositForJobSubscription(jobSubsId, usdcDeposit, 
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidJobSubscription");
+	});
+});
+
+describe("Relay - Update Job Subscription Params", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let token: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+	let callbackDeposit: bigint;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+
+		await token.transfer(addrs[2], 10000000);
+		await token.connect(signers[2]).approve(relay.target, 10000000);
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 10,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 0,
+			periodicGap = 50,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 100;
+		callbackDeposit = parseUnits("1", 7);
+		await setNextBlockBaseFeePerGas(1);
+		await relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can update job params", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			codeHash = keccak256(solidityPacked(["string"], ["codehash1"])),
+			codeInputs = solidityPacked(["string"], ["codeInput1"]);
+
+		let tx = relay.connect(signers[2]).updateJobParams(jobSubsId, codeHash, codeInputs);
+		await expect(tx).to.emit(relay, "JobSubscriptionJobParamsUpdated")
+			.withArgs(jobSubsId, codeHash, codeInputs);
+
+		let jobSubs = await relay.jobSubscriptions(jobSubsId);
+		expect(jobSubs.job.codehash).to.eq(codeHash);
+		expect(jobSubs.job.codeInputs).to.eq(codeInputs);
+	});
+
+	it("cannot update job params without job subscription owner account", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			codeHash = keccak256(solidityPacked(["string"], ["codehash1"])),
+			codeInputs = solidityPacked(["string"], ["codeInput1"]);
+
+		let tx = relay.connect(signers[1]).updateJobParams(jobSubsId, codeHash, codeInputs);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayNotJobSubscriptionOwner");
+	});
+
+	it("can update job termination params", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			terminationTimestamp = await time.latest() + 110,
+			usdcDeposit = 2000000n;
+		
+		let jobSubsInitial = await relay.jobSubscriptions(jobSubsId);
+		
+		let tx = relay.connect(signers[2])
+			.updateJobTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit, 
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.emit(relay, "JobSubscriptionTerminationParamsUpdated")
+			.withArgs(jobSubsId, terminationTimestamp);
+
+		let jobSubsFinal = await relay.jobSubscriptions(jobSubsId);
+		expect(jobSubsFinal.terminationTimestamp).to.eq(terminationTimestamp);
+		expect(jobSubsFinal.job.usdcDeposit).to.eq(jobSubsInitial.job.usdcDeposit + usdcDeposit);
+		expect(jobSubsFinal.job.callbackDeposit).to.eq(jobSubsInitial.job.callbackDeposit + callbackDeposit);
+	});
+
+	it("cannot update job termination params without job subscription owner account", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			terminationTimestamp = await time.latest() + 110,
+			usdcDeposit = 2000000;
+
+		let tx = relay.connect(signers[1])
+			.updateJobTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit, 
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.be.revertedWithCustomError(relay, "RelayNotJobSubscriptionOwner");
+	});
+
+	it("cannot update job termination params with invalid termination timestamp", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			terminationTimestamp = await time.latest() + 90,
+			usdcDeposit = 2000000;
+
+		let tx = relay.connect(signers[2])
+			.updateJobTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit, 
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.be.revertedWithCustomError(relay, "RelayInvalidTerminationTimestamp");
+	});
+
+	it("cannot update job termination params with insufficient callback deposit", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			terminationTimestamp = await time.latest() + 1000,
+			usdcDeposit = 2000000;
+
+		let tx = relay.connect(signers[2])
+			.updateJobTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit, 
+				{ value: 0 }
+			);
+		await expect(tx).to.be.revertedWithCustomError(relay, "RelayInsufficientCallbackDeposit");
+	});
+
+	it("cannot update job termination params with insufficient USDC deposit", async function () {
+		let jobSubsId: any = await relay.jobSubsCount(),
+			terminationTimestamp = await time.latest() + 1000,
+			usdcDeposit = 2000000;
+
+		let tx = relay.connect(signers[2])
+			.updateJobTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit, 
+				{ value: parseUnits("1") }
+			);
+		await expect(tx).to.be.revertedWithCustomError(relay, "RelayInsufficientUsdcDeposit");
+	});
+});
+
+describe("Relay - Job Subscription Termination", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let token: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+	let callbackDeposit: bigint;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+
+		await token.transfer(addrs[2], 10000000);
+		await token.connect(signers[2]).approve(relay.target, 10000000);
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 10,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 0,
+			periodicGap = 50,
+			usdcDeposit = 2000000,
+			terminationTimestamp = await time.latest() + 100;
+		callbackDeposit = parseUnits("1", 7);
+		await setNextBlockBaseFeePerGas(1);
+		await relay.connect(signers[2])
+			.startJobSubscription(
+				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, terminationTimestamp,
+				{ value: callbackDeposit }
+			);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can terminate job subscription", async function () {
+		let jobSubsId: any = await relay.jobSubsCount();
+		let jobSubsInitial = await relay.jobSubscriptions(jobSubsId);
+		let jobOwnerUsdcBalInit = await token.balanceOf(addrs[2]);
+		let jobOwnerEthBalInit = await ethers.provider.getBalance(addrs[2]);
+
+		await time.increase(210);
+		let tx = relay.connect(signers[2]).terminateJobSubscription(jobSubsId);
+		await expect(tx).to.emit(relay, "JobSubscriptionTerminated");
+
+		let jobSubsFinal = await relay.jobSubscriptions(jobSubsId);
+		let jobOwnerUsdcBalFinal = await token.balanceOf(addrs[2]);
+		let jobOwnerEthBalFinal = await ethers.provider.getBalance(addrs[2]);
+
+		expect(jobSubsFinal.job.jobOwner).to.eq(ZeroAddress);
+		expect(jobOwnerUsdcBalFinal).to.be.eq(jobOwnerUsdcBalInit + jobSubsInitial.job.usdcDeposit);
+		expect(jobOwnerEthBalFinal).to.be.gt(jobOwnerEthBalInit);
+	});
+
+	it("cannot terminate job subscription without job subscription owner account", async function () {
+		let jobSubsId: any = await relay.jobSubsCount();
+
+		let tx = relay.connect(signers[1]).terminateJobSubscription(jobSubsId);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayNotJobSubscriptionOwner");
+	});
+
+	it("cannot terminate job subscription befre termination condition is met", async function () {
+		let jobSubsId: any = await relay.jobSubsCount();
+
+		let tx = relay.connect(signers[2]).terminateJobSubscription(jobSubsId);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayTerminationConditionPending");
+	});
+});
+
 function normalize(key: string): string {
 	return '0x' + key.substring(4);
 }
