@@ -772,6 +772,8 @@ contract Relay is
 
     /// @notice Error for when a job subscription is invalid.
     error RelayInvalidJobSubscription();
+    /// @notice Error for when the current runs in job response jobId is invalid.
+    error RelayInvalidCurrentRuns();
     /// @notice Error for when insufficient USDC is being deposited for a job subscription.
     error RelayInsufficientUsdcDeposit();
     /// @notice Error for when the termination timestamp is being updated to an invalid value.
@@ -876,13 +878,14 @@ contract Relay is
 
     function _jobSubsResponse(
         bytes calldata _signature,
-        uint256 _jobSubsId,
+        uint256 _jobId,
         bytes calldata _output,
         uint256 _totalTime,
         uint8 _errorCode,
         uint256 _signTimestamp
     ) internal {
-        JobSubscription memory jobSubs = jobSubscriptions[_jobSubsId];
+        uint256 subId = (_jobId >> 127) & ((1 << 64) - 1);
+        JobSubscription memory jobSubs = jobSubscriptions[subId];
         if (jobSubs.job.jobOwner == address(0)) 
             revert RelayInvalidJobSubscription();
 
@@ -891,25 +894,28 @@ contract Relay is
         if(block.timestamp > jobStartTime + OVERALL_TIMEOUT)
             revert RelayOverallTimeoutOver();
 
-        // adjusting currentRuns to last 127 bits of jobSubsId to prevent txn replay
-        uint256 jobId = _jobSubsId | (jobSubs.currentRuns + 1);
+        uint256 instanceCount = _jobId & ((1 << 127) - 1);
+        // note: instance count for the first output should be 1
+        if(instanceCount <= jobSubs.currentRuns)
+            revert RelayInvalidCurrentRuns();
+
         // signature check
         address enclaveAddress = _verifyJobResponseSign(
             _signature,
-            jobId,
+            _jobId,
             _output,
             _totalTime,
             _errorCode,
             _signTimestamp
         );
 
-        jobSubscriptions[_jobSubsId].currentRuns += 1;
-        jobSubscriptions[_jobSubsId].lastRunTimestamp = block.timestamp;
+        jobSubscriptions[subId].currentRuns = instanceCount;
+        jobSubscriptions[subId].lastRunTimestamp = block.timestamp;
 
         _releaseJobSubsEscrowAmount(enclaveAddress, _totalTime, jobSubs.job.usdcDeposit);
 
         (bool success, uint256 callbackGas) = _callBackWithLimit(
-            _jobSubsId,
+            subId,
             jobSubs.job,
             _output,
             _errorCode
@@ -920,14 +926,13 @@ contract Relay is
 
         _releaseJobSubsGasCostOnSuccess(gatewayOwners[enclaveAddress], jobSubs.job.callbackDeposit, callbackCost);
 
-        uint256 currentRuns = jobSubscriptions[_jobSubsId].currentRuns;
         emit JobSubscriptionResponded(
-            _jobSubsId,
+            subId,
             _output,
             _totalTime,
             _errorCode,
             success,
-            currentRuns,
+            instanceCount,
             block.timestamp
         );
     }
@@ -1098,7 +1103,8 @@ contract Relay is
      * @notice Function for the gateway to respond to a periodic job within a subscription.
      * @dev The response includes output data, execution time, and error code.
      * @param _signature The signature of the gateway enclave verifying the job response.
-     * @param _jobSubsId The unique identifier of the job subscription.
+     * @param _jobId The unique identifier of the job of a specific job subscription. Last 127 bits 
+     *               store the current runs count for which the response is being submitted.
      * @param _output The output data from the job execution.
      * @param _totalTime The total time taken for job execution in milliseconds.
      * @param _errorCode The error code returned from the job execution.
@@ -1106,13 +1112,13 @@ contract Relay is
      */
     function jobSubsResponse(
         bytes calldata _signature,
-        uint256 _jobSubsId,
+        uint256 _jobId,
         bytes calldata _output,
         uint256 _totalTime,
         uint8 _errorCode,
         uint256 _signTimestamp
     ) external {
-        _jobSubsResponse(_signature, _jobSubsId, _output, _totalTime, _errorCode, _signTimestamp);
+        _jobSubsResponse(_signature, _jobId, _output, _totalTime, _errorCode, _signTimestamp);
     }
 
     /**
