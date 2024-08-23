@@ -37,7 +37,7 @@ contract Relay is
      * @notice Initializes the logic contract with essential parameters and disables further 
      * initializations of the logic contract.
      * @param attestationVerifier The contract responsible for verifying attestations.
-     * @param maxAge The maximum age for attestations.
+     * @param maxAge The maximum age for attestations and signature, in seconds.
      * @param _token The ERC20 token used for payments and deposits.
      * @param _globalMinTimeout The minimum timeout value for jobs.
      * @param _globalMaxTimeout The maximum timeout value for jobs. This refers to the max time for the executor to execute the job.
@@ -198,9 +198,13 @@ contract Relay is
      */
     event GatewayDeregistered(address indexed enclaveAddress);
 
+    /// @notice Error for when the gateway with a given enclave address is already registered.
     error RelayGatewayAlreadyExists();
-    error RelayInvalidGateway();
+    /// @notice Error for when the msg.sender isn't the gateway owner.
+    error RelayInvalidGatewayOwner();
+    /// @notice Error for when the signature has expired.
     error RelaySignatureTooOld();
+    /// @notice Error for when a given signature hasn't been signed by the gateway enclave.
     error RelayInvalidSigner();
 
     //-------------------------------- internal functions start --------------------------------//
@@ -242,7 +246,7 @@ contract Relay is
     }
 
     function _deregisterGateway(address _enclaveAddress, address _owner) internal {
-        if (gatewayOwners[_enclaveAddress] != _owner) revert RelayInvalidGateway();
+        if (gatewayOwners[_enclaveAddress] != _owner) revert RelayInvalidGatewayOwner();
 
         _revokeEnclaveKey(gatewayOwners[_enclaveAddress]);
         delete gatewayOwners[_enclaveAddress];
@@ -311,10 +315,10 @@ contract Relay is
      * @param codehash The transaction hash storing the code to be executed.
      * @param codeInputs The inputs for the code execution.
      * @param userTimeout The timeout specified by the user for the job.
-     * @param maxGasPrice The maximum gas price allowed for the job.
+     * @param maxGasPrice The maximum gas price allowed for the job response and callback method.
      * @param usdcDeposit The USDC deposit provided for the job.
      * @param callbackDeposit The callback deposit provided for the job.
-     * @param refundAccount The address where the refund will be sent.
+     * @param refundAccount The address where the slashed token will be sent on common chain.
      * @param callbackContract The address of the callback contract.
      * @param startTime The timestamp when the job was started.
      * @param callbackGasLimit The gas limit for the callback execution.
@@ -339,7 +343,7 @@ contract Relay is
      * @param output The output from the job execution.
      * @param totalTime The total time taken for the job execution.
      * @param errorCode The error code if the job failed.
-     * @param success A boolean indicating if the job was successful.
+     * @param success A boolean indicating if the callback was successful.
      */
     event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint256 errorCode, bool success);
 
@@ -564,7 +568,7 @@ contract Relay is
      * @dev The job parameters are validated before relaying to the enclave.
      *      The job escrow amount (USDC+ETH) is transferred to the contract.
      * @param _codehash The transaction hash storing the code to be executed by the enclave.
-     * @param _codeInputs The excrypted inputs to the code to be executed.
+     * @param _codeInputs The inputs to the code to be executed.
      * @param _userTimeout The maximum execution time allowed for the job in milliseconds.
      * @param _maxGasPrice The maximum gas price the job owner is willing to pay, to get back the job response.
      * @param _refundAccount The account to receive any slashed tokens.

@@ -123,7 +123,7 @@ contract Gateways is
     //-------------------------------- Gateway start --------------------------------//
 
     modifier isValidGatewayOwner(address _enclaveAddress, address _owner) {
-        if (gateways[_enclaveAddress].owner != _owner) revert GatewaysInvalidGateway();
+        if (gateways[_enclaveAddress].owner != _owner) revert GatewaysNotGatewayOwner();
         _;
     }
 
@@ -212,7 +212,7 @@ contract Gateways is
 
     /// @notice Thrown when an invalid signer is detected.
     error GatewaysInvalidSigner();
-    /// @notice Thrown when a gateway already exists for the given enclave address.
+    /// @notice Thrown when a gateway already exists for the given enclave address, during registration.
     error GatewaysGatewayAlreadyExists();
     /// @notice Thrown when an unsupported chain is detected.
     error GatewaysUnsupportedChain();
@@ -230,8 +230,8 @@ contract Gateways is
     /// @notice Thrown when a chain is not found in the gateway.
     /// @param chainId The ID of the chain.
     error GatewaysChainNotFound(uint256 chainId);
-    /// @notice Thrown when an invalid gateway is detected.
-    error GatewaysInvalidGateway();
+    /// @notice Thrown when the msg.sender isn't the gateway owner.
+    error GatewaysNotGatewayOwner();
     /// @notice Thrown when a gateway is already draining.
     error GatewaysAlreadyDraining();
     /// @notice Thrown when a gateway drain is pending.

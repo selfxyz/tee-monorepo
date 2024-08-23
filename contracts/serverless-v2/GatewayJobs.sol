@@ -185,8 +185,8 @@ contract GatewayJobs is
 
     /**
      * @notice Emitted when a job is relayed by a gateway.
-     * @param jobId The ID of the job.
-     * @param execJobId The ID of the execution job.
+     * @param jobId The ID of the job from request chain.
+     * @param execJobId The ID of the job by Jobs contract.
      * @param jobOwner The address of the job owner.
      * @param gateway The address of the gateway.
      */
@@ -194,8 +194,8 @@ contract GatewayJobs is
 
     /**
      * @notice Emitted when a job's resource is unavailable.
-     * @param jobId The ID of the job.
-     * @param gateway The address of the gateway that reported the unavailability.
+     * @param jobId The ID of the job from request chain.
+     * @param gateway The address of the gateway that relayed the job.
      */
     event JobResourceUnavailable(uint256 indexed jobId, address indexed gateway);
 
@@ -448,7 +448,7 @@ contract GatewayJobs is
      * @dev Can only be called by a gateway registered in the Gateways contract.
      * @param _signature The signature verifying the job details.
      * @param _jobId The ID of the job to be relayed.
-     * @param _codehash The hash of the job's code.
+     * @param _codehash The transaction hash storing the code in calldata, that needs to be executed.
      * @param _codeInputs The inputs to the job's code.
      * @param _deadline The deadline for job execution in milliseconds.
      * @param _jobRequestTimestamp The timestamp when the job was requested.
