@@ -895,8 +895,8 @@ contract Relay is
             revert RelayOverallTimeoutOver();
 
         uint256 instanceCount = _jobId & ((1 << 127) - 1);
-        // note: instance count for the first output should be 1
-        if(instanceCount <= jobSubs.currentRuns)
+        // note: instance count for the first output should be 0
+        if(instanceCount < jobSubs.currentRuns)
             revert RelayInvalidCurrentRuns();
 
         // signature check
@@ -909,7 +909,7 @@ contract Relay is
             _signTimestamp
         );
 
-        jobSubscriptions[subId].currentRuns = instanceCount;
+        jobSubscriptions[subId].currentRuns = instanceCount + 1;
         jobSubscriptions[subId].lastRunTimestamp = block.timestamp;
 
         _releaseJobSubsEscrowAmount(enclaveAddress, _totalTime, jobSubs.job.usdcDeposit);
