@@ -267,6 +267,7 @@ contract GatewayJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
+        uint8 _env,
         uint256 _signTimestamp,
         address _gateway
     ) internal {
@@ -295,7 +296,7 @@ contract GatewayJobs is
         uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
         USDC_TOKEN.safeTransferFrom(_gateway, address(this), usdcDeposit);
 
-        _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId);
+        _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId, _env);
     }
 
     function _createJob(
@@ -306,9 +307,10 @@ contract GatewayJobs is
         address _jobOwner,
         address _gateway,
         uint256 _usdcDeposit,
-        uint8 _sequenceId
+        uint8 _sequenceId,
+        uint8 _env
     ) internal {
-        try JOB_MANAGER.createJob(_codehash, _codeInputs, _deadline) returns (uint256 execJobId) {
+        try JOB_MANAGER.createJob(_env, _codehash, _codeInputs, _deadline) returns (uint256 execJobId) {
             relayJobs[_jobId].execStartTime = block.timestamp;
             relayJobs[_jobId].jobOwner = _jobOwner;
             relayJobs[_jobId].usdcDeposit = _usdcDeposit;
@@ -465,6 +467,7 @@ contract GatewayJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
+        uint8 _env,
         uint256 _signTimestamp
     ) external {
         _relayJob(
@@ -476,6 +479,7 @@ contract GatewayJobs is
             _jobRequestTimestamp,
             _sequenceId,
             _jobOwner,
+            _env,
             _signTimestamp,
             _msgSender()
         );

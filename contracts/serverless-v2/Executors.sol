@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
-import "./tree/TreeUpgradeable.sol";
+import "./tree/EnvTreeUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
 /**
@@ -25,7 +25,7 @@ contract Executors is
     AccessControlUpgradeable,
     UUPSUpgradeable, // public upgrade
     AttestationAutherUpgradeable,
-    TreeUpgradeable
+    EnvTreeUpgradeable
 {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -89,7 +89,7 @@ contract Executors is
      * @param _admin The address of the admin.
      * @param _images Array of enclave images to initialize.
      */
-    function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
+    function initialize(address _admin, EnclaveImage[] memory _images, uint8 _env) public initializer {
         if (_admin == address(0)) revert ExecutorsZeroAddressAdmin();
 
         __Context_init_unchained();
@@ -97,7 +97,7 @@ contract Executors is
         __AccessControl_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(_images);
-        __TreeUpgradeable_init_unchained();
+        __EnvTreeUpgradeable_init_unchained(_env);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
@@ -130,12 +130,21 @@ contract Executors is
         _;
     }
 
+    modifier isValidEnv(uint8 _env) {
+        if(!isSupportedEnv[_env])
+            revert ExecutorsEnvUnsupported();
+        _;
+    }
+
+    mapping(uint8 => bool) public isSupportedEnv;
+
     struct Executor {
-        address owner;
         uint256 jobCapacity;
         uint256 activeJobs;
         uint256 stakeAmount;
+        address owner;
         bool draining;
+        uint8 env;
     }
 
     // enclaveAddress => Execution node details
@@ -151,13 +160,26 @@ contract Executors is
         );
 
     bytes32 private constant REGISTER_TYPEHASH =
-        keccak256("Register(address owner,uint256 jobCapacity,uint256 signTimestamp)");
+        keccak256("Register(address owner,uint256 jobCapacity,uint8 env,uint256 signTimestamp)");
+
+    /**
+     * @notice Emitted when a new execution environment support is added globally.
+     * @param env The execution environment added.
+     */
+    event GlobalEnvAdded(uint8 indexed env);
+
+    /**
+     * @notice Emitted when an existing execution environment support is removed globally.
+     * @param env The execution environment removed.
+     */
+    event GlobalEnvRemoved(uint8 indexed env);
 
     /// @notice Emitted when a new executor is registered.
     /// @param enclaveAddress The address of the enclave.
     /// @param owner The owner of the executor.
+    /// @param env The execution environment supported by the enclave.
     /// @param jobCapacity The maximum number of jobs the executor can handle.
-    event ExecutorRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity);
+    event ExecutorRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity, uint8 env);
 
     /// @notice Emitted when an executor is deregistered.
     /// @param enclaveAddress The address of the enclave.
@@ -181,6 +203,10 @@ contract Executors is
     /// @param removedAmount The amount of stake removed.
     event ExecutorStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
 
+    /// @notice Thrown when the execution environment is already supported globally.
+    error ExecutorsGlobalEnvAlreadySupported();
+    /// @notice Thrown when the execution environment is already unsupported globally.
+    error ExecutorsGlobalEnvAlreadyUnsupported();
     /// @notice Thrown when the signature timestamp has expired.
     error ExecutorsSignatureTooOld();
     /// @notice Thrown when the signer of the registration data is invalid.
@@ -197,6 +223,8 @@ contract Executors is
     error ExecutorsHasPendingJobs();
     /// @notice Thrown when the provided executor owner does not match the stored owner.
     error ExecutorsInvalidOwner();
+    /// @notice Thrown when the provided execution environment is not supported globally.
+    error ExecutorsEnvUnsupported();
 
     //-------------------------------- Admin methods start --------------------------------//
 
@@ -229,6 +257,23 @@ contract Executors is
 
     //-------------------------------- internal functions start ----------------------------------//
 
+    function _addGlobalEnv(uint8 _env) internal {
+        if(isSupportedEnv[_env])
+            revert ExecutorsGlobalEnvAlreadySupported();
+        
+        _init_tree(_env);
+        isSupportedEnv[_env] = true;
+        emit GlobalEnvAdded(_env);
+    }
+
+    function _removeGlobalEnv(uint8 _env) internal {
+        if(!isSupportedEnv[_env])
+            revert ExecutorsGlobalEnvAlreadyUnsupported();
+        
+        isSupportedEnv[_env] = false;
+        emit GlobalEnvRemoved(_env);
+    }
+
     function _registerExecutor(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
@@ -236,6 +281,7 @@ contract Executors is
         uint256 _signTimestamp,
         bytes memory _signature,
         uint256 _stakeAmount,
+        uint8 _env,
         address _owner
     ) internal {
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
@@ -245,13 +291,13 @@ contract Executors is
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
         // signature check
-        _verifySign(enclaveAddress, _owner, _jobCapacity, _signTimestamp, _signature);
+        _verifySign(enclaveAddress, _owner, _jobCapacity, _env, _signTimestamp, _signature);
 
-        _register(enclaveAddress, _owner, _jobCapacity);
+        _register(enclaveAddress, _owner, _jobCapacity, _env);
 
         // add node to the tree if min stake amount deposited
         if (_stakeAmount >= MIN_STAKE_AMOUNT)
-            _insert_unchecked(enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(_env, enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
 
         _addStake(enclaveAddress, _stakeAmount);
     }
@@ -260,23 +306,30 @@ contract Executors is
         address _enclaveAddress,
         address _owner,
         uint256 _jobCapacity,
+        uint8 _env,
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal view {
         if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE) revert ExecutorsSignatureTooOld();
 
-        bytes32 hashStruct = keccak256(abi.encode(REGISTER_TYPEHASH, _owner, _jobCapacity, _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(REGISTER_TYPEHASH, _owner, _jobCapacity, _env, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
         if (signer != _enclaveAddress) revert ExecutorsInvalidSigner();
     }
 
-    function _register(address _enclaveAddress, address _owner, uint256 _jobCapacity) internal {
+    function _register(
+        address _enclaveAddress, 
+        address _owner, 
+        uint256 _jobCapacity,
+        uint8 _env
+    ) internal {
         executors[_enclaveAddress].jobCapacity = _jobCapacity;
         executors[_enclaveAddress].owner = _owner;
+        executors[_enclaveAddress].env = _env;
 
-        emit ExecutorRegistered(_enclaveAddress, _owner, _jobCapacity);
+        emit ExecutorRegistered(_enclaveAddress, _owner, _jobCapacity, _env);
     }
 
     function _drainExecutor(address _enclaveAddress) internal {
@@ -285,7 +338,7 @@ contract Executors is
         executors[_enclaveAddress].draining = true;
 
         // remove node from the tree
-        _deleteIfPresent(_enclaveAddress);
+        _deleteIfPresent(executors[_enclaveAddress].env, _enclaveAddress);
 
         emit ExecutorDrained(_enclaveAddress);
     }
@@ -298,7 +351,7 @@ contract Executors is
 
         // insert node in the tree
         if (executorNode.stakeAmount >= MIN_STAKE_AMOUNT && executorNode.activeJobs < executorNode.jobCapacity) {
-            _insert_unchecked(_enclaveAddress, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(executorNode.env, _enclaveAddress, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
         emit ExecutorRevived(_enclaveAddress);
@@ -326,7 +379,7 @@ contract Executors is
             updatedStake >= MIN_STAKE_AMOUNT
         ) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
-            _upsert(_enclaveAddress, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
+            _upsert(executorNode.env, _enclaveAddress, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
         }
 
         _addStake(_enclaveAddress, _amount);
@@ -360,6 +413,25 @@ contract Executors is
     //-------------------------------- external functions start ----------------------------------//
 
     /**
+     * @notice Adds global support for a new execution environment.
+     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
+            It also initializes a new executor nodes tree for the environment.
+     * @param _env The execution environment to be added.
+     */
+    function addGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addGlobalEnv(_env);
+    }
+
+    /**
+     * @notice Removes global support for an existing execution environment.
+     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
+     * @param _env The execution environment to be removed.
+     */
+    function removeGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _removeGlobalEnv(_env);
+    }
+
+    /**
      * @notice Registers a new executor node.
      * @param _attestationSignature The attestation signature for verification.
      * @param _attestation The attestation details.
@@ -367,6 +439,7 @@ contract Executors is
      * @param _signTimestamp The timestamp when the signature was created.
      * @param _signature The signature to verify the registration.
      * @param _stakeAmount The amount of stake to be deposited.
+     * @param _env The execution environment supported by the enclave.
      */
     function registerExecutor(
         bytes memory _attestationSignature,
@@ -374,8 +447,9 @@ contract Executors is
         uint256 _jobCapacity,
         uint256 _signTimestamp,
         bytes memory _signature,
-        uint256 _stakeAmount
-    ) external {
+        uint256 _stakeAmount,
+        uint8 _env
+    ) external isValidEnv(_env) {
         _registerExecutor(
             _attestationSignature,
             _attestation,
@@ -383,6 +457,7 @@ contract Executors is
             _signTimestamp,
             _signature,
             _stakeAmount,
+            _env,
             _msgSender()
         );
     }
@@ -465,31 +540,31 @@ contract Executors is
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _selectExecutors(uint256 _noOfNodesToSelect) internal returns (address[] memory selectedNodes) {
-        selectedNodes = _selectNodes(_noOfNodesToSelect);
+    function _selectExecutors(uint8 _env, uint256 _noOfNodesToSelect) internal returns (address[] memory selectedNodes) {
+        selectedNodes = _selectNodes(_env, _noOfNodesToSelect);
         for (uint256 index = 0; index < selectedNodes.length; index++) {
             address enclaveAddress = selectedNodes[index];
             executors[enclaveAddress].activeJobs += 1;
 
             // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
             if (executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
-                _deleteIfPresent(enclaveAddress);
+                _deleteIfPresent(_env, enclaveAddress);
         }
     }
 
-    function _selectNodes(uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
+    function _selectNodes(uint8 _env, uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
         uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
-        selectedNodes = _selectN(randomizer, _noOfNodesToSelect);
+        selectedNodes = _selectN(_env, randomizer, _noOfNodesToSelect);
     }
 
-    function _releaseExecutor(address _enclaveAddress) internal {
+    function _releaseExecutor(uint8 _env, address _enclaveAddress) internal {
         if (!executors[_enclaveAddress].draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
             if (executors[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(_enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+                _upsert(_env, _enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
                 // remove node from tree if stake falls below min level
-            else _deleteIfPresent(_enclaveAddress);
+            else _deleteIfPresent(_env, _enclaveAddress);
         }
 
         executors[_enclaveAddress].activeJobs -= 1;
@@ -501,7 +576,7 @@ contract Executors is
 
         TOKEN.safeTransfer(_recipient, totalComp);
 
-        _releaseExecutor(_enclaveAddress);
+        _releaseExecutor(executors[_enclaveAddress].env, _enclaveAddress);
         return totalComp;
     }
 
@@ -512,13 +587,15 @@ contract Executors is
     /**
      * @notice Selects a number of executor nodes for job assignments.
      * @dev Executors are selected randomly based on the stake distribution.
+     * @param _env The execution environment supported by the enclave.
      * @param _noOfNodesToSelect The number of nodes to select.
      * @return selectedNodes An array of selected node addresses.
      */
     function selectExecutors(
+        uint8 _env,
         uint256 _noOfNodesToSelect
-    ) external onlyRole(JOBS_ROLE) returns (address[] memory selectedNodes) {
-        return _selectExecutors(_noOfNodesToSelect);
+    ) external onlyRole(JOBS_ROLE) isValidEnv(_env) returns (address[] memory selectedNodes) {
+        return _selectExecutors(_env, _noOfNodesToSelect);
     }
 
     /**
@@ -527,7 +604,7 @@ contract Executors is
      * @param _enclaveAddress The address of the executor enclave to release.
      */
     function releaseExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) {
-        _releaseExecutor(_enclaveAddress);
+        _releaseExecutor(executors[_enclaveAddress].env, _enclaveAddress);
     }
 
     /**

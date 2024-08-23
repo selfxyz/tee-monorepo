@@ -234,12 +234,13 @@ contract Jobs is
     //-------------------------------- internal functions start --------------------------------//
 
     function _createJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline, // in milliseconds
         address _jobOwner
     ) internal returns (uint256 jobId) {
-        address[] memory selectedNodes = EXECUTORS.selectExecutors(NO_OF_NODES_TO_SELECT);
+        address[] memory selectedNodes = EXECUTORS.selectExecutors(_env, NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then return with error code 1
         if (selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             revert JobsUnavailableResources();
@@ -397,17 +398,19 @@ contract Jobs is
 
     /**
      * @notice Creates a new job with the specified parameters.
+     * env The execution environment supported by the enclave.
      * @param _codehash The hash of the job code.
      * @param _codeInputs The inputs to the job code.
      * @param _deadline The deadline for the job in milliseconds.
      * @return jobId The ID of the job created.
      */
     function createJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline // in milliseconds
     ) external returns (uint256) {
-        return _createJob(_codehash, _codeInputs, _deadline, _msgSender());
+        return _createJob(_env, _codehash, _codeInputs, _deadline, _msgSender());
     }
 
     /**
