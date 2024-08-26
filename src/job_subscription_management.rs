@@ -112,11 +112,11 @@ pub async fn process_historic_subscription_jobs_on_request_chain(
         } else if log.topics[0]
             == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
         {
-            let _ = update_subscription_job_params(contracts_client, log).await;
+            let _ = update_subscription_job_params(contracts_client, log);
         } else if log.topics[0]
             == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT).into()
         {
-            let _ = update_subscription_job_termination_params(contracts_client, log).await;
+            let _ = update_subscription_job_termination_params(contracts_client, log);
         }
     }
 }
@@ -377,14 +377,14 @@ async fn trigger_subscription_job(
         subscription_job.subscription_id
     );
 
-    let job = subscription_job_to_relay_job(subscription_job, trigger_timestamp).await;
+    let job = subscription_job_to_relay_job(subscription_job, trigger_timestamp);
 
     contracts_client
         .job_relayed_handler(job, req_chain_tx)
         .await;
 }
 
-async fn subscription_job_to_relay_job(
+fn subscription_job_to_relay_job(
     subscription_job: SubscriptionJob,
     trigger_timestamp: u64,
 ) -> Job {
@@ -409,7 +409,7 @@ async fn subscription_job_to_relay_job(
     }
 }
 
-pub async fn update_subscription_job_params(
+pub fn update_subscription_job_params(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
 ) -> Result<(), ServerlessError> {
@@ -456,7 +456,7 @@ pub async fn update_subscription_job_params(
     Ok(())
 }
 
-pub async fn update_subscription_job_termination_params(
+pub fn update_subscription_job_termination_params(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
 ) -> Result<(), ServerlessError> {

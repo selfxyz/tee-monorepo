@@ -176,7 +176,7 @@ pub enum JobSubscriptionAction {
 #[derive(Debug, Clone)]
 pub struct JobSubscriptionChannelType {
     pub subscription_action: JobSubscriptionAction,
-    pub subscription_id: H160,
+    pub subscription_id: U256,
 }
 
 #[derive(Debug, Clone, PartialEq)]

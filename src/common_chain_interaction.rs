@@ -354,7 +354,7 @@ impl ContractsClient {
                 } else if topics[0]
                     == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into()
                 {
-                    let subscription_id: H160 = log.topics[1].into();
+                    let subscription_id: U256 = log.topics[1].into_uint();
 
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionStarted jobID: {:?}",
@@ -1163,12 +1163,12 @@ impl ContractsClient {
     async fn job_response_txn(self: &Arc<Self>, response_job: ResponseJob) {
         info!("Creating a transaction for jobResponse");
 
-        let mut response_job_id = response_job.job_id;
-        if response_job.job_mode == JobMode::Subscription {
-            // set instance count (last 127 bits) to 0
-            let mask = U256::MAX >> 127 << 127;
-            response_job_id = response_job.job_id & mask;
-        }
+        let response_job_id = response_job.job_id;
+        // if response_job.job_mode == JobMode::Subscription {
+        //     // set instance count (last 127 bits) to 0
+        //     let mask = U256::MAX >> 127 << 127;
+        //     response_job_id = response_job.job_id & mask;
+        // }
 
         let req_chain_client = &self.request_chain_clients[&response_job.request_chain_id];
 
@@ -1386,6 +1386,7 @@ impl LogsProvider for ContractsClient {
     ) -> Result<Vec<Log>> {
         let event_filter = Filter::new()
             .address(req_chain_client.contract_address)
+            .select(..req_chain_client.request_chain_start_block_number-1)
             .topic0(vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
@@ -1395,7 +1396,6 @@ impl LogsProvider for ContractsClient {
         let http_provider = Provider::<Http>::try_from(&req_chain_client.http_rpc_url).unwrap();
 
         let logs = http_provider.get_logs(&event_filter).await.unwrap();
-
         Ok(logs)
     }
 }
