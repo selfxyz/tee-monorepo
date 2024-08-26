@@ -393,7 +393,7 @@ impl ContractsClient {
                     let self_clone = Arc::clone(&self);
 
                     tokio::spawn(async move {
-                        let _ = update_subscription_job_params(&self_clone, log).await;
+                        let _ = update_subscription_job_params(&self_clone, log);
                     });
                 } else if topics[0]
                     == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT)
@@ -406,7 +406,7 @@ impl ContractsClient {
 
                     let self_clone = Arc::clone(&self);
                     tokio::spawn(async move {
-                        let _ = update_subscription_job_termination_params(&self_clone, log).await;
+                        let _ = update_subscription_job_termination_params(&self_clone, log);
                     });
                 } else {
                     error!("Request Chain ID: {:?}, Unknown event: {:?}", chain_id, log);
