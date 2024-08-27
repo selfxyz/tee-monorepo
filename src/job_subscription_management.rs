@@ -65,6 +65,7 @@ impl Ord for SubscriptionJobHeap {
 pub async fn process_historic_job_subscriptions(
     contracts_client: &Arc<ContractsClient>,
     req_chain_tx: Sender<Job>,
+    job_sub_tx: Sender<JobSubscriptionChannelType>,
 ) {
     info!("Processing Historic Job Subscriptions on Request Chains");
 
@@ -72,11 +73,13 @@ pub async fn process_historic_job_subscriptions(
         let contracts_client_clone = contracts_client.clone();
         let req_chain_tx_clone = req_chain_tx.clone();
 
+        let job_sub_tx_clone = job_sub_tx.clone();
         tokio::spawn(async move {
             process_historic_subscription_jobs_on_request_chain(
                 &contracts_client_clone,
                 request_chain_id,
                 req_chain_tx_clone,
+                job_sub_tx_clone,
             )
             .await;
         });
@@ -87,6 +90,7 @@ pub async fn process_historic_subscription_jobs_on_request_chain(
     contracts_client: &Arc<ContractsClient>,
     request_chain_id: u64,
     req_chain_tx: Sender<Job>,
+    job_sub_tx: Sender<JobSubscriptionChannelType>,
 ) {
     let logs = contracts_client
         .request_chain_historic_subscription_jobs(
@@ -100,7 +104,7 @@ pub async fn process_historic_subscription_jobs_on_request_chain(
 
     for log in logs {
         if log.topics[0] == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into() {
-            add_subscription_job(
+            let sub_id = add_subscription_job(
                 contracts_client,
                 log,
                 request_chain_id,
@@ -109,6 +113,16 @@ pub async fn process_historic_subscription_jobs_on_request_chain(
             )
             .await
             .unwrap();
+            if sub_id == U256::zero() {
+                continue;
+            }
+            job_sub_tx
+                .send(JobSubscriptionChannelType {
+                    subscription_action: JobSubscriptionAction::Add,
+                    subscription_id: sub_id,
+                })
+                .await
+                .unwrap();
         } else if log.topics[0]
             == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
         {
@@ -211,7 +225,7 @@ pub async fn add_subscription_job(
     request_chain_id: u64,
     req_chain_tx: Sender<Job>,
     is_historic_log: bool,
-) -> Result<(), ServerlessError> {
+) -> Result<U256, ServerlessError> {
     let types = vec![
         ParamType::Uint(256),
         ParamType::Uint(256),
@@ -254,7 +268,7 @@ pub async fn add_subscription_job(
             "Subscription Job has reached termination time - Subscription ID: {}",
             subscription_job.subscription_id
         );
-        return Ok(());
+        return Ok(0.into());
     }
 
     // Scope for write lock on subscription_jobs
@@ -273,7 +287,6 @@ pub async fn add_subscription_job(
             to_trigger_first_instance = false;
         }
     }
-
     if to_trigger_first_instance {
         let contracts_client_clone = contracts_client.clone();
         let subscription_job_clone = subscription_job.clone();
@@ -294,7 +307,7 @@ pub async fn add_subscription_job(
         is_historic_log,
     )
     .await;
-    Ok(())
+    Ok(subscription_job.subscription_id)
 }
 
 async fn add_next_trigger_time_to_heap(
@@ -384,10 +397,7 @@ async fn trigger_subscription_job(
         .await;
 }
 
-fn subscription_job_to_relay_job(
-    subscription_job: SubscriptionJob,
-    trigger_timestamp: u64,
-) -> Job {
+fn subscription_job_to_relay_job(subscription_job: SubscriptionJob, trigger_timestamp: u64) -> Job {
     let instance_count =
         (U256::from(trigger_timestamp) - subscription_job.starttime) / subscription_job.interval;
     let job_id = subscription_job.subscription_id + instance_count;

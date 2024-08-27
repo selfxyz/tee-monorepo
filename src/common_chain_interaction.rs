@@ -223,10 +223,15 @@ impl ContractsClient {
         {
             let contracts_client_clone = self.clone();
             let req_chain_tx_clone = req_chain_tx.clone();
+            let job_subscription_tx_clone = job_subscription_tx.clone();
 
             tokio::spawn(async move {
-                process_historic_job_subscriptions(&contracts_client_clone, req_chain_tx_clone)
-                    .await;
+                process_historic_job_subscriptions(
+                    &contracts_client_clone,
+                    req_chain_tx_clone,
+                    job_subscription_tx_clone,
+                )
+                .await;
             });
 
             let contracts_client_clone = self.clone();
@@ -1164,11 +1169,6 @@ impl ContractsClient {
         info!("Creating a transaction for jobResponse");
 
         let response_job_id = response_job.job_id;
-        // if response_job.job_mode == JobMode::Subscription {
-        //     // set instance count (last 127 bits) to 0
-        //     let mask = U256::MAX >> 127 << 127;
-        //     response_job_id = response_job.job_id & mask;
-        // }
 
         let req_chain_client = &self.request_chain_clients[&response_job.request_chain_id];
 
@@ -1386,7 +1386,7 @@ impl LogsProvider for ContractsClient {
     ) -> Result<Vec<Log>> {
         let event_filter = Filter::new()
             .address(req_chain_client.contract_address)
-            .select(..req_chain_client.request_chain_start_block_number-1)
+            .select(..req_chain_client.request_chain_start_block_number - 1)
             .topic0(vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
