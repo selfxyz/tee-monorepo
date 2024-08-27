@@ -212,14 +212,6 @@ contract Jobs is
      */
     event JobFailureCallbackCalled(uint256 indexed jobId, bool callback_success);
 
-    /// @notice Thrown when the relay time has passed.
-    error JobsRelayTimeOver();
-    /// @notice Thrown when the provided sequence ID is invalid.
-    error JobsInvalidSequenceId();
-    /// @notice Thrown when the job has already been relayed.
-    error JobsJobAlreadyRelayed();
-    /// @notice Thrown when the chain is unsupported.
-    error JobsUnsupportedChain();
     /// @notice Thrown when the signature is too old.
     error JobsSignatureTooOld();
     /// @notice Thrown when the job execution time has passed.

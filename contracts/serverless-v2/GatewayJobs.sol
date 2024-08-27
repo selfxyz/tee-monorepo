@@ -224,7 +224,7 @@ contract GatewayJobs is
     event JobFailed(uint256 indexed jobId);
 
     // @notice Error for when USDC token approval fails.
-    error GatewaysJobsApprovalFailed();
+    error GatewaysJobsUsdcApprovalFailed(address spender, uint256 value);
     // @notice Error for when the relay time for a job has passed.
     error GatewayJobsRelayTimeOver();
     // @notice Error for when the job resource is unavailable.

@@ -110,9 +110,6 @@ contract Gateways is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable DRAINING_TIME_DURATION;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable REASSIGN_COMP_FOR_REPORTER_GATEWAY;
-
     /// @notice The slashing percentage in basis points(an integer in the range 0-10^6)
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_PERCENT_IN_BIPS;
@@ -235,8 +232,6 @@ contract Gateways is
     error GatewaysChainNotFound(uint256 chainId);
     /// @notice Thrown when the msg.sender isn't the gateway owner.
     error GatewaysNotGatewayOwner();
-    /// @notice Thrown when an invalid gateway is detected.
-    error GatewaysInvalidGateway();
     /// @notice Thrown when a gateway is already draining.
     error GatewaysAlreadyDraining();
     /// @notice Thrown when a gateway drain is pending.
