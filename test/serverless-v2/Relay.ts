@@ -2266,6 +2266,176 @@ describe("Relay - Job Subscription Termination", function () {
 	});
 });
 
+describe("Relay - Job Subscription sent by UserSample contract", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let token: USDCoin;
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+	let userSample: UserSample;
+	let	fixedGas: number;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			executionFeePerMs = 10,  // fee is in USDC
+			gatewayFeePerJob = 10,
+			callbackMeasureGas = 4530;
+		fixedGas = 150000;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					executionFeePerMs,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+
+		const timestamp = await time.latest() * 1000;
+		let [signature, attestation] = await createAttestation(pubkeys[15], image2, wallets[14], timestamp - 540000);
+
+		let signTimestamp = await time.latest();
+		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
+
+		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		const UserSample = await ethers.getContractFactory("UserSample");
+		userSample = await UserSample.deploy(relay.target, token.target) as unknown as UserSample;
+
+		await token.transfer(userSample.target, 10000000);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it("can submit response and execute callback", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
+			callbackDeposit = parseUnits("1"),	// 1 eth
+			refundAccount = addrs[1],
+			callbackContract = userSample.target,
+			callbackGasLimit = 20000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			startTimestamp = 0,
+			terminationTimestamp = await time.latest() + 20;
+		await userSample.startJobSubscription(
+			codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit,startTimestamp, terminationTimestamp,
+			{value: callbackDeposit}
+		);
+
+		let jobId: any = await relay.jobSubsCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		// set tx.gasprice for next block
+		await setNextBlockBaseFeePerGas(1);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let initBalance = await ethers.provider.getBalance(addrs[1]);
+		let tx = relay.connect(signers[2]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.emit(relay, "JobSubscriptionResponded")
+			.and.to.emit(userSample, "CalledBack").withArgs(
+				jobId, callbackContract, codeHash, codeInputs, output, errorCode
+		);
+
+		let jobOwner = userSample.target;
+		let txReceipt = await (await tx).wait();
+		// console.log("FIXED_GAS : ", txReceipt?.gasUsed);
+		// validate callback cost and refund
+		let txGasPrice = txReceipt?.gasPrice || 0n;
+		let callbackGas = 9247; // calculated using console.log
+		// console.log("txGasPrice: ", txGasPrice);
+		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
+		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
+		expect((await relay.jobSubscriptions(jobId)).job.callbackDeposit).to.equal(callbackDeposit - callbackCost);
+
+	});
+
+	it("can submit response with gas price higher than maxGasPrice", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
+			callbackDeposit = parseUnits("1"),	// 1 eth
+			refundAccount = addrs[1],
+			callbackContract = userSample.target,
+			callbackGasLimit = 20000,
+			periodicGap = 10,
+			usdcDeposit = 2000000,
+			startTimestamp = 0,
+			terminationTimestamp = await time.latest() + 20;
+		await userSample.startJobSubscription(
+			codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit,startTimestamp, terminationTimestamp,
+			{value: callbackDeposit}
+		);
+
+		let jobId: any = await relay.jobSubsCount(),
+			output = solidityPacked(["string"], ["it is the output"]),
+			totalTime = 100,
+			errorCode = 0,
+			signTimestamp = await time.latest();
+
+		let initBalance = await ethers.provider.getBalance(addrs[1]);
+
+		// set tx.gasprice for next block
+		await setNextBlockBaseFeePerGas(maxGasPrice + 10n);
+		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+		let tx = relay.connect(signers[2]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+		await expect(tx).to.emit(relay, "JobSubscriptionResponded")
+			.and.to.not.emit(userSample, "CalledBack");
+
+		// validate callback cost and refund
+		let jobOwner = userSample.target;
+		let txGasPrice = (await (await tx).wait())?.gasPrice || 0n;
+		let callbackCost = txGasPrice * (ethers.toBigInt(fixedGas));
+		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
+		expect((await relay.jobSubscriptions(jobId)).job.callbackDeposit).to.equal(callbackDeposit - callbackCost);
+	});
+});
+
 function normalize(key: string): string {
 	return '0x' + key.substring(4);
 }

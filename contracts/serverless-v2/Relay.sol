@@ -917,7 +917,7 @@ contract Relay is
         uint256 _signTimestamp
     ) internal {
         // setting the last 127 bits as zero to get the jobSubsId
-        uint256 jobSubsId = _jobId & (~((uint256(1) << 127) - 1));
+        uint256 jobSubsId = (_jobId >> 127) << 127;
         JobSubscription memory jobSubs = jobSubscriptions[jobSubsId];
         if (jobSubs.job.jobOwner == address(0)) 
             revert RelayInvalidJobSubscription();

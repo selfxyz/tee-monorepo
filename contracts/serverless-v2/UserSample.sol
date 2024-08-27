@@ -73,6 +73,41 @@ contract UserSample is Ownable {
         emit CalledBack(_jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode);
     }
 
+    function startJobSubscription(
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _userTimeout,
+        uint256 _maxGasPrice,
+        address _refundAccount,
+        address _callbackContract,
+        uint256 _callbackGasLimit,
+        uint256 _periodicGap,
+        uint256 _usdcDeposit,
+        uint256 _startTimestamp,
+        uint256 _terminationTimestamp
+    ) external payable returns (bool) {
+        // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
+
+        (bool success, ) = relayAddress.call{value: msg.value}(
+            abi.encodeWithSignature(
+                "startJobSubscription(bytes32,bytes,uint256,uint256,address,address,uint256,uint256,uint256,uint256,uint256)",
+                _codehash,
+                _codeInputs,
+                _userTimeout,
+                _maxGasPrice,
+                _refundAccount,
+                _callbackContract,
+                _callbackGasLimit,
+                _periodicGap,
+                _usdcDeposit,
+                _startTimestamp,
+                _terminationTimestamp
+            )
+        );
+        return success;
+    }
+
     function withdrawEth() external onlyOwner() {
         (bool success, ) = msg.sender.call{value: address(this).balance}("");
         if(!success)
@@ -80,6 +115,6 @@ contract UserSample is Ownable {
         
         emit OwnerEthWithdrawal();
     }
-
+    
     receive() external payable {}
 }
