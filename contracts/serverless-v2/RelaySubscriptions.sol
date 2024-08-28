@@ -29,55 +29,21 @@ contract RelaySubscriptions is
 
     /// @notice Error for when zero address is provided for Relay contract.
     error RelaySubscriptionsInvalidRelay();
-    /// @notice Error for when zero address token is provided.
-    error RelaySubscriptionsInvalidToken();
-    /// @notice Error for when global timeout values are invalid (minimum timeout is not less than maximum timeout).
-    error RelaySubscriptionsInvalidGlobalTimeouts();
 
     /**
      * @notice Initializes the logic contract with essential parameters and disables further 
      * initializations of the logic contract.
      * @param _relay The Relay contract.
-     * @param _token The ERC20 token used for payments and deposits.
-     * @param _signMaxAge The maximum age of a valid signature in seconds.
-     * @param _globalMinTimeout The minimum timeout value for jobs.
-     * @param _globalMaxTimeout The maximum timeout value for jobs. This refers to the max time for the executor to execute the job.
-     * @param _overallTimeout The overall timeout value for job execution. This refers to the max time for the complete lifecycle of the job request on-chain.
-     * @param _executionFeePerMs The fee per millisecond for job execution(in USDC).
-     * @param _gatewayFeePerJob The fixed fee per job for the gateway(in USDC).
-     * @param _fixedGas The fixed gas amount for job responses without callback.
-     * @param _callbackMeasureGas The gas amount used for measuring callback gas.
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(
-        Relay _relay,
-        IERC20 _token,
-        uint256 _globalMinTimeout, // in milliseconds
-        uint256 _globalMaxTimeout, // in milliseconds
-        uint256 _overallTimeout,
-        uint256 _signMaxAge,
-        uint256 _executionFeePerMs, // fee is in USDC
-        uint256 _gatewayFeePerJob,
-        uint256 _fixedGas,
-        uint256 _callbackMeasureGas
+        Relay _relay
     ) {
         _disableInitializers();
 
+        if(address(_relay) == address(0)) 
+            revert RelaySubscriptionsInvalidRelay();
         RELAY = _relay;
-        if (address(_token) == address(0)) revert RelaySubscriptionsInvalidToken();
-        TOKEN = _token;
-        SIGN_MAX_AGE = _signMaxAge;
-
-        if (_globalMinTimeout >= _globalMaxTimeout) revert RelaySubscriptionsInvalidGlobalTimeouts();
-        GLOBAL_MIN_TIMEOUT = _globalMinTimeout;
-        GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
-        OVERALL_TIMEOUT = _overallTimeout;
-
-        EXECUTION_FEE_PER_MS = _executionFeePerMs;
-        GATEWAY_FEE_PER_JOB = _gatewayFeePerJob;
-
-        FIXED_GAS = _fixedGas;
-        CALLBACK_MEASURE_GAS = _callbackMeasureGas;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -121,33 +87,6 @@ contract RelaySubscriptions is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     Relay public immutable RELAY;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    IERC20 public immutable TOKEN;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable SIGN_MAX_AGE;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable GLOBAL_MIN_TIMEOUT;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable GLOBAL_MAX_TIMEOUT;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable OVERALL_TIMEOUT;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable EXECUTION_FEE_PER_MS;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable GATEWAY_FEE_PER_JOB;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable FIXED_GAS; // Should equal to gas of jobResponse without callback - gas refunds
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable CALLBACK_MEASURE_GAS; // gas consumed for measurement of callback gas
-
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
@@ -157,7 +96,7 @@ contract RelaySubscriptions is
             )
         );
 
-    //-------------------------------- Job start --------------------------------//
+    //-------------------------------- Job Subscription Start ----------------------------------//
 
     struct Job {
         uint256 startTime;
@@ -170,62 +109,6 @@ contract RelaySubscriptions is
         bytes32 codehash;
         bytes codeInputs;
     }
-
-    bytes32 private constant JOB_RESPONSE_TYPEHASH =
-        keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
-
-    /// @notice Error for when the signature has expired.
-    error RelaySubscriptionsSignatureTooOld();
-
-    function _verifyJobResponseSign(
-        bytes calldata _signature,
-        uint256 _jobId,
-        bytes calldata _output,
-        uint256 _totalTime,
-        uint8 _errorCode,
-        uint256 _signTimestamp
-    ) internal view returns (address) {
-        if (block.timestamp > _signTimestamp + SIGN_MAX_AGE) revert RelaySubscriptionsSignatureTooOld();
-
-        bytes32 hashStruct = keccak256(
-            abi.encode(JOB_RESPONSE_TYPEHASH, _jobId, keccak256(_output), _totalTime, _errorCode, _signTimestamp)
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
-        address signer = digest.recover(_signature);
-
-        RELAY.allowOnlyVerified(signer);
-        return signer;
-    }
-
-    function _callBackWithLimit(
-        uint256 _jobId,
-        Job memory _job,
-        bytes calldata _output,
-        uint8 _errorCode
-    ) internal returns (bool success, uint callbackGas) {
-        if (tx.gasprice <= _job.maxGasPrice) {
-            uint startGas = gasleft();
-            (success, ) = _job.callbackContract.call{gas: _job.callbackGasLimit}(
-                abi.encodeWithSignature(
-                    "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
-                    _jobId,
-                    _job.jobOwner,
-                    _job.codehash,
-                    _job.codeInputs,
-                    _output,
-                    _errorCode
-                )
-            );
-            // calculate callback cost
-            callbackGas = startGas - gasleft();
-        }
-    }
-
-    //-------------------------------- internal functions end ----------------------------------//
-
-    //--------------------------------------- Job end ----------------------------------------//
-
-    //-------------------------------- Job Subscription Start ----------------------------------//
 
     struct JobSubscription {
         uint256 periodicGap;
@@ -375,6 +258,8 @@ contract RelaySubscriptions is
     error RelaySubscriptionsInsufficientCallbackDeposit();
     /// @notice Error for when the overall timeout for a job has been exceeded.
     error RelaySubscriptionsOverallTimeoutOver();
+    /// @notice Error for when the signature has expired.
+    error RelaySubscriptionsSignatureTooOld();
     /// @notice Error for when the termination timestamp is an invalid value.
     error RelaySubscriptionsInvalidTerminationTimestamp();
     /// @notice Error for when the termination timestamp is being updated after the termination condition is reached.
@@ -384,6 +269,7 @@ contract RelaySubscriptions is
     /// @notice Error for when the job subscription owner tries to terminate the subscription 
     ///         before the termination condition is reached.
     error RelaySubscriptionsTerminationConditionPending();
+
     //-------------------------------- internal functions start --------------------------------//
 
     function _startJobSubscription(
@@ -408,7 +294,7 @@ contract RelaySubscriptions is
         if(_terminationTimestamp <= block.timestamp)
             revert RelaySubscriptionsInvalidTerminationTimestamp();
 
-        if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) 
+        if (_userTimeout <= RELAY.GLOBAL_MIN_TIMEOUT() || _userTimeout >= RELAY.GLOBAL_MAX_TIMEOUT()) 
             revert RelaySubscriptionsInvalidUserTimeout();
 
         if (_maxGasPrice < tx.gasprice) 
@@ -442,7 +328,7 @@ contract RelaySubscriptions is
         );
 
         // deposit escrow amount(USDC) for the periodic jobs
-        TOKEN.safeTransferFrom(_jobOwner, address(this), _usdcDeposit);
+        RELAY.TOKEN().safeTransferFrom(_jobOwner, address(this), _usdcDeposit);
     }
 
     function _validateDeposits(
@@ -455,10 +341,10 @@ contract RelaySubscriptions is
         uint256 _terminationTimestamp
     ) internal {
         uint256 totalRuns = (_terminationTimestamp - _startTimestamp) / _periodicGap;
-        if (_maxGasPrice * (_callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) * totalRuns > msg.value)
+        if (_maxGasPrice * (_callbackGasLimit + RELAY.FIXED_GAS() + RELAY.CALLBACK_MEASURE_GAS()) * totalRuns > msg.value)
             revert RelaySubscriptionsInsufficientCallbackDeposit();
 
-        uint256 minUsdcDeposit = (_userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB) * totalRuns;
+        uint256 minUsdcDeposit = (_userTimeout * RELAY.EXECUTION_FEE_PER_MS() + RELAY.GATEWAY_FEE_PER_JOB()) * totalRuns;
         if(_usdcDeposit < minUsdcDeposit)
             revert RelaySubscriptionsInsufficientUsdcDeposit();
     }
@@ -521,7 +407,7 @@ contract RelaySubscriptions is
 
         // getting the virtual start time of the job subscription current run
         uint256 jobStartTime = jobSubs.job.startTime + (jobSubs.currentRuns * jobSubs.periodicGap);
-        if(block.timestamp > jobStartTime + OVERALL_TIMEOUT)
+        if(block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT())
             revert RelaySubscriptionsOverallTimeoutOver();
 
         uint256 instanceCount = _jobId & ((1 << 127) - 1);
@@ -542,7 +428,8 @@ contract RelaySubscriptions is
         jobSubscriptions[jobSubsId].currentRuns = instanceCount + 1;
         jobSubscriptions[jobSubsId].lastRunTimestamp = block.timestamp;
 
-        _releaseJobSubsEscrowAmount(enclaveAddress, _totalTime, jobSubs.job.usdcDeposit);
+        address gatewayOwner = RELAY.gatewayOwners(enclaveAddress);
+        _releaseJobSubsEscrowAmount(gatewayOwner, _totalTime, jobSubs.job.usdcDeposit);
 
         (bool success, uint256 callbackGas) = _callBackWithLimit(
             jobSubsId,
@@ -552,9 +439,9 @@ contract RelaySubscriptions is
         );
 
         // TODO: FIXED_GAS will be different for this function
-        uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
+        uint256 callbackCost = (callbackGas + RELAY.FIXED_GAS()) * tx.gasprice;
 
-        _releaseJobSubsGasCostOnSuccess(RELAY.gatewayOwners(enclaveAddress), jobSubs.job.callbackDeposit, callbackCost);
+        _releaseJobSubsGasCostOnSuccess(gatewayOwner, jobSubs.job.callbackDeposit, callbackCost);
 
         emit JobSubscriptionResponded(
             jobSubsId,
@@ -567,22 +454,67 @@ contract RelaySubscriptions is
         );
     }
 
+
+    function _verifyJobResponseSign(
+        bytes calldata _signature,
+        uint256 _jobId,
+        bytes calldata _output,
+        uint256 _totalTime,
+        uint8 _errorCode,
+        uint256 _signTimestamp
+    ) internal view returns (address) {
+        if (block.timestamp > _signTimestamp + RELAY.ATTESTATION_MAX_AGE()) revert RelaySubscriptionsSignatureTooOld();
+
+        bytes32 hashStruct = keccak256(
+            abi.encode(RELAY.JOB_RESPONSE_TYPEHASH(), _jobId, keccak256(_output), _totalTime, _errorCode, _signTimestamp)
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+        address signer = digest.recover(_signature);
+
+        RELAY.allowOnlyVerified(signer);
+        return signer;
+    }
+
     function _releaseJobSubsEscrowAmount(
-        address _enclaveAddress,
+        address _gatewayOwner,
         uint256 _totalTime,
         uint256 _usdcDeposit
     ) internal {
         uint256 gatewayPayoutUsdc;
         uint256 jobOwnerPayoutUsdc;
         unchecked {
-            gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+            gatewayPayoutUsdc = _totalTime * RELAY.EXECUTION_FEE_PER_MS() + RELAY.GATEWAY_FEE_PER_JOB();
             jobOwnerPayoutUsdc = _usdcDeposit - gatewayPayoutUsdc;
         }
 
         // release escrow to gateway
-        TOKEN.safeTransfer(RELAY.gatewayOwners(_enclaveAddress), gatewayPayoutUsdc);
+        RELAY.TOKEN().safeTransfer(_gatewayOwner, gatewayPayoutUsdc);
 
         jobSubscriptions[jobSubsCount].job.usdcDeposit = jobOwnerPayoutUsdc;
+    }
+
+    function _callBackWithLimit(
+        uint256 _jobId,
+        Job memory _job,
+        bytes calldata _output,
+        uint8 _errorCode
+    ) internal returns (bool success, uint callbackGas) {
+        if (tx.gasprice <= _job.maxGasPrice) {
+            uint startGas = gasleft();
+            (success, ) = _job.callbackContract.call{gas: _job.callbackGasLimit}(
+                abi.encodeWithSignature(
+                    "oysterResultCall(uint256,address,bytes32,bytes,bytes,uint8)",
+                    _jobId,
+                    _job.jobOwner,
+                    _job.codehash,
+                    _job.codeInputs,
+                    _output,
+                    _errorCode
+                )
+            );
+            // calculate callback cost
+            callbackGas = startGas - gasleft();
+        }
     }
 
     function _releaseJobSubsGasCostOnSuccess(
@@ -615,7 +547,7 @@ contract RelaySubscriptions is
         uint256 _usdcDeposit,
         uint256 _callbackDeposit
     ) internal {
-        TOKEN.safeTransferFrom(_msgSender(), address(this), _usdcDeposit);
+        RELAY.TOKEN().safeTransferFrom(_msgSender(), address(this), _usdcDeposit);
 
         jobSubscriptions[_jobSubsId].job.usdcDeposit += _usdcDeposit;
         jobSubscriptions[_jobSubsId].job.callbackDeposit += _callbackDeposit;
@@ -645,23 +577,24 @@ contract RelaySubscriptions is
         if(jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
             revert RelaySubscriptionsNotJobSubscriptionOwner();
 
-        if(_terminationTimestamp < block.timestamp + OVERALL_TIMEOUT)
+        if(_terminationTimestamp < block.timestamp + RELAY.OVERALL_TIMEOUT())
             revert RelaySubscriptionsInvalidTerminationTimestamp();
         
-        if(block.timestamp > jobSubscriptions[_jobSubsId].terminationTimestamp)
+        uint256 currentTerminationTimestamp = jobSubscriptions[_jobSubsId].terminationTimestamp;
+        if(block.timestamp > currentTerminationTimestamp)
             revert RelaySubscriptionsJobSubscriptionTerminated();
 
         // won't be executed if called from terminateJobSubscription()
-        if(_terminationTimestamp > block.timestamp + OVERALL_TIMEOUT) {
+        if(_terminationTimestamp > currentTerminationTimestamp) {
             _depositTokens(_jobSubsId, _usdcDeposit, _callbackDeposit);
 
             JobSubscription memory jobSubs = jobSubscriptions[_jobSubsId];
             uint256 remainingRuns = (_terminationTimestamp - block.timestamp) / jobSubs.periodicGap;
 
-            if (jobSubs.job.maxGasPrice * (jobSubs.job.callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) * remainingRuns > jobSubs.job.callbackDeposit)
+            if (jobSubs.job.maxGasPrice * (jobSubs.job.callbackGasLimit + RELAY.FIXED_GAS() + RELAY.CALLBACK_MEASURE_GAS()) * remainingRuns > jobSubs.job.callbackDeposit)
                 revert RelaySubscriptionsInsufficientCallbackDeposit();
 
-            uint256 minUsdcDeposit = (jobSubs.userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB) * remainingRuns;
+            uint256 minUsdcDeposit = (jobSubs.userTimeout * RELAY.EXECUTION_FEE_PER_MS() + RELAY.GATEWAY_FEE_PER_JOB()) * remainingRuns;
             if(jobSubs.job.usdcDeposit < minUsdcDeposit)
                 revert RelaySubscriptionsInsufficientUsdcDeposit();
         }
@@ -678,7 +611,7 @@ contract RelaySubscriptions is
         if(jobSubscriptions[_jobSubsId].job.jobOwner != _jobOwner)
             revert RelaySubscriptionsNotJobSubscriptionOwner();
 
-        if(block.timestamp <= jobSubscriptions[_jobSubsId].terminationTimestamp + OVERALL_TIMEOUT)
+        if(block.timestamp <= jobSubscriptions[_jobSubsId].terminationTimestamp + RELAY.OVERALL_TIMEOUT())
             revert RelaySubscriptionsTerminationConditionPending();
 
         uint256 usdcAmount = jobSubscriptions[_jobSubsId].job.usdcDeposit;
@@ -686,7 +619,7 @@ contract RelaySubscriptions is
 
         delete jobSubscriptions[_jobSubsId];
 
-        TOKEN.safeTransfer(_jobOwner, usdcAmount);
+        RELAY.TOKEN().safeTransfer(_jobOwner, usdcAmount);
         // TODO: do we need to check this bool success
         (bool success, ) = _jobOwner.call{value: callbackAmount}("");
 
@@ -696,7 +629,7 @@ contract RelaySubscriptions is
     function _terminateJobSubscription(
         uint256 _jobSubsId
     ) internal {
-        _updateJobSubsTerminationParams(_jobSubsId, block.timestamp + OVERALL_TIMEOUT, 0, 0);
+        _updateJobSubsTerminationParams(_jobSubsId, block.timestamp + RELAY.OVERALL_TIMEOUT(), 0, 0);
 
         emit JobSubscriptionTerminated(_jobSubsId);
     }

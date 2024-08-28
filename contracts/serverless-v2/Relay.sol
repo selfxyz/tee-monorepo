@@ -323,7 +323,7 @@ contract Relay is
      */
     uint256 public jobCount;
 
-    bytes32 private constant JOB_RESPONSE_TYPEHASH =
+    bytes32 public constant JOB_RESPONSE_TYPEHASH =
         keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
 
     /**
