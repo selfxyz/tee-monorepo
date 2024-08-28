@@ -14,7 +14,7 @@ import "../interfaces/IAttestationVerifier.sol";
 
 /**
  * @title Relay Contract
- * @notice This contract manages serverless job relay, gateway registration, and job subscription functionalities.
+ * @notice This contract manages serverless job relay and gateway registration functionalities.
  * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
  */
 contract Relay is
@@ -282,6 +282,14 @@ contract Relay is
      */
     function deregisterGateway(address _enclaveAddress) external {
         _deregisterGateway(_enclaveAddress, _msgSender());
+    }
+
+    /**
+     * @notice Ensures that the specified enclave address is verified.
+     * @param _enclaveAddress The address of the enclave to verify.
+     */
+    function allowOnlyVerified(address _enclaveAddress) external view {
+        _allowOnlyVerified(_enclaveAddress);
     }
 
     //-------------------------------- external functions end ---------------------------//
