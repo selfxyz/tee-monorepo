@@ -95,6 +95,24 @@ async function main() {
     let relay_addr = relay.target;
     console.log("Relay Deployed address: ", relay_addr);
 
+    
+    const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
+    console.log("Deploying RelaySubscriptions...")
+    let relaySubscriptions = await upgrades.deployProxy(
+        RelaySubscriptions,
+        [
+            admin_addr
+        ],
+        {
+            initializer : "initialize",
+            kind : "uups",
+            constructorArgs : [
+                relay_addr
+            ]
+        });
+    let relaySubscriptionsAddress = relaySubscriptions.target;
+    console.log("RelaySubscriptions Deployed address: ", relaySubscriptionsAddress);
+
     // Common Chain Gateways Contract
     let epochInterval = 600;
     const Gateways = await ethers.getContractFactory("Gateways");
