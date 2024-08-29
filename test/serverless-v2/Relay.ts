@@ -545,7 +545,7 @@ describe("Relay - Register gateway", function () {
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
 		await expect(relay.connect(signers[2]).deregisterGateway(addrs[15]))
-			.to.revertedWithCustomError(relay, "RelayInvalidGateway");
+			.to.revertedWithCustomError(relay, "RelayInvalidGatewayOwner");
 	});
 
 });
@@ -1145,24 +1145,28 @@ describe("Relay - Job sent by UserSample contract", function () {
 			.and.to.emit(userSample, "CalledBack").withArgs(
 				jobId, callbackContract, codeHash, codeInputs, output, errorCode
 		);
-
-		let initBalAddrs10 = await ethers.provider.getBalance(addrs[10]);
-		await userSample.connect(signers[10]).withdrawEth();
-		let finalBalAddrs10 = await ethers.provider.getBalance(addrs[10]);
-		// console.log("user sample owner bal: ", formatUnits(finalBalAddrs10), formatUnits(initBalAddrs10))
-		expect(finalBalAddrs10).to.be.gt(initBalAddrs10);
-
+		
 		let jobOwner = userSample.target;
 		let txReceipt = await (await tx).wait();
-		console.log("FIXED_GAS : ", txReceipt?.gasUsed);
+		// console.log("FIXED_GAS : ", txReceipt?.gasUsed);
 		// validate callback cost and refund
 		let txGasPrice = txReceipt?.gasPrice || 0n;
-		let callbackGas = 9246; // calculated using console.log
-		console.log("txGasPrice: ", txGasPrice);
+		let callbackGas = 9313; // calculated using console.log
+		// console.log("txGasPrice: ", txGasPrice);
 		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
 		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
 		expect(await ethers.provider.getBalance(jobOwner)).to.equal(callbackDeposit - callbackCost);
 
+		let userSampleBal = await ethers.provider.getBalance(jobOwner),
+			initBalAddrs10 = await ethers.provider.getBalance(addrs[10]),
+			withdrawalTxn = await userSample.connect(signers[10]).withdrawEth(),
+			withdrawalReceipt = await withdrawalTxn.wait(),
+			gasCost = 0n;
+		if(withdrawalReceipt) 
+			gasCost = withdrawalReceipt?.gasPrice * withdrawalReceipt?.gasUsed;
+		let finalBalAddrs10 = await ethers.provider.getBalance(addrs[10]);
+		// console.log("user sample owner bal: ", formatUnits(finalBalAddrs10), formatUnits(initBalAddrs10))
+		expect(finalBalAddrs10).to.eq(initBalAddrs10 + userSampleBal - gasCost);
 	});
 
 	it("can submit response with gas price higher than maxGasPrice", async function () {
