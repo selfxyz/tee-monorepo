@@ -48,8 +48,16 @@ contract EnvTreeUpgradeable is Initializable {
         }
     }
 
-    function __EnvTreeUpgradeable_init_unchained(uint8 _env) internal onlyInitializing {
-        _init_tree(_env);
+    function __EnvTreeUpgradeable_init_unchained(uint8[] memory _env) internal onlyInitializing {
+        _init_trees(_env);
+    }
+
+    /// @dev Initializes multiple trees with 0 element as the first element.
+    /// Node indexes start from 1.
+    function _init_trees(uint8[] memory _envs) internal {
+        for (uint256 index = 0; index < _envs.length; index++) {
+            _init_tree(_envs[index]);
+        }
     }
 
     /// @dev Initializes the tree with 0 element as the first element.

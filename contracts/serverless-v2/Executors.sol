@@ -89,7 +89,7 @@ contract Executors is
      * @param _admin The address of the admin.
      * @param _images Array of enclave images to initialize.
      */
-    function initialize(address _admin, EnclaveImage[] memory _images, uint8 _env) public initializer {
+    function initialize(address _admin, EnclaveImage[] memory _images, uint8[] memory _envs) public initializer {
         if (_admin == address(0)) revert ExecutorsZeroAddressAdmin();
 
         __Context_init_unchained();
@@ -97,7 +97,7 @@ contract Executors is
         __AccessControl_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(_images);
-        __EnvTreeUpgradeable_init_unchained(_env);
+        __EnvTreeUpgradeable_init_unchained(_envs);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }

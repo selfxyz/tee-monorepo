@@ -176,7 +176,7 @@ contract GatewayJobs is
 
     bytes32 private constant RELAY_JOB_TYPEHASH =
         keccak256(
-            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestamp)"
+            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint8 env,uint256 signTimestamp)"
         );
     bytes32 private constant REASSIGN_GATEWAY_TYPEHASH =
         keccak256(
@@ -289,6 +289,7 @@ contract GatewayJobs is
             _jobRequestTimestamp,
             _sequenceId,
             _jobOwner,
+            _env,
             _signTimestamp
         );
 
@@ -344,6 +345,7 @@ contract GatewayJobs is
         uint256 _jobRequestTimestamp,
         uint8 _sequenceId,
         address _jobOwner,
+        uint8 _env,
         uint256 _signTimestamp
     ) internal view returns (address) {
         if (block.timestamp > _signTimestamp + SIGN_MAX_AGE) revert GatewayJobsSignatureTooOld();
@@ -358,6 +360,7 @@ contract GatewayJobs is
                 _jobRequestTimestamp,
                 _sequenceId,
                 _jobOwner,
+                _env,
                 _signTimestamp
             )
         );
