@@ -98,18 +98,6 @@ contract RelaySubscriptions is
 
     //-------------------------------- Job Subscription Start ----------------------------------//
 
-    struct Job {
-        uint256 startTime;
-        uint256 maxGasPrice;
-        uint256 usdcDeposit;
-        uint256 callbackDeposit;
-        uint256 callbackGasLimit;
-        address jobOwner;
-        address callbackContract;
-        bytes32 codehash;
-        bytes codeInputs;
-    }
-
     struct JobSubscription {
         uint256 periodicGap;
         uint256 terminationTimestamp;
@@ -117,7 +105,7 @@ contract RelaySubscriptions is
         uint256 lastRunTimestamp;
         uint256 userTimeout;
         address refundAccount;
-        Job job;
+        Relay.Job job;
     }
 
     // jobSubsId => JobSubscription
@@ -286,8 +274,6 @@ contract RelaySubscriptions is
         uint256 _terminationTimestamp,
         address _jobOwner
     ) internal {
-        // TODO: Can _terminationTimestamp = 0 and _maxRuns = 0 while starting subscription??
-
         if(_startTimestamp >= _terminationTimestamp)
             revert RelaySubscriptionsInvalidStartTimestamp();
 
@@ -305,7 +291,7 @@ contract RelaySubscriptions is
 
         _validateDeposits(_userTimeout, _maxGasPrice, _callbackGasLimit, _periodicGap, _usdcDeposit, _startTimestamp, _terminationTimestamp);
 
-        Job memory job = Job({
+        Relay.Job memory job = Relay.Job({
             startTime: _startTimestamp,
             maxGasPrice: _maxGasPrice,
             usdcDeposit: _usdcDeposit,
@@ -350,7 +336,7 @@ contract RelaySubscriptions is
     }
 
     function _createJobSubscription(
-        Job memory _job,
+        Relay.Job memory _job,
         uint256 _userTimeout,
         address _refundAccount,
         uint256 _periodicGap,
@@ -495,7 +481,7 @@ contract RelaySubscriptions is
 
     function _callBackWithLimit(
         uint256 _jobId,
-        Job memory _job,
+        Relay.Job memory _job,
         bytes calldata _output,
         uint8 _errorCode
     ) internal returns (bool success, uint callbackGas) {
