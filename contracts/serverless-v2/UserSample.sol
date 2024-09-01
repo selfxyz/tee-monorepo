@@ -9,6 +9,7 @@ contract UserSample is Ownable {
     using SafeERC20 for IERC20;
 
     address public relayAddress;
+    address public relaySubscriptionsAddress;
 
     /// @notice refers to USDC token
     IERC20 public token;
@@ -17,8 +18,14 @@ contract UserSample is Ownable {
 
     error EthWithdrawalFailed();
 
-    constructor(address _relayAddress, address _token, address _owner) Ownable(_owner) {
+    constructor(
+        address _relayAddress,
+        address _relaySubscriptionsAddress,
+        address _token,
+        address _owner
+    ) Ownable(_owner) {
         relayAddress = _relayAddress;
+        relaySubscriptionsAddress = _relaySubscriptionsAddress;
         token = IERC20(_token);
     }
 
@@ -88,9 +95,9 @@ contract UserSample is Ownable {
         uint256 _terminationTimestamp
     ) external returns (bool) {
         // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
-        token.safeIncreaseAllowance(relayAddress, _usdcDeposit);
+        token.safeIncreaseAllowance(relaySubscriptionsAddress, _usdcDeposit);
 
-        (bool success, ) = relayAddress.call{value: _callbackDeposit}(
+        (bool success, ) = relaySubscriptionsAddress.call{value: _callbackDeposit}(
             abi.encodeWithSignature(
                 "startJobSubscription(bytes32,bytes,uint256,uint256,address,address,uint256,uint256,uint256,uint256,uint256)",
                 _codehash,

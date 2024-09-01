@@ -484,6 +484,9 @@ describe("Relay - Register gateway", function () {
 		await expect(relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp))
 			.to.emit(relay, "GatewayRegistered").withArgs(addrs[1], addrs[15]);
 		expect(await relay.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
+		expect(await relay.allowOnlyVerified(addrs[15])).to.be.not.reverted;
+		await expect(relay.allowOnlyVerified(addrs[16]))
+			.to.be.revertedWithCustomError(relay, "AttestationAutherKeyNotVerified");
 	});
 
 	it("cannot register gateway with expired signature", async function () {
@@ -1107,7 +1110,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
 		const UserSample = await ethers.getContractFactory("UserSample");
-		userSample = await UserSample.deploy(relay.target, token.target, addrs[10]) as unknown as UserSample;
+		userSample = await UserSample.deploy(relay.target, addrs[9], token.target, addrs[10]) as unknown as UserSample;
 
 		await token.transfer(userSample.target, 1000000);
 	});
@@ -1145,13 +1148,13 @@ describe("Relay - Job sent by UserSample contract", function () {
 			.and.to.emit(userSample, "CalledBack").withArgs(
 				jobId, callbackContract, codeHash, codeInputs, output, errorCode
 		);
-		
+
 		let jobOwner = userSample.target;
 		let txReceipt = await (await tx).wait();
 		// console.log("FIXED_GAS : ", txReceipt?.gasUsed);
 		// validate callback cost and refund
 		let txGasPrice = txReceipt?.gasPrice || 0n;
-		let callbackGas = 9313; // calculated using console.log
+		let callbackGas = 9269; // calculated using console.log
 		// console.log("txGasPrice: ", txGasPrice);
 		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
 		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
