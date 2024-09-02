@@ -128,7 +128,8 @@ contract Gateways is
     }
 
     struct RequestChain {
-        address contractAddress;
+        address relayAddress;
+        address relaySubscriptionsAddress;
         string httpRpcUrl;
         string wsRpcUrl;
     }
@@ -178,10 +179,17 @@ contract Gateways is
 
     /// @notice Event emitted when a new request chain is added globally.
     /// @param chainId The ID of the chain.
-    /// @param contractAddress The Relay contract address on the chain.
+    /// @param relayAddress The Relay contract address on the chain.
+    /// @param relaySubscriptionsAddress The RelaySubscriptions contract address on the chain.
     /// @param httpRpcUrl The HTTP RPC URL of the chain.
     /// @param wsRpcUrl The WebSocket RPC URL of the chain.
-    event ChainAddedGlobal(uint256 chainId, address contractAddress, string httpRpcUrl, string wsRpcUrl);
+    event ChainAddedGlobal(
+        uint256 chainId,
+        address relayAddress,
+        address relaySubscriptionsAddress,
+        string httpRpcUrl,
+        string wsRpcUrl
+    );
 
     /// @notice Event emitted when a request chain is removed globally.
     /// @param chainId The ID of the removed chain.
@@ -250,7 +258,7 @@ contract Gateways is
             uint256 chainId = _chainIds[index];
             requestChains[chainId] = reqChain;
 
-            emit ChainAddedGlobal(chainId, reqChain.contractAddress, reqChain.httpRpcUrl, reqChain.wsRpcUrl);
+            emit ChainAddedGlobal(chainId, reqChain.relayAddress, reqChain.relaySubscriptionsAddress, reqChain.httpRpcUrl, reqChain.wsRpcUrl);
         }
     }
 
@@ -336,7 +344,7 @@ contract Gateways is
         if (gateways[enclaveAddress].owner != address(0)) revert GatewaysGatewayAlreadyExists();
 
         for (uint256 index = 0; index < _chainIds.length; index++) {
-            if (requestChains[_chainIds[index]].contractAddress == address(0)) revert GatewaysUnsupportedChain();
+            if (requestChains[_chainIds[index]].relayAddress == address(0)) revert GatewaysUnsupportedChain();
         }
 
         _register(enclaveAddress, _owner, _chainIds);
@@ -448,7 +456,7 @@ contract Gateways is
     }
 
     function _addChain(uint256 _chainId, address _enclaveAddress) internal {
-        if (requestChains[_chainId].contractAddress == address(0)) revert GatewaysUnsupportedChain();
+        if (requestChains[_chainId].relayAddress == address(0)) revert GatewaysUnsupportedChain();
 
         uint256[] memory chainIdList = gateways[_enclaveAddress].chainIds;
         for (uint256 index = 0; index < chainIdList.length; index++) {
@@ -645,7 +653,7 @@ contract Gateways is
      * @return bool indicating whether the chain is supported.
      */
     function isChainSupported(uint256 _reqChainId) external view returns (bool) {
-        return (requestChains[_reqChainId].contractAddress != address(0));
+        return (requestChains[_reqChainId].relayAddress != address(0));
     }
 
     /**
