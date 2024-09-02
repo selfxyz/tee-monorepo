@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::contract_abi::{GatewayJobsContract, RelayContract};
+use crate::contract_abi::{GatewayJobsContract, RelayContract, RelaySubscriptionsContract};
 use crate::HttpProvider;
 
 #[derive(Debug)]
@@ -108,7 +108,8 @@ pub struct ContractsClient {
 
 #[derive(Debug, Clone)]
 pub struct RequestChainData {
-    pub contract_address: Address,
+    pub relay_address: Address,
+    pub relay_subscriptions_address: Address,
     pub http_rpc_url: String,
     pub ws_rpc_url: String,
     pub block_number: u64,
@@ -117,10 +118,12 @@ pub struct RequestChainData {
 #[derive(Debug, Clone)]
 pub struct RequestChainClient {
     pub chain_id: u64,
-    pub contract_address: Address,
+    pub relay_address: Address,
+    pub relay_subscriptions_address: Address,
     pub ws_rpc_url: String,
     pub http_rpc_url: String,
-    pub contract: Arc<RwLock<RelayContract<HttpProvider>>>,
+    pub relay_contract: Arc<RwLock<RelayContract<HttpProvider>>>,
+    pub relay_subscriptions_contract: Arc<RwLock<RelaySubscriptionsContract<HttpProvider>>>,
     pub request_chain_start_block_number: u64,
     pub confirmation_blocks: u64,
     pub last_seen_block: Arc<AtomicU64>,

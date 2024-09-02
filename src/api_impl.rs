@@ -15,7 +15,7 @@ use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract};
+use crate::contract_abi::{GatewayJobsContract, GatewaysContract, RelayContract, RelaySubscriptionsContract};
 use crate::model::{
     AppState, ContractsClient, GatewayData, ImmutableConfig, MutableConfig, RequestChainClient,
     RequestChainData, SignedRegistrationBody,
@@ -108,7 +108,8 @@ async fn inject_mutable_config(
         );
 
         // Build Request Chain Client's http rpc client
-        let mut request_chain_contract_clients: HashMap<u64, RelayContract<HttpProvider>> =
+        let mut request_chain_contract_clients:
+            HashMap<u64, (RelayContract<HttpProvider>, RelaySubscriptionsContract<HttpProvider>)> =
             HashMap::new();
         let request_chain_clients_clone: HashMap<u64, Arc<RequestChainClient>> =
             contracts_client_guard
@@ -135,11 +136,16 @@ async fn inject_mutable_config(
                     .nonce_manager(gas_address),
             );
 
-            let contract = RelayContract::new(
-                request_chain_client.contract_address,
+            let relay_contract = RelayContract::new(
+                request_chain_client.relay_address,
+                request_chain_http_rpc_client.clone(),
+            );
+
+            let relay_subs_contract = RelaySubscriptionsContract::new(
+                request_chain_client.relay_subscriptions_address,
                 request_chain_http_rpc_client,
             );
-            request_chain_contract_clients.insert(chain_id, contract);
+            request_chain_contract_clients.insert(chain_id, (relay_contract, relay_subs_contract));
         }
 
         // Updating Gateway Jobs Contract's http rpc client with the new wallet address
@@ -163,14 +169,18 @@ async fn inject_mutable_config(
             .request_chain_clients
             .values()
         {
-            let contract = request_chain_contract_clients
+            let (relay_contract, relay_subs_contract) = request_chain_contract_clients
                 .get(&request_chain_client.chain_id)
                 .unwrap()
                 .clone();
 
-            let mut request_chain_contract_write_guard =
-                request_chain_client.contract.write().unwrap();
-            *request_chain_contract_write_guard = contract;
+            let mut relay_contract_write_guard = request_chain_client.relay_contract.write().unwrap();
+            *relay_contract_write_guard = relay_contract;
+
+            let  mut relay_subs_contract_write_guard = 
+                request_chain_client.relay_subscriptions_contract.write().unwrap();
+            *relay_subs_contract_write_guard = relay_subs_contract;
+
         }
     }
     *wallet_guard = Some(gas_wallet.clone());
@@ -368,7 +378,7 @@ async fn export_signed_registration_message(
                 request_chain_info.unwrap_err()
             ));
         }
-        let (contract_address, http_rpc_url, ws_rpc_url) = request_chain_info.unwrap();
+        let (relay_address, relay_subscriptions_address, http_rpc_url, ws_rpc_url) = request_chain_info.unwrap();
 
         let http_rpc_client = Provider::<Http>::try_from(&http_rpc_url);
         let Ok(http_rpc_client) = http_rpc_client else {
@@ -390,7 +400,8 @@ async fn export_signed_registration_message(
         request_chains_data.insert(
             chain_id,
             RequestChainData {
-                contract_address,
+                relay_address,
+                relay_subscriptions_address,
                 http_rpc_url: http_rpc_url.to_string(),
                 ws_rpc_url: ws_rpc_url.to_string(),
                 block_number,
@@ -443,15 +454,22 @@ async fn export_signed_registration_message(
                 .with_signer(signer_wallet)
                 .nonce_manager(signer_address),
         );
-        let contract = RelayContract::new(
-            request_chain_data.contract_address,
+        let relay_contract = RelayContract::new(
+            request_chain_data.relay_address,
+            request_chain_http_rpc_client.clone(),
+        );
+
+        let relay_subs_contract = RelaySubscriptionsContract::new(
+            request_chain_data.relay_subscriptions_address,
             request_chain_http_rpc_client.clone(),
         );
 
         let request_chain_client = Arc::from(RequestChainClient {
             chain_id,
-            contract_address: request_chain_data.contract_address,
-            contract: Arc::new(RwLock::new(contract)),
+            relay_address: request_chain_data.relay_address,
+            relay_subscriptions_address: request_chain_data.relay_subscriptions_address,
+            relay_contract: Arc::new(RwLock::new(relay_contract)),
+            relay_subscriptions_contract: Arc::new(RwLock::new(relay_subs_contract)),
             ws_rpc_url: request_chain_data.ws_rpc_url.to_string(),
             http_rpc_url: request_chain_data.http_rpc_url.to_string(),
             request_chain_start_block_number: request_chain_data.block_number,

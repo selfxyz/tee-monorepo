@@ -105,7 +105,7 @@ impl ContractsClient {
         // listen to all the request chains for the GatewayRegistered event
         for request_chain_client in self.request_chain_clients.values().cloned() {
             let request_chain_registered_filter = Filter::new()
-                .address(request_chain_client.contract_address)
+                .address(request_chain_client.relay_address)
                 .select(request_chain_client.request_chain_start_block_number..)
                 .topic0(vec![keccak256(REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT)])
                 .topic1(self.enclave_owner)
@@ -1188,7 +1188,7 @@ impl ContractsClient {
 
         let txn;
         if response_job.job_mode == JobMode::Single {
-            txn = req_chain_client.contract.read().unwrap().job_response(
+            txn = req_chain_client.relay_contract.read().unwrap().job_response(
                 signature,
                 response_job_id,
                 response_job.output,
@@ -1197,7 +1197,7 @@ impl ContractsClient {
                 sign_timestamp.into(),
             );
         } else {
-            txn = req_chain_client.contract.read().unwrap().job_subs_response(
+            txn = req_chain_client.relay_subscriptions_contract.read().unwrap().job_subs_response(
                 signature,
                 response_job_id,
                 response_job.output,
@@ -1288,9 +1288,8 @@ impl LogsProvider for ContractsClient {
             "Subscribing to events for Req Chain chain_id: {}",
             req_chain_client.chain_id
         );
-
         let event_filter = Filter::new()
-            .address(req_chain_client.contract_address)
+            .address(vec![req_chain_client.relay_address, req_chain_client.relay_subscriptions_address])
             .select(req_chain_client.request_chain_start_block_number..)
             .topic0(vec![
                 keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT),
@@ -1385,7 +1384,7 @@ impl LogsProvider for ContractsClient {
         req_chain_client: &'a RequestChainClient,
     ) -> Result<Vec<Log>> {
         let event_filter = Filter::new()
-            .address(req_chain_client.contract_address)
+            .address(req_chain_client.relay_subscriptions_address)
             .select(..req_chain_client.request_chain_start_block_number - 1)
             .topic0(vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
