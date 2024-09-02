@@ -222,7 +222,7 @@ describe("Jobs - Init", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		const executors2 = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image1]],
+			[addrs[0], [image1], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -388,11 +388,12 @@ describe("Jobs - Create", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		let executor_images = [image4, image5, image6, image7]
+		let executor_images = [image4, image5, image6, image7],
+			envs = [1];
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images],
+			[addrs[0], executor_images, envs],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -437,15 +438,16 @@ describe("Jobs - Create", function () {
 		await staking_token.transfer(addrs[1], 10n**20n);
 		await staking_token.connect(signers[1]).approve(executors.target, 10n**20n);
 
-		let jobCapacity = 3, stakeAmount = 10n**19n;
-
+		let jobCapacity = 3, 
+			stakeAmount = 10n**19n,
+			env = 1;
 
 		for (let index = 0; index < 4; index++) {
 			let signTimestamp = await time.latest() - 540;
 			// Executor index using wallet 17 + index as enclave address
 			let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index],
 																		 wallets[14], timestamp - 540000);
-			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
 															 wallets[17 + index]);
 
 			await executors.connect(signers[1]).registerExecutor(
@@ -454,7 +456,8 @@ describe("Jobs - Create", function () {
 				jobCapacity,
 				signTimestamp,
 				signedDigest,
-				stakeAmount
+				stakeAmount,
+				env
 			);
 		}
 
@@ -469,9 +472,10 @@ describe("Jobs - Create", function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			deadline = 10000,
-			jobOwner = addrs[1];
+			jobOwner = addrs[1],
+			env = 1;
 
-		let tx = await jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline);
+		let tx = await jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline);
 		await tx.wait();
 		await expect(tx).to.emit(jobs, "JobCreated");
 
@@ -491,15 +495,26 @@ describe("Jobs - Create", function () {
 		}
 	});
 
+	it("cannot relay job with unsupported execution env", async function () {
+		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			deadline = 10000,
+			env = 2;
+
+		await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
+			.to.revertedWithCustomError(executors, "ExecutorsEnvUnsupported");
+	});
+
 	it("cannot relay job when a minimum no. of executor nodes are not available", async function () {
 		await executors.connect(signers[1]).drainExecutor(addrs[19]);
 		await executors.connect(signers[1]).drainExecutor(addrs[20]);
 
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			deadline = 10000;
+			deadline = 10000,
+			env = 1;
 
-		await expect(jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline))
+		await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
 			.to.revertedWithCustomError(jobs, "JobsUnavailableResources");
 	});
 
@@ -508,14 +523,15 @@ describe("Jobs - Create", function () {
 
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			deadline = 10000;
+			deadline = 10000,
+			env = 1;
 
 		for (let index = 1; index <= 3; index++) {
-			await expect(jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline))
+			await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
 				.to.emit(jobs, "JobCreated");
 		}
 
-		await expect(jobs.connect(signers[1]).createJob(codeHash, codeInputs, deadline))
+		await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
 			.to.revertedWithCustomError(jobs, "JobsUnavailableResources");
 	});
 });
@@ -557,11 +573,12 @@ describe("Jobs - Output", function () {
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
-		let executor_images = [image4, image5, image6, image7]
+		let executor_images = [image4, image5, image6, image7],
+			envs = [1];
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images],
+			[addrs[0], executor_images, envs],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -606,7 +623,9 @@ describe("Jobs - Output", function () {
 		await staking_token.transfer(addrs[1], 10n**20n);
 		await staking_token.connect(signers[1]).approve(executors.target, 10n**20n);
 
-		let jobCapacity = 20, stakeAmount = 10n**19n;
+		let jobCapacity = 20, 
+			stakeAmount = 10n**19n,
+			env = 1;
 		const timestamp = await time.latest() * 1000;
 
 		for (let index = 0; index < 3; index++) {
@@ -614,7 +633,7 @@ describe("Jobs - Output", function () {
 			// Executor index using wallet 17 + index as enclave address
 			let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index],
 																		 wallets[14], timestamp - 540000);
-			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
 															 wallets[17 + index]);
 
 			await executors.connect(signers[1]).registerExecutor(
@@ -623,7 +642,8 @@ describe("Jobs - Output", function () {
 				jobCapacity,
 				signTimestamp,
 				signedDigest,
-				stakeAmount
+				stakeAmount,
+				env
 			);
 		}
 		// RELAY JOB
@@ -634,7 +654,7 @@ describe("Jobs - Output", function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			deadline = 10000;
-		await jobs.connect(signers[3]).createJob(codeHash, codeInputs, deadline);
+		await jobs.connect(signers[3]).createJob(env, codeHash, codeInputs, deadline);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -809,12 +829,13 @@ describe("Jobs - Output", function () {
 		// deploy job user
 		const JobsUser = await ethers.getContractFactory("JobsUser");
 		let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			usdcDeposit = 1000000,
 			deadline = 10000;
 		await usdc_token.transfer(jobsUser.target, 10n**6n);
-		await jobsUser.createJob(codeHash, codeInputs, deadline, usdcDeposit);
+		await jobsUser.createJob(env, codeHash, codeInputs, deadline, usdcDeposit);
 
 		let jobId = 1,
 			output = solidityPacked(["string"], ["it is the output"]),
@@ -908,13 +929,14 @@ describe("Jobs - Output", function () {
 	it("cannot submit output from unselected executor node", async function () {
 		let jobCapacity = 20,
 			stakeAmount = 10,
-			timestamp = await time.latest() * 1000;
+			timestamp = await time.latest() * 1000,
+			env = 1;
 
 		let signTimestamp = await time.latest() - 540;
 		// Executor index using wallet 17 + index as enclave address
 		let [attestationSign, attestation] = await createAttestation(pubkeys[20], image4,
 																		wallets[14], timestamp - 540000);
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
 															wallets[20]);
 
 		await executors.connect(signers[1]).registerExecutor(
@@ -923,7 +945,8 @@ describe("Jobs - Output", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			stakeAmount
+			stakeAmount,
+			env
 		);
 
 		let jobId = 0,
@@ -1033,12 +1056,13 @@ describe("Jobs - Slashing", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		let executor_images = [image4, image5, image6, image7]
+		let executor_images = [image4, image5, image6, image7],
+			envs = [1];
 
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images],
+			[addrs[0], executor_images, envs],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -1082,14 +1106,16 @@ describe("Jobs - Slashing", function () {
 		await staking_token.transfer(addrs[1], 10n**20n);
 		await staking_token.connect(signers[1]).approve(executors.target, 10n**20n);
 
-		let jobCapacity = 20, stakeAmount = 10n**19n;
+		let jobCapacity = 20,
+			stakeAmount = 10n**19n,
+			env = 1;
 		const timestamp = await time.latest() * 1000;
 		for (let index = 0; index < 3; index++) {
 			let signTimestamp = await time.latest() - 540;
 			// Executor index using wallet 17 + index as enclave address
 			let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index],
 																		 wallets[14], timestamp - 540000);
-			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+			let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
 															 wallets[17 + index]);
 
 			await executors.connect(signers[1]).registerExecutor(
@@ -1098,7 +1124,8 @@ describe("Jobs - Slashing", function () {
 				jobCapacity,
 				signTimestamp,
 				signedDigest,
-				stakeAmount
+				stakeAmount,
+				env
 			);
 		}
 
@@ -1110,7 +1137,7 @@ describe("Jobs - Slashing", function () {
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			deadline = 10000;
-		await jobs.connect(signers[3]).createJob(codeHash, codeInputs, deadline);
+		await jobs.connect(signers[3]).createJob(env, codeHash, codeInputs, deadline);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1287,12 +1314,13 @@ describe("Jobs - Slashing", function () {
 		// deploy job user
 		const JobsUser = await ethers.getContractFactory("JobsUser");
 		let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			usdcDeposit = 1000000,
 			deadline = 10000;
 		await usdc_token.transfer(jobsUser.target, 10n**6n);
-		await jobsUser.createJob(codeHash, codeInputs, deadline, usdcDeposit);
+		await jobsUser.createJob(env, codeHash, codeInputs, deadline, usdcDeposit);
 
 		await time.increase(await time.latest() + 100000);
 		let jobId = 1;
@@ -1358,6 +1386,7 @@ async function createAttestation(
 async function createExecutorSignature(
 	owner: string,
 	jobCapacity: number,
+	env: number,
 	signTimestamp: number,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
@@ -1370,6 +1399,7 @@ async function createExecutorSignature(
 		Register: [
 			{ name: 'owner', type: 'address' },
 			{ name: 'jobCapacity', type: 'uint256' },
+			{ name: 'env', type: 'uint8' },
 			{ name: 'signTimestamp', type: 'uint256' }
 		]
 	};
@@ -1377,6 +1407,7 @@ async function createExecutorSignature(
 	const value = {
 		owner,
 		jobCapacity,
+		env,
 		signTimestamp
 	};
 

@@ -73,11 +73,11 @@ describe("Executors - Init", function () {
 		expect(await executors.SLASH_MAX_BIPS()).to.equal(10**6);
 
 		await expect(
-			executors.initialize(addrs[0], []),
+			executors.initialize(addrs[0], [], [1]),
 		).to.be.revertedWithCustomError(executors, "InvalidInitialization");
 
 		await expect(
-			executors.initialize(addrs[0], [image1, image2]),
+			executors.initialize(addrs[0], [image1, image2], [1]),
 		).to.be.revertedWithCustomError(executors, "InvalidInitialization");
 	});
 
@@ -85,7 +85,7 @@ describe("Executors - Init", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		const executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image1]],
+			[addrs[0], [image1], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -98,13 +98,14 @@ describe("Executors - Init", function () {
 					10**6
 				]
 			},
-		);
+		) as unknown as Executors;
 
 		expect(await executors.ATTESTATION_VERIFIER()).to.equal(attestationVerifier.target);
 		expect(await executors.ATTESTATION_MAX_AGE()).to.equal(600);
 		expect(await executors.MIN_STAKE_AMOUNT()).to.equal(10**10);
 		expect(await executors.SLASH_PERCENT_IN_BIPS()).to.equal(10**2);
 		expect(await executors.SLASH_MAX_BIPS()).to.equal(10**6);
+		expect(await executors.isSupportedEnv(1)).to.be.true;
 
 		expect(await executors.hasRole(await executors.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
 		{
@@ -118,7 +119,7 @@ describe("Executors - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				Executors,
-				[ZeroAddress, [image1, image2, image3]],
+				[ZeroAddress, [image1, image2, image3], [1]],
 				{
 					kind: "uups",
 					initializer: "initialize",
@@ -140,7 +141,7 @@ describe("Executors - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				Executors,
-				[addrs[0], [image1, image2, image3]],
+				[addrs[0], [image1, image2, image3], [1]],
 				{
 					kind: "uups",
 					initializer: "initialize",
@@ -162,7 +163,7 @@ describe("Executors - Init", function () {
 		await expect(
 			upgrades.deployProxy(
 				Executors,
-				[addrs[0], [image1, image2, image3]],
+				[addrs[0], [image1, image2, image3], [1]],
 				{
 					kind: "uups",
 					initializer: "initialize",
@@ -183,7 +184,7 @@ describe("Executors - Init", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		const executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image1, image2, image3]],
+			[addrs[0], [image1, image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -248,7 +249,7 @@ describe("Executors - Init", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		const executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image1, image2, image3]],
+			[addrs[0], [image1, image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -285,7 +286,7 @@ testERC165(
 		const Executors = await ethers.getContractFactory("Executors");
 		const executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image1]],
+			[addrs[0], [image1], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -339,7 +340,7 @@ describe("Executors - Verify", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -414,7 +415,7 @@ describe("Executors - Register executor", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -442,9 +443,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 		await expect(executors.connect(signers[1]).registerExecutor(
 			attestationSign,
@@ -452,13 +453,40 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0))
-			.to.emit(executors, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image2), pubkeys[15]);
+			0,
+			env
+		)).to.emit(executors, "EnclaveKeyVerified").withArgs(addrs[15], getImageId(image2), pubkeys[15]);
 		expect(await executors.getVerifiedKey(addrs[15])).to.equal(getImageId(image2));
 		expect(await executors.getOwner(addrs[15])).to.eq(addrs[1]);
 		expect(await executors.allowOnlyVerified(addrs[15])).to.be.not.reverted;
 		await expect(executors.allowOnlyVerified(addrs[16]))
 			.to.be.revertedWithCustomError(executors, "AttestationAutherKeyNotVerified");
+	});
+
+	it("cannot register executor with unsupported execution env", async function () {
+		const timestamp = await time.latest() * 1000;
+		let signTimestamp = await time.latest() - 700;
+		let [attestationSign, attestation] = await createAttestation(
+			pubkeys[15],
+			image2,
+			wallets[14],
+			timestamp - 540
+		);
+
+		let jobCapacity = 20,
+			env = 2;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
+			wallets[15]);
+
+		await expect(executors.connect(signers[1]).registerExecutor(
+			attestationSign,
+			attestation,
+			jobCapacity,
+			signTimestamp,
+			signedDigest,
+			0,
+			env
+		)).to.revertedWithCustomError(executors, "ExecutorsEnvUnsupported");
 	});
 
 	it("cannot register executor with old signature timestamp", async function () {
@@ -471,8 +499,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
 			wallets[15]);
 
 		await expect(executors.connect(signers[1]).registerExecutor(
@@ -481,8 +510,9 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0))
-			.to.revertedWithCustomError(executors, "ExecutorsSignatureTooOld");
+			0,
+			env
+		)).to.revertedWithCustomError(executors, "ExecutorsSignatureTooOld");
 	});
 
 	it("cannot register executor with different attestation pubkey and digest signing key", async function () {
@@ -495,9 +525,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-			wallets[16]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[16]);
 
 		await expect(executors.connect(signers[1]).registerExecutor(
 			attestationSign,
@@ -505,8 +535,9 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0))
-			.to.revertedWithCustomError(executors, "ExecutorsInvalidSigner");
+			0,
+			env
+		)).to.revertedWithCustomError(executors, "ExecutorsInvalidSigner");
 	});
 
 	it("cannot register executor with same enclave key twice", async function () {
@@ -519,16 +550,17 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 		await executors.connect(signers[1]).registerExecutor(
 			attestationSign,
 			attestation,
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0
+			0,
+			env
 		)
 		await expect(executors.connect(signers[1]).registerExecutor(
 			attestationSign,
@@ -536,8 +568,9 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0))
-			.to.revertedWithCustomError(executors, "ExecutorsExecutorAlreadyExists");
+			0,
+			env
+		)).to.revertedWithCustomError(executors, "ExecutorsExecutorAlreadyExists");
 	});
 
 	// drain then deregister with active jobs 0
@@ -551,9 +584,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 
 		await executors.connect(signers[1]).registerExecutor(
@@ -562,7 +595,8 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0
+			0,
+			env
 		)
 
 		await executors.connect(signers[1]).drainExecutor(addrs[15]);
@@ -583,9 +617,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 
 		await executors.connect(signers[1]).registerExecutor(
@@ -594,7 +628,8 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0
+			0,
+			env
 		)
 
 		await expect(executors.connect(signers[1]).deregisterExecutor(addrs[15]))
@@ -617,9 +652,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 		// register a enclave
 		await executors.connect(signers[1]).registerExecutor(
@@ -628,11 +663,12 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			10n**19n
+			10n**19n,
+			env
 		)
 
 		// select nodes
-		await executors.connect(signers[0]).selectExecutors(1);
+		await executors.connect(signers[0]).selectExecutors(env, 1);
 		// drain
 		await executors.connect(signers[1]).drainExecutor(addrs[15]);
 		// deregister
@@ -650,9 +686,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 		// register a enclave
 		await executors.connect(signers[1]).registerExecutor(
@@ -661,7 +697,8 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0
+			0,
+			env
 		)
 		// deregister with signer 0
 		await expect(executors.deregisterExecutor(addrs[15]))
@@ -678,10 +715,9 @@ describe("Executors - Register executor", function () {
 			timestamp - 540000
 		);
 
-		let jobCapacity = 20;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
-
+		let jobCapacity = 20,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 		await executors.connect(signers[1]).registerExecutor(
 			attestationSign,
@@ -689,7 +725,8 @@ describe("Executors - Register executor", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			0
+			0,
+			env
 		)
 
 		await executors.connect(signers[1]).drainExecutor(addrs[15]);
@@ -697,6 +734,91 @@ describe("Executors - Register executor", function () {
 			.to.revertedWithCustomError(executors, "ExecutorsAlreadyDraining");
 	});
 
+});
+
+describe("Executors - Global Execution Env", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let token: Pond;
+	let attestationVerifier: AttestationVerifier;
+	let executors: Executors;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		const Pond = await ethers.getContractFactory("Pond");
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        }) as unknown as Pond;
+
+		const Executors = await ethers.getContractFactory("Executors");
+		executors = await upgrades.deployProxy(
+			Executors,
+			[addrs[0], [image2, image3], [1]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token.target,
+					10,
+					10**2,
+					10**6
+				]
+			},
+		) as unknown as Executors;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it('can add global execution env', async function () {
+		let newEnv = 2;
+		await expect(executors.addGlobalEnv(newEnv)).to.emit(executors, "GlobalEnvAdded");
+		expect(await executors.isSupportedEnv(newEnv)).to.be.true;
+	});
+
+	it('cannot add global execution env without admin account', async function () {
+		let newEnv = 2;
+		await expect(executors.connect(signers[1]).addGlobalEnv(newEnv))
+			.to.be.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
+	});
+
+	it('cannot add already supported global execution env again', async function () {
+		let newEnv = 1;
+		await expect(executors.addGlobalEnv(newEnv))
+			.to.be.revertedWithCustomError(executors, "ExecutorsGlobalEnvAlreadySupported");
+	});
+
+	it('can remove global execution env', async function () {
+		let env = 1;
+		await expect(executors.removeGlobalEnv(env)).to.emit(executors, "GlobalEnvRemoved");
+		expect(await executors.isSupportedEnv(env)).to.be.false;
+	});
+
+	it('cannot remove global execution env without admin account', async function () {
+		let env = 1;
+		await expect(executors.connect(signers[1]).removeGlobalEnv(env))
+			.to.be.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
+	});
+
+	it('cannot remove unsupported global execution env', async function () {
+		let env = 2;
+		await expect(executors.removeGlobalEnv(env))
+			.to.be.revertedWithCustomError(executors, "ExecutorsGlobalEnvAlreadyUnsupported");
+	});
 });
 
 describe("Executors - Staking", function () {
@@ -729,7 +851,7 @@ describe("Executors - Staking", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -756,9 +878,9 @@ describe("Executors - Staking", function () {
 		);
 
 		let jobCapacity = 20,
-			stakeAmount = 10;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-														 wallets[15]);
+			stakeAmount = 10,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 
 		await executors.connect(signers[1]).registerExecutor(
 			attestationSign,
@@ -766,7 +888,8 @@ describe("Executors - Staking", function () {
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			stakeAmount
+			stakeAmount,
+			env
 		);
 	});
 
@@ -840,8 +963,9 @@ describe("Executors - Staking", function () {
 
 		// add stake to get node added to tree
 		await executors.connect(signers[1]).addExecutorStake(addrs[15], 10n**19n);
+		let env = 1;
 		// select nodes
-		await executors.connect(signers[0]).selectExecutors(1);
+		await executors.connect(signers[0]).selectExecutors(env, 1);
 		// drain
 		await executors.connect(signers[1]).drainExecutor(addrs[15]);
 
@@ -882,7 +1006,7 @@ describe("Executors - Revive", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -910,16 +1034,17 @@ describe("Executors - Revive", function () {
 			timestamp - 540000
 		);
 		let jobCapacity = 1,
-			stakeAmount = 10n**19n;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-			wallets[15]);
+			stakeAmount = 10n**19n,
+			env = 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 		await executors.connect(signers[1]).registerExecutor(
 			attestationSign,
 			attestation,
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			stakeAmount
+			stakeAmount,
+			env
 		);
 	});
 
@@ -929,8 +1054,9 @@ describe("Executors - Revive", function () {
 		// Drain executor
 		await executors.connect(signers[1]).drainExecutor(addrs[15]);
 
+		let env = 1;
 		// Try to select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// No executor should be selected
 		let executor = await executors.executors(addrs[15]);
@@ -943,7 +1069,7 @@ describe("Executors - Revive", function () {
 			.to.emit(executors, "ExecutorRevived").withArgs(addrs[15]);
 
 		// check executor can be selected again
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 		executor = await executors.executors(addrs[15]);
 		expect(executor.draining).to.be.false;
 		expect(executor.activeJobs).to.be.eq(1);
@@ -956,7 +1082,7 @@ describe("Executors - Revive", function () {
 		await executors.connect(signers[1]).reviveExecutor(addrs[15]);
 
 		// select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// No executor should be selected
 		executor = await executors.executors(addrs[15]);
@@ -981,7 +1107,7 @@ describe("Executors - Revive", function () {
 
 		// executor should not be added to the tree because it dosent have minimum stake
 		// select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// No executor should be selected
 		executor = await executors.executors(addrs[15]);
@@ -1029,7 +1155,7 @@ describe("Executors - Select/Release/Slash", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3], [1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -1057,24 +1183,26 @@ describe("Executors - Select/Release/Slash", function () {
 			timestamp - 540000
 		);
 		let jobCapacity = 1,
-			stakeAmount = 10n**19n;
-		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, signTimestamp,
-			wallets[15]);
+			stakeAmount = 10n**19n,
+			env= 1;
+		let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[15]);
 		await executors.connect(signers[1]).registerExecutor(
 			attestationSign,
 			attestation,
 			jobCapacity,
 			signTimestamp,
 			signedDigest,
-			stakeAmount
+			stakeAmount,
+			env
 		);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("select executor after releasing", async function () {
+		let env= 1;
 		// Select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// Check active jobs 1
 		let executor = await executors.executors(addrs[15]);
@@ -1088,7 +1216,7 @@ describe("Executors - Select/Release/Slash", function () {
 		expect(executor.activeJobs).to.be.eq(0);
 
 		// Select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// Check active jobs 1
 		executor = await executors.executors(addrs[15]);
@@ -1096,8 +1224,9 @@ describe("Executors - Select/Release/Slash", function () {
 	});
 
 	it("releasing while draining executor", async function () {
+		let env = 1;
 		// Select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// Check active jobs 1
 		let executor = await executors.executors(addrs[15]);
@@ -1114,7 +1243,7 @@ describe("Executors - Select/Release/Slash", function () {
 		expect(executor.activeJobs).to.be.eq(0);
 
 		// Select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// Check active jobs 0
 		executor = await executors.executors(addrs[15]);
@@ -1122,8 +1251,9 @@ describe("Executors - Select/Release/Slash", function () {
 	});
 
 	it("low stakes while releasing executor", async function () {
+		let env = 1;
 		// Select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// Check active jobs 1
 		let executor = await executors.executors(addrs[15]);
@@ -1137,26 +1267,33 @@ describe("Executors - Select/Release/Slash", function () {
 		expect(executor.activeJobs).to.be.eq(0);
 
 		// Select one executor
-		await executors.selectExecutors(1);
+		await executors.selectExecutors(env, 1);
 
 		// Check active jobs 0
 		executor = await executors.executors(addrs[15]);
 		expect(executor.activeJobs).to.be.eq(0);
 	});
 
-	it("cannot release executor without JOB ROlE", async function () {
+	it("cannot release executor without JOB ROLE", async function () {
 		await expect(executors.connect(signers[1]).releaseExecutor(addrs[15]))
 			.to.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
 	});
 
 	it("cannot select executor without JOB ROLE", async function () {
-		await expect(executors.connect(signers[1]).selectExecutors(1))
+		let env = 1;
+		await expect(executors.connect(signers[1]).selectExecutors(env, 1))
 			.to.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
 	});
 
 	it("cannot slash executor without JOB ROLE", async function () {
 		await expect(executors.connect(signers[1]).slashExecutor(addrs[15]))
 			.to.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
+	});
+
+	it("cannot select executor with unsupported execution env", async function () {
+		let env = 2;
+		await expect(executors.selectExecutors(env, 1))
+			.to.revertedWithCustomError(executors, "ExecutorsEnvUnsupported");
 	});
 });
 
@@ -1212,6 +1349,7 @@ async function createAttestation(
 async function createExecutorSignature(
 	owner: string,
 	jobCapacity: number,
+	env: number,
 	signTimestamp: number,
 	sourceEnclaveWallet: Wallet
 ): Promise<string> {
@@ -1224,6 +1362,7 @@ async function createExecutorSignature(
 		Register: [
 			{ name: 'owner', type: 'address' },
 			{ name: 'jobCapacity', type: 'uint256' },
+			{ name: 'env', type: 'uint8' },
 			{ name: 'signTimestamp', type: 'uint256' }
 		]
 	};
@@ -1231,6 +1370,7 @@ async function createExecutorSignature(
 	const value = {
 		owner,
 		jobCapacity,
+		env,
 		signTimestamp
 	};
 

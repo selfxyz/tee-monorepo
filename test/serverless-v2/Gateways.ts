@@ -584,7 +584,7 @@ describe("Gateways - Add/Remove chains", function () {
 			signTimestamp = await time.latest();
 		let signedDigest = await createAddChainsSignature(chainIds, signTimestamp, wallets[15])
 		await expect(gateways.addChains(signedDigest, chainIds, signTimestamp, addrs[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 	it("cannot add chains with invalid signer", async function () {
@@ -643,7 +643,7 @@ describe("Gateways - Add/Remove chains", function () {
 			signTimestamp = await time.latest();
 		let signedDigest = await createRemoveChainsSignature(chainIds, signTimestamp, wallets[15])
 		await expect(gateways.removeChains(signedDigest, chainIds, signTimestamp, addrs[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 	it("cannot remove chain with invalid signer", async function () {
@@ -764,7 +764,7 @@ describe("Gateways - Draining gateway", function () {
 
 	it('cannot drain without gateway owner', async function () {
 		await expect(gateways.connect(signers[0]).drainGateway(addrs[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 	it('cannot drain twice consecutively', async function () {
@@ -785,7 +785,7 @@ describe("Gateways - Draining gateway", function () {
 
 	it('cannot drain without gateway owner', async function () {
 		await expect(gateways.connect(signers[0]).reviveGateway(addrs[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 	it('cannot revive when not draining', async function () {
@@ -945,7 +945,7 @@ describe("Gateways - Register gateway", function () {
 		await gateways.connect(signers[1]).drainGateway(addrs[15]);
 
 		await expect(gateways.connect(signers[0]).deregisterGateway(addrs[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 	it('cannot deregister gateway before drain timeout', async function () {
@@ -1006,7 +1006,7 @@ describe("Gateways - Register gateway", function () {
 
 		await time.increase(700);
 		await expect(gateways.connect(signers[0]).deregisterGateway(addrs[15]))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 });
@@ -1083,7 +1083,7 @@ describe("Gateways - Staking", function () {
 	it("cannot stake without gateway owner", async function () {
 		let amount = 20;
 		await expect(gateways.connect(signers[0]).addGatewayStake(addrs[15], amount))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 	});
 
 	it("can stake", async function () {
@@ -1097,7 +1097,7 @@ describe("Gateways - Staking", function () {
 
 	it("cannot unstake without gateway owner", async function () {
 		await expect(gateways.connect(signers[0]).removeGatewayStake(addrs[15], 10))
-			.to.be.revertedWithCustomError(gateways, "GatewaysInvalidGateway");
+			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
 
 	});
 
