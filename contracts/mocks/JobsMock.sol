@@ -5,6 +5,7 @@ contract JobsMock {
     error JobsMockError();
 
     function createJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline // in milliseconds

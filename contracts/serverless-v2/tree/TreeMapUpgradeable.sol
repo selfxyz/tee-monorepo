@@ -10,7 +10,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 /// it is replaced with the element in the right most leaf in the tree.
 /// Each element in the tree stores the weight of all elements on the left
 /// and right side of the node.
-contract EnvTreeUpgradeable is Initializable {
+contract TreeMapUpgradeable is Initializable {
     /// @notice Struct that stores the value on the node and the sum of
     /// weights on left and right side of the node.
     /// @param value Value on the node
@@ -32,23 +32,23 @@ contract EnvTreeUpgradeable is Initializable {
     }
 
     /// @custom:storage-location erc7201:marlin.oyster.storage.EnvTree
-    struct EnvTreeStorage {
+    struct TreeMapStorage {
         /// @notice Tree data for each environment
         mapping(uint8 => Tree) envTree;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.EnvTree")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant EnvTreeStorageLocation = 0x8731a315ce9ca0ea8593ae2136a4f652d3ece8e4802e703eae4270516b326400;
+    // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.TreeMap")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant TreeMapStorageLocation = 0x03deb113f53cfc5c9ce28544dc6140711774fc5c00752abd22c8d30d1faf2900;
 
     error TreeInvalidInitState();
 
-    function _getEnvTreeStorage() private pure returns (EnvTreeStorage storage $) {
+    function _getTreeMapStorage() private pure returns (TreeMapStorage storage $) {
         assembly {
-            $.slot := EnvTreeStorageLocation
+            $.slot := TreeMapStorageLocation
         }
     }
 
-    function __EnvTreeUpgradeable_init_unchained(uint8[] memory _env) internal onlyInitializing {
+    function __TreeMapUpgradeable_init_unchained(uint8[] memory _env) internal onlyInitializing {
         _init_trees(_env);
     }
 
@@ -63,20 +63,20 @@ contract EnvTreeUpgradeable is Initializable {
     /// @dev Initializes the tree with 0 element as the first element.
     /// Node indexes start from 1.
     function _init_tree(uint8 _env) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
         if ($.envTree[_env].nodes.length != 0) revert TreeInvalidInitState();
         // root starts from index 1
         $.envTree[_env].nodes.push(Node(0, 0, 0));
     }
 
     function nodesInTree(uint8 _env) public view returns (uint256) {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
         return $.envTree[_env].nodes.length - 1;
     }
 
     // assumes index is not 0
     function _add_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         $.envTree[_env].nodes[_index].value += _value;
         while (_index > 1) {
@@ -92,7 +92,7 @@ contract EnvTreeUpgradeable is Initializable {
 
     // assumes index is not 0
     function _sub_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         $.envTree[_env].nodes[_index].value -= _value;
         while (_index > 1) {
@@ -108,7 +108,7 @@ contract EnvTreeUpgradeable is Initializable {
 
     // assumes _addr not already in tree
     function _insert_unchecked(uint8 _env, address _addr, uint64 _value) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint256 _index = $.envTree[_env].nodes.length;
         $.envTree[_env].nodes.push(Node(0, 0, 0));
@@ -121,7 +121,7 @@ contract EnvTreeUpgradeable is Initializable {
 
     // assumes index is not 0
     function _update_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint64 _currentValue = $.envTree[_env].nodes[_index].value;
 
@@ -134,12 +134,12 @@ contract EnvTreeUpgradeable is Initializable {
 
     // assumes _addr already in tree
     function _update_unchecked(uint8 _env, address _addr, uint64 _value) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
         _update_unchecked(_env, $.envTree[_env].addressToIndexMap[_addr], _value);
     }
 
     function _upsert(uint8 _env, address _addr, uint64 _value) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint256 _index = $.envTree[_env].addressToIndexMap[_addr];
         if (_index == 0) {
@@ -151,7 +151,7 @@ contract EnvTreeUpgradeable is Initializable {
 
     // assumes _addr already in tree at _index
     function _delete_unchecked(uint8 _env, address _addr, uint256 _index) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint256 _lastNodeIndex = $.envTree[_env].nodes.length - 1;
         address _lastNodeAddress = $.envTree[_env].indexToAddressMap[_lastNodeIndex];
@@ -175,7 +175,7 @@ contract EnvTreeUpgradeable is Initializable {
     }
 
     function _deleteIfPresent(uint8 _env, address _addr) internal {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint256 _index = $.envTree[_env].addressToIndexMap[_addr];
         if (_index == 0) {
@@ -211,7 +211,7 @@ contract EnvTreeUpgradeable is Initializable {
         )
     {
         unchecked {
-            EnvTreeStorage storage $ = _getEnvTreeStorage();
+            TreeMapStorage storage $ = _getTreeMapStorage();
 
             Node memory _root = $.envTree[_env].nodes[_rootIndex];
 
@@ -331,7 +331,7 @@ contract EnvTreeUpgradeable is Initializable {
     }
 
     function _selectN(uint8 _env, uint256 _randomizer, uint256 _N) internal view returns (address[] memory _selectedNodes) {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint256 _nodeCount = $.envTree[_env].nodes.length - 1;
         if (_N > _nodeCount) _N = _nodeCount;
@@ -368,7 +368,7 @@ contract EnvTreeUpgradeable is Initializable {
         MemoryNode[] memory _selectedPathTree,
         uint256 _totalWeightInTree
     ) internal view returns (address[] memory _selectedNodes) {
-        EnvTreeStorage storage $ = _getEnvTreeStorage();
+        TreeMapStorage storage $ = _getTreeMapStorage();
         uint256 _mLastIndex = 1;
         uint256 _sumOfBalancesOfSelectedNodes = 0;
         _selectedNodes = new address[](_N);

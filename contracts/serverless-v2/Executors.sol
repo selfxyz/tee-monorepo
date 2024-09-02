@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../AttestationAutherUpgradeable.sol";
-import "./tree/EnvTreeUpgradeable.sol";
+import "./tree/TreeMapUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 
 /**
@@ -25,7 +25,7 @@ contract Executors is
     AccessControlUpgradeable,
     UUPSUpgradeable, // public upgrade
     AttestationAutherUpgradeable,
-    EnvTreeUpgradeable
+    TreeMapUpgradeable
 {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -97,7 +97,10 @@ contract Executors is
         __AccessControl_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(_images);
-        __EnvTreeUpgradeable_init_unchained(_envs);
+        __TreeMapUpgradeable_init_unchained(_envs);
+
+        for (uint256 index = 0; index < _envs.length; index++)
+            _addGlobalEnvUnchecked(_envs[index]);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
@@ -262,6 +265,10 @@ contract Executors is
             revert ExecutorsGlobalEnvAlreadySupported();
         
         _init_tree(_env);
+        _addGlobalEnvUnchecked(_env);
+    }
+
+    function _addGlobalEnvUnchecked(uint8 _env) internal {
         isSupportedEnv[_env] = true;
         emit GlobalEnvAdded(_env);
     }
