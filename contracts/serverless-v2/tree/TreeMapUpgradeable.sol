@@ -65,7 +65,8 @@ contract TreeMapUpgradeable is Initializable {
         TreeMapStorage storage $ = _getTreeMapStorage();
 
         uint256 len = $.envTree[_env].nodes.length;
-        for (uint256 index = 0; index < len; index++) {
+        // starting from 1st index, as mapping doesn't exists for the node at 0th index
+        for (uint256 index = 1; index < len; index++) {
             address addrs = $.envTree[_env].indexToAddressMap[index];
             delete $.envTree[_env].indexToAddressMap[index];
             delete $.envTree[_env].addressToIndexMap[addrs];

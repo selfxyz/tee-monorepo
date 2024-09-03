@@ -127,7 +127,7 @@ contract Executors is
 
     modifier isValidEnv(uint8 _env) {
         if(!isTreeInitialized(_env))
-            revert ExecutorsEnvUnsupported();
+            revert ExecutorsUnsupportedEnv();
         _;
     }
 
@@ -218,7 +218,7 @@ contract Executors is
     /// @notice Thrown when the provided executor owner does not match the stored owner.
     error ExecutorsInvalidOwner();
     /// @notice Thrown when the provided execution environment is not supported globally.
-    error ExecutorsEnvUnsupported();
+    error ExecutorsUnsupportedEnv();
 
     //-------------------------------- Admin methods start --------------------------------//
 
@@ -515,14 +515,15 @@ contract Executors is
         selectedNodes = _selectN(_env, randomizer, _noOfNodesToSelect);
     }
 
-    function _releaseExecutor(uint8 _env, address _enclaveAddress) internal {
+    function _releaseExecutor(address _enclaveAddress) internal {
         if (!executors[_enclaveAddress].draining) {
+            uint8 env = executors[_enclaveAddress].env;
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
             if (executors[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(_env, _enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+                _upsert(env, _enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
                 // remove node from tree if stake falls below min level
-            else _deleteIfPresent(_env, _enclaveAddress);
+            else _deleteIfPresent(env, _enclaveAddress);
         }
 
         executors[_enclaveAddress].activeJobs -= 1;
@@ -534,7 +535,7 @@ contract Executors is
 
         TOKEN.safeTransfer(_recipient, totalComp);
 
-        _releaseExecutor(executors[_enclaveAddress].env, _enclaveAddress);
+        _releaseExecutor(_enclaveAddress);
         return totalComp;
     }
 
@@ -562,7 +563,7 @@ contract Executors is
      * @param _enclaveAddress The address of the executor enclave to release.
      */
     function releaseExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) {
-        _releaseExecutor(executors[_enclaveAddress].env, _enclaveAddress);
+        _releaseExecutor(_enclaveAddress);
     }
 
     /**
