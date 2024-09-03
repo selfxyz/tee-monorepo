@@ -39,7 +39,6 @@ contract GatewayJobs is
      * @param _usdcToken The USDC token used for payments.
      * @param _signMaxAge The maximum age of a valid signature in seconds.
      * @param _relayBufferTime The buffer time allowed for relaying jobs.
-     * @param _executionFeePerMs The execution fee per millisecond.
      * @param _slashCompForGateway The slashed amount component given to the gateway when all the selected executors fails to submit the job response.
      * @param _reassignCompForReporterGateway The compensation for the gateway that reports the reassignment.
      * @param _jobMgr The job manager contract.
@@ -52,7 +51,6 @@ contract GatewayJobs is
         IERC20 _usdcToken,
         uint256 _signMaxAge,
         uint256 _relayBufferTime,
-        uint256 _executionFeePerMs,
         uint256 _slashCompForGateway,
         uint256 _reassignCompForReporterGateway,
         Jobs _jobMgr,
@@ -69,7 +67,6 @@ contract GatewayJobs is
 
         SIGN_MAX_AGE = _signMaxAge;
         RELAY_BUFFER_TIME = _relayBufferTime;
-        EXECUTION_FEE_PER_MS = _executionFeePerMs;
         SLASH_COMP_FOR_GATEWAY = _slashCompForGateway;
         REASSIGN_COMP_FOR_REPORTER_GATEWAY = _reassignCompForReporterGateway;
         JOB_MANAGER = _jobMgr;
@@ -131,9 +128,6 @@ contract GatewayJobs is
     uint256 public immutable RELAY_BUFFER_TIME;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable EXECUTION_FEE_PER_MS;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_COMP_FOR_GATEWAY;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -152,11 +146,12 @@ contract GatewayJobs is
 
     struct Job {
         uint256 execStartTime;
+        uint256 usdcDeposit;
+        address jobOwner;
         bool isResourceUnavailable;
         uint8 sequenceId;
-        address jobOwner;
+        uint8 env;
         address gateway;
-        uint256 usdcDeposit;
     }
 
     // job_id => job
@@ -187,10 +182,11 @@ contract GatewayJobs is
      * @notice Emitted when a job is relayed by a gateway.
      * @param jobId The ID of the job from request chain.
      * @param execJobId The ID of the job by Jobs contract.
+     * @param env The execution environment for the job.
      * @param jobOwner The address of the job owner.
      * @param gateway The address of the gateway.
      */
-    event JobRelayed(uint256 indexed jobId, uint256 execJobId, address jobOwner, address gateway);
+    event JobRelayed(uint256 indexed jobId, uint256 execJobId, uint8 env, address jobOwner, address gateway);
 
     /**
      * @notice Emitted when a job's resource is unavailable.
@@ -294,7 +290,7 @@ contract GatewayJobs is
         );
 
         // reserve execution fee from gateway
-        uint256 usdcDeposit = _deadline * EXECUTION_FEE_PER_MS;
+        uint256 usdcDeposit = _deadline * JOB_MANAGER.getJobExecutionFeePerMs(_env);
         USDC_TOKEN.safeTransferFrom(_gateway, address(this), usdcDeposit);
 
         _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId, _env);
@@ -317,10 +313,11 @@ contract GatewayJobs is
             relayJobs[_jobId].usdcDeposit = _usdcDeposit;
             relayJobs[_jobId].sequenceId = _sequenceId;
             relayJobs[_jobId].gateway = _gateway;
+            relayJobs[_jobId].env = _env;
 
             execJobs[execJobId] = _jobId;
 
-            emit JobRelayed(_jobId, execJobId, _jobOwner, _gateway);
+            emit JobRelayed(_jobId, execJobId, _env, _jobOwner, _gateway);
         } catch (bytes memory reason) {
             if (bytes4(reason) == Jobs.JobsUnavailableResources.selector) {
                 // Resource unavailable
@@ -534,13 +531,14 @@ contract GatewayJobs is
         uint256 jobId = execJobs[_execJobId];
         address gateway = relayJobs[jobId].gateway;
         uint256 usdcDeposit = relayJobs[jobId].usdcDeposit;
+        uint8 env = relayJobs[jobId].env;
 
         delete execJobs[_execJobId];
         delete relayJobs[jobId];
 
         address owner = GATEWAYS.getOwner(gateway);
 
-        USDC_TOKEN.safeTransfer(owner, usdcDeposit - _totalTime * EXECUTION_FEE_PER_MS);
+        USDC_TOKEN.safeTransfer(owner, usdcDeposit - _totalTime * JOB_MANAGER.getJobExecutionFeePerMs(env));
         emit JobResponded(jobId, _output, _totalTime, _errorCode);
     }
 

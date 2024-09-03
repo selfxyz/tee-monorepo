@@ -48,16 +48,7 @@ contract TreeMapUpgradeable is Initializable {
         }
     }
 
-    function __TreeMapUpgradeable_init_unchained(uint8[] memory _env) internal onlyInitializing {
-        _init_trees(_env);
-    }
-
-    /// @dev Initializes multiple trees with 0 element as the first element.
-    /// Node indexes start from 1.
-    function _init_trees(uint8[] memory _envs) internal {
-        for (uint256 index = 0; index < _envs.length; index++) {
-            _init_tree(_envs[index]);
-        }
+    function __TreeMapUpgradeable_init_unchained() internal onlyInitializing {
     }
 
     /// @dev Initializes the tree with 0 element as the first element.
@@ -69,9 +60,28 @@ contract TreeMapUpgradeable is Initializable {
         $.envTree[_env].nodes.push(Node(0, 0, 0));
     }
 
+    /// @dev Deletes the tree storage for a given env.
+    function _delete_tree(uint8 _env) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+
+        uint256 len = $.envTree[_env].nodes.length;
+        for (uint256 index = 0; index < len; index++) {
+            address addrs = $.envTree[_env].indexToAddressMap[index];
+            delete $.envTree[_env].indexToAddressMap[index];
+            delete $.envTree[_env].addressToIndexMap[addrs];
+        }
+
+        delete $.envTree[_env].nodes;
+    }
+
     function nodesInTree(uint8 _env) public view returns (uint256) {
         TreeMapStorage storage $ = _getTreeMapStorage();
         return $.envTree[_env].nodes.length - 1;
+    }
+
+    function isTreeInitialized(uint8 _env) public view returns (bool) {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        return ($.envTree[_env].nodes.length > 0);
     }
 
     // assumes index is not 0

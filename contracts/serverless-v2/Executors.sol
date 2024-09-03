@@ -89,7 +89,7 @@ contract Executors is
      * @param _admin The address of the admin.
      * @param _images Array of enclave images to initialize.
      */
-    function initialize(address _admin, EnclaveImage[] memory _images, uint8[] memory _envs) public initializer {
+    function initialize(address _admin, EnclaveImage[] memory _images) public initializer {
         if (_admin == address(0)) revert ExecutorsZeroAddressAdmin();
 
         __Context_init_unchained();
@@ -97,10 +97,7 @@ contract Executors is
         __AccessControl_init_unchained();
         __UUPSUpgradeable_init_unchained();
         __AttestationAuther_init_unchained(_images);
-        __TreeMapUpgradeable_init_unchained(_envs);
-
-        for (uint256 index = 0; index < _envs.length; index++)
-            _addGlobalEnvUnchecked(_envs[index]);
+        __TreeMapUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
@@ -126,20 +123,30 @@ contract Executors is
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
+    //-------------------------------- Execution Env start --------------------------------//
+
+    modifier isValidEnv(uint8 _env) {
+        if(!isTreeInitialized(_env))
+            revert ExecutorsEnvUnsupported();
+        _;
+    }
+
+    function initTree(uint8 _env) external onlyRole(JOBS_ROLE) {
+        _init_tree(_env);
+    }
+
+    function removeTree(uint8 _env) external onlyRole(JOBS_ROLE) {
+        _delete_tree(_env);
+    }
+
+    //-------------------------------- Execution Env end --------------------------------//
+
     //-------------------------------- Executor start --------------------------------//
 
     modifier isValidExecutorOwner(address _enclaveAddress, address _owner) {
         if (executors[_enclaveAddress].owner != _owner) revert ExecutorsInvalidOwner();
         _;
     }
-
-    modifier isValidEnv(uint8 _env) {
-        if(!isSupportedEnv[_env])
-            revert ExecutorsEnvUnsupported();
-        _;
-    }
-
-    mapping(uint8 => bool) public isSupportedEnv;
 
     struct Executor {
         uint256 jobCapacity;
@@ -164,18 +171,6 @@ contract Executors is
 
     bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256 jobCapacity,uint8 env,uint256 signTimestamp)");
-
-    /**
-     * @notice Emitted when a new execution environment support is added globally.
-     * @param env The execution environment added.
-     */
-    event GlobalEnvAdded(uint8 indexed env);
-
-    /**
-     * @notice Emitted when an existing execution environment support is removed globally.
-     * @param env The execution environment removed.
-     */
-    event GlobalEnvRemoved(uint8 indexed env);
 
     /// @notice Emitted when a new executor is registered.
     /// @param enclaveAddress The address of the enclave.
@@ -206,10 +201,6 @@ contract Executors is
     /// @param removedAmount The amount of stake removed.
     event ExecutorStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
 
-    /// @notice Thrown when the execution environment is already supported globally.
-    error ExecutorsGlobalEnvAlreadySupported();
-    /// @notice Thrown when the execution environment is already unsupported globally.
-    error ExecutorsGlobalEnvAlreadyUnsupported();
     /// @notice Thrown when the signature timestamp has expired.
     error ExecutorsSignatureTooOld();
     /// @notice Thrown when the signer of the registration data is invalid.
@@ -259,27 +250,6 @@ contract Executors is
     //-------------------------------- Admin methods end ----------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
-
-    function _addGlobalEnv(uint8 _env) internal {
-        if(isSupportedEnv[_env])
-            revert ExecutorsGlobalEnvAlreadySupported();
-        
-        _init_tree(_env);
-        _addGlobalEnvUnchecked(_env);
-    }
-
-    function _addGlobalEnvUnchecked(uint8 _env) internal {
-        isSupportedEnv[_env] = true;
-        emit GlobalEnvAdded(_env);
-    }
-
-    function _removeGlobalEnv(uint8 _env) internal {
-        if(!isSupportedEnv[_env])
-            revert ExecutorsGlobalEnvAlreadyUnsupported();
-        
-        isSupportedEnv[_env] = false;
-        emit GlobalEnvRemoved(_env);
-    }
 
     function _registerExecutor(
         bytes memory _attestationSignature,
@@ -418,25 +388,6 @@ contract Executors is
     //-------------------------------- internal functions end ----------------------------------//
 
     //-------------------------------- external functions start ----------------------------------//
-
-    /**
-     * @notice Adds global support for a new execution environment.
-     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
-            It also initializes a new executor nodes tree for the environment.
-     * @param _env The execution environment to be added.
-     */
-    function addGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _addGlobalEnv(_env);
-    }
-
-    /**
-     * @notice Removes global support for an existing execution environment.
-     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
-     * @param _env The execution environment to be removed.
-     */
-    function removeGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _removeGlobalEnv(_env);
-    }
 
     /**
      * @notice Registers a new executor node.

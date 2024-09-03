@@ -42,7 +42,6 @@ contract Relay is
      * @param _globalMinTimeout The minimum timeout value for jobs.
      * @param _globalMaxTimeout The maximum timeout value for jobs. This refers to the max time for the executor to execute the job.
      * @param _overallTimeout The overall timeout value for job execution. This refers to the max time for the complete lifecycle of the job request on-chain.
-     * @param _executionFeePerMs The fee per millisecond for job execution(in USDC).
      * @param _gatewayFeePerJob The fixed fee per job for the gateway(in USDC).
      * @param _fixedGas The fixed gas amount for job responses without callback.
      * @param _callbackMeasureGas The gas amount used for measuring callback gas.
@@ -55,7 +54,6 @@ contract Relay is
         uint256 _globalMinTimeout, // in milliseconds
         uint256 _globalMaxTimeout, // in milliseconds
         uint256 _overallTimeout,
-        uint256 _executionFeePerMs, // fee is in USDC
         uint256 _gatewayFeePerJob,
         uint256 _fixedGas,
         uint256 _callbackMeasureGas
@@ -70,7 +68,6 @@ contract Relay is
         GLOBAL_MAX_TIMEOUT = _globalMaxTimeout;
         OVERALL_TIMEOUT = _overallTimeout;
 
-        EXECUTION_FEE_PER_MS = _executionFeePerMs;
         GATEWAY_FEE_PER_JOB = _gatewayFeePerJob;
 
         FIXED_GAS = _fixedGas;
@@ -130,9 +127,6 @@ contract Relay is
     uint256 public immutable OVERALL_TIMEOUT;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable EXECUTION_FEE_PER_MS;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GATEWAY_FEE_PER_JOB;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -177,6 +171,102 @@ contract Relay is
     }
 
     //-------------------------------- Admin methods end ----------------------------------//
+
+    //-------------------------------- Execution Env start --------------------------------//
+
+    struct ExecutionEnv {
+        // The fee per millisecond for job execution(in USDC).
+        uint256 executionFeePerMs;
+        bool status;
+    }
+
+    mapping(uint8 => ExecutionEnv) public executionEnv;
+
+    /**
+     * @notice Emitted when a new execution environment support is added globally.
+     * @param env The execution environment added.
+     * @param executionFeePerMs The fee per millisecond for job execution(in USDC).
+     */
+    event GlobalEnvAdded(
+        uint8 indexed env,
+        uint256 executionFeePerMs
+    );
+
+    /**
+     * @notice Emitted when an existing execution environment support is removed globally.
+     * @param env The execution environment removed.
+     */
+    event GlobalEnvRemoved(uint8 indexed env);
+
+    /// @notice Thrown when the provided execution environment is not supported globally.
+    error ExecutorsEnvUnsupported();
+    /// @notice Thrown when the execution environment is already supported globally.
+    error JobsGlobalEnvAlreadySupported();
+    /// @notice Thrown when the execution environment is already unsupported globally.
+    error JobsGlobalEnvAlreadyUnsupported();
+
+    modifier isValidEnv(uint8 _env) {
+        if(!executionEnv[_env].status)
+            revert ExecutorsEnvUnsupported();
+        _;
+    }
+
+    //-------------------------------- internal functions start --------------------------------//
+
+    function _addGlobalEnv(
+        uint8 _env,
+        uint256 _executionFeePerMs
+    ) internal {
+        if(executionEnv[_env].status)
+            revert JobsGlobalEnvAlreadySupported();
+
+        executionEnv[_env] = ExecutionEnv({
+            executionFeePerMs: _executionFeePerMs,
+            status: true
+        });
+
+        emit GlobalEnvAdded(_env, _executionFeePerMs);
+    }
+
+    function _removeGlobalEnv(uint8 _env) internal {
+        if(!executionEnv[_env].status)
+            revert JobsGlobalEnvAlreadyUnsupported();
+
+        delete executionEnv[_env];
+
+        emit GlobalEnvRemoved(_env);
+    }
+
+    //-------------------------------- internal functions end --------------------------------//
+
+    //-------------------------------- external functions start --------------------------------//
+
+    /**
+     * @notice Adds global support for a new execution environment.
+     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
+            It also initializes a new executor nodes tree for the environment.
+     * @param _env The execution environment to be added.
+     * @param _executionFeePerMs The fee per millisecond for job execution(in USDC).
+     */
+    function addGlobalEnv(
+        uint8 _env,
+        uint256 _executionFeePerMs
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addGlobalEnv(_env, _executionFeePerMs);
+    }
+
+    /**
+     * @notice Removes global support for an existing execution environment.
+     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
+     * @param _env The execution environment to be removed.
+     */
+    function removeGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _removeGlobalEnv(_env);
+    }
+
+    //-------------------------------- external functions end --------------------------------//
+
+    //--------------------------------- Execution Env end ---------------------------------//
 
     //-------------------------------- Gateway start --------------------------------//
 
@@ -298,6 +388,7 @@ contract Relay is
         uint256 callbackGasLimit;
         address jobOwner;
         address callbackContract;
+        uint8 env;
         bytes32 codehash;
         bytes codeInputs;
     }
@@ -312,6 +403,7 @@ contract Relay is
     /**
      * @notice Emitted when a job is successfully relayed.
      * @param jobId The unique identifier of the job.
+     * @param env The execution environment for the job.
      * @param codehash The transaction hash storing the code to be executed.
      * @param codeInputs The inputs for the code execution.
      * @param userTimeout The timeout specified by the user for the job.
@@ -325,6 +417,7 @@ contract Relay is
      */
     event JobRelayed(
         uint256 indexed jobId,
+        uint8 indexed env,
         bytes32 codehash,
         bytes codeInputs,
         uint256 userTimeout, // in milliseconds
@@ -371,6 +464,7 @@ contract Relay is
     //-------------------------------- internal functions start -------------------------------//
 
     function _relayJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes calldata _codeInputs,
         uint256 _userTimeout, // in milliseconds
@@ -390,7 +484,7 @@ contract Relay is
         if (_maxGasPrice * (_callbackGasLimit + FIXED_GAS + CALLBACK_MEASURE_GAS) > _callbackDeposit)
             revert RelayInsufficientCallbackDeposit();
 
-        uint256 usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        uint256 usdcDeposit = _userTimeout * executionEnv[_env].executionFeePerMs + GATEWAY_FEE_PER_JOB;
         jobs[++jobCount] = Job({
             startTime: block.timestamp,
             maxGasPrice: _maxGasPrice,
@@ -400,7 +494,8 @@ contract Relay is
             codehash: _codehash,
             codeInputs: _codeInputs,
             callbackContract: _callbackContract,
-            callbackGasLimit: _callbackGasLimit
+            callbackGasLimit: _callbackGasLimit,
+            env: _env
         });
 
         // deposit escrow amount(USDC)
@@ -408,6 +503,7 @@ contract Relay is
 
         emit JobRelayed(
             jobCount,
+            _env,
             _codehash,
             _codeInputs,
             _userTimeout,
@@ -446,7 +542,7 @@ contract Relay is
         );
 
         delete jobs[_jobId];
-        _releaseEscrowAmount(enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
+        _releaseEscrowAmount(job.env, enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
 
         (bool success, uint256 callbackGas) = _callBackWithLimit(
             _jobId,
@@ -482,6 +578,7 @@ contract Relay is
     }
 
     function _releaseEscrowAmount(
+        uint8 _env,
         address _enclaveAddress,
         address _jobOwner,
         uint256 _totalTime,
@@ -490,7 +587,7 @@ contract Relay is
         uint256 gatewayPayoutUsdc;
         uint256 jobOwnerPayoutUsdc;
         unchecked {
-            gatewayPayoutUsdc = _totalTime * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+            gatewayPayoutUsdc = _totalTime * executionEnv[_env].executionFeePerMs + GATEWAY_FEE_PER_JOB;
             jobOwnerPayoutUsdc = _usdcDeposit - gatewayPayoutUsdc;
         }
 
@@ -567,6 +664,7 @@ contract Relay is
      * @notice Function for users to relay a job to the enclave for execution.
      * @dev The job parameters are validated before relaying to the enclave.
      *      The job escrow amount (USDC+ETH) is transferred to the contract.
+     * @param _env The execution environment for the job.
      * @param _codehash The transaction hash storing the code to be executed by the enclave.
      * @param _codeInputs The inputs to the code to be executed.
      * @param _userTimeout The maximum execution time allowed for the job in milliseconds.
@@ -576,6 +674,7 @@ contract Relay is
      * @param _callbackGasLimit The gas limit for the callback function.
      */
     function relayJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes calldata _codeInputs,
         uint256 _userTimeout,
@@ -583,8 +682,9 @@ contract Relay is
         address _refundAccount, // Common chain slashed token will be sent to this address
         address _callbackContract,
         uint256 _callbackGasLimit
-    ) external payable {
+    ) external payable isValidEnv(_env) {
         _relayJob(
+            _env,
             _codehash,
             _codeInputs,
             _userTimeout,
