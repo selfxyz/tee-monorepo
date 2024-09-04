@@ -58,7 +58,6 @@ describe("GatewayJobs - Init", function () {
     let jobs: string;
 	let signMaxAge: number;
 	let relayBufferTime: number;
-	let executionFeePerMs: number;
 	let slashCompForGateway: number;
 	let reassignCompForReporterGateway: number;
 	let stakingPaymentPool: string;
@@ -72,7 +71,6 @@ describe("GatewayJobs - Init", function () {
 		jobs = addrs[1];
 		signMaxAge = 600;
 		relayBufferTime = 100;
-		executionFeePerMs = 10;
 		slashCompForGateway = 10;
 		reassignCompForReporterGateway = 100;
 		stakingPaymentPool = addrs[1];
@@ -97,7 +95,6 @@ describe("GatewayJobs - Init", function () {
 			usdcToken,
 			signMaxAge,
 			relayBufferTime,
-			executionFeePerMs,
 			slashCompForGateway,
 			reassignCompForReporterGateway,
 			jobs,
@@ -123,7 +120,6 @@ describe("GatewayJobs - Init", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -150,7 +146,6 @@ describe("GatewayJobs - Init", function () {
 						usdcToken.target,
 						signMaxAge,
 						relayBufferTime,
-						executionFeePerMs,
 						slashCompForGateway,
 						reassignCompForReporterGateway,
 						jobs,
@@ -176,7 +171,6 @@ describe("GatewayJobs - Init", function () {
 						usdcToken.target,
 						signMaxAge,
 						relayBufferTime,
-						executionFeePerMs,
 						slashCompForGateway,
 						reassignCompForReporterGateway,
 						jobs,
@@ -202,7 +196,6 @@ describe("GatewayJobs - Init", function () {
 						ZeroAddress,
 						signMaxAge,
 						relayBufferTime,
-						executionFeePerMs,
 						slashCompForGateway,
 						reassignCompForReporterGateway,
 						jobs,
@@ -227,7 +220,6 @@ describe("GatewayJobs - Init", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -246,7 +238,6 @@ describe("GatewayJobs - Init", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -272,7 +263,6 @@ describe("GatewayJobs - Init", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -290,7 +280,6 @@ describe("GatewayJobs - Init", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -320,7 +309,6 @@ testERC165(
 			jobs = addrs[1],
 			signMaxAge = 600,
 			relayBufferTime = 100,
-			executionFeePerMs = 10,
 			slashCompForGateway = 10,
 			reassignCompForReporterGateway = 100,
 			stakingPaymentPool = addrs[1];
@@ -336,7 +324,6 @@ testERC165(
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -369,7 +356,6 @@ describe("GatewayJobs - Admin functions", function () {
     let jobs: string;
 	let signMaxAge: number;
 	let relayBufferTime: number;
-	let executionFeePerMs: number;
 	let slashCompForGateway: number;
 	let reassignCompForReporterGateway: number;
 	let stakingPaymentPool: string;
@@ -383,7 +369,6 @@ describe("GatewayJobs - Admin functions", function () {
 		jobs = addrs[1];
 		signMaxAge = 600;
 		relayBufferTime = 100;
-		executionFeePerMs = 10;
 		slashCompForGateway = 10;
 		reassignCompForReporterGateway = 100;
 		stakingPaymentPool = addrs[1];
@@ -409,7 +394,6 @@ describe("GatewayJobs - Admin functions", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
@@ -497,12 +481,11 @@ describe("GatewayJobs - Relay", function () {
 		) as unknown as Gateways;
 
 		images = [image4, image5, image6, image7];
-		let minStakeAmount = 1,
-			envs = [1];
+		let minStakeAmount = 1;
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[admin, images, envs],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -513,8 +496,6 @@ describe("GatewayJobs - Relay", function () {
 		let signMaxAge = 600,
 			executionBufferTime = 100,
         	noOfNodesToSelect = 3,
-        	executorFeePerMs = 10,
-        	stakingRewardPerMs = 10,
         	stakingPaymentPoolAddress = addrs[0],
         	usdcPaymentPoolAddress = addrs[0];
 		const Jobs = await ethers.getContractFactory("Jobs");
@@ -530,8 +511,6 @@ describe("GatewayJobs - Relay", function () {
 					signMaxAge,
 					executionBufferTime,
 					noOfNodesToSelect,
-					executorFeePerMs,
-					stakingRewardPerMs,
 					stakingPaymentPoolAddress,
 					usdcPaymentPoolAddress,
 					executors.target
@@ -540,7 +519,6 @@ describe("GatewayJobs - Relay", function () {
 		) as unknown as Jobs;
 
 		let relayBufferTime = 100,
-			executionFeePerMs = 20,
 			slashCompForGateway = 10;
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		gatewayJobs = await upgrades.deployProxy(
@@ -554,7 +532,6 @@ describe("GatewayJobs - Relay", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs.target,
@@ -565,6 +542,11 @@ describe("GatewayJobs - Relay", function () {
 		) as unknown as GatewayJobs;
 
 		await executors.grantRole(await executors.JOBS_ROLE(), jobs.target);
+
+		let env = 1,
+			executionFeePerMs = 10,
+			stakingRewardPerMs = 10;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
 		let chainIds = [1];
 		let reqChains = [
@@ -601,8 +583,7 @@ describe("GatewayJobs - Relay", function () {
 
 		// REGISTER EXECUTORS
 		let execStakeAmount = parseUnits("10"),	// 10 POND
-			jobCapacity = 3,
-			env = 1;
+			jobCapacity = 3;
 		// 1st executor
 		[signature, attestation] = await createAttestation(pubkeys[17], image4, wallets[14], timestamp - 540000);
 		signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[17]);
@@ -865,12 +846,14 @@ describe("GatewayJobs - Relay", function () {
 
 	it("cannot relay job if Jobs contract reverts due to some unexpected error", async function () {
 		const JobsMock = await ethers.getContractFactory("JobsMock");
-		let jobsMock = await JobsMock.deploy();
+		let env = 1,
+			executionFeePerMs = 10,
+			stakingRewardPerMs = 10;
+		let jobsMock = await JobsMock.deploy(env, executionFeePerMs, stakingRewardPerMs);
 
 		// upgrading the contract to update immutable jobs contract
 		let signMaxAge = 600,
 			relayBufferTime = 100,
-			executionFeePerMs = 20,
 			slashCompForGateway = 10,
 			reassignCompForReporterGateway = 100,
 			stakingPaymentPoolAddress = addrs[0];
@@ -885,7 +868,6 @@ describe("GatewayJobs - Relay", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobsMock.target,
@@ -902,7 +884,6 @@ describe("GatewayJobs - Relay", function () {
 			jobRequestTimestamp = await time.latest(),
 			sequenceId = 1,
 			jobOwner = addrs[1],
-			env = 1,
 			signTimestamp = await time.latest();
 		let signedDigest = await createRelayJobSignature(jobId, codeHash, codeInputs, deadline, jobRequestTimestamp, sequenceId, jobOwner, env, signTimestamp, wallets[15]);
 
@@ -972,12 +953,11 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		) as unknown as Gateways;
 
 		images = [image4, image5, image6, image7];
-		let minStakeAmount = 1,
-			envs = [1];
+		let minStakeAmount = 1;
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[admin, images, envs],
+			[admin, images],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -988,8 +968,6 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		let signMaxAge = 600,
 			executionBufferTime = 100,
         	noOfNodesToSelect = 3,
-        	executorFeePerMs = 10,
-        	stakingRewardPerMs = 10,
         	stakingPaymentPoolAddress = addrs[4],
         	usdcPaymentPoolAddress = addrs[0];
 		const Jobs = await ethers.getContractFactory("Jobs");
@@ -1005,8 +983,6 @@ describe("GatewayJobs - Reassign Gateway", function () {
 					signMaxAge,
 					executionBufferTime,
 					noOfNodesToSelect,
-					executorFeePerMs,
-					stakingRewardPerMs,
 					stakingPaymentPoolAddress,
 					usdcPaymentPoolAddress,
 					executors.target
@@ -1015,7 +991,6 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		) as unknown as Jobs;
 
 		let relayBufferTime = 100,
-			executionFeePerMs = 20,
 			slashCompForGateway = 10;
 		const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
 		gatewayJobs = await upgrades.deployProxy(
@@ -1029,7 +1004,6 @@ describe("GatewayJobs - Reassign Gateway", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs.target,
@@ -1041,6 +1015,11 @@ describe("GatewayJobs - Reassign Gateway", function () {
 
 		await gateways.grantRole(await gateways.GATEWAY_JOBS_ROLE(), gatewayJobs.target);
 		await executors.grantRole(await executors.JOBS_ROLE(), jobs.target);
+
+		let env = 1,
+			executionFeePerMs = 10,
+			stakingRewardPerMs = 10;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
 		let chainIds = [1];
 		let reqChains = [
@@ -1079,8 +1058,7 @@ describe("GatewayJobs - Reassign Gateway", function () {
 
 		// REGISTER EXECUTORS
 		let execStakeAmount = parseUnits("10"),	// 10 POND
-			jobCapacity = 3,
-			env = 1;
+			jobCapacity = 3;
 		// 1st executor
 		[signature, attestation] = await createAttestation(pubkeys[17], image4, wallets[14], timestamp - 540000);
 		signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[17]);
@@ -1326,12 +1304,11 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 			},
 		) as unknown as Gateways;
 
-		let executor_images = [image4, image5, image6, image7],
-			envs = [1];
+		let executor_images = [image4, image5, image6, image7];
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images, envs],
+			[addrs[0], executor_images],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -1359,8 +1336,6 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 					600,
 					100,
 					3,
-					1,
-					1,
 					stakingPaymentPool,
 					usdcPaymentPool,
 					executors.target
@@ -1370,7 +1345,6 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 
 		let signMaxAge = 600,
 			relayBufferTime = 100,
-			executionFeePerMs = 20,
 			slashCompForGateway = 10,
 			reassignCompForReporterGateway = 100,
 			stakingPaymentPoolAddress = addrs[1];
@@ -1386,7 +1360,6 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs.target,
@@ -1398,6 +1371,11 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 
 		// Grant role to jobs contract
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+
+		let env = 1,
+			executionFeePerMs = 1,
+			stakingRewardPerMs = 1;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
 		let chainIds = [1];
 		let reqChains = [
@@ -1436,7 +1414,6 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 		signedDigest = await createGatewaySignature(addrs[0], chainIds, signTimestamp, wallets[16]);
 		await gateways.connect(signers[0]).registerGateway(signature, attestation, chainIds, signedDigest, stakeAmount, signTimestamp);
 
-		let env = 1;
 		// REGISTER EXECUTORS
 		for (let index = 0; index < 3; index++) {
 			let signTimestamp = await time.latest() - 540;
@@ -1544,6 +1521,8 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 			errorCode = 0;
 
 		await gatewayJobs.grantRole(await gatewayJobs.JOBS_ROLE(), addrs[0]);
+		// as we haven't called submitOutput on Jobs contract, so USDC hasn't been transferred to GatewayJobs 
+		await usdcToken.transfer(gatewayJobs.target, 1e5);
 
 		await expect(gatewayJobs.oysterResultCall(jobId, output, errorCode, totalTime))
 			.and.to.emit(gatewayJobs, "JobResponded");

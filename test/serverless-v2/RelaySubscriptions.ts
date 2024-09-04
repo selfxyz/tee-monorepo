@@ -227,7 +227,6 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -245,7 +244,6 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -276,29 +274,34 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
 		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can start job subscription", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 100,
-			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 20;
+		let callbackDeposit = parseUnits("1");
+		let jobSubsParams = {
+			startTime: await time.latest(),
+			maxGasPrice: 100,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+        	callbackContract: addrs[1],
+        	env: 1,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
+
 		await setNextBlockBaseFeePerGas(1);
 		let tx = await relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionStarted");
 
 		let key = await relaySubscriptions.jobSubsCount();
@@ -307,140 +310,160 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
 		expect(jobSubs.job.jobOwner).to.eq(addrs[2]);
 	});
 
-	it("cannot start job subscription with invalid start timestamp", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 100,
-			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest() + 10,
-			terminationTimestamp = await time.latest();
+	it("cannot start job subscription with unsupported execution env", async function () {
+		let callbackDeposit = parseUnits("1");
+		
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 100,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+        	callbackContract: addrs[1],
+        	env: 2,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
 		let tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
+		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsEnvUnsupported");
+	});
+
+	it("cannot start job subscription with invalid start timestamp", async function () {
+		let callbackDeposit = parseUnits("1");
+		
+		let jobSubsParams = {
+			startTime: await time.latest() + 10,
+			maxGasPrice: 100,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+        	callbackContract: addrs[1],
+        	env: 1,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest()
+		};
+		let tx = relaySubscriptions.connect(signers[2])
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidStartTimestamp");
 	});
 
 	it("cannot start job subscription with invalid termination timestamp", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 100,
-			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest() - 100,
-			terminationTimestamp = await time.latest() - 10;
+		let callbackDeposit = parseUnits("1");
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 100,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+        	callbackContract: addrs[1],
+        	env: 1,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() - 10
+		};
+
 		let tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidTerminationTimestamp");
 	});
 
 	it("cannot start job subscription with invalid user timeout", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 500,
-			maxGasPrice = 100,
-			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 20;
+		let callbackDeposit = parseUnits("1");
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 100,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+			callbackContract: addrs[1],
+			env: 1,
+			codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 500,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
 		let tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidUserTimeout");
 
-		userTimeout = 1000 * 1000;
+		jobSubsParams.userTimeout = 1000 * 1000;
 		tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidUserTimeout");
 	});
 
 	it("cannot start job subscription with insufficient callback deposit", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 100,
-			callbackDeposit = 0,
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 20;
-
+		let callbackDeposit = 0;
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 100,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+			callbackContract: addrs[1],
+			env: 1,
+			codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
 		await setNextBlockBaseFeePerGas(1);
 
 		let tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInsufficientCallbackDeposit");
 	});
 
 	it("cannot start job subscription with invalid max gas price", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 0,
-			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 20;
+		let callbackDeposit = parseUnits("1");
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 0,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+			callbackContract: addrs[1],
+			env: 1,
+			codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
 		let tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInsufficientMaxGasPrice");
 	});
 
 	it("cannot start job subscription with insufficient usdc deposit", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = parseUnits("1", 9),
-			callbackDeposit = parseUnits("1"),
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 1000000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 50;
+		let callbackDeposit = parseUnits("1");
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: parseUnits("1", 9),
+			usdcDeposit: 2000000,
+			callbackGasLimit: 1000000,
+			callbackContract: addrs[1],
+			env: 1,
+			codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 50
+		};
 		let tx = relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInsufficientUsdcDeposit");
 	});
 });
@@ -484,7 +507,6 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -502,7 +524,6 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -534,24 +555,28 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 10,
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 0,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 20;
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 10,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 0,
+        	callbackContract: addrs[1],
+        	env,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
 		callbackDeposit = parseUnits("1");
 		await setNextBlockBaseFeePerGas(1);
 		await relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -700,7 +725,6 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -718,7 +742,6 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -750,24 +773,28 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 10,
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 0,
-			periodicGap = 50,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 100;
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 10,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 0,
+        	callbackContract: addrs[1],
+        	env,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 50,
+			terminationTimestamp: await time.latest() + 100
+		};
 		callbackDeposit = parseUnits("1", 7);
 		await setNextBlockBaseFeePerGas(1);
 		await relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -840,7 +867,6 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -858,7 +884,6 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -890,24 +915,28 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 10,
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 0,
-			periodicGap = 50,
-			usdcDeposit = 2000000,
-			startTimestamp = 0,
-			terminationTimestamp = await time.latest() + 100;
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 10,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 0,
+        	callbackContract: addrs[1],
+        	env,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 50,
+			terminationTimestamp: await time.latest() + 100
+		};
 		callbackDeposit = parseUnits("1", 7);
 		await setNextBlockBaseFeePerGas(1);
 		await relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1056,7 +1085,6 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -1074,7 +1102,6 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -1106,24 +1133,28 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 10,
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 0,
-			periodicGap = 50,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 100;
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 10,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 0,
+        	callbackContract: addrs[1],
+        	env,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 50,
+			terminationTimestamp: await time.latest() + 100
+		};
 		callbackDeposit = parseUnits("1", 7);
 		await setNextBlockBaseFeePerGas(1);
 		await relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1205,7 +1236,6 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -1223,7 +1253,6 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -1255,24 +1284,28 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = 10,
-			refundAccount = addrs[1],
-			callbackContract = addrs[1],
-			callbackGasLimit = 0,
-			periodicGap = 50,
-			usdcDeposit = 2000000,
-			startTimestamp = await time.latest(),
-			terminationTimestamp = await time.latest() + 100;
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: 10,
+			usdcDeposit: 2000000,
+			callbackGasLimit: 0,
+        	callbackContract: addrs[1],
+        	env,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 50,
+			terminationTimestamp: await time.latest() + 100
+		};
 		callbackDeposit = parseUnits("1", 7);
 		await setNextBlockBaseFeePerGas(1);
 		await relaySubscriptions.connect(signers[2])
-			.startJobSubscription(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit, startTimestamp, terminationTimestamp,
-				{ value: callbackDeposit }
-			);
+			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1343,7 +1376,6 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			callbackMeasureGas = 4530;
 		fixedGas = 150000;
@@ -1361,7 +1393,6 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -1390,6 +1421,10 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
 		const UserSample = await ethers.getContractFactory("UserSample");
 		userSample = await UserSample.deploy(relay.target, relaySubscriptions.target, token.target, addrs[10]) as unknown as UserSample;
 
@@ -1399,23 +1434,25 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can submit response and execute callback", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
-			callbackDeposit = parseUnits("1"),	// 1 eth
-			refundAccount = addrs[1],
-			callbackContract = userSample.target,
-			callbackGasLimit = 20000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = 0,
-			terminationTimestamp = await time.latest() + 20;
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
+			usdcDeposit: 2000000,
+			callbackGasLimit: 20000,
+        	callbackContract: userSample.target,
+        	env: 1,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
+
+		let callbackDeposit = parseUnits("1");	// 1 eth
 		// deposit eth in UserSample contract before relaying jobs
 		await signers[4].sendTransaction({to: userSample.target, value: callbackDeposit});
-		await userSample.startJobSubscription(
-			codeHash, codeInputs, userTimeout, maxGasPrice, callbackDeposit, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit,startTimestamp, terminationTimestamp
-		);
+		await userSample.startJobSubscription(jobSubsParams, callbackDeposit);
 
 		let jobId: any = await relaySubscriptions.jobSubsCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
@@ -1430,7 +1467,7 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 		let tx = relaySubscriptions.connect(signers[2]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionResponded")
 			.and.to.emit(userSample, "CalledBack").withArgs(
-				jobId, callbackContract, codeHash, codeInputs, output, errorCode
+				jobId, jobSubsParams.callbackContract, jobSubsParams.codehash, jobSubsParams.codeInputs, output, errorCode
 		);
 
 		let jobOwner = userSample.target;
@@ -1438,7 +1475,7 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 		// console.log("FIXED_GAS : ", txReceipt?.gasUsed);
 		// validate callback cost and refund
 		let txGasPrice = txReceipt?.gasPrice || 0n;
-		let callbackGas = 9271; // calculated using console.log
+		let callbackGas = 9325; // calculated using console.log
 		// console.log("txGasPrice: ", txGasPrice);
 		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
 		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
@@ -1447,23 +1484,25 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 	});
 
 	it("can submit response with gas price higher than maxGasPrice", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-			codeInputs = solidityPacked(["string"], ["codeInput"]),
-			userTimeout = 50000,
-			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
-			callbackDeposit = parseUnits("1"),	// 1 eth
-			refundAccount = addrs[1],
-			callbackContract = userSample.target,
-			callbackGasLimit = 20000,
-			periodicGap = 10,
-			usdcDeposit = 2000000,
-			startTimestamp = 0,
-			terminationTimestamp = await time.latest() + 20;
+		let jobSubsParams = {
+			startTime: 0,
+			maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
+			usdcDeposit: 2000000,
+			callbackGasLimit: 20000,
+        	callbackContract: userSample.target,
+        	env: 1,
+        	codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+        	codeInputs: solidityPacked(["string"], ["codeInput"]),
+			userTimeout: 50000,
+			refundAccount: addrs[1],
+			periodicGap: 10,
+			terminationTimestamp: await time.latest() + 20
+		};
+
+		let callbackDeposit = parseUnits("1");	// 1 eth
 		// deposit eth in UserSample contract before relaying jobs
 		await signers[4].sendTransaction({to: userSample.target, value: callbackDeposit});
-		await userSample.startJobSubscription(
-			codeHash, codeInputs, userTimeout, maxGasPrice, callbackDeposit, refundAccount, callbackContract, callbackGasLimit, periodicGap, usdcDeposit,startTimestamp, terminationTimestamp
-		);
+		await userSample.startJobSubscription(jobSubsParams, callbackDeposit);
 
 		let jobId: any = await relaySubscriptions.jobSubsCount(),
 			output = solidityPacked(["string"], ["it is the output"]),
@@ -1474,7 +1513,7 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
 		let initBalance = await ethers.provider.getBalance(addrs[1]);
 
 		// set tx.gasprice for next block
-		await setNextBlockBaseFeePerGas(maxGasPrice + 10n);
+		await setNextBlockBaseFeePerGas(jobSubsParams.maxGasPrice + 10n);
 		let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 		let tx = relaySubscriptions.connect(signers[2]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
 		await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionResponded")

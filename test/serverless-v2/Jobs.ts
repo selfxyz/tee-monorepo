@@ -79,8 +79,6 @@ describe("Jobs - Init", function () {
 			100,
 			100,
 			3,
-			1,
-			1,
 			staking_payment_pool,
 			usdc_payment_pool,
 			executors
@@ -105,8 +103,6 @@ describe("Jobs - Init", function () {
 					100,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors
@@ -132,8 +128,6 @@ describe("Jobs - Init", function () {
 						100,
 						100,
 						3,
-						1,
-						1,
 						staking_payment_pool,
 						usdc_payment_pool,
 						executors
@@ -158,8 +152,6 @@ describe("Jobs - Init", function () {
 						100,
 						100,
 						3,
-						1,
-						1,
 						staking_payment_pool,
 						usdc_payment_pool,
 						executors
@@ -184,8 +176,6 @@ describe("Jobs - Init", function () {
 						100,
 						100,
 						3,
-						1,
-						1,
 						staking_payment_pool,
 						usdc_payment_pool,
 						executors
@@ -209,8 +199,6 @@ describe("Jobs - Init", function () {
 					100,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors
@@ -222,7 +210,7 @@ describe("Jobs - Init", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		const executors2 = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image1], [1]],
+			[addrs[0], [image1]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -247,8 +235,6 @@ describe("Jobs - Init", function () {
 					200,
 					200,
 					5,
-					2,
-					2,
 					addrs[2],
 					addrs[2],
 					executors2.target
@@ -262,8 +248,6 @@ describe("Jobs - Init", function () {
 		expect(await jobs.SIGN_MAX_AGE()).to.be.eq(200);
 		expect(await jobs.EXECUTION_BUFFER_TIME()).to.be.eq(200);
 		expect(await jobs.NO_OF_NODES_TO_SELECT()).to.be.eq(5);
-		expect(await jobs.EXECUTOR_FEE_PER_MS()).to.be.eq(2);
-		expect(await jobs.STAKING_REWARD_PER_MS()).to.be.eq(2);
 		expect(await jobs.STAKING_PAYMENT_POOL()).to.be.eq(addrs[2]);
 		expect(await jobs.USDC_PAYMENT_POOL()).to.be.eq(addrs[2]);
 		expect(await jobs.EXECUTORS()).to.be.eq(executors2.target);
@@ -283,8 +267,6 @@ describe("Jobs - Init", function () {
 					100,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors
@@ -301,8 +283,6 @@ describe("Jobs - Init", function () {
 					100,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors
@@ -329,8 +309,6 @@ testERC165(
 					100,
 					100,
 					3,
-					1,
-					1,
 					addrs[1],
 					addrs[1],
 					addrs[1]
@@ -349,6 +327,138 @@ testERC165(
 		],
 	},
 );
+
+describe("Jobs - Global Execution Env", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let token: Pond;
+	let attestationVerifier: AttestationVerifier;
+	let executors: Executors;
+	let jobs: Jobs;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		const Pond = await ethers.getContractFactory("Pond");
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        }) as unknown as Pond;
+
+		const Executors = await ethers.getContractFactory("Executors");
+		executors = await upgrades.deployProxy(
+			Executors,
+			[addrs[0], [image2, image3]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					600,
+					token.target,
+					10,
+					10**2,
+					10**6
+				]
+			},
+		) as unknown as Executors;
+
+		let usdcToken = addrs[2],
+			signMaxAge = 100,
+    		executionBufferTime = 100,
+    		noOfNodesToSelect = 3,
+        	stakingPaymentPoolAddress = addrs[3],
+        	usdcPaymentPoolAddress = addrs[4];
+		const Jobs = await ethers.getContractFactory("Jobs");
+		jobs = await upgrades.deployProxy(
+			Jobs,
+			[addrs[0]],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					usdcToken,
+					signMaxAge,
+					executionBufferTime,
+					noOfNodesToSelect,
+					stakingPaymentPoolAddress,
+					usdcPaymentPoolAddress,
+					executors.target
+				]
+			},
+		) as unknown as Jobs;
+
+		await executors.grantRole(await executors.JOBS_ROLE(), jobs.target);
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it('can add global execution env', async function () {
+		let env = 1,
+			executionFeePerMs = 100,
+       		stakingRewardPerMs = 100;
+		await expect(jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs)).to.emit(jobs, "GlobalEnvAdded");
+		
+		let executionEnv = await jobs.executionEnv(env);
+		expect(executionEnv.executionFeePerMs).to.eq(executionFeePerMs);
+		expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
+	});
+
+	it('cannot add global execution env without admin account', async function () {
+		let env = 1,
+			executionFeePerMs = 100,
+       		stakingRewardPerMs = 100;
+		await expect(jobs.connect(signers[1]).addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs))
+			.to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+	});
+
+	it('cannot add already supported global execution env again', async function () {
+		let env = 1,
+			executionFeePerMs = 100,
+       		stakingRewardPerMs = 100;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+
+		await expect(jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs))
+			.to.be.revertedWithCustomError(jobs, "JobsGlobalEnvAlreadySupported");
+	});
+
+	it('can remove global execution env', async function () {
+		let env = 1,
+			executionFeePerMs = 100,
+			stakingRewardPerMs = 100;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+		await expect(jobs.removeGlobalEnv(env)).to.emit(jobs, "GlobalEnvRemoved");
+
+		let executionEnv = await jobs.executionEnv(env);
+		expect(executionEnv.executionFeePerMs).to.eq(0);
+		expect(executionEnv.stakingRewardPerMs).to.eq(0);
+		expect(await executors.isTreeInitialized(env)).to.be.false;
+	});
+
+	it('cannot remove global execution env without admin account', async function () {
+		let env = 1;
+		await expect(jobs.connect(signers[1]).removeGlobalEnv(env))
+			.to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+	});
+
+	it('cannot remove unsupported global execution env', async function () {
+		let env = 1;
+		await expect(jobs.removeGlobalEnv(env))
+			.to.be.revertedWithCustomError(jobs, "JobsGlobalEnvAlreadyUnsupported");
+	});
+});
 
 describe("Jobs - Create", function () {
 	let signers: Signer[];
@@ -388,12 +498,11 @@ describe("Jobs - Create", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		let executor_images = [image4, image5, image6, image7],
-			envs = [1];
+		let executor_images = [image4, image5, image6, image7];
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images, envs],
+			[addrs[0], executor_images],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -421,8 +530,6 @@ describe("Jobs - Create", function () {
 					100,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors.target
@@ -432,15 +539,19 @@ describe("Jobs - Create", function () {
 
 		// Grant role to jobs contract on executor
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
-		const timestamp = await time.latest() * 1000;
+
+		let env = 1,
+			executionFeePerMs = 1,
+			stakingRewardPerMs = 1;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
 		// Register Executors. Owner is addrs[1]
 		await staking_token.transfer(addrs[1], 10n**20n);
 		await staking_token.connect(signers[1]).approve(executors.target, 10n**20n);
-
+		
+		const timestamp = await time.latest() * 1000;
 		let jobCapacity = 3, 
-			stakeAmount = 10n**19n,
-			env = 1;
+			stakeAmount = 10n**19n;
 
 		for (let index = 0; index < 4; index++) {
 			let signTimestamp = await time.latest() - 540;
@@ -502,7 +613,7 @@ describe("Jobs - Create", function () {
 			env = 2;
 
 		await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
-			.to.revertedWithCustomError(executors, "ExecutorsEnvUnsupported");
+			.to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
 	});
 
 	it("cannot relay job when a minimum no. of executor nodes are not available", async function () {
@@ -573,12 +684,11 @@ describe("Jobs - Output", function () {
 			[[image1], [pubkeys[14]], addrs[0]],
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
-		let executor_images = [image4, image5, image6, image7],
-			envs = [1];
+		let executor_images = [image4, image5, image6, image7];
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images, envs],
+			[addrs[0], executor_images],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -607,8 +717,6 @@ describe("Jobs - Output", function () {
 					600,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors.target
@@ -619,13 +727,18 @@ describe("Jobs - Output", function () {
 		// Grant role to jobs contract on executor
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
 
+
+		let env = 1,
+			executionFeePerMs = 1,
+			stakingRewardPerMs = 1;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+
 		// Register Executors. Owner is addrs[1]
 		await staking_token.transfer(addrs[1], 10n**20n);
 		await staking_token.connect(signers[1]).approve(executors.target, 10n**20n);
 
 		let jobCapacity = 20, 
-			stakeAmount = 10n**19n,
-			env = 1;
+			stakeAmount = 10n**19n;
 		const timestamp = await time.latest() * 1000;
 
 		for (let index = 0; index < 3; index++) {
@@ -1056,13 +1169,12 @@ describe("Jobs - Slashing", function () {
 			{ kind: "uups" },
 		) as unknown as AttestationVerifier;
 
-		let executor_images = [image4, image5, image6, image7],
-			envs = [1];
+		let executor_images = [image4, image5, image6, image7];
 
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], executor_images, envs],
+			[addrs[0], executor_images],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -1090,8 +1202,6 @@ describe("Jobs - Slashing", function () {
 					600,
 					100,
 					3,
-					1,
-					1,
 					staking_payment_pool,
 					usdc_payment_pool,
 					executors.target
@@ -1101,14 +1211,17 @@ describe("Jobs - Slashing", function () {
 
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
 
+		let env = 1,
+			executionFeePerMs = 1,
+			stakingRewardPerMs = 1;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
 		// Grant role to jobs contract on executor
 		await staking_token.transfer(addrs[1], 10n**20n);
 		await staking_token.connect(signers[1]).approve(executors.target, 10n**20n);
 
 		let jobCapacity = 20,
-			stakeAmount = 10n**19n,
-			env = 1;
+			stakeAmount = 10n**19n;
 		const timestamp = await time.latest() * 1000;
 		for (let index = 0; index < 3; index++) {
 			let signTimestamp = await time.latest() - 540;

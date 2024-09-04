@@ -38,7 +38,6 @@ describe("Relay - Init", function () {
     let globalMinTimeout: number;  // in milliseconds
     let globalMaxTimeout: number;  // in milliseconds
     let overallTimeout: number;
-    let executionFeePerMs: number;  // fee is in USDC
     let gatewayFeePerJob: number;
 	let fixedGas: number;
 	let callbackMeasureGas: number;
@@ -53,7 +52,6 @@ describe("Relay - Init", function () {
         globalMinTimeout = 10 * 1000;  // in milliseconds
         globalMaxTimeout = 100 * 1000;  // in milliseconds
         overallTimeout = 100;
-        executionFeePerMs = 10;  // fee is in USDC
         gatewayFeePerJob = 10;
 		fixedGas = 150000;
     	callbackMeasureGas = 4530;
@@ -70,7 +68,6 @@ describe("Relay - Init", function () {
 			globalMinTimeout,
 			globalMaxTimeout,
 			overallTimeout,
-			executionFeePerMs,
 			gatewayFeePerJob,
 			fixedGas,
 			callbackMeasureGas
@@ -96,7 +93,6 @@ describe("Relay - Init", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -123,7 +119,6 @@ describe("Relay - Init", function () {
 						globalMinTimeout,
 						globalMaxTimeout,
 						overallTimeout,
-						executionFeePerMs,
 						gatewayFeePerJob,
 						fixedGas,
 						callbackMeasureGas
@@ -152,7 +147,6 @@ describe("Relay - Init", function () {
 						globalMinTimeout,
 						globalMaxTimeout,
 						overallTimeout,
-						executionFeePerMs,
 						gatewayFeePerJob,
 						fixedGas,
 						callbackMeasureGas
@@ -178,7 +172,6 @@ describe("Relay - Init", function () {
 						globalMaxTimeout,
 						globalMinTimeout,
 						overallTimeout,
-						executionFeePerMs,
 						gatewayFeePerJob,
 						fixedGas,
 						callbackMeasureGas
@@ -206,7 +199,6 @@ describe("Relay - Init", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -225,7 +217,6 @@ describe("Relay - Init", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -251,7 +242,6 @@ describe("Relay - Init", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -271,7 +261,6 @@ describe("Relay - Init", function () {
 						globalMinTimeout,
 						globalMaxTimeout,
 						overallTimeout,
-						executionFeePerMs,
 						gatewayFeePerJob,
 						fixedGas,
 						callbackMeasureGas
@@ -291,7 +280,6 @@ testERC165(
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10;
 			let fixedGas = 150000;
 			let callbackMeasureGas = 4530;
@@ -309,7 +297,6 @@ testERC165(
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -351,7 +338,6 @@ describe("Relay - Whitelist/Revoke enclave", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -369,7 +355,6 @@ describe("Relay - Whitelist/Revoke enclave", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -404,6 +389,122 @@ describe("Relay - Whitelist/Revoke enclave", function () {
 	it("cannot revoke enclave image without admin account", async function () {
 		await expect(relay.connect(signers[1]).revokeEnclaveImage(getImageId(image2)))
 			.to.be.revertedWithCustomError(relay, "AccessControlUnauthorizedAccount");
+	});
+});
+
+describe("Relay - Global Execution Env", function () {
+	let signers: Signer[];
+	let addrs: string[];
+	let wallets: Wallet[];
+	let pubkeys: string[];
+	let token: USDCoin;
+	let attestationVerifier: AttestationVerifier;
+	let relay: Relay;
+
+	before(async function () {
+		signers = await ethers.getSigners();
+		addrs = await Promise.all(signers.map((a) => a.getAddress()));
+		wallets = signers.map((_, idx) => walletForIndex(idx));
+		pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+		const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+		attestationVerifier = await upgrades.deployProxy(
+			AttestationVerifier,
+			[[image1], [pubkeys[14]], addrs[0]],
+			{ kind: "uups" },
+		) as unknown as AttestationVerifier;
+
+		const USDCoin = await ethers.getContractFactory("USDCoin");
+		token = await upgrades.deployProxy(
+			USDCoin,
+			[addrs[0]],
+			{
+				kind: "uups",
+			}
+		) as unknown as USDCoin;
+
+		let admin = addrs[0],
+			images = [image1, image2],
+			maxAge = 600,
+			globalMinTimeout = 10 * 1000,  // in milliseconds
+			globalMaxTimeout = 100 * 1000,  // in milliseconds
+			overallTimeout = 100,
+			gatewayFeePerJob = 10,
+			fixedGas = 150000,
+			callbackMeasureGas = 4530;
+		const Relay = await ethers.getContractFactory("Relay");
+		relay = await upgrades.deployProxy(
+			Relay,
+			[admin, images],
+			{
+				kind: "uups",
+				initializer: "initialize",
+				constructorArgs: [
+					attestationVerifier.target,
+					maxAge,
+					token.target,
+					globalMinTimeout,
+					globalMaxTimeout,
+					overallTimeout,
+					gatewayFeePerJob,
+					fixedGas,
+					callbackMeasureGas
+				]
+			},
+		) as unknown as Relay;
+	});
+
+	takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+	it('can add global execution env', async function () {
+		let env = 1,
+			executionFeePerMs = 100;
+		await expect(relay.addGlobalEnv(env, executionFeePerMs)).to.emit(relay, "GlobalEnvAdded");
+		
+		let executionEnv = await relay.executionEnv(env);
+		expect(executionEnv.executionFeePerMs).to.eq(executionFeePerMs);
+		expect(executionEnv.status).to.be.true;
+		expect(await relay.getJobExecutionFeePerMs(env)).to.eq(executionFeePerMs);
+		expect(await relay.isEnvSupported(env)).to.be.true;
+	});
+
+	it('cannot add global execution env without admin account', async function () {
+		let env = 1,
+			executionFeePerMs = 100;
+		await expect(relay.connect(signers[1]).addGlobalEnv(env, executionFeePerMs))
+			.to.be.revertedWithCustomError(relay, "AccessControlUnauthorizedAccount");
+	});
+
+	it('cannot add already supported global execution env again', async function () {
+		let env = 1,
+			executionFeePerMs = 100;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
+		await expect(relay.addGlobalEnv(env, executionFeePerMs))
+			.to.be.revertedWithCustomError(relay, "RelayGlobalEnvAlreadySupported");
+	});
+
+	it('can remove global execution env', async function () {
+		let env = 1,
+			executionFeePerMs = 100;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+		await expect(relay.removeGlobalEnv(env)).to.emit(relay, "GlobalEnvRemoved");
+
+		let executionEnv = await relay.executionEnv(env);
+		expect(executionEnv.executionFeePerMs).to.eq(0);
+		expect(executionEnv.status).to.be.false;
+	});
+
+	it('cannot remove global execution env without admin account', async function () {
+		let env = 1;
+		await expect(relay.connect(signers[1]).removeGlobalEnv(env))
+			.to.be.revertedWithCustomError(relay, "AccessControlUnauthorizedAccount");
+	});
+
+	it('cannot remove unsupported global execution env', async function () {
+		let env = 1;
+		await expect(relay.removeGlobalEnv(env))
+			.to.be.revertedWithCustomError(relay, "RelayGlobalEnvAlreadyUnsupported");
 	});
 });
 
@@ -444,7 +545,6 @@ describe("Relay - Register gateway", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -462,7 +562,6 @@ describe("Relay - Register gateway", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -590,7 +689,6 @@ describe("Relay - Relay Job", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -608,7 +706,6 @@ describe("Relay - Relay Job", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -626,12 +723,17 @@ describe("Relay - Relay Job", function () {
 		let signedDigest = await createGatewaySignature(addrs[1], signTimestamp, wallets[15]);
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
+
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can relay job", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
 			maxGasPrice = 100,
@@ -642,7 +744,7 @@ describe("Relay - Relay Job", function () {
 		await setNextBlockBaseFeePerGas(1);
 		let tx = await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.emit(relay, "JobRelayed");
@@ -653,8 +755,27 @@ describe("Relay - Relay Job", function () {
 		expect(job.jobOwner).to.eq(addrs[2]);
 	});
 
+	it("cannot relay job with unsupported execution env", async function () {
+		let env = 2,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+			codeInputs = solidityPacked(["string"], ["codeInput"]),
+			userTimeout = 50000,
+			maxGasPrice = 100,
+			callbackDeposit = 100,
+			refundAccount = addrs[1],
+			callbackContract = addrs[1],
+			callbackGasLimit = 10000;
+		let tx = relay.connect(signers[2])
+			.relayJob(
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				{ value: callbackDeposit }
+			);
+		await expect(tx).to.revertedWithCustomError(relay, "RelayEnvUnsupported");
+	});
+
 	it("cannot relay job with invalid user timeout", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 500,
 			maxGasPrice = 100,
@@ -664,7 +785,7 @@ describe("Relay - Relay Job", function () {
 			callbackGasLimit = 10000;
 		let tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
@@ -672,14 +793,15 @@ describe("Relay - Relay Job", function () {
 		userTimeout = 1000 * 1000;	// 1000ms
 		tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInvalidUserTimeout");
 	});
 
 	it("cannot relay job with insufficient callback deposit", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
 			maxGasPrice = 100,
@@ -692,14 +814,15 @@ describe("Relay - Relay Job", function () {
 
 		let tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientCallbackDeposit");
 	});
 
 	it("cannot relay job with invalid max gas price", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
 			maxGasPrice = 0,
@@ -709,7 +832,7 @@ describe("Relay - Relay Job", function () {
 			callbackGasLimit = 10000;
 		let tx = relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 		await expect(tx).to.revertedWithCustomError(relay, "RelayInsufficientMaxGasPrice");
@@ -754,7 +877,6 @@ describe("Relay - Job Response", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -772,7 +894,6 @@ describe("Relay - Job Response", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -791,6 +912,10 @@ describe("Relay - Job Response", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
@@ -802,7 +927,7 @@ describe("Relay - Job Response", function () {
 		await setNextBlockBaseFeePerGas(1);
 		await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 	});
@@ -929,7 +1054,6 @@ describe("Relay - Job Cancel", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			fixedGas = 150000,
 			callbackMeasureGas = 4530;
@@ -947,7 +1071,6 @@ describe("Relay - Job Cancel", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -966,6 +1089,10 @@ describe("Relay - Job Cancel", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
 		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
@@ -978,7 +1105,7 @@ describe("Relay - Job Cancel", function () {
 		await setNextBlockBaseFeePerGas(1);
 		await relay.connect(signers[2])
 			.relayJob(
-				codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
+				env, codeHash, codeInputs, userTimeout, maxGasPrice, refundAccount, callbackContract, callbackGasLimit,
 				{ value: callbackDeposit }
 			);
 	});
@@ -1075,7 +1202,6 @@ describe("Relay - Job sent by UserSample contract", function () {
 			globalMinTimeout = 10 * 1000,  // in milliseconds
 			globalMaxTimeout = 100 * 1000,  // in milliseconds
 			overallTimeout = 100,
-			executionFeePerMs = 10,  // fee is in USDC
 			gatewayFeePerJob = 10,
 			callbackMeasureGas = 4530;
 		fixedGas = 150000;
@@ -1093,7 +1219,6 @@ describe("Relay - Job sent by UserSample contract", function () {
 					globalMinTimeout,
 					globalMaxTimeout,
 					overallTimeout,
-					executionFeePerMs,
 					gatewayFeePerJob,
 					fixedGas,
 					callbackMeasureGas
@@ -1109,6 +1234,10 @@ describe("Relay - Job sent by UserSample contract", function () {
 
 		await relay.connect(signers[1]).registerGateway(signature, attestation, signedDigest, signTimestamp);
 
+		let env = 1,
+			executionFeePerMs = 10;
+		await relay.addGlobalEnv(env, executionFeePerMs);
+
 		const UserSample = await ethers.getContractFactory("UserSample");
 		userSample = await UserSample.deploy(relay.target, addrs[9], token.target, addrs[10]) as unknown as UserSample;
 
@@ -1118,7 +1247,8 @@ describe("Relay - Job sent by UserSample contract", function () {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can submit response and execute callback", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
 			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
@@ -1130,7 +1260,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		// deposit eth in UserSample contract before relaying jobs
 		await signers[4].sendTransaction({to: userSample.target, value: callbackDeposit});
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, refundAccount, callbackContract, callbackGasLimit
+			env, codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, refundAccount, callbackContract, callbackGasLimit
 		);
 
 		let jobId: any = await relay.jobCount(),
@@ -1154,7 +1284,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 		// console.log("FIXED_GAS : ", txReceipt?.gasUsed);
 		// validate callback cost and refund
 		let txGasPrice = txReceipt?.gasPrice || 0n;
-		let callbackGas = 9269; // calculated using console.log
+		let callbackGas = 9325; // calculated using console.log
 		// console.log("txGasPrice: ", txGasPrice);
 		let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
 		expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);
@@ -1173,7 +1303,8 @@ describe("Relay - Job sent by UserSample contract", function () {
 	});
 
 	it("can submit response with gas price higher than maxGasPrice", async function () {
-		let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+		let env = 1,
+			codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
 			codeInputs = solidityPacked(["string"], ["codeInput"]),
 			userTimeout = 50000,
 			maxGasPrice = (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
@@ -1184,7 +1315,7 @@ describe("Relay - Job sent by UserSample contract", function () {
 			callbackGasLimit = 20000;
 		await signers[0].sendTransaction({to: userSample.target, value: callbackDeposit});
 		await userSample.relayJob(
-			codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, refundAccount, callbackContract, callbackGasLimit
+			env, codeHash, codeInputs, userTimeout, maxGasPrice, usdcDeposit, callbackDeposit, refundAccount, callbackContract, callbackGasLimit
 		);
 
 		let jobId: any = await relay.jobCount(),

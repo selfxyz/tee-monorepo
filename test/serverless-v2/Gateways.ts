@@ -1193,7 +1193,6 @@ describe("Gateways - Slash on reassign gateway", function () {
 		) as unknown as Gateways;
 
 		let relayBufferTime = 100,
-			executionFeePerMs = 20,
 			slashCompForGateway = 10,
 			signMaxAge = 600,
 			jobs = addrs[1],
@@ -1210,7 +1209,6 @@ describe("Gateways - Slash on reassign gateway", function () {
 					usdcToken.target,
 					signMaxAge,
 					relayBufferTime,
-					executionFeePerMs,
 					slashCompForGateway,
 					reassignCompForReporterGateway,
 					jobs,
