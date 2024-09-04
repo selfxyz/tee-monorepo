@@ -332,7 +332,7 @@ contract Jobs is
         USDC_TOKEN.safeTransferFrom(
             _jobOwner,
             address(this),
-            _deadline * (executionEnv[_env].executionFeePerMs + executionEnv[_env].stakingRewardPerMs)
+            _deadline * getJobExecutionFeePerMs(_env)
         );
 
         jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, _env, selectedNodes);

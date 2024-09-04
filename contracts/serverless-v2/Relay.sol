@@ -199,15 +199,15 @@ contract Relay is
     event GlobalEnvRemoved(uint8 indexed env);
 
     /// @notice Thrown when the provided execution environment is not supported globally.
-    error ExecutorsEnvUnsupported();
+    error RelayEnvUnsupported();
     /// @notice Thrown when the execution environment is already supported globally.
-    error JobsGlobalEnvAlreadySupported();
+    error RelayGlobalEnvAlreadySupported();
     /// @notice Thrown when the execution environment is already unsupported globally.
-    error JobsGlobalEnvAlreadyUnsupported();
+    error RelayGlobalEnvAlreadyUnsupported();
 
     modifier isValidEnv(uint8 _env) {
         if(!executionEnv[_env].status)
-            revert ExecutorsEnvUnsupported();
+            revert RelayEnvUnsupported();
         _;
     }
 
@@ -218,7 +218,7 @@ contract Relay is
         uint256 _executionFeePerMs
     ) internal {
         if(executionEnv[_env].status)
-            revert JobsGlobalEnvAlreadySupported();
+            revert RelayGlobalEnvAlreadySupported();
 
         executionEnv[_env] = ExecutionEnv({
             executionFeePerMs: _executionFeePerMs,
@@ -230,7 +230,7 @@ contract Relay is
 
     function _removeGlobalEnv(uint8 _env) internal {
         if(!executionEnv[_env].status)
-            revert JobsGlobalEnvAlreadyUnsupported();
+            revert RelayGlobalEnvAlreadyUnsupported();
 
         delete executionEnv[_env];
 
@@ -262,6 +262,14 @@ contract Relay is
      */
     function removeGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _removeGlobalEnv(_env);
+    }
+
+    function getJobExecutionFeePerMs(uint8 _env) public view returns (uint256) {
+        return executionEnv[_env].executionFeePerMs;
+    }
+
+    function isEnvSupported(uint8 _env) public view returns (bool) {
+        return executionEnv[_env].status;
     }
 
     //-------------------------------- external functions end --------------------------------//
