@@ -329,7 +329,7 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
 		};
 		let tx = relaySubscriptions.connect(signers[2])
 			.startJobSubscription(jobSubsParams, { value: callbackDeposit });
-		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsEnvUnsupported");
+		await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsUnsupportedEnv");
 	});
 
 	it("cannot start job subscription with invalid start timestamp", async function () {

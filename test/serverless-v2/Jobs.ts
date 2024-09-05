@@ -359,7 +359,7 @@ describe("Jobs - Global Execution Env", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3, image4, image5, image6]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -458,6 +458,90 @@ describe("Jobs - Global Execution Env", function () {
 		await expect(jobs.removeGlobalEnv(env))
 			.to.be.revertedWithCustomError(jobs, "JobsGlobalEnvAlreadyUnsupported");
 	});
+
+	it('can add multiple envs and remove them', async function () {
+        let env = 1,
+			executionFeePerMs = 100,
+       		stakingRewardPerMs = 150;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+
+		let executionEnv = await jobs.executionEnv(env);
+		expect(executionEnv.executionFeePerMs).to.eq(executionFeePerMs);
+		expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
+        expect(await executors.isTreeInitialized(env)).to.be.true;
+		expect(await executors.nodesInTree(env)).that.eq(0);
+
+        await token.transfer(addrs[1], 100000);
+		await token.connect(signers[1]).approve(executors.target, 10000);
+        
+		let jobCapacity = 20,
+            stakeAmount = 10,
+            executorImages = [image2, image3],
+		    timestamp = await time.latest() * 1000;
+        for (let index = 0; index < 2; index++) {
+            let signTimestamp = await time.latest() - 540;
+            // Executor index using wallet 10 + index as enclave address
+            let [attestationSign, attestation] = await createAttestation(pubkeys[10 + index], executorImages[index],
+                                                                            wallets[14], timestamp - 540000);
+            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[10 + index]);
+            await executors.connect(signers[1]).registerExecutor(
+                attestationSign,
+                attestation,
+                jobCapacity,
+                signTimestamp,
+                signedDigest,
+                stakeAmount,
+                env
+            );
+        }
+
+        env = 2,
+		executionFeePerMs = 200,
+		stakingRewardPerMs = 250;
+		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+
+		executionEnv = await jobs.executionEnv(env);
+		expect(executionEnv.executionFeePerMs).to.eq(executionFeePerMs);
+		expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
+        expect(await executors.isTreeInitialized(env)).to.be.true;
+		expect(await executors.nodesInTree(env)).that.eq(0);
+
+        executorImages = [image4, image5, image6];
+        for (let index = 0; index < 3; index++) {
+            let signTimestamp = await time.latest() - 540;
+            // Executor index using wallet 12 + index as enclave address
+            let [attestationSign, attestation] = await createAttestation(pubkeys[12 + index], executorImages[index],
+                                                                            wallets[14], timestamp - 540000);
+            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[12 + index]);
+            await executors.connect(signers[1]).registerExecutor(
+                attestationSign,
+                attestation,
+                jobCapacity,
+                signTimestamp,
+                signedDigest,
+                stakeAmount,
+                env
+            );
+        }
+
+		expect(await executors.nodesInTree(1)).that.eq(2);
+		expect(await executors.nodesInTree(2)).that.eq(3);
+
+        await jobs.removeGlobalEnv(1);
+
+		executionEnv = await jobs.executionEnv(1);
+		expect(executionEnv.executionFeePerMs).to.eq(0);
+		expect(executionEnv.stakingRewardPerMs).to.eq(0);
+        expect(await executors.isTreeInitialized(1)).to.be.false;
+        expect(await executors.isTreeInitialized(2)).to.be.true;
+
+        await jobs.removeGlobalEnv(2);
+
+		executionEnv = await jobs.executionEnv(2);
+		expect(executionEnv.executionFeePerMs).to.eq(0);
+		expect(executionEnv.stakingRewardPerMs).to.eq(0);
+        expect(await executors.isTreeInitialized(2)).to.be.false;
+    });
 });
 
 describe("Jobs - Create", function () {

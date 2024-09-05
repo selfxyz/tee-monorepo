@@ -41,6 +41,7 @@ contract TreeMapUpgradeable is Initializable {
     bytes32 private constant TreeMapStorageLocation = 0x03deb113f53cfc5c9ce28544dc6140711774fc5c00752abd22c8d30d1faf2900;
 
     error TreeInvalidInitState();
+    error TreeInvalidDeleteState();
 
     function _getTreeMapStorage() private pure returns (TreeMapStorage storage $) {
         assembly {
@@ -63,6 +64,7 @@ contract TreeMapUpgradeable is Initializable {
     /// @dev Deletes the tree storage for a given env.
     function _delete_tree(uint8 _env) internal {
         TreeMapStorage storage $ = _getTreeMapStorage();
+        if ($.envTree[_env].nodes.length == 0) revert TreeInvalidDeleteState();
 
         uint256 len = $.envTree[_env].nodes.length;
         // starting from 1st index, as mapping doesn't exists for the node at 0th index

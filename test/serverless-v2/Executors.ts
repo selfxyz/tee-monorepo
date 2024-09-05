@@ -24,6 +24,24 @@ const image3: AttestationAutherUpgradeable.EnclaveImageStruct = {
 	PCR2: ethers.hexlify(ethers.randomBytes(48))
 };
 
+const image4: AttestationAutherUpgradeable.EnclaveImageStruct = {
+	PCR0: ethers.hexlify(ethers.randomBytes(48)),
+	PCR1: ethers.hexlify(ethers.randomBytes(48)),
+	PCR2: ethers.hexlify(ethers.randomBytes(48))
+};
+
+const image5: AttestationAutherUpgradeable.EnclaveImageStruct = {
+	PCR0: ethers.hexlify(ethers.randomBytes(48)),
+	PCR1: ethers.hexlify(ethers.randomBytes(48)),
+	PCR2: ethers.hexlify(ethers.randomBytes(48))
+};
+
+const image6: AttestationAutherUpgradeable.EnclaveImageStruct = {
+	PCR0: ethers.hexlify(ethers.randomBytes(48)),
+	PCR1: ethers.hexlify(ethers.randomBytes(48)),
+	PCR2: ethers.hexlify(ethers.randomBytes(48))
+};
+
 function getImageId(image: AttestationAutherUpgradeable.EnclaveImageStruct): string {
 	return keccak256(solidityPacked(["bytes", "bytes", "bytes"], [image.PCR0, image.PCR1, image.PCR2]));
 }
@@ -342,7 +360,7 @@ describe("Executors - TreeMap functions", function () {
 		const Executors = await ethers.getContractFactory("Executors");
 		executors = await upgrades.deployProxy(
 			Executors,
-			[addrs[0], [image2, image3]],
+			[addrs[0], [image2, image3, image4, image5, image6]],
 			{
 				kind: "uups",
 				initializer: "initialize",
@@ -391,6 +409,12 @@ describe("Executors - TreeMap functions", function () {
 		expect(await executors.isTreeInitialized(env)).to.be.false;
 	});
 
+    it("cannot remove tree whose execution env hasn't been initialized", async function () {
+		let env = 1;
+		await expect(executors.removeTree(env)).to.be
+			.revertedWithCustomError(executors, "TreeInvalidDeleteState");
+	});
+
 	it("cannot remove tree without JOBS_ROLE account", async function () {
 		let env = 1;
 		await executors.initTree(env);
@@ -399,6 +423,71 @@ describe("Executors - TreeMap functions", function () {
 			.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
 	});
 
+    it('can add multiple envs and remove them', async function () {
+        let env = 1;
+        await executors.initTree(env);
+
+        expect(await executors.isTreeInitialized(env)).to.be.true;
+		expect(await executors.nodesInTree(env)).that.eq(0);
+
+        await token.transfer(addrs[1], 100000);
+		await token.connect(signers[1]).approve(executors.target, 10000);
+        
+		let jobCapacity = 20,
+            stakeAmount = 10,
+            executorImages = [image2, image3],
+		    timestamp = await time.latest() * 1000;
+        for (let index = 0; index < 2; index++) {
+            let signTimestamp = await time.latest() - 540;
+            // Executor index using wallet 10 + index as enclave address
+            let [attestationSign, attestation] = await createAttestation(pubkeys[10 + index], executorImages[index],
+                                                                            wallets[14], timestamp - 540000);
+            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[10 + index]);
+            await executors.connect(signers[1]).registerExecutor(
+                attestationSign,
+                attestation,
+                jobCapacity,
+                signTimestamp,
+                signedDigest,
+                stakeAmount,
+                env
+            );
+        }
+
+        env = 2;
+        await executors.initTree(env);
+
+        expect(await executors.isTreeInitialized(env)).to.be.true;
+		expect(await executors.nodesInTree(env)).that.eq(0);
+        
+        executorImages = [image4, image5, image6];
+        for (let index = 0; index < 3; index++) {
+            let signTimestamp = await time.latest() - 540;
+            // Executor index using wallet 12 + index as enclave address
+            let [attestationSign, attestation] = await createAttestation(pubkeys[12 + index], executorImages[index],
+                                                                            wallets[14], timestamp - 540000);
+            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[12 + index]);
+            await executors.connect(signers[1]).registerExecutor(
+                attestationSign,
+                attestation,
+                jobCapacity,
+                signTimestamp,
+                signedDigest,
+                stakeAmount,
+                env
+            );
+        }
+
+		expect(await executors.nodesInTree(1)).that.eq(2);
+		expect(await executors.nodesInTree(2)).that.eq(3);
+
+        await executors.removeTree(1);
+        expect(await executors.isTreeInitialized(1)).to.be.false;
+        expect(await executors.isTreeInitialized(2)).to.be.true;
+
+        await executors.removeTree(2);
+        expect(await executors.isTreeInitialized(2)).to.be.false;
+    });
 });
 
 describe("Executors - Verify", function () {
@@ -518,35 +607,10 @@ describe("Executors - Register executor", function () {
 			},
 		) as unknown as Executors;
 
-		let usdcToken = addrs[2],
-			stakingPaymentPool = addrs[3],
-			usdcPaymentPool = addrs[4];
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					usdcToken,
-					600,
-					100,
-					3,
-					stakingPaymentPool,
-					usdcPaymentPool,
-					executors.target
-				]
-			},
-		) as unknown as Jobs;
-
-		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
-
-		let env = 1,
-			executionFeePerMs = 1,
-			stakingRewardPerMs = 1;
-		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+        await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
+        
+        let env = 1;
+        await executors.initTree(env);
 	});
 
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -899,35 +963,10 @@ describe("Executors - Staking", function () {
 			},
 		) as unknown as Executors;
 
-		let usdcToken = addrs[2],
-			stakingPaymentPool = addrs[3],
-			usdcPaymentPool = addrs[4];
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					usdcToken,
-					600,
-					100,
-					3,
-					stakingPaymentPool,
-					usdcPaymentPool,
-					executors.target
-				]
-			},
-		) as unknown as Jobs;
+		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
 
-		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
-
-		let env = 1,
-			executionFeePerMs = 1,
-			stakingRewardPerMs = 1;
-		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+        let env = 1;
+        await executors.initTree(env);
 
 		await token.transfer(addrs[1], 100000);
 		await token.connect(signers[1]).approve(executors.target, 10000);
@@ -1083,37 +1122,10 @@ describe("Executors - Revive", function () {
 			},
 		) as unknown as Executors;
 
-		let usdcToken = addrs[2],
-			stakingPaymentPool = addrs[3],
-			usdcPaymentPool = addrs[4];
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					usdcToken,
-					600,
-					100,
-					3,
-					stakingPaymentPool,
-					usdcPaymentPool,
-					executors.target
-				]
-			},
-		) as unknown as Jobs;
-
-		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
-		
-		let env = 1,
-		executionFeePerMs = 1,
-		stakingRewardPerMs = 1;
-		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
-		
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
+		
+		let env = 1;
+        await executors.initTree(env);
 
 		await token.transfer(addrs[1], 10n**19n);
 		await token.connect(signers[1]).approve(executors.target, 10n**19n);
@@ -1262,36 +1274,9 @@ describe("Executors - Select/Release/Slash", function () {
 		) as unknown as Executors;
 
 		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
-
-		let usdcToken = addrs[2],
-			stakingPaymentPool = addrs[3],
-			usdcPaymentPool = addrs[4];
-		const Jobs = await ethers.getContractFactory("Jobs");
-		let jobs = await upgrades.deployProxy(
-			Jobs,
-			[addrs[0]],
-			{
-				kind: "uups",
-				initializer: "initialize",
-				constructorArgs: [
-					token.target,
-					usdcToken,
-					600,
-					100,
-					3,
-					stakingPaymentPool,
-					usdcPaymentPool,
-					executors.target
-				]
-			},
-		) as unknown as Jobs;
-
-		await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
 		
-		let env = 1,
-			executionFeePerMs = 1,
-			stakingRewardPerMs = 1;
-		await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+		let env = 1;
+        await executors.initTree(env);
 
 		await token.transfer(addrs[1], 10n**19n);
 		await token.connect(signers[1]).approve(executors.target, 10n**19n);

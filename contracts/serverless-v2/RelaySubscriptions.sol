@@ -275,11 +275,11 @@ contract RelaySubscriptions is
     ///         before the termination condition is reached.
     error RelaySubscriptionsTerminationConditionPending();
     /// @notice Thrown when the provided execution environment is not supported globally.
-    error RelaySubscriptionsEnvUnsupported();
+    error RelaySubscriptionsUnsupportedEnv();
 
     modifier isValidEnv(uint8 _env) {
         if(!RELAY.isEnvSupported(_env))
-            revert RelaySubscriptionsEnvUnsupported();
+            revert RelaySubscriptionsUnsupportedEnv();
         _;
     }
 
