@@ -1178,6 +1178,7 @@ impl ContractsClient {
             response_job.output.clone(),
             response_job.total_time,
             response_job.error_code,
+            response_job.job_mode
         )
         .await
         .unwrap();
