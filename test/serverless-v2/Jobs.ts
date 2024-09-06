@@ -414,6 +414,8 @@ describe("Jobs - Global Execution Env", function () {
         let executionEnv = await jobs.executionEnv(env);
         expect(executionEnv.executionFeePerMs).to.eq(executionFeePerMs);
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
+        expect(await executors.isTreeInitialized(env)).to.be.true;
+        expect(await executors.nodesInTree(env)).to.eq(0);
     });
 
     it('cannot add global execution env without admin account', async function () {
@@ -496,8 +498,8 @@ describe("Jobs - Global Execution Env", function () {
         }
 
         env = 2,
-            executionFeePerMs = 200,
-            stakingRewardPerMs = 250;
+        executionFeePerMs = 200,
+        stakingRewardPerMs = 250;
         await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
         executionEnv = await jobs.executionEnv(env);
