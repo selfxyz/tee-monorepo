@@ -17,6 +17,7 @@ use tokio::time;
 use crate::constant::{
     MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK,
 };
+use crate::error::ServerlessError;
 use crate::model::{Job, RequestChainClient};
 
 pub trait LogsProvider {
@@ -31,16 +32,38 @@ pub trait LogsProvider {
         req_chain_client: &'a RequestChainClient,
     ) -> impl Future<Output = Result<impl Stream<Item = Log> + Unpin>>;
 
-    fn gateways_job_relayed_logs<'a>(
+    fn gateways_job_relayed_logs<'a, P: HttpProviderLogs>(
         &'a self,
         job: Job,
-        common_chain_http_provider: &'a Provider<Http>,
+        common_chain_http_provider: &'a P,
     ) -> impl Future<Output = Result<Vec<Log>>>;
 
     fn request_chain_historic_subscription_jobs<'a>(
         &'a self,
         req_chain_client: &'a RequestChainClient,
     ) -> impl Future<Output = Result<Vec<Log>>>;
+}
+
+pub trait HttpProviderLogs {
+    async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ServerlessError>;
+}
+
+pub struct HttpProvider {
+    pub url: String,
+}
+
+impl HttpProvider {
+    pub fn new(url: String) -> Self {
+        Self { url }
+    }
+}
+
+impl HttpProviderLogs for HttpProvider {
+    async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ServerlessError> {
+        let provider = Provider::<Http>::try_from(&self.url).unwrap();
+        let logs = provider.get_logs(filter).await.unwrap();
+        Ok(logs)
+    }
 }
 
 pub async fn get_block_number_by_timestamp(

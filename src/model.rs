@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::contract_abi::{GatewayJobsContract, RelayContract, RelaySubscriptionsContract};
-use crate::HttpProvider;
+use crate::HttpProviderType;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -45,6 +45,23 @@ pub struct MutableConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignedRegistrationBody {
     pub chain_ids: Vec<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SignedRegistrationResponse {
+    pub owner: H160,
+    pub sign_timestamp: usize,
+    pub chain_ids: Vec<u64>,
+    pub common_chain_signature: String,
+    pub request_chain_signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GatewayDetailsResponse {
+    pub enclave_public_key: String,
+    pub enclave_address: H160,
+    pub owner_address: H160,
+    pub gas_address: Address,
 }
 
 pub enum RegisterType {
@@ -91,7 +108,7 @@ pub struct ContractsClient {
     pub common_chain_ws_url: String,
     pub common_chain_http_url: String,
     pub gateways_contract_address: Address,
-    pub gateway_jobs_contract: Arc<RwLock<GatewayJobsContract<HttpProvider>>>,
+    pub gateway_jobs_contract: Arc<RwLock<GatewayJobsContract<HttpProviderType>>>,
     pub request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_ids: HashSet<u64>,
@@ -122,8 +139,8 @@ pub struct RequestChainClient {
     pub relay_subscriptions_address: Address,
     pub ws_rpc_url: String,
     pub http_rpc_url: String,
-    pub relay_contract: Arc<RwLock<RelayContract<HttpProvider>>>,
-    pub relay_subscriptions_contract: Arc<RwLock<RelaySubscriptionsContract<HttpProvider>>>,
+    pub relay_contract: Arc<RwLock<RelayContract<HttpProviderType>>>,
+    pub relay_subscriptions_contract: Arc<RwLock<RelaySubscriptionsContract<HttpProviderType>>>,
     pub request_chain_start_block_number: u64,
     pub confirmation_blocks: u64,
     pub last_seen_block: Arc<AtomicU64>,
@@ -139,7 +156,7 @@ pub enum GatewayJobType {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JobMode {
-    Single,
+    Once,
     Subscription,
 }
 

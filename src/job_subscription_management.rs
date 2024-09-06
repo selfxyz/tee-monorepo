@@ -29,9 +29,9 @@ use crate::{
 
 fn unix_timestamp_to_instant(timestamp: u64) -> Instant {
     let duration = Duration::from_secs(timestamp);
-    let system_time = UNIX_EPOCH + duration;
+    let timestamp_in_system_time = UNIX_EPOCH + duration;
     Instant::now()
-        + system_time
+        + timestamp_in_system_time
             .duration_since(SystemTime::now())
             .unwrap_or_default()
 }
@@ -509,4 +509,21 @@ pub fn update_subscription_job_termination_params(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod job_subscription_management {
+    use super::*;
+
+    #[test]
+    fn test_unix_timestamp_to_instant() {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 60;
+        let instant = unix_timestamp_to_instant(timestamp);
+        let instant_now = Instant::now();
+        assert!(instant < instant_now + Duration::from_secs(60));
+    }
 }
