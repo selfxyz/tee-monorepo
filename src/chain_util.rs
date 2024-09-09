@@ -18,7 +18,7 @@ use crate::constant::{
     MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK,
 };
 use crate::error::ServerlessError;
-use crate::model::{Job, RequestChainClient};
+use crate::model::{Job, JobMode, RequestChainClient};
 
 pub trait LogsProvider {
     fn common_chain_jobs<'a>(
@@ -313,6 +313,7 @@ pub async fn sign_job_response_request(
     output: Bytes,
     total_time: U256,
     error_code: u8,
+    job_mode: JobMode,
 ) -> Option<(String, u64)> {
     let sign_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -336,9 +337,16 @@ pub async fn sign_job_response_request(
 
     let hash_struct = keccak256(encode(&token_list));
 
+    let contract_name;
+    if job_mode == JobMode::Once {
+        contract_name = "marlin.oyster.Relay";
+    } else {
+        contract_name = "marlin.oyster.RelaySubscriptions";
+    }
+
     let gateway_jobs_domain_separator = keccak256(encode(&[
         Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
+        Token::FixedBytes(keccak256(contract_name).to_vec()),
         Token::FixedBytes(keccak256("1").to_vec()),
     ]));
 
