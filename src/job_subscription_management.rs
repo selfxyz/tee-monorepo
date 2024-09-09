@@ -517,6 +517,7 @@ mod job_subscription_management {
 
     #[test]
     fn test_unix_timestamp_to_instant() {
+        // Future time stays in future
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -525,5 +526,28 @@ mod job_subscription_management {
         let instant = unix_timestamp_to_instant(timestamp);
         let instant_now = Instant::now();
         assert!(instant < instant_now + Duration::from_secs(60));
+        assert!(instant > instant_now + Duration::from_secs(59));
+
+        // Future time stays in future
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 1000;
+        let instant = unix_timestamp_to_instant(timestamp);
+        let instant_now = Instant::now();
+        assert!(instant < instant_now + Duration::from_secs(1000));
+        assert!(instant > instant_now + Duration::from_secs(999));
+
+        // Past time becomes instance time
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - 100;
+        let instant = unix_timestamp_to_instant(timestamp);
+        let instant_now = Instant::now();
+        assert!(instant < instant_now + Duration::from_secs(1));
+        assert!(instant > instant_now - Duration::from_secs(1));
     }
 }
