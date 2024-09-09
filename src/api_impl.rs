@@ -614,7 +614,7 @@ mod api_impl_tests {
     };
 
     // Test the response for the 'index' endpoint
-    #[actix_web::test]
+    #[tokio::test]
     async fn index_test() {
         let app_state = generate_app_state().await;
         let app = actix_web::test::init_service(new_app(app_state.clone())).await;
@@ -626,7 +626,7 @@ mod api_impl_tests {
     }
 
     // Test the various response cases for the 'immutable-config' endpoint
-    #[actix_web::test]
+    #[tokio::test]
     async fn inject_immutable_config_test() {
         let app_state = generate_app_state().await;
         let app = actix_web::test::init_service(new_app(app_state.clone())).await;
@@ -723,7 +723,7 @@ mod api_impl_tests {
     }
 
     // Test the various response cases for the 'mutable-config' endpoint
-    #[actix_web::test]
+    #[tokio::test]
     async fn inject_mutable_config_test() {
         let app_state = generate_app_state().await;
         let app = actix_web::test::init_service(new_app(app_state.clone())).await;
@@ -1027,7 +1027,7 @@ mod api_impl_tests {
         true
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn export_signed_registration_message_test() {
         let app_state = generate_app_state().await;
         let app = actix_web::test::init_service(new_app(app_state.clone())).await;
@@ -1300,7 +1300,7 @@ mod api_impl_tests {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn get_gateway_details_test() {
         let app_state = generate_app_state().await;
         let app = actix_web::test::init_service(new_app(app_state.clone())).await;

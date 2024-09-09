@@ -1181,7 +1181,7 @@ impl ContractsClient {
             response_job.output.clone(),
             response_job.total_time,
             response_job.error_code,
-            response_job.job_mode
+            response_job.job_mode,
         )
         .await
         .unwrap();
@@ -1551,7 +1551,7 @@ mod common_chain_interaction_tests {
         }
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_relay_event() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1572,7 +1572,7 @@ mod common_chain_interaction_tests {
         assert_eq!(job, expected_job);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_relay_event_invalid_log() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1594,7 +1594,7 @@ mod common_chain_interaction_tests {
         assert_eq!(job.err().unwrap(), ServerlessError::LogDecodeFailure);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1610,7 +1610,7 @@ mod common_chain_interaction_tests {
         assert_eq!(gateway_address, contracts_client.enclave_address);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id_no_cycle_state() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1636,7 +1636,7 @@ mod common_chain_interaction_tests {
         assert_eq!(waitlisted_jobs[0][0], job);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id_multiple_gateways() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1674,7 +1674,7 @@ mod common_chain_interaction_tests {
         assert_eq!(gateway_address, expected_gateway_address);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id_multiple_gateways_seq_number() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1715,7 +1715,7 @@ mod common_chain_interaction_tests {
 
     // TODO: Add select gateway for job id test - Error cases
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_handler() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1762,7 +1762,7 @@ mod common_chain_interaction_tests {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_handler_selected_gateway_not_self() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1816,7 +1816,7 @@ mod common_chain_interaction_tests {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_handler_no_cycle_state() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1851,7 +1851,7 @@ mod common_chain_interaction_tests {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_slash_timer_txn_success() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1882,7 +1882,7 @@ mod common_chain_interaction_tests {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_slash_timer_txn_fail_retry() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1922,7 +1922,7 @@ mod common_chain_interaction_tests {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_slash_timer_txn_fail_max_retry() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1962,7 +1962,7 @@ mod common_chain_interaction_tests {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_cancel_job_with_job_id_single_active_job() {
         let contracts_client = generate_contracts_client().await;
 
@@ -1983,7 +1983,7 @@ mod common_chain_interaction_tests {
         assert_eq!(contracts_client.active_jobs.read().unwrap().len(), 0);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_cancel_job_with_job_id_multiple_active_jobs() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2019,7 +2019,7 @@ mod common_chain_interaction_tests {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_cancel_job_with_job_id_no_active_jobs() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2035,7 +2035,7 @@ mod common_chain_interaction_tests {
         assert_eq!(contracts_client.active_jobs.read().unwrap().len(), 0);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_responded_event_job_not_of_enclave() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2052,7 +2052,7 @@ mod common_chain_interaction_tests {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_responded_event_job_of_enclave() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2072,7 +2072,7 @@ mod common_chain_interaction_tests {
         assert_eq!(job.unwrap(), expected_job);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_responded_event_job_of_enclave_invalid_log() {
         let contracts_client = generate_contracts_client().await;
 
