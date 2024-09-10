@@ -203,13 +203,13 @@ contract RelaySubscriptions is
     /**
      * @notice Emitted when job parameters are updated in a job subscription.
      * @param jobSubsId The unique identifier of the job subscription.
-     * @param _codehash The new code hash for the job.
-     * @param _codeInputs The new code inputs for the job.
+     * @param codehash The new code hash for the job.
+     * @param codeInputs The new code inputs for the job.
      */
     event JobSubscriptionJobParamsUpdated(
         uint256 indexed jobSubsId,
-        bytes32 _codehash,
-        bytes _codeInputs
+        bytes32 codehash,
+        bytes codeInputs
     );
 
     /**

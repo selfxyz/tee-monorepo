@@ -3,6 +3,20 @@ import { ethers, upgrades } from "hardhat";
 import { Relay, UserSample } from "../typechain-types";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
+type EnvConfig = {
+    [key: number]: {
+        executorFeePerMs: number;
+        stakingRewardPerMs: number;
+    }
+}
+
+const envConfig: EnvConfig = {
+    1: {
+        executorFeePerMs: 1,
+        stakingRewardPerMs: 1
+    }
+};
+
 async function main() {
     //Create Enclave Image object
     const img = {
@@ -38,8 +52,9 @@ async function main() {
     let usdc_token_addr = usdc_token.target;
     console.log("USDCoin Deployed address: ", usdc_token_addr);
 
-    const executorFeePerMs = 1; // 0.001 usd per ms
-    const stakingRewardPerMs = 1; // 0.001 usd per ms
+    const env = 1;
+    const executorFeePerMs = envConfig[env].executorFeePerMs; // 0.001 usd per ms
+    const stakingRewardPerMs = envConfig[env].stakingRewardPerMs; // 0.001 usd per ms
     const executionFeePerMs = executorFeePerMs + stakingRewardPerMs;
     const gatewayFee = 100; // 0.1 usd
     const stakingPaymentPoolAddress = await signers[1].getAddress();
@@ -86,7 +101,6 @@ async function main() {
                 minUserDeadline,
                 maxUserDeadline,
                 overallTimeout,
-                executionFeePerMs,
                 gatewayFee,
                 fixedGas,
                 callbackMeasureGas
@@ -95,6 +109,7 @@ async function main() {
     let relay_addr = relay.target;
     console.log("Relay Deployed address: ", relay_addr);
 
+    await relay.addGlobalEnv(env, executionFeePerMs);
     
     const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
     console.log("Deploying RelaySubscriptions...")
@@ -183,8 +198,6 @@ async function main() {
                 signMaxAge,
                 executionBufferTime,
                 noOfNodesToSelect,
-                1,
-                1,
                 stakingPaymentPoolAddress,
                 usdcPaymentPoolAddress,
                 executorsAddress
@@ -192,7 +205,9 @@ async function main() {
         });
     let jobsAddress = jobsContract.target;
     console.log("Jobs Deployed address: ", jobsAddress);
+
     await executorsContract.grantRole(await executorsContract.JOBS_ROLE(), jobsAddress);
+    await jobsContract.addGlobalEnv(env, executorFeePerMs, stakingRewardPerMs);
 
      // Common Chain Gateway Jobs Contract
      let relayBufferTime = 120;
@@ -211,7 +226,6 @@ async function main() {
                  usdc_token_addr,
                  signMaxAge,
                  relayBufferTime,
-                 executionFeePerMs,
                  10n**16n, // 0.01 POND
                  10n**16n, // 0.01 POND
                  jobsAddress,
