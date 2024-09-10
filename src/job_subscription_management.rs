@@ -120,6 +120,10 @@ pub async fn process_historic_subscription_jobs_on_request_chain<'a, P: HttpProv
 
     for log in logs {
         if log.topics[0] == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into() {
+            info!(
+                "Processing Historic Job Subscription - Subscription Started - Subscription ID: {}",
+                log.topics[1]
+            );
             let sub_id = add_subscription_job(
                 contracts_client,
                 log,
@@ -142,10 +146,18 @@ pub async fn process_historic_subscription_jobs_on_request_chain<'a, P: HttpProv
         } else if log.topics[0]
             == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
         {
+            info!(
+                "Processing Historic Job Subscription - Subscription Params Updated - Subscription ID: {}",
+                log.topics[1]
+            );
             let _ = update_subscription_job_params(contracts_client, log);
         } else if log.topics[0]
             == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT).into()
         {
+            info!(
+                "Processing Historic Job Subscription - Subscription Termination Params Updated - Subscription ID: {}",
+                log.topics[1]
+            );
             let _ = update_subscription_job_termination_params(contracts_client, log);
         }
     }
