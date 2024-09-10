@@ -567,7 +567,7 @@ mod job_subscription_management {
         assert!(instant < instant_now + Duration::from_secs(1000));
         assert!(instant > instant_now + Duration::from_secs(999));
 
-        // Past time becomes instance time
+        // Past time becomes instance now time
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
