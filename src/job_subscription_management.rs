@@ -308,7 +308,7 @@ pub async fn add_subscription_job(
     let mut to_trigger_first_instance = true;
     if is_historic_log {
         let minimum_timestamp_for_job = current_timestamp
-            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
             - contracts_client.offset_for_epoch;
 
         if subscription_job.starttime.as_u64() < minimum_timestamp_for_job {
@@ -325,6 +325,7 @@ pub async fn add_subscription_job(
                 contracts_client_clone,
                 req_chain_tx,
             )
+            .await
         });
     }
 
@@ -383,7 +384,7 @@ async fn add_next_trigger_time_to_heap(
             .as_secs();
 
         let minimum_timestamp_for_job = current_timestamp
-            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
             - contracts_client.offset_for_epoch;
 
         if next_trigger_time < minimum_timestamp_for_job {
@@ -550,7 +551,7 @@ mod job_subscription_management {
     use super::*;
 
     use crate::test_util::{
-        generate_contracts_client, generate_generic_subscription_job,
+        add_gateway_epoch_state, generate_contracts_client, generate_generic_subscription_job,
         generate_job_subscription_job_params_updated, generate_job_subscription_started_log,
         generate_job_subscription_termination_params_updated, MockHttpProvider, CHAIN_ID,
     };
@@ -633,6 +634,9 @@ mod job_subscription_management {
         )
         .await;
 
+        // Sleep for 1s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         assert!(res.is_err());
         assert_eq!(res.err().unwrap(), ServerlessError::LogDecodeFailure);
 
@@ -642,6 +646,22 @@ mod job_subscription_management {
             let subscription_job = subscription_jobs.get(&U256::one());
 
             assert!(subscription_job.is_none());
+        }
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek();
+
+            assert!(subscription_job_instance.is_none());
+        }
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_none());
         }
     }
 
@@ -663,6 +683,9 @@ mod job_subscription_management {
         )
         .await;
 
+        // Sleep for 1s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), U256::zero());
 
@@ -673,16 +696,176 @@ mod job_subscription_management {
 
             assert!(subscription_job.is_none());
         }
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek();
+
+            assert!(subscription_job_instance.is_none());
+        }
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_add_subscription_job_historic_active_job_with_first_instance_trigger() {
+        let contracts_client = generate_contracts_client().await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-2)).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-3)).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-4)).await;
+        let request_chain_id = CHAIN_ID;
+        let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
+        let is_history_log = true;
+
+        let log = generate_job_subscription_started_log(None, Some(-50));
+
+        let res = add_subscription_job(
+            &contracts_client.clone(),
+            log,
+            request_chain_id,
+            req_chain_tx,
+            is_history_log,
+        )
+        .await;
+
+        // Sleep for 1s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), U256::one());
+
+        let result_subscription_job: SubscriptionJob;
+        // Scope for read lock on subscription_jobs
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            let subscription_job = subscription_jobs.get(&U256::one()).cloned();
+
+            assert!(subscription_job.is_some());
+
+            result_subscription_job = subscription_job.unwrap();
+
+            assert_eq!(result_subscription_job.subscription_id, U256::one());
+        }
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+
+            assert_eq!(subscription_job_instance.subscription_id, U256::one());
+            assert_eq!(
+                subscription_job_instance.next_trigger_time,
+                result_subscription_job.starttime.as_u64()
+                    + result_subscription_job.interval.as_u64()
+            );
+        }
+
+        let mut expected_job = subscription_job_to_relay_job(
+            result_subscription_job.clone(),
+            result_subscription_job.starttime.as_u64(),
+        );
+        expected_job.gateway_address = Some(contracts_client.enclave_address);
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_some());
+            assert_eq!(active_job.unwrap(), &expected_job);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_add_subscription_job_historic_active_job() {
+        let contracts_client = generate_contracts_client().await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-5)).await;
+        let request_chain_id = CHAIN_ID;
+        let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
+        let is_history_log = true;
+
+        let log = generate_job_subscription_started_log(None, Some(-500));
+
+        let res = add_subscription_job(
+            &contracts_client.clone(),
+            log,
+            request_chain_id,
+            req_chain_tx,
+            is_history_log,
+        )
+        .await;
+
+        // Sleep for 1s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), U256::one());
+
+        let result_subscription_job: SubscriptionJob;
+        // Scope for read lock on subscription_jobs
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            let subscription_job = subscription_jobs.get(&U256::one()).cloned();
+
+            assert!(subscription_job.is_some());
+
+            result_subscription_job = subscription_job.unwrap();
+
+            assert_eq!(result_subscription_job.subscription_id, U256::one());
+        }
+
+        let expected_next_trigger_time = (result_subscription_job.starttime
+            + result_subscription_job.interval
+                * (((SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    - result_subscription_job.starttime.as_u64()
+                    - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
+                    - contracts_client.offset_for_epoch)
+                    / result_subscription_job.interval.as_u64())
+                    + 1))
+            .as_u64();
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+
+            assert_eq!(subscription_job_instance.subscription_id, U256::one());
+            assert_eq!(
+                subscription_job_instance.next_trigger_time,
+                expected_next_trigger_time
+            );
+        }
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_none());
+        }
     }
 
     #[tokio::test]
     async fn test_add_subscription_job_active_job() {
         let contracts_client = generate_contracts_client().await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
         let request_chain_id = CHAIN_ID;
         let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
         let is_history_log = false;
 
         let log = generate_job_subscription_started_log(None, None);
+
+        let expected_subscription_job = generate_generic_subscription_job(None, None);
 
         let res = add_subscription_job(
             &contracts_client,
@@ -693,19 +876,21 @@ mod job_subscription_management {
         )
         .await;
 
+        // Sleep for 1s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         assert!(res.is_ok());
 
         let res = res.unwrap();
         assert_eq!(res, U256::one());
 
-        let expected_subscription_job = generate_generic_subscription_job(None, None);
-
+        let subscription_job: SubscriptionJob;
         // Scope for read lock on subscription_jobs
         {
             let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
-            let subscription_job = subscription_jobs.get(&U256::one()).unwrap();
+            subscription_job = subscription_jobs.get(&U256::one()).cloned().unwrap();
 
-            assert_eq!(subscription_job, &expected_subscription_job);
+            assert_eq!(subscription_job, expected_subscription_job);
         }
 
         // Scope for read lock on subscription_job_heap
@@ -719,6 +904,21 @@ mod job_subscription_management {
                 expected_subscription_job.starttime.as_u64()
                     + expected_subscription_job.interval.as_u64()
             );
+        }
+
+        let mut expected_job = subscription_job_to_relay_job(
+            subscription_job.clone(),
+            subscription_job.starttime.as_u64(),
+        );
+        expected_job.gateway_address = Some(contracts_client.enclave_address);
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_some());
+            assert_eq!(active_job.unwrap(), &expected_job);
         }
     }
 
@@ -802,7 +1002,7 @@ mod job_subscription_management {
                     .unwrap()
                     .as_secs()
                     - subscription_job.starttime.as_u64()
-                    - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+                    - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
                     - contracts_client.offset_for_epoch)
                     / subscription_job.interval.as_u64())
                     + 1))
@@ -1284,6 +1484,7 @@ mod job_subscription_management {
     #[tokio::test]
     async fn test_process_historic_subscription_jobs_on_request_chain() {
         let contracts_client = generate_contracts_client().await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-3)).await;
         let request_chain_client = contracts_client
             .request_chain_clients
             .get(&CHAIN_ID)
@@ -1301,6 +1502,9 @@ mod job_subscription_management {
             mock_http_provider,
         )
         .await;
+
+        // Sleep for 2s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         if let Some(rx_job) = job_sub_rx.recv().await {
             if rx_job.subscription_action == JobSubscriptionAction::Add {
@@ -1321,9 +1525,6 @@ mod job_subscription_management {
         } else {
             assert!(false);
         }
-
-        // sleep for 1 second
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
         let subscription_job_one: Option<SubscriptionJob>;
         // Scope for read lock on subscription_jobs
@@ -1351,6 +1552,7 @@ mod job_subscription_management {
                 .unwrap(),
             )
         );
+
         let system_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -1366,5 +1568,42 @@ mod job_subscription_management {
         }
 
         assert!(job_sub_rx.recv().await.is_none());
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+
+            assert_eq!(subscription_job_instance.subscription_id, U256::one());
+            assert_eq!(
+                subscription_job_instance.next_trigger_time,
+                subscription_job_one.starttime.as_u64() + subscription_job_one.interval.as_u64()
+            );
+        }
+
+        let mut expected_job = subscription_job_to_relay_job(
+            subscription_job_one.clone(),
+            subscription_job_one.starttime.as_u64(),
+        );
+        expected_job.gateway_address = Some(contracts_client.enclave_address);
+        expected_job.tx_hash = hex::decode(
+            "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e".to_owned(),
+        )
+        .unwrap();
+        expected_job.code_input = Bytes::from(
+            serde_json::to_vec(&json!({
+                "num": 10
+            }))
+            .unwrap(),
+        );
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_some());
+            assert_eq!(active_job.unwrap(), &expected_job);
+        }
     }
 }

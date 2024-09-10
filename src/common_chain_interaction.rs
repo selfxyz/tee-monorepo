@@ -1380,7 +1380,6 @@ impl LogsProvider for ContractsClient {
 
 #[cfg(test)]
 mod common_chain_interaction_tests {
-    use std::collections::{BTreeMap, BTreeSet};
     use std::str::FromStr;
 
     use abi::{encode, Token};
@@ -1388,64 +1387,11 @@ mod common_chain_interaction_tests {
     use serde_json::json;
 
     use crate::test_util::{
-        generate_contracts_client, MockHttpProvider, CHAIN_ID, GATEWAY_JOBS_CONTRACT_ADDR,
-        RELAY_CONTRACT_ADDR,
+        add_gateway_epoch_state, generate_contracts_client, MockHttpProvider, CHAIN_ID,
+        GATEWAY_JOBS_CONTRACT_ADDR, RELAY_CONTRACT_ADDR,
     };
 
     use super::*;
-
-    async fn add_gateway_epoch_state(
-        contracts_client: Arc<ContractsClient>,
-        num: Option<u64>,
-        add_self: Option<bool>,
-    ) {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let current_cycle = (ts - contracts_client.epoch - contracts_client.offset_for_epoch)
-            / contracts_client.time_interval;
-
-        let add_self = add_self.unwrap_or(true);
-
-        let mut gateway_epoch_state_guard = contracts_client.gateway_epoch_state.write().unwrap();
-
-        let mut num = num.unwrap_or(1);
-
-        if add_self {
-            gateway_epoch_state_guard
-                .entry(current_cycle)
-                .or_insert(BTreeMap::new())
-                .insert(
-                    contracts_client.enclave_address,
-                    GatewayData {
-                        last_block_number: 5600 as u64,
-                        address: contracts_client.enclave_address,
-                        stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
-                        req_chain_ids: BTreeSet::from([CHAIN_ID]),
-                        draining: false,
-                    },
-                );
-
-            num -= 1;
-        }
-
-        for _ in 0..num {
-            gateway_epoch_state_guard
-                .entry(current_cycle)
-                .or_insert(BTreeMap::new())
-                .insert(
-                    Address::random(),
-                    GatewayData {
-                        last_block_number: 5600 as u64,
-                        address: Address::random(),
-                        stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
-                        req_chain_ids: BTreeSet::from([CHAIN_ID]),
-                        draining: false,
-                    },
-                );
-        }
-    }
 
     async fn generate_job_relayed_log(job_id: Option<U256>, job_starttime: u64) -> Log {
         let job_id = job_id.unwrap_or(U256::from(1));
@@ -1600,7 +1546,7 @@ mod common_chain_interaction_tests {
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), None, None).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
 
         let gateway_address = contracts_client
             .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
@@ -1642,7 +1588,7 @@ mod common_chain_interaction_tests {
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
 
         let gateway_address = contracts_client
             .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
@@ -1681,7 +1627,7 @@ mod common_chain_interaction_tests {
         let mut job = generate_generic_job(None, None).await;
         job.sequence_number = 5;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
 
         let gateway_address = contracts_client
             .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
@@ -1721,7 +1667,7 @@ mod common_chain_interaction_tests {
 
         let mut job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), None, None).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
@@ -1768,7 +1714,7 @@ mod common_chain_interaction_tests {
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(4), Some(false)).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(4), Some(false), None).await;
 
         let (req_chain_tx, _com_chain_rx) = channel::<Job>(100);
 
@@ -1857,7 +1803,7 @@ mod common_chain_interaction_tests {
 
         let mut job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
         job.gateway_address = Some(
             contracts_client
                 .gateway_epoch_state
@@ -1888,7 +1834,7 @@ mod common_chain_interaction_tests {
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
         job.gateway_address = Some(
             contracts_client
                 .gateway_epoch_state
@@ -1928,7 +1874,7 @@ mod common_chain_interaction_tests {
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
         job.gateway_address = Some(
             contracts_client
                 .gateway_epoch_state

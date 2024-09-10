@@ -13,6 +13,7 @@ use k256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
 use serde_json::json;
 use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -25,12 +26,13 @@ use crate::api_impl::{
 };
 use crate::chain_util::HttpProviderLogs;
 use crate::constant::{
-    COMMON_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+    COMMON_CHAIN_JOB_RELAYED_EVENT, MIN_GATEWAY_STAKE,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
     REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
     REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT,
 };
 use crate::error::ServerlessError;
-use crate::model::{AppState, ContractsClient, Job, SubscriptionJob};
+use crate::model::{AppState, ContractsClient, GatewayData, Job, SubscriptionJob};
 
 // Testnet or Local blockchain (Hardhat) configurations
 #[cfg(test)]
@@ -147,6 +149,62 @@ pub async fn generate_contracts_client() -> Arc<ContractsClient> {
 }
 
 #[cfg(test)]
+pub async fn add_gateway_epoch_state(
+    contracts_client: Arc<ContractsClient>,
+    num: Option<u64>,
+    add_self: Option<bool>,
+    cycle_delta: Option<i64>,
+) {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let cycle = (((ts - contracts_client.epoch - contracts_client.offset_for_epoch)
+        / contracts_client.time_interval) as i64
+        + cycle_delta.unwrap_or(0)) as u64;
+
+    let add_self = add_self.unwrap_or(true);
+
+    let mut gateway_epoch_state_guard = contracts_client.gateway_epoch_state.write().unwrap();
+
+    let mut num = num.unwrap_or(1);
+
+    if add_self {
+        gateway_epoch_state_guard
+            .entry(cycle)
+            .or_insert(BTreeMap::new())
+            .insert(
+                contracts_client.enclave_address,
+                GatewayData {
+                    last_block_number: 5600 as u64,
+                    address: contracts_client.enclave_address,
+                    stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
+                    req_chain_ids: BTreeSet::from([CHAIN_ID]),
+                    draining: false,
+                },
+            );
+
+        num -= 1;
+    }
+
+    for _ in 0..num {
+        gateway_epoch_state_guard
+            .entry(cycle)
+            .or_insert(BTreeMap::new())
+            .insert(
+                Address::random(),
+                GatewayData {
+                    last_block_number: 5600 as u64,
+                    address: Address::random(),
+                    stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
+                    req_chain_ids: BTreeSet::from([CHAIN_ID]),
+                    draining: false,
+                },
+            );
+    }
+}
+
+#[cfg(test)]
 pub struct MockHttpProvider {
     pub job: Option<Job>,
 }
@@ -206,7 +264,7 @@ impl HttpProviderLogs for MockHttpProvider {
                 REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
             ))) {
                 let subscription_started_still_active_event =
-                    generate_job_subscription_started_log(None, None);
+                    generate_job_subscription_started_log(None, Some(-50));
 
                 let subscription_started_terminated_event =
                     generate_job_subscription_started_log(Some(2), Some(-2000));
