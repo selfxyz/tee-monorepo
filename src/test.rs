@@ -5,8 +5,9 @@ use actix_web::{
     App, Error,
 };
 use anyhow::Result;
+use ethers::abi::{encode, Token};
 use ethers::prelude::*;
-use ethers::types::{Address, H160};
+use ethers::types::{Address, Log, H160};
 use ethers::utils::{keccak256, public_key_to_address};
 use k256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
@@ -16,6 +17,7 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api_impl::{
     export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
@@ -23,10 +25,12 @@ use crate::api_impl::{
 };
 use crate::chain_util::HttpProviderLogs;
 use crate::constant::{
-    COMMON_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+    COMMON_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT,
 };
 use crate::error::ServerlessError;
-use crate::model::{AppState, ContractsClient, Job};
+use crate::model::{AppState, ContractsClient, Job, SubscriptionJob};
 
 // Testnet or Local blockchain (Hardhat) configurations
 #[cfg(test)]
@@ -41,8 +45,8 @@ const GATEWAY_CONTRACT_ADDR: &str = "0x9a79Bb5676c19A01ad27D88ca6A0131d51022AC4"
 pub const GATEWAY_JOBS_CONTRACT_ADDR: &str = "0x124371e1E13f2917A73E8eca9F361e6aA21eA06a";
 #[cfg(test)]
 pub const RELAY_CONTRACT_ADDR: &str = "0x1Af94DA972cC2B12dbfcb2871d62e531e4d4f1F0";
-// #[cfg(test)]
-// const SUBSCRIPTION_RELAY_CONTRACT_ADDR: &str = "0xA37F74824dA3DDaF241461c11f069Ebd2cc44b1a";
+#[cfg(test)]
+const SUBSCRIPTION_RELAY_CONTRACT_ADDR: &str = "0xA37F74824dA3DDaF241461c11f069Ebd2cc44b1a";
 #[cfg(test)]
 pub const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 #[cfg(test)]
@@ -157,11 +161,6 @@ impl MockHttpProvider {
 #[cfg(test)]
 impl HttpProviderLogs for MockHttpProvider {
     async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ServerlessError> {
-        use ethers::abi::{encode, Token};
-        use ethers::prelude::*;
-        use serde_json::json;
-        use std::time::{SystemTime, UNIX_EPOCH};
-
         if let Some(topic0) = filter.topics().next() {
             let topic0 = match topic0 {
                 ValueOrArray::Value(s) => *s,
@@ -205,50 +204,168 @@ impl HttpProviderLogs for MockHttpProvider {
             else if topic0.eq(&H256::from_slice(&keccak256(
                 REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
             ))) {
-                let job_subscriber = Address::random();
-                let system_time = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+                let subscription_started_still_active_event =
+                    generate_job_subscription_started_log(None, None);
 
-                let subscription_started_still_active_event = Log {
-                    address: Address::default(),
-                    topics: vec![
-                        keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into(),
-                        H256::from_uint(&U256::from(1)),
-                        H256::from(job_subscriber),
-                    ],
-                    data: encode(&[
-                        Token::Uint(U256::from(10)),
-                        Token::Uint(U256::from(1000)),
-                        Token::Uint(U256::from(system_time + 1000)),
-                        Token::Uint(U256::from(100)),
-                        Token::Address(Address::random()),
-                        Token::FixedBytes(
-                            hex::decode(
-                                "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e"
-                                    .to_owned(),
-                            )
-                            .unwrap(),
-                        ),
-                        Token::Bytes(
-                            serde_json::to_vec(&json!({
-                                "num": 10
-                            }))
-                            .unwrap(),
-                        ),
-                        Token::Uint(U256::from(system_time)),
-                    ])
-                    .into(),
-                    ..Default::default()
-                };
+                let subscription_started_terminated_event =
+                    generate_job_subscription_started_log(None, Some(-2000));
 
-                Ok(vec![subscription_started_still_active_event])
+                Ok(vec![
+                    subscription_started_still_active_event,
+                    subscription_started_terminated_event,
+                ])
             } else {
                 return Err(ServerlessError::InvalidTopic);
             }
         } else {
             return Err(ServerlessError::EmptyTopics);
         }
+    }
+}
+
+#[cfg(test)]
+pub fn generate_job_subscription_started_log(
+    job_id: Option<u64>,
+    starttime_delta: Option<i64>,
+) -> Log {
+    let job_id = U256::from(job_id.unwrap_or(1));
+
+    let starttime = U256::from(
+        ((SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()) as i64
+            + starttime_delta.unwrap_or(0)) as u64,
+    );
+
+    let termination_time = starttime + 1000;
+
+    Log {
+        address: Address::default(),
+        topics: vec![
+            keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into(),
+            H256::from_uint(&job_id),
+            H256::from(Address::from_str(SUBSCRIPTION_RELAY_CONTRACT_ADDR).unwrap()),
+        ],
+        data: encode(&[
+            Token::Uint(U256::from(10)),
+            Token::Uint(U256::from(1000)),
+            Token::Uint(termination_time),
+            Token::Uint(U256::from(100)),
+            Token::Address(Address::random()),
+            Token::FixedBytes(
+                hex::decode(
+                    "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e".to_owned(),
+                )
+                .unwrap(),
+            ),
+            Token::Bytes(
+                serde_json::to_vec(&json!({
+                    "num": 10
+                }))
+                .unwrap(),
+            ),
+            Token::Uint(starttime),
+        ])
+        .into(),
+        ..Default::default()
+    }
+}
+
+#[cfg(test)]
+pub fn generate_generic_subscription_job(
+    job_id: Option<u64>,
+    starttime_delta: Option<i64>,
+) -> SubscriptionJob {
+    let starttime = U256::from(
+        ((SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()) as i64
+            + starttime_delta.unwrap_or(0)) as u64,
+    );
+
+    let termination_time = starttime + 1000;
+
+    SubscriptionJob {
+        subscription_id: U256::from(job_id.unwrap_or(1)),
+        request_chain_id: CHAIN_ID,
+        subscriber: Address::from_str(SUBSCRIPTION_RELAY_CONTRACT_ADDR).unwrap(),
+        interval: U256::from(10),
+        termination_time,
+        user_timeout: U256::from(100),
+        tx_hash: hex::decode(
+            "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e".to_owned(),
+        )
+        .unwrap(),
+        code_input: serde_json::to_vec(&json!({
+            "num": 10
+        }))
+        .unwrap()
+        .into(),
+        starttime,
+    }
+}
+
+#[cfg(test)]
+pub fn generate_job_subscription_job_params_updated(
+    job_id: Option<u64>,
+    code_hash: Option<&str>,
+    data_num: Option<u64>,
+) -> Log {
+    Log {
+        address: Address::default(),
+        topics: vec![
+            keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into(),
+            H256::from_uint(&U256::from(job_id.unwrap_or(1))),
+        ],
+        data: encode(&[
+            Token::FixedBytes(
+                hex::decode(
+                    code_hash
+                        .unwrap_or(
+                            "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e",
+                        )
+                        .to_owned(),
+                )
+                .unwrap(),
+            ),
+            Token::Bytes(
+                serde_json::to_vec(&json!({
+                    "num": data_num.unwrap_or(10)
+                }))
+                .unwrap(),
+            ),
+        ])
+        .into(),
+        ..Default::default()
+    }
+}
+
+#[cfg(test)]
+pub fn generate_job_subscription_termination_params_updated(
+    job_id: Option<u64>,
+    termination_time: Option<u64>,
+) -> Log {
+    let job_id = U256::from(job_id.unwrap_or(1));
+
+    let termination_time = U256::from(
+        termination_time.unwrap_or(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 1000,
+        ),
+    );
+
+    Log {
+        address: Address::default(),
+        topics: vec![
+            keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT).into(),
+            H256::from_uint(&job_id),
+        ],
+        data: encode(&[Token::Uint(termination_time)]).into(),
+        ..Default::default()
     }
 }
