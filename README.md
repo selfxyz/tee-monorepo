@@ -53,5 +53,5 @@ Monitors jobs on Request Chains and transfers them to the Common Chain for Execu
 # Running Tests
 
 ```shell
-cargo test -- --nocapture --test-threads=1
+cargo test
 ```

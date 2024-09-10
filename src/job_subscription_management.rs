@@ -721,7 +721,7 @@ mod job_subscription_management {
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-3)).await;
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-4)).await;
         let request_chain_id = CHAIN_ID;
-        let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
+        let (req_chain_tx, _com_chain_rx) = tokio::sync::mpsc::channel::<Job>(100);
         let is_history_log = true;
 
         let log = generate_job_subscription_started_log(None, Some(-50));
@@ -860,7 +860,7 @@ mod job_subscription_management {
         let contracts_client = generate_contracts_client().await;
         add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
         let request_chain_id = CHAIN_ID;
-        let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
+        let (req_chain_tx, _com_chain_rx) = tokio::sync::mpsc::channel::<Job>(100);
         let is_history_log = false;
 
         let log = generate_job_subscription_started_log(None, None);
@@ -1484,12 +1484,14 @@ mod job_subscription_management {
     #[tokio::test]
     async fn test_process_historic_subscription_jobs_on_request_chain() {
         let contracts_client = generate_contracts_client().await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-2)).await;
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-3)).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-4)).await;
         let request_chain_client = contracts_client
             .request_chain_clients
             .get(&CHAIN_ID)
             .unwrap();
-        let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
+        let (req_chain_tx, _com_chain_rx) = tokio::sync::mpsc::channel::<Job>(100);
         let (job_sub_tx, mut job_sub_rx) =
             tokio::sync::mpsc::channel::<JobSubscriptionChannelType>(100);
         let mock_http_provider = MockHttpProvider::new(None);
@@ -1596,6 +1598,41 @@ mod job_subscription_management {
             }))
             .unwrap(),
         );
+
+        // Scope for read lock on active_jobs
+        {
+            let active_jobs = contracts_client.active_jobs.read().unwrap();
+            let active_job = active_jobs.get(&U256::one());
+
+            assert!(active_job.is_some());
+            assert_eq!(active_job.unwrap(), &expected_job);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_trigger_subscription_job() {
+        let contracts_client = generate_contracts_client().await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
+        let subscription_job = generate_generic_subscription_job(None, None);
+        let trigger_timestamp = subscription_job.starttime.as_u64();
+        let (req_chain_tx, _com_chain_rx) = tokio::sync::mpsc::channel::<Job>(100);
+
+        trigger_subscription_job(
+            subscription_job.clone(),
+            trigger_timestamp,
+            contracts_client.clone(),
+            req_chain_tx,
+        )
+        .await;
+
+        // Sleep for 1s to allow all async tasks to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let mut expected_job = subscription_job_to_relay_job(
+            subscription_job.clone(),
+            subscription_job.starttime.as_u64(),
+        );
+        expected_job.gateway_address = Some(contracts_client.enclave_address);
 
         // Scope for read lock on active_jobs
         {
