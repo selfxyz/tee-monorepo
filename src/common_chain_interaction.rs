@@ -1387,7 +1387,7 @@ mod common_chain_interaction_tests {
     use ethers::types::{Address, Bytes as EthBytes, H160};
     use serde_json::json;
 
-    use crate::test::{
+    use crate::test_util::{
         generate_contracts_client, MockHttpProvider, CHAIN_ID, GATEWAY_JOBS_CONTRACT_ADDR,
         RELAY_CONTRACT_ADDR,
     };

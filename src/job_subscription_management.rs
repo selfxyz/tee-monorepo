@@ -537,7 +537,7 @@ mod job_subscription_management {
 
     use super::*;
 
-    use crate::test::{
+    use crate::test_util::{
         generate_contracts_client, generate_generic_subscription_job,
         generate_job_subscription_job_params_updated, generate_job_subscription_started_log,
         generate_job_subscription_termination_params_updated, MockHttpProvider, CHAIN_ID,
@@ -1169,7 +1169,7 @@ mod job_subscription_management {
         let contracts_client = generate_contracts_client().await;
         let subscription_id = U256::one();
 
-        let log = generate_job_subscription_job_params_updated(None, None, Some(104));
+        let log = generate_job_subscription_termination_params_updated(None, None);
 
         let res = update_subscription_job_termination_params(&contracts_client, log);
 

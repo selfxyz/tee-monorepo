@@ -10,7 +10,7 @@ mod job_subscription_management;
 mod model;
 
 #[cfg(test)]
-mod test;
+mod test_util;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};

@@ -608,7 +608,7 @@ mod api_impl_tests {
     use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
     use serde_json::json;
 
-    use crate::test::{
+    use crate::test_util::{
         generate_app_state, new_app, CHAIN_ID, GAS_WALLET_KEY, GAS_WALLET_PUBLIC_ADDRESS,
         OWNER_ADDRESS,
     };
