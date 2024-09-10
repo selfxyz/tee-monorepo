@@ -1575,6 +1575,7 @@ mod common_chain_interaction_tests {
     async fn test_get_job_from_job_relay_event_invalid_log() {
         let contracts_client = generate_contracts_client().await;
 
+        // Data is empty
         let log = Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
@@ -2075,6 +2076,7 @@ mod common_chain_interaction_tests {
     async fn test_get_job_from_job_responded_event_job_of_enclave_invalid_log() {
         let contracts_client = generate_contracts_client().await;
 
+        // data is empty
         let log = Log {
             address: H160::from_str(GATEWAY_JOBS_CONTRACT_ADDR).unwrap(),
             topics: vec![

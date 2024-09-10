@@ -586,6 +586,8 @@ mod job_subscription_management {
         let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
         let is_history_log = false;
 
+        // topics is missing one indexed event parameter
+        // data is missins code_input and starttime parameters
         let log = Log {
             address: Address::default(),
             topics: vec![
@@ -705,6 +707,54 @@ mod job_subscription_management {
                 expected_subscription_job.starttime.as_u64()
                     + expected_subscription_job.interval.as_u64()
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_add_next_trigger_time_to_heap_historic_active_job_with_first_instance_trigger() {
+        let contracts_client = generate_contracts_client().await;
+        let subscription_id = U256::one();
+
+        let subscription_job = generate_generic_subscription_job(None, Some(-100));
+
+        // when is_historic_log is true, previous_trigger_time is the starttime of the job
+        let subscription_job_starttime = subscription_job.starttime.as_u64();
+        let is_historic_log = true;
+
+        // Scope for write lock on subscription_jobs
+        {
+            let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
+            subscription_jobs.insert(subscription_id, subscription_job.clone());
+        }
+
+        add_next_trigger_time_to_heap(
+            &contracts_client,
+            subscription_id,
+            subscription_job_starttime,
+            is_historic_log,
+        )
+        .await;
+
+        let expected_next_trigger_time = subscription_job.starttime + subscription_job.interval;
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+
+            assert_eq!(subscription_job_instance.subscription_id, U256::one());
+            assert_eq!(
+                subscription_job_instance.next_trigger_time,
+                expected_next_trigger_time.as_u64()
+            );
+        }
+
+        // Scope for read lock on subscription_jobs
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            let result_subscription_job = subscription_jobs.get(&U256::one()).unwrap();
+
+            assert_eq!(*result_subscription_job, subscription_job);
         }
     }
 
@@ -970,6 +1020,7 @@ mod job_subscription_management {
             subscription_jobs.insert(subscription_id, subscription_job.clone());
         }
 
+        // data is empty
         let log = Log {
             address: Address::default(),
             topics: vec![
@@ -1140,6 +1191,7 @@ mod job_subscription_management {
             subscription_jobs.insert(subscription_id, subscription_job.clone());
         }
 
+        // data is empty
         let log = Log {
             address: Address::default(),
             topics: vec![
