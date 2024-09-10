@@ -27,6 +27,18 @@ use crate::{
     },
 };
 
+/// Converts a Unix timestamp to an `Instant`.
+///
+/// If the timestamp is in the future, the function returns an `Instant` in the future.
+/// If the timestamp is in the past, the function returns `Instant::now()`.
+///
+/// # Arguments
+///
+/// * `timestamp` - A Unix timestamp represented as a `u64`.
+///
+/// # Returns
+///
+/// * An `Instant` representing the given timestamp or the current time if the timestamp is in the past.
 fn unix_timestamp_to_instant(timestamp: u64) -> Instant {
     let duration = Duration::from_secs(timestamp);
     let timestamp_in_system_time = UNIX_EPOCH + duration;
