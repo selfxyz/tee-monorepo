@@ -1359,9 +1359,10 @@ impl LogsProvider for ContractsClient {
         Ok(logs)
     }
 
-    async fn request_chain_historic_subscription_jobs<'a>(
+    async fn request_chain_historic_subscription_jobs<'a, P: HttpProviderLogs>(
         &'a self,
         req_chain_client: &'a RequestChainClient,
+        http_provider: &'a P,
     ) -> Result<Vec<Log>> {
         let event_filter = Filter::new()
             .address(req_chain_client.relay_subscriptions_address)
@@ -1371,8 +1372,6 @@ impl LogsProvider for ContractsClient {
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
             ]);
-
-        let http_provider = Provider::<Http>::try_from(&req_chain_client.http_rpc_url).unwrap();
 
         let logs = http_provider.get_logs(&event_filter).await.unwrap();
         Ok(logs)
@@ -1874,7 +1873,7 @@ mod common_chain_interaction_tests {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
-        let mock_provider = MockHttpProvider::new(job.clone());
+        let mock_provider = MockHttpProvider::new(Some(job.clone()));
         contracts_client
             .job_relayed_slash_timer(job.clone(), Some(1), req_chain_tx, &mock_provider)
             .await;
@@ -1905,7 +1904,7 @@ mod common_chain_interaction_tests {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
-        let mock_provider = MockHttpProvider::new(job.clone());
+        let mock_provider = MockHttpProvider::new(Some(job.clone()));
 
         contracts_client
             .clone()
@@ -1946,7 +1945,7 @@ mod common_chain_interaction_tests {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
-        let mock_provider = MockHttpProvider::new(job.clone());
+        let mock_provider = MockHttpProvider::new(Some(job.clone()));
         contracts_client
             .clone()
             .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx, &mock_provider)

@@ -38,9 +38,10 @@ pub trait LogsProvider {
         common_chain_http_provider: &'a P,
     ) -> impl Future<Output = Result<Vec<Log>>>;
 
-    fn request_chain_historic_subscription_jobs<'a>(
+    fn request_chain_historic_subscription_jobs<'a, P: HttpProviderLogs>(
         &'a self,
         req_chain_client: &'a RequestChainClient,
+        req_chain_http_provider: &'a P,
     ) -> impl Future<Output = Result<Vec<Log>>>;
 }
 

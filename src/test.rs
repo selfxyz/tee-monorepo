@@ -148,12 +148,12 @@ pub async fn generate_contracts_client() -> Arc<ContractsClient> {
 
 #[cfg(test)]
 pub struct MockHttpProvider {
-    pub job: Job,
+    pub job: Option<Job>,
 }
 
 #[cfg(test)]
 impl MockHttpProvider {
-    pub fn new(job: Job) -> Self {
+    pub fn new(job: Option<Job>) -> Self {
         Self { job }
     }
 }
@@ -176,17 +176,18 @@ impl HttpProviderLogs for MockHttpProvider {
             if topic0.eq(&H256::from_slice(&keccak256(
                 COMMON_CHAIN_JOB_RELAYED_EVENT,
             ))) {
-                if self.job.job_id == U256::from(1) {
+                let job = self.job.clone().unwrap();
+                if job.job_id == U256::from(1) {
                     Ok(vec![Log {
                         address: H160::from_str(GATEWAY_JOBS_CONTRACT_ADDR).unwrap().into(),
                         topics: vec![
                             keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into(),
-                            H256::from_uint(&self.job.job_id),
+                            H256::from_uint(&job.job_id),
                         ],
                         data: encode(&[
                             Token::Uint(U256::from(100)),
-                            Token::Address(self.job.job_owner),
-                            Token::Address(self.job.gateway_address.unwrap()),
+                            Token::Address(job.job_owner),
+                            Token::Address(job.gateway_address.unwrap()),
                         ])
                         .into(),
                         ..Default::default()
@@ -208,11 +209,34 @@ impl HttpProviderLogs for MockHttpProvider {
                     generate_job_subscription_started_log(None, None);
 
                 let subscription_started_terminated_event =
-                    generate_job_subscription_started_log(None, Some(-2000));
+                    generate_job_subscription_started_log(Some(2), Some(-2000));
+
+                let subscription_job_params_updated_event =
+                    generate_job_subscription_job_params_updated(
+                        None,
+                        Some("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e7d8"),
+                        Some(108),
+                    );
+
+                let system_time = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let subscription_termination_params_updated_event =
+                    generate_job_subscription_termination_params_updated(
+                        None,
+                        Some(system_time + 1500),
+                    );
+
+                let subscription_started_still_active_event_2 =
+                    generate_job_subscription_started_log(Some(3), None);
 
                 Ok(vec![
                     subscription_started_still_active_event,
                     subscription_started_terminated_event,
+                    subscription_job_params_updated_event,
+                    subscription_termination_params_updated_event,
+                    subscription_started_still_active_event_2,
                 ])
             } else {
                 return Err(ServerlessError::InvalidTopic);

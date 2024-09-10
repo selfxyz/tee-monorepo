@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use crate::{
-    chain_util::LogsProvider,
+    chain_util::{HttpProvider, HttpProviderLogs, LogsProvider},
     constant::{
         GATEWAY_BLOCK_STATES_TO_MAINTAIN, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
         REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
@@ -23,7 +23,7 @@ use crate::{
     error::ServerlessError,
     model::{
         ContractsClient, GatewayJobType, Job, JobMode, JobSubscriptionAction,
-        JobSubscriptionChannelType, SubscriptionJob, SubscriptionJobHeap,
+        JobSubscriptionChannelType, RequestChainClient, SubscriptionJob, SubscriptionJobHeap,
     },
 };
 
@@ -75,32 +75,36 @@ pub async fn process_historic_job_subscriptions(
 
         let job_sub_tx_clone = job_sub_tx.clone();
         tokio::spawn(async move {
+            let request_chain_client = contracts_client_clone
+                .request_chain_clients
+                .get(&request_chain_id)
+                .unwrap();
+            let http_provider = HttpProvider::new(request_chain_client.http_rpc_url.clone());
             process_historic_subscription_jobs_on_request_chain(
                 &contracts_client_clone,
-                request_chain_id,
+                request_chain_client,
                 req_chain_tx_clone,
                 job_sub_tx_clone,
+                http_provider,
             )
             .await;
         });
     }
 }
 
-pub async fn process_historic_subscription_jobs_on_request_chain(
+pub async fn process_historic_subscription_jobs_on_request_chain<'a, P: HttpProviderLogs>(
     contracts_client: &Arc<ContractsClient>,
-    request_chain_id: u64,
+    request_chain_client: &Arc<RequestChainClient>,
     req_chain_tx: Sender<Job>,
     job_sub_tx: Sender<JobSubscriptionChannelType>,
+    http_provider: P,
 ) {
     let logs = contracts_client
-        .request_chain_historic_subscription_jobs(
-            contracts_client
-                .request_chain_clients
-                .get(&request_chain_id)
-                .unwrap(),
-        )
+        .request_chain_historic_subscription_jobs(&request_chain_client, &http_provider)
         .await
         .unwrap();
+
+    let request_chain_id = request_chain_client.chain_id;
 
     for log in logs {
         if log.topics[0] == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into() {
@@ -517,13 +521,14 @@ mod job_subscription_management {
         abi::{encode, Token},
         types::{Address, H256},
     };
+    use serde_json::json;
 
     use super::*;
 
     use crate::test::{
         generate_contracts_client, generate_generic_subscription_job,
         generate_job_subscription_job_params_updated, generate_job_subscription_started_log,
-        generate_job_subscription_termination_params_updated, CHAIN_ID,
+        generate_job_subscription_termination_params_updated, MockHttpProvider, CHAIN_ID,
     };
 
     #[test]
@@ -968,7 +973,7 @@ mod job_subscription_management {
     }
 
     #[tokio::test]
-    async fn test_update_subscription_job_params_active_job() {
+    async fn test_update_subscription_job_params_active_job_tx_hash_update() {
         let contracts_client = generate_contracts_client().await;
         let subscription_id = U256::one();
         let subscription_job = generate_generic_subscription_job(None, None);
@@ -999,6 +1004,88 @@ mod job_subscription_management {
             assert_eq!(
                 result_subscription_job.code_input,
                 subscription_job.code_input
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_subscription_job_params_active_job_code_input_update() {
+        let contracts_client = generate_contracts_client().await;
+        let subscription_id = U256::one();
+        let subscription_job = generate_generic_subscription_job(None, None);
+
+        // Scope for write lock on subscription_jobs
+        {
+            let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
+            subscription_jobs.insert(subscription_id, subscription_job.clone());
+        }
+
+        let log = generate_job_subscription_job_params_updated(None, None, Some(188));
+
+        let res = update_subscription_job_params(&contracts_client, log);
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), ());
+
+        // Scope for read lock on subscription_jobs
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            let result_subscription_job = subscription_jobs.get(&U256::one()).unwrap();
+
+            assert_eq!(result_subscription_job.tx_hash, subscription_job.tx_hash,);
+            assert_eq!(
+                result_subscription_job.code_input,
+                Bytes::from(
+                    serde_json::to_vec(&json!({
+                        "num": 188
+                    }))
+                    .unwrap(),
+                )
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_subscription_job_params_active_job_all_update() {
+        let contracts_client = generate_contracts_client().await;
+        let subscription_id = U256::one();
+        let subscription_job = generate_generic_subscription_job(None, None);
+
+        // Scope for write lock on subscription_jobs
+        {
+            let mut subscription_jobs = contracts_client.subscription_jobs.write().unwrap();
+            subscription_jobs.insert(subscription_id, subscription_job.clone());
+        }
+
+        let new_code_hash = "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e7d8";
+        let log = generate_job_subscription_job_params_updated(
+            None,
+            Some("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e7d8"),
+            Some(188),
+        );
+
+        let res = update_subscription_job_params(&contracts_client, log);
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), ());
+
+        // Scope for read lock on subscription_jobs
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            let result_subscription_job = subscription_jobs.get(&U256::one()).unwrap();
+
+            assert_eq!(
+                result_subscription_job.tx_hash,
+                hex::decode(new_code_hash.to_owned(),).unwrap(),
+            );
+            assert_eq!(
+                result_subscription_job.code_input,
+                Bytes::from(
+                    serde_json::to_vec(&json!({
+                        "num": 188
+                    }))
+                    .unwrap(),
+                )
             );
         }
     }
@@ -1090,5 +1177,92 @@ mod job_subscription_management {
                 new_termination_time
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_process_historic_subscription_jobs_on_request_chain() {
+        let contracts_client = generate_contracts_client().await;
+        let request_chain_client = contracts_client
+            .request_chain_clients
+            .get(&CHAIN_ID)
+            .unwrap();
+        let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
+        let (job_sub_tx, mut job_sub_rx) =
+            tokio::sync::mpsc::channel::<JobSubscriptionChannelType>(100);
+        let mock_http_provider = MockHttpProvider::new(None);
+
+        process_historic_subscription_jobs_on_request_chain(
+            &contracts_client,
+            request_chain_client,
+            req_chain_tx,
+            job_sub_tx,
+            mock_http_provider,
+        )
+        .await;
+
+        if let Some(rx_job) = job_sub_rx.recv().await {
+            if rx_job.subscription_action == JobSubscriptionAction::Add {
+                assert_eq!(rx_job.subscription_id, U256::one());
+            } else {
+                assert!(false);
+            }
+        } else {
+            assert!(false);
+        }
+
+        if let Some(rx_job) = job_sub_rx.recv().await {
+            if rx_job.subscription_action == JobSubscriptionAction::Add {
+                assert_eq!(rx_job.subscription_id, U256::from(3));
+            } else {
+                assert!(false);
+            }
+        } else {
+            assert!(false);
+        }
+
+        // sleep for 1 second
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let subscription_job_one: Option<SubscriptionJob>;
+        // Scope for read lock on subscription_jobs
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            subscription_job_one = subscription_jobs.get(&U256::one()).cloned();
+        }
+
+        assert!(subscription_job_one.is_some());
+
+        let subscription_job_one = subscription_job_one.unwrap();
+        assert_eq!(
+            subscription_job_one.tx_hash,
+            hex::decode(
+                "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e7d8".to_owned(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            subscription_job_one.code_input,
+            Bytes::from(
+                serde_json::to_vec(&json!({
+                    "num": 108
+                }))
+                .unwrap(),
+            )
+        );
+        let system_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(subscription_job_one.termination_time.as_u64() >= system_time + 1490);
+        assert!(subscription_job_one.termination_time.as_u64() <= system_time + 1510);
+
+        {
+            let subscription_jobs = contracts_client.subscription_jobs.read().unwrap();
+            let subscription_job_two = subscription_jobs.get(&U256::from(2));
+
+            assert!(subscription_job_two.is_none());
+        }
+
+        assert!(job_sub_rx.recv().await.is_none());
     }
 }
