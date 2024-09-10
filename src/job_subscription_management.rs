@@ -693,6 +693,19 @@ mod job_subscription_management {
 
             assert_eq!(subscription_job, &expected_subscription_job);
         }
+
+        // Scope for read lock on subscription_job_heap
+        {
+            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
+            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+
+            assert_eq!(subscription_job_instance.subscription_id, U256::one());
+            assert_eq!(
+                subscription_job_instance.next_trigger_time,
+                expected_subscription_job.starttime.as_u64()
+                    + expected_subscription_job.interval.as_u64()
+            );
+        }
     }
 
     #[tokio::test]
