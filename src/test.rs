@@ -56,9 +56,9 @@ pub const GAS_WALLET_PUBLIC_ADDRESS: &str = "0x70997970c51812dc3a010c7d01b50e0d1
 #[cfg(test)]
 const EPOCH: u64 = 1713433800;
 #[cfg(test)]
-const TIME_INTERVAL: u64 = 300;
+const TIME_INTERVAL: u64 = 20;
 #[cfg(test)]
-const OFFSET_FOR_EPCOH: u64 = 20;
+const OFFSET_FOR_EPCOH: u64 = 4;
 
 #[cfg(test)]
 pub fn new_app(

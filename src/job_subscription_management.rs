@@ -733,6 +733,19 @@ mod job_subscription_management {
         )
         .await;
 
+        let expected_next_trigger_time = (subscription_job.starttime
+            + subscription_job.interval
+                * (((SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    - subscription_job.starttime.as_u64()
+                    - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN + 1) * contracts_client.time_interval)
+                    - contracts_client.offset_for_epoch)
+                    / subscription_job.interval.as_u64())
+                    + 1))
+            .as_u64();
+
         // Scope for read lock on subscription_job_heap
         {
             let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
@@ -741,7 +754,7 @@ mod job_subscription_management {
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
                 subscription_job_instance.next_trigger_time,
-                subscription_job_starttime + subscription_job.interval.as_u64()
+                expected_next_trigger_time
             );
         }
 
