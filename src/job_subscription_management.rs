@@ -131,7 +131,6 @@ pub async fn process_historic_subscription_jobs_on_request_chain<'a, P: HttpProv
                 req_chain_tx.clone(),
                 true,
             )
-            .await
             .unwrap();
             if sub_id == U256::zero() {
                 continue;
@@ -237,7 +236,7 @@ pub async fn job_subscription_manager(
                     subscription.subscription_id.clone(),
                     subscription.next_trigger_time,
                     false,
-                ).await;
+                );
             }
             else => {
                 info!("Awaiting");
@@ -247,7 +246,7 @@ pub async fn job_subscription_manager(
     }
 }
 
-pub async fn add_subscription_job(
+pub fn add_subscription_job(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
     request_chain_id: u64,
@@ -334,12 +333,11 @@ pub async fn add_subscription_job(
         subscription_job.subscription_id,
         subscription_job.starttime.as_u64(),
         is_historic_log,
-    )
-    .await;
+    );
     Ok(subscription_job.subscription_id)
 }
 
-async fn add_next_trigger_time_to_heap(
+fn add_next_trigger_time_to_heap(
     contracts_client: &Arc<ContractsClient>,
     subscription_id: U256,
     previous_trigger_time: u64,
@@ -631,8 +629,7 @@ mod job_subscription_management {
             request_chain_id,
             req_chain_tx,
             is_history_log,
-        )
-        .await;
+        );
 
         // Sleep for 1s to allow all async tasks to complete
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -680,8 +677,7 @@ mod job_subscription_management {
             request_chain_id,
             req_chain_tx,
             is_history_log,
-        )
-        .await;
+        );
 
         // Sleep for 1s to allow all async tasks to complete
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -732,8 +728,7 @@ mod job_subscription_management {
             request_chain_id,
             req_chain_tx,
             is_history_log,
-        )
-        .await;
+        );
 
         // Sleep for 1s to allow all async tasks to complete
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -799,8 +794,7 @@ mod job_subscription_management {
             request_chain_id,
             req_chain_tx,
             is_history_log,
-        )
-        .await;
+        );
 
         // Sleep for 1s to allow all async tasks to complete
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -873,8 +867,7 @@ mod job_subscription_management {
             request_chain_id,
             req_chain_tx,
             is_history_log,
-        )
-        .await;
+        );
 
         // Sleep for 1s to allow all async tasks to complete
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -944,8 +937,7 @@ mod job_subscription_management {
             subscription_id,
             subscription_job_starttime,
             is_historic_log,
-        )
-        .await;
+        );
 
         let expected_next_trigger_time = subscription_job.starttime + subscription_job.interval;
 
@@ -992,8 +984,7 @@ mod job_subscription_management {
             subscription_id,
             subscription_job_starttime,
             is_historic_log,
-        )
-        .await;
+        );
 
         let expected_next_trigger_time = (subscription_job.starttime
             + subscription_job.interval
@@ -1050,8 +1041,7 @@ mod job_subscription_management {
             subscription_id,
             subscription_job_starttime,
             is_historic_log,
-        )
-        .await;
+        );
 
         // Scope for read lock on subscription_job_heap
         {
@@ -1099,8 +1089,7 @@ mod job_subscription_management {
             subscription_id,
             previous_trigger_time,
             is_historic_log,
-        )
-        .await;
+        );
 
         // Scope for read lock on subscription_job_heap
         {
@@ -1148,8 +1137,7 @@ mod job_subscription_management {
             subscription_id,
             previous_trigger_time,
             is_historic_log,
-        )
-        .await;
+        );
 
         // Scope for read lock on subscription_job_heap
         {

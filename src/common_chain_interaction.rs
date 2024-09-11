@@ -378,8 +378,7 @@ impl ContractsClient {
                             chain_id,
                             req_chain_tx_clone,
                             false,
-                        )
-                        .await;
+                        );
                         job_subscription_tx_clone
                             .send(JobSubscriptionChannelType {
                                 subscription_action: JobSubscriptionAction::Add,
