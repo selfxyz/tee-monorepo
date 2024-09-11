@@ -617,7 +617,7 @@ mod job_subscription_management_tests {
         let is_history_log = false;
 
         // topics is missing one indexed event parameter
-        // data is missins code_input and starttime parameters
+        // data is missing code_input and starttime parameters
         let log = Log {
             address: Address::default(),
             topics: vec![
