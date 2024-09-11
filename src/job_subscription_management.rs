@@ -548,7 +548,7 @@ pub fn update_subscription_job_termination_params(
 }
 
 #[cfg(test)]
-mod job_subscription_management {
+mod job_subscription_management_tests {
     use ethers::{
         abi::{encode, Token},
         types::{Address, H256},
