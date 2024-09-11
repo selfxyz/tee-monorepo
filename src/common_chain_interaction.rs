@@ -377,8 +377,7 @@ impl ContractsClient {
                             chain_id,
                             req_chain_tx_clone,
                             false,
-                        )
-                        .await;
+                        );
                         job_subscription_tx_clone
                             .send(JobSubscriptionChannelType {
                                 subscription_action: JobSubscriptionAction::Add,
@@ -1178,7 +1177,7 @@ impl ContractsClient {
             response_job.output.clone(),
             response_job.total_time,
             response_job.error_code,
-            response_job.job_mode
+            response_job.job_mode,
         )
         .await
         .unwrap();
@@ -1189,23 +1188,31 @@ impl ContractsClient {
 
         let txn;
         if response_job.job_mode == JobMode::Single {
-            txn = req_chain_client.relay_contract.read().unwrap().job_response(
-                signature,
-                response_job_id,
-                response_job.output,
-                response_job.total_time,
-                response_job.error_code,
-                sign_timestamp.into(),
-            );
+            txn = req_chain_client
+                .relay_contract
+                .read()
+                .unwrap()
+                .job_response(
+                    signature,
+                    response_job_id,
+                    response_job.output,
+                    response_job.total_time,
+                    response_job.error_code,
+                    sign_timestamp.into(),
+                );
         } else {
-            txn = req_chain_client.relay_subscriptions_contract.read().unwrap().job_subs_response(
-                signature,
-                response_job_id,
-                response_job.output,
-                response_job.total_time,
-                response_job.error_code,
-                sign_timestamp.into(),
-            );
+            txn = req_chain_client
+                .relay_subscriptions_contract
+                .read()
+                .unwrap()
+                .job_subs_response(
+                    signature,
+                    response_job_id,
+                    response_job.output,
+                    response_job.total_time,
+                    response_job.error_code,
+                    sign_timestamp.into(),
+                );
         }
 
         for i in 0..3 {
@@ -1290,7 +1297,10 @@ impl LogsProvider for ContractsClient {
             req_chain_client.chain_id
         );
         let event_filter = Filter::new()
-            .address(vec![req_chain_client.relay_address, req_chain_client.relay_subscriptions_address])
+            .address(vec![
+                req_chain_client.relay_address,
+                req_chain_client.relay_subscriptions_address,
+            ])
             .select(req_chain_client.request_chain_start_block_number..)
             .topic0(vec![
                 keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT),

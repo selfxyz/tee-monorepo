@@ -111,7 +111,6 @@ pub async fn process_historic_subscription_jobs_on_request_chain(
                 req_chain_tx.clone(),
                 true,
             )
-            .await
             .unwrap();
             if sub_id == U256::zero() {
                 continue;
@@ -209,7 +208,7 @@ pub async fn job_subscription_manager(
                     subscription.subscription_id.clone(),
                     subscription.next_trigger_time,
                     false,
-                ).await;
+                );
             }
             else => {
                 info!("Awaiting");
@@ -219,7 +218,7 @@ pub async fn job_subscription_manager(
     }
 }
 
-pub async fn add_subscription_job(
+pub fn add_subscription_job(
     contracts_client: &Arc<ContractsClient>,
     subscription_log: Log,
     request_chain_id: u64,
@@ -305,12 +304,11 @@ pub async fn add_subscription_job(
         subscription_job.subscription_id,
         subscription_job.starttime.as_u64(),
         is_historic_log,
-    )
-    .await;
+    );
     Ok(subscription_job.subscription_id)
 }
 
-async fn add_next_trigger_time_to_heap(
+fn add_next_trigger_time_to_heap(
     contracts_client: &Arc<ContractsClient>,
     subscription_id: U256,
     previous_trigger_time: u64,
