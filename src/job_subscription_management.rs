@@ -312,9 +312,7 @@ pub fn add_subscription_job(
 
     let mut to_trigger_first_instance = true;
     if is_historic_log {
-        let minimum_timestamp_for_job = current_timestamp
-            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
-            - contracts_client.offset_for_epoch;
+        let minimum_timestamp_for_job = get_minimum_timestamp_for_job(contracts_client);
 
         if subscription_job.starttime.as_u64() < minimum_timestamp_for_job {
             to_trigger_first_instance = false;
@@ -341,6 +339,25 @@ pub fn add_subscription_job(
         is_historic_log,
     );
     Ok(subscription_job.subscription_id)
+}
+
+/// Returns the minimum timestamp for a job to be triggered w.r.t to the current time
+/// and the maintained block states.
+///
+/// # Arguments
+///
+/// * `contracts_client` - A reference to the `ContractsClient`.
+///
+/// # Returns
+///
+/// * A `u64` representing the minimum timestamp for a job to be triggered.
+fn get_minimum_timestamp_for_job(contracts_client: &Arc<ContractsClient>) -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
+        - contracts_client.offset_for_epoch
 }
 
 fn add_next_trigger_time_to_heap(
@@ -382,14 +399,7 @@ fn add_next_trigger_time_to_heap(
     }
 
     if is_historic_log {
-        let current_timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let minimum_timestamp_for_job = current_timestamp
-            - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
-            - contracts_client.offset_for_epoch;
+        let minimum_timestamp_for_job = get_minimum_timestamp_for_job(contracts_client);
 
         if next_trigger_time < minimum_timestamp_for_job {
             let instance_count = ((minimum_timestamp_for_job
@@ -797,6 +807,20 @@ mod job_subscription_management_tests {
     }
 
     #[tokio::test]
+    async fn test_get_minimum_timestamp_for_job() {
+        let contracts_client = generate_contracts_client().await;
+        let minimum_timestamp = get_minimum_timestamp_for_job(&contracts_client);
+        let current_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let expected_timestamp = current_timestamp
+            - (GATEWAY_BLOCK_STATES_TO_MAINTAIN * contracts_client.time_interval)
+            - contracts_client.offset_for_epoch;
+        assert_eq!(minimum_timestamp, expected_timestamp);
+    }
+
+    #[tokio::test]
     async fn test_add_subscription_job_historic_active_job() {
         let contracts_client = generate_contracts_client().await;
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-5)).await;
@@ -835,13 +859,8 @@ mod job_subscription_management_tests {
 
         let expected_next_trigger_time = (result_subscription_job.starttime
             + result_subscription_job.interval
-                * (((SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    - result_subscription_job.starttime.as_u64()
-                    - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
-                    - contracts_client.offset_for_epoch)
+                * (((get_minimum_timestamp_for_job(&contracts_client)
+                    - result_subscription_job.starttime.as_u64())
                     / result_subscription_job.interval.as_u64())
                     + 1))
             .as_u64();
@@ -1015,13 +1034,8 @@ mod job_subscription_management_tests {
 
         let expected_next_trigger_time = (subscription_job.starttime
             + subscription_job.interval
-                * (((SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    - subscription_job.starttime.as_u64()
-                    - ((GATEWAY_BLOCK_STATES_TO_MAINTAIN) * contracts_client.time_interval)
-                    - contracts_client.offset_for_epoch)
+                * (((get_minimum_timestamp_for_job(&contracts_client)
+                    - subscription_job.starttime.as_u64())
                     / subscription_job.interval.as_u64())
                     + 1))
             .as_u64();
