@@ -119,7 +119,7 @@ pub struct ContractsClient {
     pub offset_for_epoch: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
-    pub subscription_job_heap: Arc<RwLock<BinaryHeap<SubscriptionJobHeap>>>,
+    pub subscription_job_instance_heap: Arc<RwLock<BinaryHeap<SubscriptionJobInstanceHeap>>>,
     pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
 }
 
@@ -213,7 +213,7 @@ pub struct SubscriptionJob {
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionJobHeap {
+pub struct SubscriptionJobInstanceHeap {
     pub subscription_id: U256,
     pub next_trigger_time: u64,
 }

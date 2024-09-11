@@ -23,7 +23,8 @@ use crate::{
     error::ServerlessError,
     model::{
         ContractsClient, GatewayJobType, Job, JobMode, JobSubscriptionAction,
-        JobSubscriptionChannelType, RequestChainClient, SubscriptionJob, SubscriptionJobHeap,
+        JobSubscriptionChannelType, RequestChainClient, SubscriptionJob,
+        SubscriptionJobInstanceHeap,
     },
 };
 
@@ -48,15 +49,15 @@ fn unix_timestamp_to_instant(timestamp: u64) -> Instant {
             .unwrap_or_default()
 }
 
-impl PartialEq for SubscriptionJobHeap {
+impl PartialEq for SubscriptionJobInstanceHeap {
     fn eq(&self, other: &Self) -> bool {
         self.next_trigger_time == other.next_trigger_time
     }
 }
 
-impl Eq for SubscriptionJobHeap {}
+impl Eq for SubscriptionJobInstanceHeap {}
 
-impl PartialOrd for SubscriptionJobHeap {
+impl PartialOrd for SubscriptionJobInstanceHeap {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(
             self.next_trigger_time
@@ -66,7 +67,7 @@ impl PartialOrd for SubscriptionJobHeap {
     }
 }
 
-impl Ord for SubscriptionJobHeap {
+impl Ord for SubscriptionJobInstanceHeap {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.next_trigger_time
             .cmp(&other.next_trigger_time)
@@ -169,10 +170,15 @@ pub async fn job_subscription_manager(
 ) {
     loop {
         let next_trigger_time: Option<u64>;
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_heap_guard = contracts_client.subscription_job_heap.read().unwrap();
-            next_trigger_time = subscription_heap_guard.peek().map(|t| t.next_trigger_time);
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            next_trigger_time = subscription_job_instance_heap_guard
+                .peek()
+                .map(|t| t.next_trigger_time);
         }
 
         tokio::select! {
@@ -190,19 +196,19 @@ pub async fn job_subscription_manager(
                 unix_timestamp_to_instant(t)
             ).unwrap_or_else(Instant::now)), if next_trigger_time.is_some() => {
                 let contracts_client_clone = contracts_client.clone();
-                let subscription: Option<SubscriptionJobHeap>;
+                let subscription_job_instance: Option<SubscriptionJobInstanceHeap>;
                 {
-                    let mut subscription_job_heap = contracts_client.subscription_job_heap
+                    let mut subscription_job_instance_heap_guard = contracts_client.subscription_job_instance_heap
                         .write()
                         .unwrap();
-                    subscription = subscription_job_heap.pop();
+                    subscription_job_instance = subscription_job_instance_heap_guard.pop();
                 }
 
-                if subscription.is_none() {
+                if subscription_job_instance.is_none() {
                     error!("Subscription Job Triggered but no subscription found");
                     continue;
                 }
-                let subscription = subscription.unwrap();
+                let subscription_job_instance = subscription_job_instance.unwrap();
 
                 let req_chain_tx_clone = req_chain_tx.clone();
 
@@ -211,14 +217,14 @@ pub async fn job_subscription_manager(
                 {
                     let subscription_jobs_guard = contracts_client.subscription_jobs.read().unwrap();
                     subscription_job = subscription_jobs_guard
-                        .get(&subscription.subscription_id)
+                        .get(&subscription_job_instance.subscription_id)
                         .cloned();
                 }
 
                 if subscription_job.is_none() {
                     info!(
                         "Job No longer active for Subscription - Subscription ID: {}",
-                        subscription.subscription_id
+                        subscription_job_instance.subscription_id
                     );
                     return;
                 }
@@ -226,15 +232,15 @@ pub async fn job_subscription_manager(
                 tokio::spawn(async move {
                     trigger_subscription_job(
                         subscription_job.unwrap(),
-                        subscription.next_trigger_time,
+                        subscription_job_instance.next_trigger_time,
                         contracts_client_clone,
                         req_chain_tx_clone
                     ).await;
                 });
                 add_next_trigger_time_to_heap(
                     &contracts_client,
-                    subscription.subscription_id.clone(),
-                    subscription.next_trigger_time,
+                    subscription_job_instance.subscription_id.clone(),
+                    subscription_job_instance.next_trigger_time,
                     false,
                 );
             }
@@ -396,10 +402,13 @@ fn add_next_trigger_time_to_heap(
         }
     }
 
-    // Scope for write lock on subscription_job_heap
+    // Scope for write lock on subscription_job_instance_heap
     {
-        let mut subscription_job_heap = contracts_client.subscription_job_heap.write().unwrap();
-        subscription_job_heap.push(SubscriptionJobHeap {
+        let mut subscription_job_instance_heap_guard = contracts_client
+            .subscription_job_instance_heap
+            .write()
+            .unwrap();
+        subscription_job_instance_heap_guard.push(SubscriptionJobInstanceHeap {
             subscription_id: subscription_job.subscription_id,
             next_trigger_time,
         });
@@ -645,10 +654,13 @@ mod job_subscription_management {
             assert!(subscription_job.is_none());
         }
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek();
 
             assert!(subscription_job_instance.is_none());
         }
@@ -693,10 +705,13 @@ mod job_subscription_management {
             assert!(subscription_job.is_none());
         }
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek();
 
             assert!(subscription_job_instance.is_none());
         }
@@ -749,10 +764,13 @@ mod job_subscription_management {
             assert_eq!(result_subscription_job.subscription_id, U256::one());
         }
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -828,10 +846,13 @@ mod job_subscription_management {
                     + 1))
             .as_u64();
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -886,10 +907,13 @@ mod job_subscription_management {
             assert_eq!(subscription_job, expected_subscription_job);
         }
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -941,10 +965,13 @@ mod job_subscription_management {
 
         let expected_next_trigger_time = subscription_job.starttime + subscription_job.interval;
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -999,10 +1026,13 @@ mod job_subscription_management {
                     + 1))
             .as_u64();
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -1043,10 +1073,13 @@ mod job_subscription_management {
             is_historic_log,
         );
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -1091,10 +1124,13 @@ mod job_subscription_management {
             is_historic_log,
         );
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
@@ -1139,10 +1175,13 @@ mod job_subscription_management {
             is_historic_log,
         );
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek();
 
             assert!(subscription_job_instance.is_none());
         }
@@ -1559,10 +1598,13 @@ mod job_subscription_management {
 
         assert!(job_sub_rx.recv().await.is_none());
 
-        // Scope for read lock on subscription_job_heap
+        // Scope for read lock on subscription_job_instance_heap
         {
-            let subscription_job_heap = contracts_client.subscription_job_heap.read().unwrap();
-            let subscription_job_instance = subscription_job_heap.peek().unwrap();
+            let subscription_job_instance_heap_guard = contracts_client
+                .subscription_job_instance_heap
+                .read()
+                .unwrap();
+            let subscription_job_instance = subscription_job_instance_heap_guard.peek().unwrap();
 
             assert_eq!(subscription_job_instance.subscription_id, U256::one());
             assert_eq!(
