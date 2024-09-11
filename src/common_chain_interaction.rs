@@ -372,24 +372,23 @@ impl ContractsClient {
                     let job_subscription_tx_clone = job_subscription_tx.clone();
 
                     tokio::spawn(async move {
-                        let sub_id = add_subscription_job(
+                        let res = add_subscription_job(
                             &self_clone,
                             log,
                             chain_id,
                             req_chain_tx_clone,
                             false,
-                        )
-                        .unwrap();
-                        if sub_id == U256::zero() {
-                            return;
+                        );
+
+                        if res.is_ok() {
+                            job_subscription_tx_clone
+                                .send(JobSubscriptionChannelType {
+                                    subscription_action: JobSubscriptionAction::Add,
+                                    subscription_id,
+                                })
+                                .await
+                                .unwrap();
                         }
-                        job_subscription_tx_clone
-                            .send(JobSubscriptionChannelType {
-                                subscription_action: JobSubscriptionAction::Add,
-                                subscription_id,
-                            })
-                            .await
-                            .unwrap();
                     });
                 } else if topics[0]
                     == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
