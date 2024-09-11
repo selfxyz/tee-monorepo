@@ -298,7 +298,7 @@ pub fn add_subscription_job(
 
     if subscription_job.termination_time.as_u64() < current_timestamp {
         info!(
-            "Subscription Job has reached termination time - Subscription ID: {}",
+            "Subscription Job is complete - Subscription ID: {}",
             subscription_job.subscription_id
         );
         return Ok(0.into());
