@@ -372,13 +372,17 @@ impl ContractsClient {
                     let job_subscription_tx_clone = job_subscription_tx.clone();
 
                     tokio::spawn(async move {
-                        let _ = add_subscription_job(
+                        let sub_id = add_subscription_job(
                             &self_clone,
                             log,
                             chain_id,
                             req_chain_tx_clone,
                             false,
-                        );
+                        )
+                        .unwrap();
+                        if sub_id == U256::zero() {
+                            return;
+                        }
                         job_subscription_tx_clone
                             .send(JobSubscriptionChannelType {
                                 subscription_action: JobSubscriptionAction::Add,

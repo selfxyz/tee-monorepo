@@ -318,6 +318,31 @@ pub fn add_subscription_job(
             to_trigger_first_instance = false;
         }
     }
+
+    let current_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let mut is_starttime_in_future = false;
+    if subscription_job.starttime.as_u64() > current_timestamp {
+        info!(
+            "Subscription Job is scheduled for future - Subscription ID: {}",
+            subscription_job.subscription_id
+        );
+
+        to_trigger_first_instance = false;
+
+        add_next_trigger_time_to_heap(
+            &contracts_client,
+            subscription_job.subscription_id,
+            subscription_job.starttime.as_u64() - subscription_job.interval.as_u64(),
+            is_historic_log,
+        );
+
+        is_starttime_in_future = true;
+    }
+
     if to_trigger_first_instance {
         let contracts_client_clone = contracts_client.clone();
         let subscription_job_clone = subscription_job.clone();
@@ -332,12 +357,14 @@ pub fn add_subscription_job(
         });
     }
 
-    add_next_trigger_time_to_heap(
-        &contracts_client,
-        subscription_job.subscription_id,
-        subscription_job.starttime.as_u64(),
-        is_historic_log,
-    );
+    if !is_starttime_in_future {
+        add_next_trigger_time_to_heap(
+            &contracts_client,
+            subscription_job.subscription_id,
+            subscription_job.starttime.as_u64(),
+            is_historic_log,
+        );
+    }
     Ok(subscription_job.subscription_id)
 }
 
@@ -401,7 +428,9 @@ fn add_next_trigger_time_to_heap(
     if is_historic_log {
         let minimum_timestamp_for_job = get_minimum_timestamp_for_job(contracts_client);
 
-        if next_trigger_time < minimum_timestamp_for_job {
+        if subscription_job.starttime.as_u64() < minimum_timestamp_for_job
+            && next_trigger_time < minimum_timestamp_for_job
+        {
             let instance_count = ((minimum_timestamp_for_job
                 - subscription_job.starttime.as_u64())
                 / subscription_job.interval.as_u64())
@@ -409,6 +438,8 @@ fn add_next_trigger_time_to_heap(
 
             next_trigger_time = subscription_job.starttime.as_u64()
                 + instance_count * subscription_job.interval.as_u64();
+        } else {
+            next_trigger_time = subscription_job.starttime.as_u64();
         }
     }
 
