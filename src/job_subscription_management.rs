@@ -428,9 +428,7 @@ fn add_next_trigger_time_to_heap(
     if is_historic_log {
         let minimum_timestamp_for_job = get_minimum_timestamp_for_job(contracts_client);
 
-        if subscription_job.starttime.as_u64() < minimum_timestamp_for_job
-            && next_trigger_time < minimum_timestamp_for_job
-        {
+        if next_trigger_time < minimum_timestamp_for_job {
             let instance_count = ((minimum_timestamp_for_job
                 - subscription_job.starttime.as_u64())
                 / subscription_job.interval.as_u64())
