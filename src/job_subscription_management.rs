@@ -438,8 +438,6 @@ fn add_next_trigger_time_to_heap(
 
             next_trigger_time = subscription_job.starttime.as_u64()
                 + instance_count * subscription_job.interval.as_u64();
-        } else {
-            next_trigger_time = subscription_job.starttime.as_u64();
         }
     }
 
