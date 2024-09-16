@@ -42,7 +42,7 @@ const HTTP_RPC_URL: &str = "https://sepolia-rollup.arbitrum.io/rpc";
 #[cfg(test)]
 const WS_URL: &str = "wss://arbitrum-sepolia.infura.io/ws/v3/cd72f20b9fd544f8a5b8da706441e01c";
 #[cfg(test)]
-const GATEWAY_CONTRACT_ADDR: &str = "0x9a79Bb5676c19A01ad27D88ca6A0131d51022AC4";
+const GATEWAYS_CONTRACT_ADDR: &str = "0x9a79Bb5676c19A01ad27D88ca6A0131d51022AC4";
 #[cfg(test)]
 pub const GATEWAY_JOBS_CONTRACT_ADDR: &str = "0x124371e1E13f2917A73E8eca9F361e6aA21eA06a";
 #[cfg(test)]
@@ -95,7 +95,7 @@ pub async fn generate_app_state() -> Data<AppState> {
         common_chain_id: CHAIN_ID,
         common_chain_http_url: HTTP_RPC_URL.to_owned(),
         common_chain_ws_url: WS_URL.to_owned(),
-        gateways_contract_addr: GATEWAY_CONTRACT_ADDR.parse::<Address>().unwrap(),
+        gateways_contract_addr: GATEWAYS_CONTRACT_ADDR.parse::<Address>().unwrap(),
         gateway_jobs_contract_addr: GATEWAY_JOBS_CONTRACT_ADDR.parse::<Address>().unwrap(),
         request_chain_ids: HashSet::new().into(),
         registered: Arc::new(AtomicBool::new(false)),
