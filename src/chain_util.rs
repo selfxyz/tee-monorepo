@@ -191,6 +191,7 @@ pub async fn sign_relay_job_request(
     job_start_time: U256,
     sequence_number: u8,
     job_owner: &Address,
+    env: u8,
 ) -> Option<(String, u64)> {
     let sign_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -212,6 +213,7 @@ pub async fn sign_relay_job_request(
         Token::Uint(job_start_time),
         Token::Uint(sequence_number.into()),
         Token::Address(*job_owner),
+        Token::Uint(env.into()),
         Token::Uint(sign_timestamp.into()),
     ];
 

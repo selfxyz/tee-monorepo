@@ -244,6 +244,7 @@ impl HttpProviderLogs for MockHttpProvider {
                         ],
                         data: encode(&[
                             Token::Uint(U256::from(100)),
+                            Token::Uint(U256::one()),
                             Token::Address(job.job_owner),
                             Token::Address(job.gateway_address.unwrap()),
                         ])

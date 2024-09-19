@@ -550,7 +550,12 @@ impl ContractsClient {
             let ref topics = log.topics;
             if topics[0] == keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into() {
                 let decoded = decode(
-                    &vec![ParamType::Uint(256), ParamType::Address, ParamType::Address],
+                    &vec![
+                        ParamType::Uint(256),
+                        ParamType::Uint(8),
+                        ParamType::Address,
+                        ParamType::Address,
+                    ],
                     &log.data.0,
                 )
                 .unwrap();
@@ -723,6 +728,7 @@ impl ContractsClient {
             job.starttime,
             job.sequence_number,
             &job.job_owner,
+            job.env,
         )
         .await
         .unwrap();
@@ -741,6 +747,7 @@ impl ContractsClient {
             job.starttime,
             job.sequence_number,
             job.job_owner,
+            job.env.into(),
             sign_timestamp.into(),
         );
 

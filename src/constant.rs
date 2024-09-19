@@ -35,7 +35,8 @@ pub const REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT: &str =
 pub const REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT: &str =
     "JobSubscriptionTerminationParamsUpdated(uint256,uint256)";
 
-pub const COMMON_CHAIN_JOB_RELAYED_EVENT: &str = "JobRelayed(uint256,uint256,address,address)";
+pub const COMMON_CHAIN_JOB_RELAYED_EVENT: &str =
+    "JobRelayed(uint256,uint256,uint8,address,address)";
 pub const COMMON_CHAIN_JOB_RESPONDED_EVENT: &str = "JobResponded(uint256,bytes,uint256,uint8)";
 pub const COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT: &str =
     "JobResourceUnavailable(uint256,address)";
