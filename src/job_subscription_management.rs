@@ -652,7 +652,7 @@ mod job_subscription_management_tests {
             topics: vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into(),
                 H256::from_uint(&U256::one()),
-                H256::from_uint(&U256::zero()),
+                H256::from_uint(&U256::one()),
             ],
             data: encode(&[
                 Token::Uint(U256::from(10)),
