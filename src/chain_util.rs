@@ -395,7 +395,7 @@ pub async fn confirm_event(
     let mut first_iteration = true;
     loop {
         if last_seen_block.load(Ordering::SeqCst)
-            >= log.block_number.unwrap_or(U64::from(0)).as_u64() + confirmation_blocks
+            >= log.block_number.unwrap_or(U64::zero()).as_u64() + confirmation_blocks
         {
             match provider
                 .get_transaction_receipt(log.transaction_hash.unwrap_or(H256::zero()))

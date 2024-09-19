@@ -235,7 +235,7 @@ impl HttpProviderLogs for MockHttpProvider {
                 COMMON_CHAIN_JOB_RELAYED_EVENT,
             ))) {
                 let job = self.job.clone().unwrap();
-                if job.job_id == U256::from(1) {
+                if job.job_id == U256::one() {
                     Ok(vec![Log {
                         address: H160::from_str(GATEWAY_JOBS_CONTRACT_ADDR).unwrap().into(),
                         topics: vec![
@@ -327,6 +327,7 @@ pub fn generate_job_subscription_started_log(
         topics: vec![
             keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into(),
             H256::from_uint(&job_id),
+            H256::from_uint(&U256::one()),
             H256::from(Address::from_str(SUBSCRIPTION_RELAY_CONTRACT_ADDR).unwrap()),
         ],
         data: encode(&[
@@ -386,6 +387,7 @@ pub fn generate_generic_subscription_job(
         .unwrap()
         .into(),
         starttime,
+        env: 1u8,
     }
 }
 

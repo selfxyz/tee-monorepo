@@ -282,13 +282,14 @@ pub fn add_subscription_job(
     let subscription_job = SubscriptionJob {
         subscription_id: subscription_log.topics[1].into_uint(),
         request_chain_id,
-        subscriber: subscription_log.topics[2].into(),
+        subscriber: subscription_log.topics[3].into(),
         interval: decoded[0].clone().into_uint().unwrap().into(),
         termination_time: decoded[2].clone().into_uint().unwrap().into(),
         user_timeout: decoded[3].clone().into_uint().unwrap().into(),
         tx_hash: decoded[5].clone().into_fixed_bytes().unwrap(),
         code_input: decoded[6].clone().into_bytes().unwrap().into(),
         starttime: decoded[7].clone().into_uint().unwrap().into(),
+        env: subscription_log.topics[2].into_uint().as_u64() as u8,
     };
 
     let current_timestamp = SystemTime::now()
@@ -489,6 +490,7 @@ fn subscription_job_to_relay_job(subscription_job: SubscriptionJob, trigger_time
         sequence_number: 1,
         gateway_address: None,
         job_mode: JobMode::Subscription,
+        env: subscription_job.env,
     }
 }
 
@@ -643,13 +645,14 @@ mod job_subscription_management_tests {
         let (req_chain_tx, _) = tokio::sync::mpsc::channel::<Job>(100);
         let is_history_log = false;
 
-        // topics is missing one indexed event parameter
+        // topics is missing the indexed event parameter jobSubscriber at index 4
         // data is missing code_input and starttime parameters
         let log = Log {
             address: Address::default(),
             topics: vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into(),
-                H256::from_uint(&U256::from(1)),
+                H256::from_uint(&U256::one()),
+                H256::from_uint(&U256::zero()),
             ],
             data: encode(&[
                 Token::Uint(U256::from(10)),
@@ -1305,7 +1308,7 @@ mod job_subscription_management_tests {
             address: Address::default(),
             topics: vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into(),
-                H256::from_uint(&U256::from(1)),
+                H256::from_uint(&U256::one()),
             ],
             data: encode(&[]).into(),
             ..Default::default()
@@ -1476,7 +1479,7 @@ mod job_subscription_management_tests {
             address: Address::default(),
             topics: vec![
                 keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT).into(),
-                H256::from_uint(&U256::from(1)),
+                H256::from_uint(&U256::one()),
             ],
             data: encode(&[]).into(),
             ..Default::default()
