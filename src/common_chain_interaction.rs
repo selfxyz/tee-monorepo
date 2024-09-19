@@ -561,10 +561,12 @@ impl ContractsClient {
                 .unwrap();
 
                 let job_id = log.topics[1].into_uint();
-                let job_owner = decoded[1].clone().into_address().unwrap();
-                let gateway_operator = decoded[2].clone().into_address().unwrap();
+                let env = log.topics[1].into_uint().as_u64() as u8;
+                let job_owner = decoded[2].clone().into_address().unwrap();
+                let gateway_operator = decoded[3].clone().into_address().unwrap();
 
                 if job_id == job.job_id
+                    && env == job.env
                     && job_owner == job.job_owner
                     && gateway_operator != Address::zero()
                     && gateway_operator == job.gateway_address.unwrap()
