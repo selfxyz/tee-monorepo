@@ -286,7 +286,14 @@ contract Jobs is
      * @param errorCode The error code associated with the job execution.
      * @param outputCount The number of outputs submitted for the job.
      */
-    event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint8 errorCode, uint8 outputCount);
+    event JobResponded(
+        uint256 indexed jobId,
+        address indexed executor,
+        bytes output,
+        uint256 totalTime,
+        uint8 errorCode,
+        uint8 outputCount
+    );
 
     /**
      * @dev Emitted when the job result callback is called.
@@ -402,7 +409,7 @@ contract Jobs is
             );
             emit JobResultCallbackCalled(_jobId, success);
         }
-        emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
+        emit JobResponded(_jobId, enclaveAddress, _output, _totalTime, _errorCode, outputCount);
     }
 
     function _verifyOutputSign(
