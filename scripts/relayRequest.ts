@@ -57,8 +57,8 @@ async function main() {
     const stakingRewardPerMs = envConfig[env].stakingRewardPerMs; // 0.001 usd per ms
     const executionFeePerMs = executorFeePerMs + stakingRewardPerMs;
     const gatewayFee = 100; // 0.1 usd
-    const stakingPaymentPoolAddress = await signers[1].getAddress();
-    const usdcPaymentPoolAddress = await signers[1].getAddress();
+    const stakingPaymentPoolAddress = await signers[0].getAddress();
+    const usdcPaymentPoolAddress = await signers[0].getAddress();
     const signMaxAge = 600;
 
     // Attestation Verifier
@@ -239,10 +239,12 @@ async function main() {
 }
 
 // async function deployUserSample() {
-//     let relayAddress = "0xD02e33f98a08030B72A471Ae41e696a57cFecCc8",
-//         tokenAddress = "0xD330cF76192274bb3f10f2E574a1bDba4ED29352";
+//     let relayAddress = "0x56EC16763Ec62f4EAF9C7Cfa09E29DC557e97006",
+//         relaySubscriptionsAddress = "0x6B59433387341925aE903E36d16D976053D018E1",
+//         tokenAddress = "0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C",
+//         owner = await (await ethers.getSigners())[0].getAddress();
 //     const UserSample = await ethers.getContractFactory("UserSample");
-//     let userSample = await UserSample.deploy(relayAddress, tokenAddress) as unknown as UserSample;
+//     let userSample = await UserSample.deploy(relayAddress, relaySubscriptionsAddress, tokenAddress, owner) as unknown as UserSample;
 //     console.log("UserSample : ", userSample.target);
 //     // await token.transfer(userSample.target, 1000000);
 // }
@@ -359,3 +361,17 @@ main()
         console.error(error);
         process.exit(1);
     });
+
+/*
+    ARBITRUM SEPOLIA -
+    Pond Deployed address:  0x0DA917048bfF8fc8fe5647509FB8F8049E2E7B87
+    USDCoin Deployed address:  0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C
+    AttestationVerifier Deployed address:  0x73B7154EdBc562D4cCbdB43D515eB1C2dF46A718
+    Relay Deployed address:  0x56EC16763Ec62f4EAF9C7Cfa09E29DC557e97006
+    RelaySubscriptions Deployed address:  0x6B59433387341925aE903E36d16D976053D018E1
+    Gateways Deployed address:  0x56Fb98c417E61609c472Aa941E0ea915Efd9615F
+    Executors Deployed address:  0xa5F525145219D16763d24670DBF0E62fFbA19571
+    Jobs Deployed address:  0xF14Ff55120210912Ffb32B7D48b926186168166C
+    GatewayJobs Deployed address:  0x7a3406cf602aCEc0Dd1f80549171F778010C31C2
+    UserSample: 0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229
+*/
