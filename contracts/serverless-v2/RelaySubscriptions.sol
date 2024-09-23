@@ -657,12 +657,13 @@ contract RelaySubscriptions is
      */
     function startJobSubscription(
         JobSubscriptionParams memory _jobSubsParams
-    ) external payable isValidEnv(_jobSubsParams.env) {
+    ) external payable isValidEnv(_jobSubsParams.env) returns (uint256) {
         _startJobSubscription(
             _jobSubsParams,
             msg.value,
             _msgSender()
         );
+        return jobSubsCount;
     }
 
     /**

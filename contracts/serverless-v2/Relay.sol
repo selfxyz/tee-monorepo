@@ -709,7 +709,7 @@ contract Relay is
         address _refundAccount, // Common chain slashed token will be sent to this address
         address _callbackContract,
         uint256 _callbackGasLimit
-    ) external payable isValidEnv(_env) {
+    ) external payable isValidEnv(_env) returns (uint256) {
         _relayJob(
             _env,
             _codehash,
@@ -722,6 +722,7 @@ contract Relay is
             _callbackGasLimit,
             _msgSender()
         );
+        return jobCount;
     }
 
     /**
