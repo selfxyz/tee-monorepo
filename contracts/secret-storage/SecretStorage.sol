@@ -174,7 +174,7 @@ contract SecretStorage is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     address public immutable STAKING_PAYMENT_POOL;
 
-    /// @notice executor stake amount will be divided by 10^18 before adding to the tree
+    /// @notice enclave stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
@@ -215,33 +215,30 @@ contract SecretStorage is
     bytes32 private constant ALIVE_TYPEHASH =
         keccak256("Alive(uint256 secretId,address owner,uint256 signTimestamp)");
 
-    // / @notice Emitted when a new executor is registered.
-    // / @param enclaveAddress The address of the enclave.
-    // / @param owner The owner of the executor.
-    // / @param jobCapacity The maximum number of jobs the executor can handle in parallel.
-    // / @param env The execution environment supported by the enclave.
-
-
+    /// @notice Emitted when a new enclave is registered.
+    /// @param enclaveAddress The address of the enclave.
+    /// @param owner The owner of the enclave.
+    /// @param storageCapacity The maximum storage of the enclave(in bytes).
     event EnclaveStoreRegistered(address indexed enclaveAddress, address indexed owner, uint256 storageCapacity);
 
-    /// @notice Emitted when an executor is deregistered.
+    /// @notice Emitted when an enclave is deregistered.
     /// @param enclaveAddress The address of the enclave.
     event EnclaveStoreDeregistered(address indexed enclaveAddress);
 
-    /// @notice Emitted when an executor is drained.
+    /// @notice Emitted when an enclave is drained.
     /// @param enclaveAddress The address of the enclave.
     event EnclaveStoreDrained(address indexed enclaveAddress);
 
-    /// @notice Emitted when an executor is revived.
+    /// @notice Emitted when an enclave is revived.
     /// @param enclaveAddress The address of the enclave.
     event EnclaveStoreRevived(address indexed enclaveAddress);
 
-    /// @notice Emitted when stake is added to an executor.
+    /// @notice Emitted when stake is added to an enclave.
     /// @param enclaveAddress The address of the enclave.
     /// @param addedAmount The amount of stake added.
     event EnclaveStoreStakeAdded(address indexed enclaveAddress, uint256 addedAmount);
 
-    /// @notice Emitted when stake is removed from an executor.
+    /// @notice Emitted when stake is removed from an enclave.
     /// @param enclaveAddress The address of the enclave.
     /// @param removedAmount The amount of stake removed.
     event EnclaveStoreStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
@@ -250,23 +247,23 @@ contract SecretStorage is
     error SecretStorageSignatureTooOld();
     /// @notice Thrown when the signer of the registration data is invalid.
     error SecretStorageInvalidSigner();
-    /// @notice Thrown when attempting to register an executor that already exists.
+    /// @notice Thrown when attempting to register an enclave that already exists.
     error SecretStorageEnclaveAlreadyExists();
-    /// @notice Thrown when attempting to drain an executor that is already draining.
+    /// @notice Thrown when attempting to drain an enclave that is already draining.
     error SecretStorageEnclaveAlreadyDraining();
-    /// @notice Thrown when attempting to revive an executor that is not draining.
+    /// @notice Thrown when attempting to revive an enclave that is not draining.
     error SecretStorageEnclaveAlreadyRevived();
-    /// @notice Thrown when attempting to deregister or remove stake from an executor that is not draining.
+    /// @notice Thrown when attempting to deregister or remove stake from an enclave that is not draining.
     error SecretStorageEnclaveNotDraining();
-    /// @notice Thrown when attempting to deregister or remove stake from an executor that has pending jobs.
+    /// @notice Thrown when attempting to deregister or remove stake from an enclave that has pending jobs.
     error SecretStorageEnclaveNotEmpty();
-    /// @notice Thrown when the provided executor owner does not match the stored owner.
+    /// @notice Thrown when the provided enclave owner does not match the stored owner.
     error SecretStorageInvalidEnclaveOwner();
 
     //-------------------------------- Admin methods start --------------------------------//
 
     /**
-     * @notice Whitelists an enclave image for use by executors.
+     * @notice Whitelists an enclave image for use by storage enclaves.
      * @param PCR0 The first PCR value.
      * @param PCR1 The second PCR value.
      * @param PCR2 The third PCR value.
