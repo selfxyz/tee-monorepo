@@ -50,7 +50,7 @@ export default {
     },
   },
   solidity: {
-    version: "0.8.25",
+    version: "0.8.27",
     settings: {
       // viaIR: true,
       optimizer: {
