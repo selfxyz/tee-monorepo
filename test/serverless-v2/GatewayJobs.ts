@@ -568,7 +568,8 @@ describe("GatewayJobs - Relay", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}
@@ -1015,7 +1016,8 @@ describe("GatewayJobs - Reassign Gateway", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "ws://eth.rpc"
 			}
@@ -1368,7 +1370,8 @@ describe("GatewayJobs - oyster callback in GatewayJobs", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}

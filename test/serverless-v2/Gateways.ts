@@ -1108,6 +1108,7 @@ describe("Gateways - Staking", function () {
 	it("cannot unstake without gateway owner", async function () {
 		await expect(gateways.connect(signers[0]).removeGatewayStake(addrs[15], 10))
 			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
+
 	});
 
 	it("cannot unstake without draining", async function () {

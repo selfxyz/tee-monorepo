@@ -338,7 +338,6 @@ contract Relay is
      * @param refundAccount The address where the slashed token will be sent on common chain.
      * @param callbackContract The address of the callback contract.
      * @param startTime The timestamp when the job was started.
-
      * @param callbackGasLimit The gas limit for the callback execution.
      */
     event JobRelayed(
@@ -649,4 +648,5 @@ contract Relay is
     //-------------------------------- external functions end --------------------------------//
 
     //-------------------------------- Job End --------------------------------//
+
 }
