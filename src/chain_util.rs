@@ -199,7 +199,7 @@ pub async fn sign_relay_job_request(
         .as_secs();
 
     let relay_job_typehash = keccak256(
-            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestamp)"
+            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint8 env,uint256 signTimestamp)"
         );
 
     let code_inputs_hash = keccak256(code_inputs);
