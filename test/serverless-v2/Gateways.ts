@@ -1,6 +1,6 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, ZeroAddress, keccak256, solidityPacked, Wallet, parseUnits } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, GatewayJobs, Gateways, Pond, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
@@ -424,15 +424,16 @@ describe("Gateways - Global chains", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}
 		]
 		await gateways.addChainGlobal(chainIds, reqChains);
 
-		let {contractAddress, httpRpcUrl, wsRpcUrl} = await gateways.requestChains(1);
-		expect({contractAddress, httpRpcUrl, wsRpcUrl}).to.deep.eq(reqChains[0]);
+		let {relayAddress, relaySubscriptionsAddress, httpRpcUrl, wsRpcUrl} = await gateways.requestChains(1);
+		expect({relayAddress, relaySubscriptionsAddress, httpRpcUrl, wsRpcUrl}).to.deep.eq(reqChains[0]);
 		expect(await gateways.isChainSupported(chainIds[0])).to.be.true;
 	});
 
@@ -440,7 +441,8 @@ describe("Gateways - Global chains", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}
@@ -464,8 +466,9 @@ describe("Gateways - Global chains", function () {
 		let chainIds = [1];
 		await gateways.removeChainGlobal(chainIds);
 
-		let {contractAddress, httpRpcUrl} = await gateways.requestChains(1);
-		expect(contractAddress).to.be.eq(ZeroAddress);
+		let {relayAddress, relaySubscriptionsAddress, httpRpcUrl} = await gateways.requestChains(1);
+		expect(relayAddress).to.be.eq(ZeroAddress);
+		expect(relaySubscriptionsAddress).to.be.eq(ZeroAddress);
 		expect(httpRpcUrl).to.be.eq("");
 	});
 
@@ -492,7 +495,8 @@ describe("Gateways - Add/Remove chains", function () {
 	let attestationVerifier: AttestationVerifier;
 	let gateways: Gateways;
 	let reqChains: {
-		contractAddress: string,
+		relayAddress: string,
+		relaySubscriptionsAddress: string,
 		httpRpcUrl: string,
 		wsRpcUrl: string
 	}[];
@@ -535,17 +539,20 @@ describe("Gateways - Add/Remove chains", function () {
 		let chainIds = [1, 56, 137];
 		reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[4],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			},
 			{
-				contractAddress: addrs[2],
+				relayAddress: addrs[2],
+				relaySubscriptionsAddress: addrs[5],
 				httpRpcUrl: "https://bsc.rpc",
 				wsRpcUrl: "wss://bsc.rpc"
 			},
 			{
-				contractAddress: addrs[3],
+				relayAddress: addrs[3],
+				relaySubscriptionsAddress: addrs[6],
 				httpRpcUrl: "https://polygon.rpc",
 				wsRpcUrl: "wss://polygon.rpc"
 			}
@@ -737,7 +744,8 @@ describe("Gateways - Draining gateway", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}
@@ -844,7 +852,8 @@ describe("Gateways - Register gateway", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}
@@ -1058,7 +1067,8 @@ describe("Gateways - Staking", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "wss://eth.rpc"
 			}
@@ -1098,7 +1108,6 @@ describe("Gateways - Staking", function () {
 	it("cannot unstake without gateway owner", async function () {
 		await expect(gateways.connect(signers[0]).removeGatewayStake(addrs[15], 10))
 			.to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
-
 	});
 
 	it("cannot unstake without draining", async function () {
@@ -1216,7 +1225,8 @@ describe("Gateways - Slash on reassign gateway", function () {
 		let chainIds = [1];
 		let reqChains = [
 			{
-				contractAddress: addrs[1],
+				relayAddress: addrs[1],
+				relaySubscriptionsAddress: addrs[2],
 				httpRpcUrl: "https://eth.rpc",
 				wsRpcUrl: "ws://eth.rpc"
 			}

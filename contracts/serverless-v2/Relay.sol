@@ -284,6 +284,14 @@ contract Relay is
         _deregisterGateway(_enclaveAddress, _msgSender());
     }
 
+    /**
+     * @notice Ensures that the specified enclave address is verified.
+     * @param _enclaveAddress The address of the enclave to verify.
+     */
+    function allowOnlyVerified(address _enclaveAddress) external view {
+        _allowOnlyVerified(_enclaveAddress);
+    }
+
     //-------------------------------- external functions end ---------------------------//
 
     //-------------------------------- Gateway End --------------------------------//
@@ -304,9 +312,18 @@ contract Relay is
 
     mapping(uint256 => Job) public jobs;
 
+    /**
+     * @notice Tracks the jobs count.
+     * @dev It follows this scheme - 
+     *      | Chain ID (64 bit) | 0 (1 bit) | job_id (191 bits) |
+     *      First 64 bits represent the chainId.
+     *      65th bit is fixed as 0, which represents an individual job.
+     *      Last 191 bits refers to the job id, and increments each time a new job is relayed.
+     *      If job_id reaches its max value, then we reset the job_id to zero.
+     */
     uint256 public jobCount;
 
-    bytes32 private constant JOB_RESPONSE_TYPEHASH =
+    bytes32 public constant JOB_RESPONSE_TYPEHASH =
         keccak256("JobResponse(uint256 jobId,bytes output,uint256 totalTime,uint8 errorCode,uint256 signTimestamp)");
 
     /**
@@ -321,6 +338,7 @@ contract Relay is
      * @param refundAccount The address where the slashed token will be sent on common chain.
      * @param callbackContract The address of the callback contract.
      * @param startTime The timestamp when the job was started.
+
      * @param callbackGasLimit The gas limit for the callback execution.
      */
     event JobRelayed(
@@ -383,7 +401,8 @@ contract Relay is
     ) internal {
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
-        if (jobCount + 1 == (block.chainid + 1) << 192) jobCount = block.chainid << 192;
+        if (jobCount + 1 == (block.chainid << 192) | (uint256(1) << 191)) 
+            jobCount = block.chainid << 192;
 
         if (_maxGasPrice < tx.gasprice) revert RelayInsufficientMaxGasPrice();
 

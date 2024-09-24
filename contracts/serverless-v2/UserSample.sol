@@ -9,6 +9,7 @@ contract UserSample is Ownable {
     using SafeERC20 for IERC20;
 
     address public relayAddress;
+    address public relaySubscriptionsAddress;
 
     /// @notice refers to USDC token
     IERC20 public token;
@@ -17,8 +18,14 @@ contract UserSample is Ownable {
 
     error EthWithdrawalFailed();
 
-    constructor(address _relayAddress, address _token, address _owner) Ownable(_owner) {
+    constructor(
+        address _relayAddress,
+        address _relaySubscriptionsAddress,
+        address _token,
+        address _owner
+    ) Ownable(_owner) {
         relayAddress = _relayAddress;
+        relaySubscriptionsAddress = _relaySubscriptionsAddress;
         token = IERC20(_token);
     }
 
@@ -71,6 +78,42 @@ contract UserSample is Ownable {
         uint8 _errorCode
     ) public {
         emit CalledBack(_jobId, _jobOwner, _codehash, _codeInputs, _output, _errorCode);
+    }
+
+    function startJobSubscription(
+        bytes32 _codehash,
+        bytes memory _codeInputs,
+        uint256 _userTimeout,
+        uint256 _maxGasPrice,
+        uint256 _callbackDeposit,
+        address _refundAccount,
+        address _callbackContract,
+        uint256 _callbackGasLimit,
+        uint256 _periodicGap,
+        uint256 _usdcDeposit,
+        uint256 _startTimestamp,
+        uint256 _terminationTimestamp
+    ) external returns (bool) {
+        // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
+        token.safeIncreaseAllowance(relaySubscriptionsAddress, _usdcDeposit);
+
+        (bool success, ) = relaySubscriptionsAddress.call{value: _callbackDeposit}(
+            abi.encodeWithSignature(
+                "startJobSubscription(bytes32,bytes,uint256,uint256,address,address,uint256,uint256,uint256,uint256,uint256)",
+                _codehash,
+                _codeInputs,
+                _userTimeout,
+                _maxGasPrice,
+                _refundAccount,
+                _callbackContract,
+                _callbackGasLimit,
+                _periodicGap,
+                _usdcDeposit,
+                _startTimestamp,
+                _terminationTimestamp
+            )
+        );
+        return success;
     }
 
     function withdrawEth() external onlyOwner() {
