@@ -6,7 +6,11 @@ mod config;
 mod constant;
 mod contract_abi;
 mod error;
+mod job_subscription_management;
 mod model;
+
+#[cfg(test)]
+mod test_util;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
@@ -29,7 +33,7 @@ use crate::api_impl::{
 };
 use crate::model::{AppState, ConfigManager};
 
-type HttpProvider = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
+type HttpProviderType = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]

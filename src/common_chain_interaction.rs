@@ -1,8 +1,9 @@
 use actix_web::web::Data;
 use anyhow::{Context, Result};
-use ethers::abi::{decode, Address, ParamType};
+use ethers::abi::{decode, ParamType};
 use ethers::prelude::*;
 use ethers::providers::Provider;
+use ethers::types::Address;
 use ethers::utils::keccak256;
 use futures_core::stream::Stream;
 use hex::FromHex;
@@ -15,21 +16,31 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::{task, time};
+use tokio::time;
 
 use crate::chain_util::{
     confirm_event, sign_job_response_request, sign_reassign_gateway_relay_request,
-    sign_relay_job_request, LogsProvider,
+    sign_relay_job_request, HttpProvider, HttpProviderLogs, LogsProvider,
 };
 use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
-    MIN_GATEWAY_STAKE, REQUEST_RELAY_TIMEOUT,
+    COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
+    COMMON_CHAIN_JOB_RELAYED_EVENT, COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT,
+    COMMON_CHAIN_JOB_RESPONDED_EVENT, GATEWAY_BLOCK_STATES_TO_MAINTAIN,
+    GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES, MIN_GATEWAY_STAKE,
+    REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT, REQUEST_CHAIN_JOB_CANCELLED_EVENT,
+    REQUEST_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+    REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT, REQUEST_RELAY_TIMEOUT,
 };
 use crate::error::ServerlessError;
+use crate::job_subscription_management::{
+    add_subscription_job, job_subscription_manager, process_historic_job_subscriptions,
+    update_subscription_job_params, update_subscription_job_termination_params,
+};
 use crate::model::{
-    AppState, ContractsClient, GatewayData, GatewayJobType, Job, RegisterType, RegisteredData,
-    RequestChainClient, ResponseJob,
+    AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobMode, JobSubscriptionAction,
+    JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob,
 };
 
 impl ContractsClient {
@@ -43,15 +54,13 @@ impl ContractsClient {
         let common_chain_registered_filter = Filter::new()
             .address(self.gateways_contract_address)
             .select(common_chain_block_number..)
-            .topic0(vec![keccak256(
-                "GatewayRegistered(address,address,uint256[])",
-            )])
+            .topic0(vec![keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT)])
             .topic1(self.enclave_address)
             .topic2(self.enclave_owner);
 
         let tx_clone = tx.clone();
         let self_clone = Arc::clone(&self);
-        task::spawn(async move {
+        tokio::spawn(async move {
             'socket_loop: loop {
                 let common_chain_ws_provider =
                     match Provider::<Ws>::connect(&self_clone.common_chain_ws_url).await {
@@ -97,15 +106,15 @@ impl ContractsClient {
         // listen to all the request chains for the GatewayRegistered event
         for request_chain_client in self.request_chain_clients.values().cloned() {
             let request_chain_registered_filter = Filter::new()
-                .address(request_chain_client.contract_address)
+                .address(request_chain_client.relay_address)
                 .select(request_chain_client.request_chain_start_block_number..)
-                .topic0(vec![keccak256("GatewayRegistered(address,address)")])
+                .topic0(vec![keccak256(REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT)])
                 .topic1(self.enclave_owner)
                 .topic2(self.enclave_address);
 
             let tx_clone = tx.clone();
             let request_chain_client_clone = request_chain_client.clone();
-            task::spawn(async move {
+            tokio::spawn(async move {
                 'socket_loop: loop {
                     let request_chain_ws_provider = match Provider::<Ws>::connect(
                         request_chain_client_clone.ws_rpc_url.clone(),
@@ -210,12 +219,41 @@ impl ContractsClient {
             });
         }
 
+        // Start the job subscription management service
+        let (job_subscription_tx, job_subscription_rx) = channel::<JobSubscriptionChannelType>(100);
+        {
+            let contracts_client_clone = self.clone();
+            let req_chain_tx_clone = req_chain_tx.clone();
+            let job_subscription_tx_clone = job_subscription_tx.clone();
+
+            tokio::spawn(async move {
+                process_historic_job_subscriptions(
+                    &contracts_client_clone,
+                    req_chain_tx_clone,
+                    job_subscription_tx_clone,
+                )
+                .await;
+            });
+
+            let contracts_client_clone = self.clone();
+            let req_chain_tx_clone = req_chain_tx.clone();
+
+            tokio::spawn(async move {
+                let _ = job_subscription_manager(
+                    contracts_client_clone,
+                    job_subscription_rx,
+                    req_chain_tx_clone,
+                )
+                .await;
+            });
+        }
+
         let self_clone = Arc::clone(&self);
         tokio::spawn(async move {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
         let _ = &self
-            .handle_all_req_chain_events(req_chain_tx.clone())
+            .handle_all_req_chain_events(req_chain_tx.clone(), job_subscription_tx)
             .await?;
 
         // setup for the listening events on Common Chain and calling Request Chain functions
@@ -230,18 +268,27 @@ impl ContractsClient {
         Ok(())
     }
 
-    async fn handle_all_req_chain_events(self: &Arc<Self>, tx: Sender<Job>) -> Result<()> {
+    async fn handle_all_req_chain_events(
+        self: &Arc<Self>,
+        req_chain_tx: Sender<Job>,
+        job_subscription_tx: Sender<JobSubscriptionChannelType>,
+    ) -> Result<()> {
         info!("Initializing Request Chain Clients for all request chains...");
         let chains_ids = self.request_chain_ids.clone();
 
         for chain_id in chains_ids {
             let self_clone = Arc::clone(&self);
-            let tx_clone = tx.clone();
+            let req_chain_tx_clone = req_chain_tx.clone();
+            let job_subscription_tx_clone = job_subscription_tx.clone();
 
             // Spawn a new task for each Request Chain Contract
-            task::spawn(async move {
+            tokio::spawn(async move {
                 _ = self_clone
-                    .handle_single_request_chain_events(tx_clone, chain_id)
+                    .handle_single_request_chain_events(
+                        req_chain_tx_clone,
+                        chain_id,
+                        job_subscription_tx_clone,
+                    )
                     .await;
             });
         }
@@ -249,7 +296,12 @@ impl ContractsClient {
         Ok(())
     }
 
-    async fn handle_single_request_chain_events(self: &Arc<Self>, tx: Sender<Job>, chain_id: u64) {
+    async fn handle_single_request_chain_events(
+        self: &Arc<Self>,
+        req_chain_tx: Sender<Job>,
+        chain_id: u64,
+        job_subscription_tx: Sender<JobSubscriptionChannelType>,
+    ) {
         loop {
             let req_chain_ws_client =
                 match Provider::<Ws>::connect(&self.request_chain_clients[&chain_id].ws_rpc_url)
@@ -275,53 +327,97 @@ impl ContractsClient {
                     continue;
                 }
 
-                if topics[0]
-                == keccak256(
-                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                )
-                .into()
-                {
+                if topics[0] == keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into() {
                     info!(
                         "Request Chain ID: {:?}, JobPlace jobID: {:?}",
                         chain_id, log.topics[1]
                     );
 
                     let self_clone = Arc::clone(&self);
-                    let tx_clone = tx.clone();
-                    task::spawn(async move {
-                        // TODO: what to do in case of error? Let it panic or return None?
+                    let req_chain_tx_clone = req_chain_tx.clone();
+                    tokio::spawn(async move {
                         let job = self_clone
-                            .get_job_from_job_relay_event(
-                                log,
-                                1u8,
-                                chain_id
-                            )
+                            .get_job_from_job_relay_event(log, 1u8, chain_id)
                             .await;
                         if job.is_ok() {
-                            self_clone.job_placed_handler(
-                                job.unwrap(),
-                                tx_clone.clone(),
-                            )
-                            .await;
+                            self_clone
+                                .job_relayed_handler(job.unwrap(), req_chain_tx_clone.clone())
+                                .await;
                         }
                     });
-                } else if topics[0] == keccak256("JobCancelled(uint256)").into() {
+                } else if topics[0] == keccak256(REQUEST_CHAIN_JOB_CANCELLED_EVENT).into() {
                     info!(
                         "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
                         chain_id, log.topics[1]
                     );
 
                     let self_clone = Arc::clone(&self);
-                    task::spawn(async move {
-                        self_clone.cancel_job_with_job_id(
-                            log.topics[1].into_uint(),
-                        ).await;
+                    tokio::spawn(async move {
+                        self_clone
+                            .cancel_job_with_job_id(log.topics[1].into_uint())
+                            .await;
+                    });
+                } else if topics[0]
+                    == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into()
+                {
+                    let subscription_id: U256 = log.topics[1].into_uint();
+
+                    info!(
+                        "Request Chain ID: {:?}, JobSubscriptionStarted jobID: {:?}",
+                        chain_id, subscription_id
+                    );
+
+                    let self_clone = Arc::clone(&self);
+                    let req_chain_tx_clone = req_chain_tx.clone();
+                    let job_subscription_tx_clone = job_subscription_tx.clone();
+
+                    tokio::spawn(async move {
+                        let res = add_subscription_job(
+                            &self_clone,
+                            log,
+                            chain_id,
+                            req_chain_tx_clone,
+                            false,
+                        );
+
+                        if res.is_ok() {
+                            job_subscription_tx_clone
+                                .send(JobSubscriptionChannelType {
+                                    subscription_action: JobSubscriptionAction::Add,
+                                    subscription_id,
+                                })
+                                .await
+                                .unwrap();
+                        }
+                    });
+                } else if topics[0]
+                    == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT).into()
+                {
+                    info!(
+                        "Request Chain ID: {:?}, JobSubscriptionJobParamsUpdated jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
+
+                    let self_clone = Arc::clone(&self);
+
+                    tokio::spawn(async move {
+                        let _ = update_subscription_job_params(&self_clone, log);
+                    });
+                } else if topics[0]
+                    == keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT)
+                        .into()
+                {
+                    info!(
+                        "Request Chain ID: {:?}, JobSubscriptionTerminationParamsUpdated jobID: {:?}",
+                        chain_id, log.topics[1]
+                    );
+
+                    let self_clone = Arc::clone(&self);
+                    tokio::spawn(async move {
+                        let _ = update_subscription_job_termination_params(&self_clone, log);
                     });
                 } else {
-                    error!(
-                        "Request Chain ID: {:?}, Unknown event: {:?}",
-                        chain_id, log
-                    );
+                    error!("Request Chain ID: {:?}, Unknown event: {:?}", chain_id, log);
                 }
             }
         }
@@ -368,10 +464,11 @@ impl ContractsClient {
             job_type: GatewayJobType::JobRelay,
             sequence_number,
             gateway_address: None,
+            job_mode: JobMode::Once,
         })
     }
 
-    pub async fn job_placed_handler(self: Arc<Self>, mut job: Job, tx: Sender<Job>) {
+    pub async fn job_relayed_handler(self: Arc<Self>, mut job: Job, tx: Sender<Job>) {
         let gateway_address = self
             .select_gateway_for_job_id(
                 job.clone(),
@@ -407,8 +504,12 @@ impl ContractsClient {
                             .insert(job.job_id, job.clone());
                     }
                     let self_clone = Arc::clone(&self);
-                    task::spawn(async move {
-                        self_clone.job_relayed_slash_timer(job, None, tx).await;
+                    tokio::spawn(async move {
+                        let common_chain_http_provider =
+                            HttpProvider::new(self_clone.common_chain_http_url.clone());
+                        self_clone
+                            .job_relayed_slash_timer(job, None, tx, &common_chain_http_provider)
+                            .await;
                     });
                 }
             }
@@ -421,11 +522,12 @@ impl ContractsClient {
         }
     }
 
-    async fn job_relayed_slash_timer(
+    async fn job_relayed_slash_timer<'a, P: HttpProviderLogs>(
         self: Arc<Self>,
         job: Job,
         mut job_timeout: Option<u64>,
         tx: Sender<Job>,
+        common_chain_http_provider: &'a P,
     ) {
         if job_timeout.is_none() {
             job_timeout = Some(REQUEST_RELAY_TIMEOUT);
@@ -437,18 +539,15 @@ impl ContractsClient {
         // SOLUTION 1 - Wait for the next block.
         //          Problem: Extra time spent here waiting.
 
-        let common_chain_http_provider: Provider<Http> =
-            Provider::<Http>::try_from(&self.common_chain_http_url).unwrap();
-
         let logs = self
-            .gateways_job_relayed_logs(job.clone(), &common_chain_http_provider)
+            .gateways_job_relayed_logs(job.clone(), common_chain_http_provider)
             .await
             .context("Failed to get logs")
             .unwrap();
 
         for log in logs {
             let ref topics = log.topics;
-            if topics[0] == keccak256("JobRelayed(uint256,uint256,address,address)").into() {
+            if topics[0] == keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into() {
                 let decoded = decode(
                     &vec![ParamType::Uint(256), ParamType::Address, ParamType::Address],
                     &log.data.0,
@@ -771,14 +870,14 @@ impl ContractsClient {
             while let Some(log) = stream.next().await {
                 let ref topics = log.topics;
 
-                if topics[0] == keccak256("JobResponded(uint256,bytes,uint256,uint8)").into() {
+                if topics[0] == keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT).into() {
                     info!(
                         "JobResponded event triggered for Job ID: {:?}",
                         log.topics[1]
                     );
                     let self_clone = Arc::clone(&self);
                     let com_chain_tx = com_chain_tx.clone();
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         let response_job_result =
                             self_clone.get_job_from_job_responded_event(log).await;
                         match response_job_result {
@@ -795,19 +894,18 @@ impl ContractsClient {
                             }
                         }
                     });
-                } else if topics[0] == keccak256("JobResourceUnavailable(uint256,address)").into() {
+                } else if topics[0] == keccak256(COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT).into()
+                {
                     info!("JobResourceUnavailable event triggered");
                     let self_clone = Arc::clone(&self);
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         self_clone.job_resource_unavailable_handler(log).await;
                     });
-                } else if topics[0]
-                    == keccak256("GatewayReassigned(uint256,address,address,uint8)").into()
-                {
+                } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT).into() {
                     info!("GatewayReassigned for Job ID: {:?}", log.topics[1]);
                     let self_clone = Arc::clone(&self);
                     let req_chain_tx = req_chain_tx.clone();
-                    task::spawn(async move {
+                    tokio::spawn(async move {
                         self_clone
                             .gateway_reassigned_handler(log, req_chain_tx)
                             .await;
@@ -845,6 +943,7 @@ impl ContractsClient {
             }
         };
         let request_chain_id = job.request_chain_id;
+        let job_mode = job.job_mode;
 
         Ok(ResponseJob {
             job_id,
@@ -854,6 +953,7 @@ impl ContractsClient {
             error_code: decoded[2].clone().into_uint().unwrap().low_u64() as u8,
             job_type: GatewayJobType::JobResponded,
             gateway_address: None,
+            job_mode,
             // sequence_number: 1,
         })
     }
@@ -1041,8 +1141,8 @@ impl ContractsClient {
         job.gateway_address = None;
 
         let self_clone = Arc::clone(&self);
-        task::spawn(async move {
-            self_clone.job_placed_handler(job, req_chain_tx).await;
+        tokio::spawn(async move {
+            self_clone.job_relayed_handler(job, req_chain_tx).await;
         });
     }
 
@@ -1073,14 +1173,17 @@ impl ContractsClient {
     async fn job_response_txn(self: &Arc<Self>, response_job: ResponseJob) {
         info!("Creating a transaction for jobResponse");
 
+        let response_job_id = response_job.job_id;
+
         let req_chain_client = &self.request_chain_clients[&response_job.request_chain_id];
 
         let (signature, sign_timestamp) = sign_job_response_request(
             &self.enclave_signer_key,
-            response_job.job_id,
+            response_job_id,
             response_job.output.clone(),
             response_job.total_time,
             response_job.error_code,
+            response_job.job_mode,
         )
         .await
         .unwrap();
@@ -1089,14 +1192,34 @@ impl ContractsClient {
             return;
         };
 
-        let txn = req_chain_client.contract.read().unwrap().job_response(
-            signature,
-            response_job.job_id,
-            response_job.output,
-            response_job.total_time,
-            response_job.error_code,
-            sign_timestamp.into(),
-        );
+        let txn;
+        if response_job.job_mode == JobMode::Once {
+            txn = req_chain_client
+                .relay_contract
+                .read()
+                .unwrap()
+                .job_response(
+                    signature,
+                    response_job_id,
+                    response_job.output,
+                    response_job.total_time,
+                    response_job.error_code,
+                    sign_timestamp.into(),
+                );
+        } else {
+            txn = req_chain_client
+                .relay_subscriptions_contract
+                .read()
+                .unwrap()
+                .job_subs_response(
+                    signature,
+                    response_job_id,
+                    response_job.output,
+                    response_job.total_time,
+                    response_job.error_code,
+                    sign_timestamp.into(),
+                );
+        }
 
         for i in 0..3 {
             let pending_txn = txn.send().await;
@@ -1156,9 +1279,9 @@ impl LogsProvider for ContractsClient {
             .address(self.gateway_jobs_contract.read().unwrap().address())
             .select(common_chain_start_block_number..)
             .topic0(vec![
-                keccak256("JobResponded(uint256,bytes,uint256,uint8)"),
-                keccak256("JobResourceUnavailable(uint256,address)"),
-                keccak256("GatewayReassigned(uint256,address,address,uint8)"),
+                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT),
+                keccak256(COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT),
+                keccak256(COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT),
             ]);
 
         let stream = common_chain_ws_provider
@@ -1179,15 +1302,18 @@ impl LogsProvider for ContractsClient {
             "Subscribing to events for Req Chain chain_id: {}",
             req_chain_client.chain_id
         );
-
         let event_filter = Filter::new()
-            .address(req_chain_client.contract_address)
+            .address(vec![
+                req_chain_client.relay_address,
+                req_chain_client.relay_subscriptions_address,
+            ])
             .select(req_chain_client.request_chain_start_block_number..)
             .topic0(vec![
-                keccak256(
-                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                ),
-                keccak256("JobCancelled(uint256)"),
+                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_CANCELLED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
             ]);
 
         // register subscription
@@ -1213,11 +1339,10 @@ impl LogsProvider for ContractsClient {
         Ok(stream)
     }
 
-    #[cfg(not(test))]
-    async fn gateways_job_relayed_logs<'a>(
+    async fn gateways_job_relayed_logs<'a, P: HttpProviderLogs>(
         &'a self,
         job: Job,
-        common_chain_http_provider: &'a Provider<Http>,
+        common_chain_http_provider: &'a P,
     ) -> Result<Vec<Log>> {
         let common_chain_start_block_number =
             self.common_chain_start_block_number.lock().unwrap().clone();
@@ -1225,9 +1350,7 @@ impl LogsProvider for ContractsClient {
         let job_relayed_event_filter = Filter::new()
             .address(self.gateway_jobs_contract.read().unwrap().address())
             .select(common_chain_start_block_number..)
-            .topic0(vec![keccak256(
-                "JobRelayed(uint256,uint256,address,address)",
-            )])
+            .topic0(vec![keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT)])
             .topic1(job.job_id);
 
         let logs = common_chain_http_provider
@@ -1238,989 +1361,39 @@ impl LogsProvider for ContractsClient {
         Ok(logs)
     }
 
-    #[cfg(test)]
-    async fn gateways_job_relayed_logs<'a>(
+    async fn request_chain_historic_subscription_jobs<'a, P: HttpProviderLogs>(
         &'a self,
-        job: Job,
-        _common_chain_http_provider: &'a Provider<Http>,
+        req_chain_client: &'a RequestChainClient,
+        http_provider: &'a P,
     ) -> Result<Vec<Log>> {
-        use ethers::abi::{encode, Token};
-        use ethers::prelude::*;
+        let event_filter = Filter::new()
+            .address(req_chain_client.relay_subscriptions_address)
+            .select(..req_chain_client.request_chain_start_block_number - 1)
+            .topic0(vec![
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
+                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
+            ]);
 
-        if job.job_id == U256::from(1) {
-            Ok(vec![Log {
-                address: self.gateway_jobs_contract.read().unwrap().address(),
-                topics: vec![
-                    keccak256("JobRelayed(uint256,uint256,address,address)").into(),
-                    H256::from_uint(&job.job_id),
-                ],
-                data: encode(&[
-                    Token::Uint(U256::from(100)),
-                    Token::Address(job.job_owner),
-                    Token::Address(job.gateway_address.unwrap()),
-                ])
-                .into(),
-                ..Default::default()
-            }])
-        } else {
-            Ok(vec![Log {
-                address: Address::default(),
-                topics: vec![H256::default(), H256::default(), H256::default()],
-                data: Bytes::default(),
-                ..Default::default()
-            }])
-        }
+        let logs = http_provider.get_logs(&event_filter).await.unwrap();
+        Ok(logs)
     }
 }
 
 #[cfg(test)]
-mod serverless_executor_test {
-    use std::collections::{BTreeMap, BTreeSet};
+mod common_chain_interaction_tests {
     use std::str::FromStr;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Mutex;
 
-    use abi::{encode, encode_packed, Token};
-    use actix_web::{
-        body::MessageBody,
-        dev::{ServiceFactory, ServiceRequest, ServiceResponse},
-        http, test, App, Error,
-    };
+    use abi::{encode, Token};
     use ethers::types::{Address, Bytes as EthBytes, H160};
-    use ethers::utils::public_key_to_address;
-    use k256::ecdsa::SigningKey;
-    use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
-    use rand::rngs::OsRng;
-    use serde::{Deserialize, Serialize};
     use serde_json::json;
 
-    use crate::api_impl::{
-        export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
-        inject_mutable_config,
+    use crate::test_util::{
+        add_gateway_epoch_state, generate_contracts_client, MockHttpProvider, CHAIN_ID,
+        GATEWAY_JOBS_CONTRACT_ADDR, RELAY_CONTRACT_ADDR,
     };
 
     use super::*;
-
-    // Testnet or Local blockchain (Hardhat) configurations
-    const CHAIN_ID: u64 = 421614;
-    const HTTP_RPC_URL: &str = "https://sepolia-rollup.arbitrum.io/rpc";
-    const WS_URL: &str = "wss://arbitrum-sepolia.infura.io/ws/v3/cd72f20b9fd544f8a5b8da706441e01c";
-    const GATEWAY_CONTRACT_ADDR: &str = "0x819d9b4087D88359B6d7fFcd16F17A13Ca79fd0E";
-    const JOB_CONTRACT_ADDR: &str = "0xAc6Ae536203a3ec290ED4aA1d3137e6459f4A963";
-    const RELAY_CONTRACT_ADDR: &str = "0xaF7E4CB6B3729C65c4a9a63d89Ae04e97C9093C4";
-    const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-    const GAS_WALLET_KEY: &str = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
-    const GAS_WALLET_PUBLIC_ADDRESS: &str = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
-    const EPOCH: u64 = 1713433800;
-    const TIME_INTERVAL: u64 = 300;
-    const OFFSET_FOR_EPCOH: u64 = 20;
-
-    #[derive(Serialize, Deserialize, Debug)]
-    struct SignedRegistrationResponse {
-        owner: H160,
-        sign_timestamp: usize,
-        chain_ids: Vec<u64>,
-        common_chain_signature: String,
-        request_chain_signature: String,
-    }
-
-    // Generate test app state
-    async fn generate_app_state() -> Data<AppState> {
-        // Initialize random 'secp256k1' signing key for the enclave
-        let signer_key = SigningKey::random(&mut OsRng);
-
-        Data::new(AppState {
-            enclave_signer_key: signer_key.clone(),
-            enclave_address: public_key_to_address(&signer_key.verifying_key()),
-            wallet: None.into(),
-            common_chain_id: CHAIN_ID,
-            common_chain_http_url: HTTP_RPC_URL.to_owned(),
-            common_chain_ws_url: WS_URL.to_owned(),
-            gateways_contract_addr: GATEWAY_CONTRACT_ADDR.parse::<Address>().unwrap(),
-            gateway_jobs_contract_addr: JOB_CONTRACT_ADDR.parse::<Address>().unwrap(),
-            request_chain_ids: HashSet::new().into(),
-            registered: Arc::new(AtomicBool::new(false)),
-            registration_events_listener_active: false.into(),
-            epoch: EPOCH,
-            time_interval: TIME_INTERVAL,
-            offset_for_epoch: OFFSET_FOR_EPCOH,
-            enclave_owner: H160::zero().into(),
-            immutable_params_injected: Mutex::new(false),
-            mutable_params_injected: Arc::new(AtomicBool::new(false)),
-            contracts_client: Mutex::new(None),
-        })
-    }
-
-    // Return the actix server with the provided app state
-    fn new_app(
-        app_state: Data<AppState>,
-    ) -> App<
-        impl ServiceFactory<
-            ServiceRequest,
-            Response = ServiceResponse<impl MessageBody + std::fmt::Debug>,
-            Config = (),
-            InitError = (),
-            Error = Error,
-        >,
-    > {
-        App::new()
-            .app_data(app_state)
-            .service(index)
-            .service(inject_immutable_config)
-            .service(inject_mutable_config)
-            .service(export_signed_registration_message)
-            .service(get_gateway_details)
-    }
-
-    // Test the various response cases for the 'immutable-config' endpoint
-    #[actix_web::test]
-    async fn inject_immutable_config_test() {
-        let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
-
-        // Inject invalid hex address string
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": "0x32255"
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: Invalid input length".as_bytes()
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
-
-        // Inject invalid hex character address
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": "0xzfffffffffffffffffffffffffffffffffffffff"
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: Invalid character 'z' at position 0".as_bytes()
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
-
-        // Inject a valid address
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!"
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.enclave_owner.lock().unwrap(),
-            H160::from_str(OWNER_ADDRESS).unwrap()
-        );
-
-        // Inject the valid address again
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params already configured!"
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.enclave_owner.lock().unwrap(),
-            H160::from_str(OWNER_ADDRESS).unwrap()
-        );
-    }
-
-    fn wallet_from_hex(hex: &str) -> LocalWallet {
-        let mut bytes32 = [0u8; 32];
-        let _ = hex::decode_to_slice(hex, &mut bytes32);
-        LocalWallet::from_bytes(&bytes32)
-            .unwrap()
-            .with_chain_id(CHAIN_ID)
-    }
-
-    // Test the various response cases for the 'mutable-config' endpoint
-    #[actix_web::test]
-    async fn inject_mutable_config_test() {
-        let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
-
-        // Inject invalid hex private key string
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "0x32255"
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Failed to hex decode the gas private key into 32 bytes: OddLength".as_bytes()
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
-
-        // Inject invalid private(signing) key
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffff"
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Failed to hex decode the gas private key into 32 bytes: InvalidStringLength"
-                .as_bytes()
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
-
-        // Inject invalid gas private key hex string (not ecdsa valid key)
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })"
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
-
-        // Inject a valid private key for gas wallet
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(wallet_from_hex(GAS_WALLET_KEY))
-        );
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(app_state.contracts_client.lock().unwrap().is_none());
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-
-        // Build contracts client to verify the contracts client public address
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                    "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .gateway_jobs_contract
-                .read()
-                .unwrap()
-                .client()
-                .inner()
-                .signer()
-                .address(),
-            GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
-        );
-
-        // Inject the same valid private key for gas wallet again
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::NOT_ACCEPTABLE);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "The same wallet address already set."
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(wallet_from_hex(GAS_WALLET_KEY))
-        );
-        assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .gateway_jobs_contract
-                .read()
-                .unwrap()
-                .client()
-                .inner()
-                .signer()
-                .address(),
-            GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
-        );
-
-        const GAS_WALLET_KEY_2: &str =
-            "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
-        const GAS_WALLET_PUBLIC_ADDRESS_2: &str = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
-
-        // Inject another valid private key for gas wallet
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY_2
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(wallet_from_hex(GAS_WALLET_KEY_2))
-        );
-        assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .gateway_jobs_contract
-                .read()
-                .unwrap()
-                .client()
-                .inner()
-                .signer()
-                .address(),
-            GAS_WALLET_PUBLIC_ADDRESS_2.parse::<Address>().unwrap()
-        );
-    }
-
-    fn recover_key(
-        chain_ids: Vec<u64>,
-        enclave_owner: H160,
-        sign_timestamp: usize,
-        common_chain_signature: String,
-        request_chain_signature: String,
-        verifying_key: VerifyingKey,
-    ) -> bool {
-        let common_chain_register_typehash =
-            keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
-
-        let chain_ids = chain_ids.into_iter().collect::<BTreeSet<u64>>();
-        let chain_ids_tokens: Vec<Token> = chain_ids
-            .clone()
-            .into_iter()
-            .map(|x| Token::Uint(x.into()))
-            .collect::<Vec<Token>>();
-        let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids_tokens)]).unwrap());
-        let hash_struct = keccak256(encode(&[
-            Token::FixedBytes(common_chain_register_typehash.to_vec()),
-            Token::Address(enclave_owner),
-            Token::FixedBytes(chain_ids_bytes.into()),
-            Token::Uint(sign_timestamp.into()),
-        ]));
-
-        let domain_separator = keccak256(encode(&[
-            Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-            Token::FixedBytes(keccak256("marlin.oyster.Gateways").to_vec()),
-            Token::FixedBytes(keccak256("1").to_vec()),
-        ]));
-
-        let digest = encode_packed(&[
-            Token::String("\x19\x01".to_string()),
-            Token::FixedBytes(domain_separator.to_vec()),
-            Token::FixedBytes(hash_struct.to_vec()),
-        ])
-        .unwrap();
-        let digest = keccak256(digest);
-
-        let signature = Signature::from_slice(
-            hex::decode(&common_chain_signature[0..128])
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
-        let v =
-            RecoveryId::try_from((hex::decode(&common_chain_signature[128..]).unwrap()[0]) - 27)
-                .unwrap();
-        let common_chain_recovered_key =
-            VerifyingKey::recover_from_prehash(&digest, &signature, v).unwrap();
-
-        if common_chain_recovered_key != verifying_key {
-            return false;
-        }
-
-        // create request chain signature and add it to the request chain signatures map
-        let request_chain_register_typehash =
-            keccak256("Register(address owner,uint256 signTimestamp)");
-        let hash_struct = keccak256(encode(&[
-            Token::FixedBytes(request_chain_register_typehash.to_vec()),
-            Token::Address(enclave_owner),
-            Token::Uint(sign_timestamp.into()),
-        ]));
-
-        let request_chain_domain_separator = keccak256(encode(&[
-            Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-            Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
-            Token::FixedBytes(keccak256("1").to_vec()),
-        ]));
-
-        let digest = encode_packed(&[
-            Token::String("\x19\x01".to_string()),
-            Token::FixedBytes(request_chain_domain_separator.to_vec()),
-            Token::FixedBytes(hash_struct.to_vec()),
-        ])
-        .unwrap();
-        let digest = keccak256(digest);
-
-        let signature = Signature::from_slice(
-            hex::decode(&request_chain_signature[0..128])
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
-        let v =
-            RecoveryId::try_from((hex::decode(&request_chain_signature[128..]).unwrap()[0]) - 27)
-                .unwrap();
-        let request_chain_recovered_key =
-            VerifyingKey::recover_from_prehash(&digest, &signature, v).unwrap();
-
-        if request_chain_recovered_key != verifying_key {
-            return false;
-        }
-
-        true
-    }
-
-    #[actix_web::test]
-    async fn export_signed_registration_message_test() {
-        let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
-
-        // Get signature without injecting the operator's address or gas key
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params not configured yet!"
-        );
-        assert!(!*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
-
-        // Inject a valid address into the enclave
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!"
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
-
-        // Get signature without injecting a gas key
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params not configured yet!"
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
-
-        // Inject a valid private key
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
-
-        // Get signature with invalid chain id
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": ["invalid u64"]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert!(resp.into_body().try_into_bytes().unwrap().starts_with(
-            "Json deserialize error: invalid type: string \"invalid u64\"".as_bytes()
-        ));
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
-
-        // Get signature with no chain_ids field in json
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({}))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert!(resp
-            .into_body()
-            .try_into_bytes()
-            .unwrap()
-            .starts_with("Json deserialize error: missing field `chain_ids`".as_bytes()));
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(!*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
-
-        // Get signature with valid data points
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                    "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        let response: Result<SignedRegistrationResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
-        assert!(response.is_ok());
-
-        let mut chain_id_set: HashSet<u64> = HashSet::new();
-        chain_id_set.insert(CHAIN_ID);
-
-        let verifying_key = app_state.enclave_signer_key.verifying_key().to_owned();
-
-        let response = response.unwrap();
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), chain_id_set);
-        assert_eq!(response.owner, *app_state.enclave_owner.lock().unwrap());
-        assert_eq!(response.common_chain_signature.len(), 130);
-        assert_eq!(response.request_chain_signature.len(), 130);
-        assert!(recover_key(
-            vec![CHAIN_ID],
-            *app_state.enclave_owner.lock().unwrap(),
-            response.sign_timestamp,
-            response.common_chain_signature,
-            response.request_chain_signature,
-            verifying_key
-        ));
-
-        // Get signature again with the same chain ids
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        let response: Result<SignedRegistrationResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
-        assert!(response.is_ok());
-
-        let mut chain_id_set: HashSet<u64> = HashSet::new();
-        chain_id_set.insert(CHAIN_ID);
-
-        let verifying_key = app_state.enclave_signer_key.verifying_key().to_owned();
-
-        let response = response.unwrap();
-        assert!(*app_state.immutable_params_injected.lock().unwrap());
-        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert!(!app_state.registered.load(Ordering::SeqCst));
-        assert!(*app_state
-            .registration_events_listener_active
-            .lock()
-            .unwrap());
-        assert_eq!(*app_state.request_chain_ids.lock().unwrap(), chain_id_set);
-        assert_eq!(response.owner, *app_state.enclave_owner.lock().unwrap());
-        assert_eq!(response.common_chain_signature.len(), 130);
-        assert_eq!(response.request_chain_signature.len(), 130);
-        assert!(recover_key(
-            vec![CHAIN_ID],
-            *app_state.enclave_owner.lock().unwrap(),
-            response.sign_timestamp,
-            response.common_chain_signature,
-            response.request_chain_signature,
-            verifying_key
-        ));
-
-        // Get signature with a different chain id
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": [CHAIN_ID + 1]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            json!({
-                    "message": "Request chain ids mismatch!",
-                    "chain_ids": [CHAIN_ID],
-            })
-            .to_string()
-            .try_into_bytes()
-            .unwrap()
-        );
-
-        // After on chain registration
-        app_state.registered.store(true, Ordering::SeqCst);
-
-        // Get signature after registration
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Enclave has already been registered."
-        );
-    }
-
-    #[actix_web::test]
-    async fn get_gateway_details_test() {
-        let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
-
-        // Get gateway details without adding wallet and gas key
-        let req = test::TestRequest::get()
-            .uri("/gateway-details")
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params not configured yet!"
-        );
-
-        // Inject a valid address into the enclave
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!"
-        );
-
-        // Get gateway details without gas key
-        let req = test::TestRequest::get()
-            .uri("/gateway-details")
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params not configured yet!"
-        );
-
-        // Inject a valid private gas key
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
-
-        // Get gateway details
-        let req = test::TestRequest::get()
-            .uri("/gateway-details")
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        assert_eq!(
-            json!({
-                "enclave_public_key": "0x".to_string() + &hex::encode(
-                    &app_state.enclave_signer_key.verifying_key().to_encoded_point(false).as_bytes()[1..]
-                ),
-                "enclave_address": app_state.enclave_address,
-                "owner_address": *app_state.enclave_owner.lock().unwrap(),
-                "gas_address": app_state.wallet.lock().unwrap().clone().unwrap().address(),
-            }).to_string().try_into_bytes().unwrap(),
-            &resp.into_body().try_into_bytes().unwrap(),
-        );
-    }
-
-    async fn generate_contracts_client() -> Arc<ContractsClient> {
-        let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
-
-        // add immutable config
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
-        test::call_service(&app, req).await;
-
-        // add mutable config
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-        test::call_service(&app, req).await;
-
-        // Get signature with valid data points
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                "chain_ids": [CHAIN_ID]
-            }))
-            .to_request();
-
-        test::call_service(&app, req).await;
-
-        let contracts_client = app_state.contracts_client.lock().unwrap().clone().unwrap();
-
-        contracts_client
-    }
-
-    async fn add_gateway_epoch_state(
-        contracts_client: Arc<ContractsClient>,
-        num: Option<u64>,
-        add_self: Option<bool>,
-    ) {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let current_cycle = (ts - contracts_client.epoch - contracts_client.offset_for_epoch)
-            / contracts_client.time_interval;
-
-        let add_self = add_self.unwrap_or(true);
-
-        let mut gateway_epoch_state_guard = contracts_client.gateway_epoch_state.write().unwrap();
-
-        let mut num = num.unwrap_or(1);
-
-        if add_self {
-            gateway_epoch_state_guard
-                .entry(current_cycle)
-                .or_insert(BTreeMap::new())
-                .insert(
-                    contracts_client.enclave_address,
-                    GatewayData {
-                        last_block_number: 5600 as u64,
-                        address: contracts_client.enclave_address,
-                        stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
-                        req_chain_ids: BTreeSet::from([CHAIN_ID]),
-                        draining: false,
-                    },
-                );
-
-            num -= 1;
-        }
-
-        for _ in 0..num {
-            gateway_epoch_state_guard
-                .entry(current_cycle)
-                .or_insert(BTreeMap::new())
-                .insert(
-                    Address::random(),
-                    GatewayData {
-                        last_block_number: 5600 as u64,
-                        address: Address::random(),
-                        stake_amount: U256::from(2) * (*MIN_GATEWAY_STAKE),
-                        req_chain_ids: BTreeSet::from([CHAIN_ID]),
-                        draining: false,
-                    },
-                );
-        }
-    }
 
     async fn generate_job_relayed_log(job_id: Option<U256>, job_starttime: u64) -> Log {
         let job_id = job_id.unwrap_or(U256::from(1));
@@ -2228,10 +1401,7 @@ mod serverless_executor_test {
         Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256(
-                   "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                )
-                .into(),
+                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
                 H256::from_uint(&job_id),
             ],
             data: encode(&[
@@ -2266,9 +1436,9 @@ mod serverless_executor_test {
         let job_id = job_id.unwrap_or(U256::from(1));
 
         Log {
-            address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
+            address: H160::from_str(GATEWAY_JOBS_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256("JobResponded(uint256,bytes,uint8").into(),
+                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT).into(),
                 H256::from_uint(&job_id),
             ],
             data: encode(&[
@@ -2309,6 +1479,7 @@ mod serverless_executor_test {
             job_type: GatewayJobType::JobRelay,
             sequence_number: 1 as u8,
             gateway_address: None,
+            job_mode: JobMode::Once,
         }
     }
 
@@ -2323,10 +1494,11 @@ mod serverless_executor_test {
             error_code: 0 as u8,
             job_type: GatewayJobType::JobResponded,
             gateway_address: None,
+            job_mode: JobMode::Once,
         }
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_relay_event() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2347,17 +1519,15 @@ mod serverless_executor_test {
         assert_eq!(job, expected_job);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_relay_event_invalid_log() {
         let contracts_client = generate_contracts_client().await;
 
+        // Data is empty
         let log = Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256(
-                    "JobRelayed(uint256,bytes32,bytes,uint256,uint256,uint256,uint256,address,address,uint256,uint256)",
-                )
-                .into(),
+                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
                 H256::from_uint(&U256::from(1)),
             ],
             data: EthBytes::from(vec![0x00]),
@@ -2372,13 +1542,13 @@ mod serverless_executor_test {
         assert_eq!(job.err().unwrap(), ServerlessError::LogDecodeFailure);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id() {
         let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), None, None).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
 
         let gateway_address = contracts_client
             .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
@@ -2388,7 +1558,7 @@ mod serverless_executor_test {
         assert_eq!(gateway_address, contracts_client.enclave_address);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id_no_cycle_state() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2414,13 +1584,13 @@ mod serverless_executor_test {
         assert_eq!(waitlisted_jobs[0][0], job);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id_multiple_gateways() {
         let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
 
         let gateway_address = contracts_client
             .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
@@ -2452,14 +1622,14 @@ mod serverless_executor_test {
         assert_eq!(gateway_address, expected_gateway_address);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_select_gateway_for_job_id_multiple_gateways_seq_number() {
         let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
         job.sequence_number = 5;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
 
         let gateway_address = contracts_client
             .select_gateway_for_job_id(job.clone(), job.starttime.as_u64(), job.sequence_number)
@@ -2493,13 +1663,13 @@ mod serverless_executor_test {
 
     // TODO: Add select gateway for job id test - Error cases
 
-    #[actix_web::test]
-    async fn test_job_placed_handler() {
+    #[tokio::test]
+    async fn test_job_relayed_handler() {
         let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), None, None).await;
+        add_gateway_epoch_state(contracts_client.clone(), None, None, None).await;
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
@@ -2507,7 +1677,7 @@ mod serverless_executor_test {
         let contracts_client_clone = contracts_client.clone();
         tokio::spawn(async move {
             contracts_client_clone
-                .job_placed_handler(job_clone, req_chain_tx.clone())
+                .job_relayed_handler(job_clone, req_chain_tx.clone())
                 .await
         });
 
@@ -2540,13 +1710,13 @@ mod serverless_executor_test {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
-    async fn test_job_placed_handler_selected_gateway_not_self() {
+    #[tokio::test]
+    async fn test_job_relayed_handler_selected_gateway_not_self() {
         let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(4), Some(false)).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(4), Some(false), None).await;
 
         let (req_chain_tx, _com_chain_rx) = channel::<Job>(100);
 
@@ -2554,7 +1724,7 @@ mod serverless_executor_test {
         let contracts_client_clone = contracts_client.clone();
 
         contracts_client_clone
-            .job_placed_handler(job_clone, req_chain_tx.clone())
+            .job_relayed_handler(job_clone, req_chain_tx.clone())
             .await;
 
         assert_eq!(
@@ -2594,8 +1764,8 @@ mod serverless_executor_test {
         );
     }
 
-    #[actix_web::test]
-    async fn test_job_placed_handler_no_cycle_state() {
+    #[tokio::test]
+    async fn test_job_relayed_handler_no_cycle_state() {
         let contracts_client = generate_contracts_client().await;
 
         let job = generate_generic_job(None, None).await;
@@ -2604,7 +1774,7 @@ mod serverless_executor_test {
 
         contracts_client
             .clone()
-            .job_placed_handler(job.clone(), req_chain_tx.clone())
+            .job_relayed_handler(job.clone(), req_chain_tx.clone())
             .await;
 
         let waitlisted_jobs_hashmap = contracts_client
@@ -2629,13 +1799,13 @@ mod serverless_executor_test {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_slash_timer_txn_success() {
         let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(None, None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
         job.gateway_address = Some(
             contracts_client
                 .gateway_epoch_state
@@ -2652,20 +1822,21 @@ mod serverless_executor_test {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
+        let mock_provider = MockHttpProvider::new(Some(job.clone()));
         contracts_client
-            .job_relayed_slash_timer(job.clone(), Some(1), req_chain_tx)
+            .job_relayed_slash_timer(job.clone(), Some(1), req_chain_tx, &mock_provider)
             .await;
 
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_slash_timer_txn_fail_retry() {
         let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
         job.gateway_address = Some(
             contracts_client
                 .gateway_epoch_state
@@ -2682,9 +1853,11 @@ mod serverless_executor_test {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
+        let mock_provider = MockHttpProvider::new(Some(job.clone()));
+
         contracts_client
             .clone()
-            .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
+            .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx, &mock_provider)
             .await;
 
         if let Some(rx_job) = com_chain_rx.recv().await {
@@ -2697,13 +1870,13 @@ mod serverless_executor_test {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_job_relayed_slash_timer_txn_fail_max_retry() {
         let contracts_client = generate_contracts_client().await;
 
         let mut job = generate_generic_job(Some(U256::from(2)), None).await;
 
-        add_gateway_epoch_state(contracts_client.clone(), Some(5), None).await;
+        add_gateway_epoch_state(contracts_client.clone(), Some(5), None, None).await;
         job.gateway_address = Some(
             contracts_client
                 .gateway_epoch_state
@@ -2721,9 +1894,10 @@ mod serverless_executor_test {
 
         let (req_chain_tx, mut com_chain_rx) = channel::<Job>(100);
 
+        let mock_provider = MockHttpProvider::new(Some(job.clone()));
         contracts_client
             .clone()
-            .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx)
+            .job_relayed_slash_timer(job.clone(), Some(1 as u64), req_chain_tx, &mock_provider)
             .await;
 
         if let Some(rx_job) = com_chain_rx.recv().await {
@@ -2736,7 +1910,7 @@ mod serverless_executor_test {
         assert!(com_chain_rx.recv().await.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_cancel_job_with_job_id_single_active_job() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2757,7 +1931,7 @@ mod serverless_executor_test {
         assert_eq!(contracts_client.active_jobs.read().unwrap().len(), 0);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_cancel_job_with_job_id_multiple_active_jobs() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2793,7 +1967,7 @@ mod serverless_executor_test {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_cancel_job_with_job_id_no_active_jobs() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2809,7 +1983,7 @@ mod serverless_executor_test {
         assert_eq!(contracts_client.active_jobs.read().unwrap().len(), 0);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_responded_event_job_not_of_enclave() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2826,7 +2000,7 @@ mod serverless_executor_test {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_responded_event_job_of_enclave() {
         let contracts_client = generate_contracts_client().await;
 
@@ -2846,14 +2020,15 @@ mod serverless_executor_test {
         assert_eq!(job.unwrap(), expected_job);
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     async fn test_get_job_from_job_responded_event_job_of_enclave_invalid_log() {
         let contracts_client = generate_contracts_client().await;
 
+        // data is empty
         let log = Log {
-            address: H160::from_str(JOB_CONTRACT_ADDR).unwrap(),
+            address: H160::from_str(GATEWAY_JOBS_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256("JobResponded(uint256,bytes,uint8").into(),
+                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT).into(),
                 H256::from_low_u64_be(1),
             ],
             data: encode(&[Token::Bytes([].into())]).into(),

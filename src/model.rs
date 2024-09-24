@@ -3,12 +3,12 @@ use ethers::signers::LocalWallet;
 use ethers::types::{Address, Bytes, H160, U256};
 use k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::contract_abi::{GatewayJobsContract, RelayContract};
-use crate::HttpProvider;
+use crate::contract_abi::{GatewayJobsContract, RelayContract, RelaySubscriptionsContract};
+use crate::HttpProviderType;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -45,6 +45,23 @@ pub struct MutableConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignedRegistrationBody {
     pub chain_ids: Vec<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SignedRegistrationResponse {
+    pub owner: H160,
+    pub sign_timestamp: usize,
+    pub chain_ids: Vec<u64>,
+    pub common_chain_signature: String,
+    pub request_chain_signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GatewayDetailsResponse {
+    pub enclave_public_key: String,
+    pub enclave_address: H160,
+    pub owner_address: H160,
+    pub gas_address: Address,
 }
 
 pub enum RegisterType {
@@ -91,7 +108,7 @@ pub struct ContractsClient {
     pub common_chain_ws_url: String,
     pub common_chain_http_url: String,
     pub gateways_contract_address: Address,
-    pub gateway_jobs_contract: Arc<RwLock<GatewayJobsContract<HttpProvider>>>,
+    pub gateway_jobs_contract: Arc<RwLock<GatewayJobsContract<HttpProviderType>>>,
     pub request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_ids: HashSet<u64>,
@@ -102,11 +119,14 @@ pub struct ContractsClient {
     pub offset_for_epoch: u64,
     pub gateway_epoch_state_waitlist: Arc<RwLock<HashMap<u64, Vec<Job>>>>,
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
+    pub subscription_job_instance_heap: Arc<RwLock<BinaryHeap<SubscriptionJobInstanceHeap>>>,
+    pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RequestChainData {
-    pub contract_address: Address,
+    pub relay_address: Address,
+    pub relay_subscriptions_address: Address,
     pub http_rpc_url: String,
     pub ws_rpc_url: String,
     pub block_number: u64,
@@ -115,10 +135,12 @@ pub struct RequestChainData {
 #[derive(Debug, Clone)]
 pub struct RequestChainClient {
     pub chain_id: u64,
-    pub contract_address: Address,
+    pub relay_address: Address,
+    pub relay_subscriptions_address: Address,
     pub ws_rpc_url: String,
     pub http_rpc_url: String,
-    pub contract: Arc<RwLock<RelayContract<HttpProvider>>>,
+    pub relay_contract: Arc<RwLock<RelayContract<HttpProviderType>>>,
+    pub relay_subscriptions_contract: Arc<RwLock<RelaySubscriptionsContract<HttpProviderType>>>,
     pub request_chain_start_block_number: u64,
     pub confirmation_blocks: u64,
     pub last_seen_block: Arc<AtomicU64>,
@@ -130,6 +152,12 @@ pub enum GatewayJobType {
     SlashGatewayJob,
     JobResponded,
     // SlashGatewayResponse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum JobMode {
+    Once,
+    Subscription,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +172,7 @@ pub struct Job {
     pub job_type: GatewayJobType,
     pub sequence_number: u8,
     pub gateway_address: Option<Address>,
+    pub job_mode: JobMode,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -155,5 +184,36 @@ pub struct ResponseJob {
     pub error_code: u8,
     pub job_type: GatewayJobType,
     pub gateway_address: Option<Address>,
+    pub job_mode: JobMode,
     // pub sequence_number: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum JobSubscriptionAction {
+    Add,
+}
+
+#[derive(Debug, Clone)]
+pub struct JobSubscriptionChannelType {
+    pub subscription_action: JobSubscriptionAction,
+    pub subscription_id: U256,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubscriptionJob {
+    pub subscription_id: U256,
+    pub request_chain_id: u64,
+    pub subscriber: Address,
+    pub interval: U256,
+    pub termination_time: U256,
+    pub user_timeout: U256,
+    pub tx_hash: FixedBytes,
+    pub code_input: Bytes,
+    pub starttime: U256,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionJobInstanceHeap {
+    pub subscription_id: U256,
+    pub next_trigger_time: u64,
 }

@@ -10,7 +10,11 @@ use tokio::sync::mpsc::Sender;
 use tokio::time;
 
 use crate::chain_util::get_block_number_by_timestamp;
-use crate::constant::GATEWAY_BLOCK_STATES_TO_MAINTAIN;
+use crate::constant::{
+    COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT, COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT,
+    COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN,
+};
 use crate::contract_abi::GatewaysContract;
 use crate::model::{ContractsClient, GatewayData, Job};
 
@@ -254,10 +258,10 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .from_block(from_block_number)
         .to_block(to_block_number)
         .topic0(vec![
-            keccak256("GatewayRegistered(address,address,uint256[])"),
-            keccak256("GatewayDeregistered(address)"),
-            keccak256("ChainAdded(address,uint256)"),
-            keccak256("ChainRemoved(address,uint256)"),
+            keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT),
+            keccak256(COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT),
+            keccak256(COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT),
+            keccak256(COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT),
         ]);
 
     let logs = provider
@@ -269,14 +273,14 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     for log in logs {
         let ref topics = log.topics;
 
-        if topics[0] == keccak256("GatewayRegistered(address,address,uint256[])").into() {
+        if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT).into() {
             process_gateway_registered_event(log, to_block_number, &mut current_cycle_state_epoch)
                 .await;
-        } else if topics[0] == keccak256("GatewayDeregistered(address)").into() {
+        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT).into() {
             process_gateway_deregistered_event(log, &mut current_cycle_state_epoch).await;
-        } else if topics[0] == keccak256("ChainAdded(address,uint256)").into() {
+        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT).into() {
             process_chain_added_event(log, &mut current_cycle_state_epoch).await;
-        } else if topics[0] == keccak256("ChainRemoved(address,uint256)").into() {
+        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT).into() {
             process_chain_removed_event(log, &mut current_cycle_state_epoch).await;
         }
     }
@@ -470,7 +474,7 @@ async fn callback_for_gateway_epoch_waitlist(
             for job in job_list {
                 contracts_client_clone
                     .clone()
-                    .job_placed_handler(job, tx.clone())
+                    .job_relayed_handler(job, tx.clone())
                     .await;
             }
         });

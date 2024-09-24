@@ -1,3 +1,4 @@
+use ethers::types::U256;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -12,4 +13,18 @@ pub enum ServerlessError {
     NoGatewaysRegisteredInCycle(u64),
     #[error("No Gateways avaialble in cycle: {0} for the Request Chain: {1}")]
     NoValidGatewaysForChain(u64, u64),
+    #[error("No Subscription Job found for the subscription id: {0}")]
+    NoSubscriptionJobFound(U256),
+
+    #[cfg(test)]
+    #[error("Invalid topic")]
+    InvalidTopic,
+
+    #[cfg(test)]
+    #[error("Empty Topics")]
+    EmptyTopics,
+
+    #[cfg(test)]
+    #[error("Empty Topic 0")]
+    EmptyTopic0,
 }
