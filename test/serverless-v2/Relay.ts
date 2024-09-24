@@ -1,6 +1,6 @@
 import { setNextBlockBaseFeePerGas, time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, formatUnits, getBigInt, keccak256, parseUnits, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Relay, USDCoin, UserSample } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
@@ -1284,7 +1284,7 @@ describe("Relay - Job sent by UserSample contract", function () {
         // console.log("FIXED_GAS : ", txReceipt?.gasUsed);
         // validate callback cost and refund
         let txGasPrice = txReceipt?.gasPrice || 0n;
-        let callbackGas = 9325; // calculated using console.log
+        let callbackGas = 9317; // calculated using console.log
         // console.log("txGasPrice: ", txGasPrice);
         let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
         expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);

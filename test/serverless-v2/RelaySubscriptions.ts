@@ -1475,7 +1475,7 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
         // console.log("FIXED_GAS : ", txReceipt?.gasUsed);
         // validate callback cost and refund
         let txGasPrice = txReceipt?.gasPrice || 0n;
-        let callbackGas = 9325; // calculated using console.log
+        let callbackGas = 9317; // calculated using console.log
         // console.log("txGasPrice: ", txGasPrice);
         let callbackCost = txGasPrice * (ethers.toBigInt(callbackGas + fixedGas));
         expect(await ethers.provider.getBalance(addrs[1])).to.equal(initBalance + callbackCost);

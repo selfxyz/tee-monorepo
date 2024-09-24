@@ -1205,7 +1205,7 @@ describe("Jobs - Output", function () {
             errorCode,
             signTimestamp
         );
-        await expect(tx).to.emit(jobs, "JobResponded").withArgs(jobId, output, 10000, errorCode, 1)
+        await expect(tx).to.emit(jobs, "JobResponded").withArgs(jobId, wallets[17], output, 10000, errorCode, 1)
             .and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
 
         // check usdc balance of executor
