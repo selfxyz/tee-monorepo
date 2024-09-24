@@ -178,7 +178,7 @@ contract Executors is
     /// @param enclaveAddress The address of the enclave.
     /// @param owner The owner of the executor.
     /// @param env The execution environment supported by the enclave.
-    /// @param jobCapacity The maximum number of jobs the executor can handle.
+    /// @param jobCapacity The maximum number of jobs the executor can handle in parallel.
     event ExecutorRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity, uint8 env);
 
     /// @notice Emitted when an executor is deregistered.
@@ -435,7 +435,7 @@ contract Executors is
      * @notice Registers a new executor node.
      * @param _attestationSignature The attestation signature for verification.
      * @param _attestation The attestation details.
-     * @param _jobCapacity The maximum number of jobs the executor can handle.
+     * @param _jobCapacity The maximum number of jobs the executor can handle in parallel.
      * @param _signTimestamp The timestamp when the signature was created.
      * @param _signature The signature to verify the registration.
      * @param _stakeAmount The amount of stake to be deposited.
