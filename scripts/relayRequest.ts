@@ -251,47 +251,62 @@ async function main() {
 
 // async function executeUserSample() {
 //     const UserSample = await ethers.getContractFactory("UserSample");
-//     let userSample = await UserSample.attach("0x8B31B905dBc15dF3d31d7488A2290A3fd563b369") as unknown as UserSample;
+//     let userSample = await UserSample.attach("0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229") as unknown as UserSample;
 //     let input = {"num": 600};
 //     let input_string = JSON.stringify(input);
-//     let codeHash = '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
+//     let env = 1,
+//         codeHash = '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
 //         // codeInputs = Buffer.from(input_string, 'utf-8'),
 //         codeInputs = "0x",
 //         userTimeout = 2000,
 //         maxGasPrice = parseUnits("2", 9),
 //         usdcDeposit = 5100,
+//         callbackDeposit = parseUnits("0.01"),	// 0.01 eth
 //         refundAccount = "0xF90e66D1452Be040Ca3A82387Bf6AD0c472f29Dd",
-//         callbackContract = "0x8B31B905dBc15dF3d31d7488A2290A3fd563b369",
+//         callbackContract = "0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229",
 //         callbackGasLimit = 5000;
 
+//     const USDCoin = await ethers.getContractFactory("USDCoin");
+//     let token = await USDCoin.attach("0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C");
+//     await token.transfer(userSample.target, 1000000);
+//     console.log("USDC sent");
+
+//     let signers = await ethers.getSigners();
+//     await signers[0].sendTransaction({ to: "0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229", value: callbackDeposit });
+//     console.log("ETH sent");
+
 //     let gas = await userSample.relayJob.estimateGas(
+//         env,
 //         codeHash, 
 //         codeInputs, 
 //         userTimeout, 
 //         maxGasPrice, 
 //         usdcDeposit, 
+//         callbackDeposit,
 //         refundAccount, 
 //         callbackContract, 
 //         callbackGasLimit,
 //         {
-//             value: parseUnits("0.01"),
+//             // value: parseUnits("0.01"),
 //             // gasLimit: 1000000
 //         }
 //     );
 //     console.log("gas: ", gas, codeInputs.toString());
 
 //     await userSample.relayJob(
+//         env,
 //         codeHash, 
 //         codeInputs, 
 //         userTimeout, 
 //         maxGasPrice, 
 //         usdcDeposit, 
+//         callbackDeposit,
 //         refundAccount, 
 //         callbackContract, 
 //         callbackGasLimit,
 //         {
-//             value: parseUnits("0.01"),
-//             gasLimit: 3500000
+//             // value: parseUnits("0.01"),
+//             // gasLimit: 3500000
 //         }
 //     );
 //     console.log("Relayed");
@@ -308,6 +323,40 @@ async function main() {
 
 //     // let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 //     // await relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+// }
+
+// async function executeUserSampleStartJobSubscription() {
+//     const UserSample = await ethers.getContractFactory("UserSample");
+//     let userSample = await UserSample.attach("0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229") as unknown as UserSample;
+
+//     let jobSubsParams = {
+//         startTime: 0,
+//         maxGasPrice: parseUnits("2", 9),
+//         usdcDeposit: 51000,
+//         callbackGasLimit: 5000,
+//         callbackContract: userSample.target,
+//         env: 1,
+//         codehash: '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
+//         codeInputs: '0x',
+//         userTimeout: 2000,
+//         refundAccount: "0xF90e66D1452Be040Ca3A82387Bf6AD0c472f29Dd",
+//         periodicGap: 30,
+//         terminationTimestamp: Math.floor(Date.now() / 1000) + 300
+//     };
+
+//     let callbackDeposit = parseUnits("0.02");
+
+//     const USDCoin = await ethers.getContractFactory("USDCoin");
+//     let token = await USDCoin.attach("0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C");
+//     await token.transfer(userSample.target, jobSubsParams.usdcDeposit);
+//     console.log("USDC sent");
+
+//     let signers = await ethers.getSigners();
+//     await signers[0].sendTransaction({ to: "0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229", value: callbackDeposit });
+//     console.log("ETH sent");
+
+//     await userSample.startJobSubscription(jobSubsParams, callbackDeposit);
+//     console.log("Started Job Subsription");
 // }
 
 // async function createJobResponseSignature(
