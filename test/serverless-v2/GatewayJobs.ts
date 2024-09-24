@@ -424,13 +424,13 @@ describe("GatewayJobs - Admin functions", function () {
 
 	it("can set job allowance with admin account", async function () {
 		await expect(
-			gatewayJobs.connect(signers[1]).setJobAllowance()
+			gatewayJobs.setJobAllowance()
 		).to.be.fulfilled;
 	});
 
 	it("cannot set job allowance without admin", async function () {
 		await expect(
-			gatewayJobs.setJobAllowance()
+			gatewayJobs.connect(signers[1]).setJobAllowance()
 		).to.be.revertedWithCustomError(gatewayJobs, "AccessControlUnauthorizedAccount");
 	});
 
