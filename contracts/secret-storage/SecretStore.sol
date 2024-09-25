@@ -180,7 +180,8 @@ contract SecretStore is
         address indexed owner,
         uint256 sizeLimit,
         uint256 endTimestamp,
-        uint256 usdcDeposit
+        uint256 usdcDeposit,
+        SelectedEnclave[] selectedEnclaves
     );
 
     event EnclaveAcknowledgedStore(
@@ -265,7 +266,7 @@ contract SecretStore is
             userStorage[id].selectedEnclaves.push(selectedEnclaves[index]);
         }
 
-        emit SecretStoreCreated(secretId, _owner, _sizeLimit, _endTimestamp, _usdcDeposit);
+        emit SecretStoreCreated(secretId, _owner, _sizeLimit, _endTimestamp, _usdcDeposit, selectedEnclaves);
     }
 
     function _checkUsdcDeposit(
