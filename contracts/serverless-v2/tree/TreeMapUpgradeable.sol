@@ -10,7 +10,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 /// it is replaced with the element in the right most leaf in the tree.
 /// Each element in the tree stores the weight of all elements on the left
 /// and right side of the node.
-contract TreeUpgradeable is Initializable {
+contract TreeMapUpgradeable is Initializable {
     /// @notice Struct that stores the value on the node and the sum of
     /// weights on left and right side of the node.
     /// @param value Value on the node
@@ -22,8 +22,7 @@ contract TreeUpgradeable is Initializable {
         uint64 rightSum;
     }
 
-    /// @custom:storage-location erc7201:marlin.oyster.storage.Tree
-    struct TreeStorage {
+    struct Tree {
         /// @notice Mapping of address of a node to it's index in nodes array
         mapping(address => uint256) addressToIndexMap;
         /// @notice Mapping of index in nodes array to address of the node
@@ -32,144 +31,171 @@ contract TreeUpgradeable is Initializable {
         Node[] nodes;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.Tree")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant TreeStorageLocation = 0x425ae037969053bfe8be40daa3fbac6dc5dd18b4cbe23752b95cbe4c4aa29c00;
+    /// @custom:storage-location erc7201:marlin.oyster.storage.EnvTree
+    struct TreeMapStorage {
+        /// @notice Tree data for each environment
+        mapping(uint8 => Tree) envTree;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("marlin.oyster.storage.TreeMap")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant TreeMapStorageLocation = 0x03deb113f53cfc5c9ce28544dc6140711774fc5c00752abd22c8d30d1faf2900;
 
     error TreeInvalidInitState();
+    error TreeInvalidDeleteState();
 
-    function _getTreeStorage() private pure returns (TreeStorage storage $) {
+    function _getTreeMapStorage() private pure returns (TreeMapStorage storage $) {
         assembly {
-            $.slot := TreeStorageLocation
+            $.slot := TreeMapStorageLocation
         }
     }
 
-    function __TreeUpgradeable_init_unchained() internal onlyInitializing {
-        _init_tree();
+    function __TreeMapUpgradeable_init_unchained() internal onlyInitializing {
     }
 
     /// @dev Initializes the tree with 0 element as the first element.
     /// Node indexes start from 1.
-    function _init_tree() private {
-        TreeStorage storage $ = _getTreeStorage();
-        if ($.nodes.length != 0) revert TreeInvalidInitState();
+    function _init_tree(uint8 _env) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        if ($.envTree[_env].nodes.length != 0) revert TreeInvalidInitState();
         // root starts from index 1
-        $.nodes.push(Node(0, 0, 0));
+        $.envTree[_env].nodes.push(Node(0, 0, 0));
     }
 
-    function nodesInTree() public view returns (uint256) {
-        TreeStorage storage $ = _getTreeStorage();
-        return $.nodes.length - 1;
+    /// @dev Deletes the tree storage for a given env.
+    function _delete_tree(uint8 _env) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        if ($.envTree[_env].nodes.length == 0) revert TreeInvalidDeleteState();
+
+        uint256 len = $.envTree[_env].nodes.length;
+        // starting from 1st index, as mapping doesn't exists for the node at 0th index
+        for (uint256 index = 1; index < len; index++) {
+            address addrs = $.envTree[_env].indexToAddressMap[index];
+            delete $.envTree[_env].indexToAddressMap[index];
+            delete $.envTree[_env].addressToIndexMap[addrs];
+        }
+
+        delete $.envTree[_env].nodes;
+    }
+
+    function nodesInTree(uint8 _env) public view returns (uint256) {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        return $.envTree[_env].nodes.length - 1;
+    }
+
+    function isTreeInitialized(uint8 _env) public view returns (bool) {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        return ($.envTree[_env].nodes.length > 0);
     }
 
     // assumes index is not 0
-    function _add_unchecked(uint256 _index, uint64 _value) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _add_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        $.nodes[_index].value += _value;
+        $.envTree[_env].nodes[_index].value += _value;
         while (_index > 1) {
             bool _side = _index % 2 == 0;
             _index = _index >> 1;
             if (_side == true) {
-                $.nodes[_index].leftSum += _value;
+                $.envTree[_env].nodes[_index].leftSum += _value;
             } else {
-                $.nodes[_index].rightSum += _value;
+                $.envTree[_env].nodes[_index].rightSum += _value;
             }
         }
     }
 
     // assumes index is not 0
-    function _sub_unchecked(uint256 _index, uint64 _value) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _sub_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        $.nodes[_index].value -= _value;
+        $.envTree[_env].nodes[_index].value -= _value;
         while (_index > 1) {
             bool _side = _index % 2 == 0;
             _index = _index >> 1;
             if (_side == true) {
-                $.nodes[_index].leftSum -= _value;
+                $.envTree[_env].nodes[_index].leftSum -= _value;
             } else {
-                $.nodes[_index].rightSum -= _value;
+                $.envTree[_env].nodes[_index].rightSum -= _value;
             }
         }
     }
 
     // assumes _addr not already in tree
-    function _insert_unchecked(address _addr, uint64 _value) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _insert_unchecked(uint8 _env, address _addr, uint64 _value) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        uint256 _index = $.nodes.length;
-        $.nodes.push(Node(0, 0, 0));
+        uint256 _index = $.envTree[_env].nodes.length;
+        $.envTree[_env].nodes.push(Node(0, 0, 0));
 
-        $.addressToIndexMap[_addr] = _index;
-        $.indexToAddressMap[_index] = _addr;
+        $.envTree[_env].addressToIndexMap[_addr] = _index;
+        $.envTree[_env].indexToAddressMap[_index] = _addr;
 
-        _add_unchecked(_index, _value);
+        _add_unchecked(_env, _index, _value);
     }
 
     // assumes index is not 0
-    function _update_unchecked(uint256 _index, uint64 _value) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _update_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        uint64 _currentValue = $.nodes[_index].value;
+        uint64 _currentValue = $.envTree[_env].nodes[_index].value;
 
         if (_currentValue >= _value) {
-            _sub_unchecked(_index, _currentValue - _value);
+            _sub_unchecked(_env, _index, _currentValue - _value);
         } else {
-            _add_unchecked(_index, _value - _currentValue);
+            _add_unchecked(_env, _index, _value - _currentValue);
         }
     }
 
     // assumes _addr already in tree
-    function _update_unchecked(address _addr, uint64 _value) internal {
-        TreeStorage storage $ = _getTreeStorage();
-        _update_unchecked($.addressToIndexMap[_addr], _value);
+    function _update_unchecked(uint8 _env, address _addr, uint64 _value) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        _update_unchecked(_env, $.envTree[_env].addressToIndexMap[_addr], _value);
     }
 
-    function _upsert(address _addr, uint64 _value) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _upsert(uint8 _env, address _addr, uint64 _value) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        uint256 _index = $.addressToIndexMap[_addr];
+        uint256 _index = $.envTree[_env].addressToIndexMap[_addr];
         if (_index == 0) {
-            _insert_unchecked(_addr, _value);
+            _insert_unchecked(_env, _addr, _value);
         } else {
-            _update_unchecked(_index, _value);
+            _update_unchecked(_env,_index, _value);
         }
     }
 
     // assumes _addr already in tree at _index
-    function _delete_unchecked(address _addr, uint256 _index) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _delete_unchecked(uint8 _env, address _addr, uint256 _index) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        uint256 _lastNodeIndex = $.nodes.length - 1;
-        address _lastNodeAddress = $.indexToAddressMap[_lastNodeIndex];
-        uint64 _lastNodeValue = $.nodes[_lastNodeIndex].value;
+        uint256 _lastNodeIndex = $.envTree[_env].nodes.length - 1;
+        address _lastNodeAddress = $.envTree[_env].indexToAddressMap[_lastNodeIndex];
+        uint64 _lastNodeValue = $.envTree[_env].nodes[_lastNodeIndex].value;
         // left and right sum will always be 0 for last node
 
-        _sub_unchecked(_lastNodeIndex, _lastNodeValue);
+        _sub_unchecked(_env, _lastNodeIndex, _lastNodeValue);
 
         // only swap if not last node
         if (_index != _lastNodeIndex) {
-            _update_unchecked(_index, _lastNodeValue);
+            _update_unchecked(_env, _index, _lastNodeValue);
 
-            $.indexToAddressMap[_index] = _lastNodeAddress;
-            $.addressToIndexMap[_lastNodeAddress] = _index;
+            $.envTree[_env].indexToAddressMap[_index] = _lastNodeAddress;
+            $.envTree[_env].addressToIndexMap[_lastNodeAddress] = _index;
         }
 
-        delete $.indexToAddressMap[_lastNodeIndex];
-        delete $.addressToIndexMap[_addr];
+        delete $.envTree[_env].indexToAddressMap[_lastNodeIndex];
+        delete $.envTree[_env].addressToIndexMap[_addr];
 
-        $.nodes.pop();
+        $.envTree[_env].nodes.pop();
     }
 
-    function _deleteIfPresent(address _addr) internal {
-        TreeStorage storage $ = _getTreeStorage();
+    function _deleteIfPresent(uint8 _env, address _addr) internal {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        uint256 _index = $.addressToIndexMap[_addr];
+        uint256 _index = $.envTree[_env].addressToIndexMap[_addr];
         if (_index == 0) {
             return;
         }
 
-        _delete_unchecked(_addr, _index);
+        _delete_unchecked(_env, _addr, _index);
     }
 
     struct MemoryNode {
@@ -182,6 +208,7 @@ contract TreeUpgradeable is Initializable {
     }
 
     function _selectOne(
+        uint8 _env,
         uint256 _rootIndex,
         uint256 _searchNumber,
         MemoryNode[] memory _selectedPathTree,
@@ -197,9 +224,9 @@ contract TreeUpgradeable is Initializable {
         )
     {
         unchecked {
-            TreeStorage storage $ = _getTreeStorage();
+            TreeMapStorage storage $ = _getTreeMapStorage();
 
-            Node memory _root = $.nodes[_rootIndex];
+            Node memory _root = $.envTree[_env].nodes[_rootIndex];
 
             // require(_searchNumber <= _root.leftSum + _root.value + _root.rightSum, "should never happen");
 
@@ -237,13 +264,14 @@ contract TreeUpgradeable is Initializable {
                 // check left side
                 // search on left side
                 // separated out due to stack too deep errors
-                return _selectLeft(_rootIndex, _searchNumber, _selectedPathTree, _mRoot.left, _mRootIndex, _mLastIndex);
+                return _selectLeft(_env, _rootIndex, _searchNumber, _selectedPathTree, _mRoot.left, _mRootIndex, _mLastIndex);
             } else {
                 // has to be on right side
                 // search on right side
                 // separated out due to stack too deep errors
                 return
                     _selectRight(
+                        _env,
                         _rootIndex,
                         _searchNumber - _rightBound,
                         _selectedPathTree,
@@ -256,6 +284,7 @@ contract TreeUpgradeable is Initializable {
     }
 
     function _selectLeft(
+        uint8 _env,
         uint256 _rootIndex,
         uint256 _searchNumber,
         MemoryNode[] memory _selectedPathTree,
@@ -265,6 +294,7 @@ contract TreeUpgradeable is Initializable {
     ) internal view returns (uint256, uint256, uint256) {
         unchecked {
             (uint256 _sNode, uint256 _sBalance, uint256 _mTreeSize) = _selectOne(
+                _env,
                 // safemath: cannot exceed storage tree size
                 _rootIndex * 2, // left node
                 _searchNumber,
@@ -284,6 +314,7 @@ contract TreeUpgradeable is Initializable {
     }
 
     function _selectRight(
+        uint8 _env,
         uint256 _rootIndex,
         uint256 _searchNumber,
         MemoryNode[] memory _selectedPathTree,
@@ -293,6 +324,7 @@ contract TreeUpgradeable is Initializable {
     ) internal view returns (uint256, uint256, uint256) {
         unchecked {
             (uint256 _sNode, uint256 _sBalance, uint256 _mTreeSize) = _selectOne(
+                _env,
                 // safemath: cannot exceed storage tree size
                 _rootIndex * 2 + 1, // right node
                 _searchNumber,
@@ -311,10 +343,10 @@ contract TreeUpgradeable is Initializable {
         }
     }
 
-    function _selectN(uint256 _randomizer, uint256 _N) internal view returns (address[] memory _selectedNodes) {
-        TreeStorage storage $ = _getTreeStorage();
+    function _selectN(uint8 _env, uint256 _randomizer, uint256 _N) internal view returns (address[] memory _selectedNodes) {
+        TreeMapStorage storage $ = _getTreeMapStorage();
 
-        uint256 _nodeCount = $.nodes.length - 1;
+        uint256 _nodeCount = $.envTree[_env].nodes.length - 1;
         if (_N > _nodeCount) _N = _nodeCount;
         if (_N == 0) return new address[](0);
 
@@ -329,15 +361,28 @@ contract TreeUpgradeable is Initializable {
             mstore(_selectedPathTree, 83)
         }
 
-        Node memory _root = $.nodes[1];
+        Node memory _root = $.envTree[_env].nodes[1];
         _selectedPathTree[1] = MemoryNode(1, 0, 0, 0, 0, 0);
 
-        uint256 _mLastIndex = 1;
         // added in next line to save gas and avoid overflow checks
         uint256 _totalWeightInTree = _root.value;
         unchecked {
             _totalWeightInTree += _root.leftSum + _root.rightSum;
         }
+
+        return _selectNLoop(_env, _randomizer, _N, _selectedPathTree, _totalWeightInTree);
+    }
+
+    /// @dev Needed to add this function logic separately to prevent "stack too deep" error. 
+    function _selectNLoop(
+        uint8 _env, 
+        uint256 _randomizer, 
+        uint256 _N,
+        MemoryNode[] memory _selectedPathTree,
+        uint256 _totalWeightInTree
+    ) internal view returns (address[] memory _selectedNodes) {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+        uint256 _mLastIndex = 1;
         uint256 _sumOfBalancesOfSelectedNodes = 0;
         _selectedNodes = new address[](_N);
 
@@ -350,6 +395,7 @@ contract TreeUpgradeable is Initializable {
             uint256 _selectedNodeBalance;
 
             (_node, _selectedNodeBalance, _mLastIndex) = _selectOne(
+                _env,
                 1, // index of root
                 _searchNumber,
                 _selectedPathTree,
@@ -357,12 +403,11 @@ contract TreeUpgradeable is Initializable {
                 _mLastIndex
             );
 
-            _selectedNodes[_index] = $.indexToAddressMap[uint32(_node)];
+            _selectedNodes[_index] = $.envTree[_env].indexToAddressMap[uint32(_node)];
             unchecked {
                 _sumOfBalancesOfSelectedNodes += _selectedNodeBalance;
                 ++_index;
             }
         }
-        return _selectedNodes;
     }
 }

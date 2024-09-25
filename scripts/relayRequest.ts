@@ -3,6 +3,20 @@ import { ethers, upgrades } from "hardhat";
 import { Relay, UserSample } from "../typechain-types";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
+type EnvConfig = {
+    [key: number]: {
+        executorFeePerMs: number;
+        stakingRewardPerMs: number;
+    }
+}
+
+const envConfig: EnvConfig = {
+    1: {
+        executorFeePerMs: 1,
+        stakingRewardPerMs: 1
+    }
+};
+
 async function main() {
     //Create Enclave Image object
     const img = {
@@ -38,12 +52,13 @@ async function main() {
     let usdc_token_addr = usdc_token.target;
     console.log("USDCoin Deployed address: ", usdc_token_addr);
 
-    const executorFeePerMs = 1; // 0.001 usd per ms
-    const stakingRewardPerMs = 1; // 0.001 usd per ms
+    const env = 1;
+    const executorFeePerMs = envConfig[env].executorFeePerMs; // 0.001 usd per ms
+    const stakingRewardPerMs = envConfig[env].stakingRewardPerMs; // 0.001 usd per ms
     const executionFeePerMs = executorFeePerMs + stakingRewardPerMs;
     const gatewayFee = 100; // 0.1 usd
-    const stakingPaymentPoolAddress = await signers[1].getAddress();
-    const usdcPaymentPoolAddress = await signers[1].getAddress();
+    const stakingPaymentPoolAddress = await signers[0].getAddress();
+    const usdcPaymentPoolAddress = await signers[0].getAddress();
     const signMaxAge = 600;
 
     // Attestation Verifier
@@ -86,7 +101,6 @@ async function main() {
                 minUserDeadline,
                 maxUserDeadline,
                 overallTimeout,
-                executionFeePerMs,
                 gatewayFee,
                 fixedGas,
                 callbackMeasureGas
@@ -95,6 +109,7 @@ async function main() {
     let relay_addr = relay.target;
     console.log("Relay Deployed address: ", relay_addr);
 
+    await relay.addGlobalEnv(env, executionFeePerMs);
     
     const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
     console.log("Deploying RelaySubscriptions...")
@@ -183,8 +198,6 @@ async function main() {
                 signMaxAge,
                 executionBufferTime,
                 noOfNodesToSelect,
-                1,
-                1,
                 stakingPaymentPoolAddress,
                 usdcPaymentPoolAddress,
                 executorsAddress
@@ -192,7 +205,9 @@ async function main() {
         });
     let jobsAddress = jobsContract.target;
     console.log("Jobs Deployed address: ", jobsAddress);
+
     await executorsContract.grantRole(await executorsContract.JOBS_ROLE(), jobsAddress);
+    await jobsContract.addGlobalEnv(env, executorFeePerMs, stakingRewardPerMs);
 
      // Common Chain Gateway Jobs Contract
      let relayBufferTime = 120;
@@ -211,7 +226,6 @@ async function main() {
                  usdc_token_addr,
                  signMaxAge,
                  relayBufferTime,
-                 executionFeePerMs,
                  10n**16n, // 0.01 POND
                  10n**16n, // 0.01 POND
                  jobsAddress,
@@ -225,57 +239,74 @@ async function main() {
 }
 
 // async function deployUserSample() {
-//     let relayAddress = "0xD02e33f98a08030B72A471Ae41e696a57cFecCc8",
-//         tokenAddress = "0xD330cF76192274bb3f10f2E574a1bDba4ED29352";
+//     let relayAddress = "0x56EC16763Ec62f4EAF9C7Cfa09E29DC557e97006",
+//         relaySubscriptionsAddress = "0x6B59433387341925aE903E36d16D976053D018E1",
+//         tokenAddress = "0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C",
+//         owner = await (await ethers.getSigners())[0].getAddress();
 //     const UserSample = await ethers.getContractFactory("UserSample");
-//     let userSample = await UserSample.deploy(relayAddress, tokenAddress) as unknown as UserSample;
+//     let userSample = await UserSample.deploy(relayAddress, relaySubscriptionsAddress, tokenAddress, owner) as unknown as UserSample;
 //     console.log("UserSample : ", userSample.target);
 //     // await token.transfer(userSample.target, 1000000);
 // }
 
 // async function executeUserSample() {
 //     const UserSample = await ethers.getContractFactory("UserSample");
-//     let userSample = await UserSample.attach("0x8B31B905dBc15dF3d31d7488A2290A3fd563b369") as unknown as UserSample;
+//     let userSample = await UserSample.attach("0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229") as unknown as UserSample;
 //     let input = {"num": 600};
 //     let input_string = JSON.stringify(input);
-//     let codeHash = '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
+//     let env = 1,
+//         codeHash = '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
 //         // codeInputs = Buffer.from(input_string, 'utf-8'),
 //         codeInputs = "0x",
 //         userTimeout = 2000,
 //         maxGasPrice = parseUnits("2", 9),
 //         usdcDeposit = 5100,
+//         callbackDeposit = parseUnits("0.01"),	// 0.01 eth
 //         refundAccount = "0xF90e66D1452Be040Ca3A82387Bf6AD0c472f29Dd",
-//         callbackContract = "0x8B31B905dBc15dF3d31d7488A2290A3fd563b369",
+//         callbackContract = "0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229",
 //         callbackGasLimit = 5000;
 
+//     const USDCoin = await ethers.getContractFactory("USDCoin");
+//     let token = await USDCoin.attach("0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C");
+//     await token.transfer(userSample.target, 1000000);
+//     console.log("USDC sent");
+
+//     let signers = await ethers.getSigners();
+//     await signers[0].sendTransaction({ to: "0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229", value: callbackDeposit });
+//     console.log("ETH sent");
+
 //     let gas = await userSample.relayJob.estimateGas(
+//         env,
 //         codeHash, 
 //         codeInputs, 
 //         userTimeout, 
 //         maxGasPrice, 
 //         usdcDeposit, 
+//         callbackDeposit,
 //         refundAccount, 
 //         callbackContract, 
 //         callbackGasLimit,
 //         {
-//             value: parseUnits("0.01"),
+//             // value: parseUnits("0.01"),
 //             // gasLimit: 1000000
 //         }
 //     );
 //     console.log("gas: ", gas, codeInputs.toString());
 
 //     await userSample.relayJob(
+//         env,
 //         codeHash, 
 //         codeInputs, 
 //         userTimeout, 
 //         maxGasPrice, 
 //         usdcDeposit, 
+//         callbackDeposit,
 //         refundAccount, 
 //         callbackContract, 
 //         callbackGasLimit,
 //         {
-//             value: parseUnits("0.01"),
-//             gasLimit: 3500000
+//             // value: parseUnits("0.01"),
+//             // gasLimit: 3500000
 //         }
 //     );
 //     console.log("Relayed");
@@ -292,6 +323,40 @@ async function main() {
 
 //     // let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
 //     // await relay.jobResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+// }
+
+// async function executeUserSampleStartJobSubscription() {
+//     const UserSample = await ethers.getContractFactory("UserSample");
+//     let userSample = await UserSample.attach("0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229") as unknown as UserSample;
+
+//     let jobSubsParams = {
+//         startTime: 0,
+//         maxGasPrice: parseUnits("2", 9),
+//         usdcDeposit: 51000,
+//         callbackGasLimit: 5000,
+//         callbackContract: userSample.target,
+//         env: 1,
+//         codehash: '0x6516be2032b475da2a96df1eefeb1679a8032faa434f8311a1441e92f2058fe5',
+//         codeInputs: '0x',
+//         userTimeout: 2000,
+//         refundAccount: "0xF90e66D1452Be040Ca3A82387Bf6AD0c472f29Dd",
+//         periodicGap: 30,
+//         terminationTimestamp: Math.floor(Date.now() / 1000) + 300
+//     };
+
+//     let callbackDeposit = parseUnits("0.02");
+
+//     const USDCoin = await ethers.getContractFactory("USDCoin");
+//     let token = await USDCoin.attach("0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C");
+//     await token.transfer(userSample.target, jobSubsParams.usdcDeposit);
+//     console.log("USDC sent");
+
+//     let signers = await ethers.getSigners();
+//     await signers[0].sendTransaction({ to: "0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229", value: callbackDeposit });
+//     console.log("ETH sent");
+
+//     await userSample.startJobSubscription(jobSubsParams, callbackDeposit);
+//     console.log("Started Job Subsription");
 // }
 
 // async function createJobResponseSignature(
@@ -345,3 +410,17 @@ main()
         console.error(error);
         process.exit(1);
     });
+
+/*
+    ARBITRUM SEPOLIA -
+    Pond Deployed address:  0x0DA917048bfF8fc8fe5647509FB8F8049E2E7B87
+    USDCoin Deployed address:  0x186A361FF2361BAbEE9344A2FeC1941d80a7a49C
+    AttestationVerifier Deployed address:  0x73B7154EdBc562D4cCbdB43D515eB1C2dF46A718
+    Relay Deployed address:  0x56EC16763Ec62f4EAF9C7Cfa09E29DC557e97006
+    RelaySubscriptions Deployed address:  0x6B59433387341925aE903E36d16D976053D018E1
+    Gateways Deployed address:  0x56Fb98c417E61609c472Aa941E0ea915Efd9615F
+    Executors Deployed address:  0xa5F525145219D16763d24670DBF0E62fFbA19571
+    Jobs Deployed address:  0xF14Ff55120210912Ffb32B7D48b926186168166C
+    GatewayJobs Deployed address:  0x7a3406cf602aCEc0Dd1f80549171F778010C31C2
+    UserSample: 0x4a71D367b347c74B2ccaba9DFae3Ba4fC6F27229
+*/

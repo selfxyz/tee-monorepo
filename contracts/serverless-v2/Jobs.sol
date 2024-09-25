@@ -37,8 +37,6 @@ contract Jobs is
      * @param _signMaxAge The maximum age of a valid signature in seconds.
      * @param _executionBufferTime The buffer time allowed for job execution in milliseconds.
      * @param _noOfNodesToSelect The number of executor nodes to select for a job.
-     * @param _executorFeePerMs The fee paid to executors per millisecond.
-     * @param _stakingRewardPerMs The staking reward per millisecond, paid to the payment pool.
      * @param _stakingPaymentPoolAddress The address of the staking payment pool.
      * @param _usdcPaymentPoolAddress The address of the USDC payment pool.
      * @param _executors The Executors contract responsible for selecting executors.
@@ -50,8 +48,6 @@ contract Jobs is
         uint256 _signMaxAge,
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect,
-        uint256 _executorFeePerMs,
-        uint256 _stakingRewardPerMs,
         address _stakingPaymentPoolAddress,
         address _usdcPaymentPoolAddress,
         Executors _executors
@@ -67,9 +63,6 @@ contract Jobs is
         SIGN_MAX_AGE = _signMaxAge;
         EXECUTION_BUFFER_TIME = _executionBufferTime;
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
-
-        EXECUTOR_FEE_PER_MS = _executorFeePerMs;
-        STAKING_REWARD_PER_MS = _stakingRewardPerMs;
 
         STAKING_PAYMENT_POOL = _stakingPaymentPoolAddress;
         USDC_PAYMENT_POOL = _usdcPaymentPoolAddress;
@@ -130,12 +123,6 @@ contract Jobs is
     uint256 public immutable NO_OF_NODES_TO_SELECT;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable EXECUTOR_FEE_PER_MS;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable STAKING_REWARD_PER_MS;
-
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     address public immutable STAKING_PAYMENT_POOL;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -144,6 +131,106 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     Executors public immutable EXECUTORS;
 
+    //-------------------------------- Execution Env start --------------------------------//
+
+    struct ExecutionEnv {
+        // The fee paid to executors per millisecond.
+        uint256 executionFeePerMs;
+        // The staking reward per millisecond, paid to the payment pool.
+        uint256 stakingRewardPerMs;
+    }
+
+    mapping(uint8 => ExecutionEnv) public executionEnv;
+
+    /**
+     * @notice Emitted when a new execution environment support is added globally.
+     * @param env The execution environment added.
+     * @param executionFeePerMs The fee paid to executors per millisecond.
+     * @param stakingRewardPerMs The staking reward per millisecond, paid to the payment pool.
+     */
+    event GlobalEnvAdded(
+        uint8 indexed env,
+        uint256 executionFeePerMs,
+        uint256 stakingRewardPerMs
+    );
+
+    /**
+     * @notice Emitted when an existing execution environment support is removed globally.
+     * @param env The execution environment removed.
+     */
+    event GlobalEnvRemoved(uint8 indexed env);
+
+    /// @notice Thrown when the execution environment is already supported globally.
+    error JobsGlobalEnvAlreadySupported();
+    /// @notice Thrown when the execution environment is already unsupported globally.
+    error JobsGlobalEnvAlreadyUnsupported();
+
+    //------------------------------ internal functions start ------------------------------//
+
+    function _addGlobalEnv(
+        uint8 _env,
+        uint256 _executionFeePerMs,
+        uint256 _stakingRewardPerMs
+    ) internal {
+        if(EXECUTORS.isTreeInitialized(_env))
+            revert JobsGlobalEnvAlreadySupported();
+
+        executionEnv[_env] = ExecutionEnv({
+            executionFeePerMs: _executionFeePerMs,
+            stakingRewardPerMs: _stakingRewardPerMs
+        });
+        EXECUTORS.initTree(_env);
+
+        emit GlobalEnvAdded(_env, _executionFeePerMs, _stakingRewardPerMs);
+    }
+
+    function _removeGlobalEnv(uint8 _env) internal {
+        if(!EXECUTORS.isTreeInitialized(_env))
+            revert JobsGlobalEnvAlreadyUnsupported();
+
+        delete executionEnv[_env];
+        EXECUTORS.removeTree(_env);
+
+        emit GlobalEnvRemoved(_env);
+    }
+
+    //------------------------------ internal functions end --------------------------------//
+
+    //------------------------------ external functions start ------------------------------//
+
+    /**
+     * @notice Adds global support for a new execution environment.
+     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
+            It also initializes a new executor nodes tree for the environment.
+     * @param _env The execution environment to be added.
+     * @param _executionFeePerMs The fee paid to executors per millisecond.
+     * @param _stakingRewardPerMs The staking reward per millisecond, paid to the payment pool.
+     */
+    function addGlobalEnv(
+        uint8 _env,
+        uint256 _executionFeePerMs,
+        uint256 _stakingRewardPerMs
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _addGlobalEnv(_env, _executionFeePerMs, _stakingRewardPerMs);
+    }
+
+    /**
+     * @notice Removes global support for an existing execution environment.
+     * @dev Can only be called by an account with the `DEFAULT_ADMIN_ROLE`.
+     * @param _env The execution environment to be removed.
+     */
+    function removeGlobalEnv(uint8 _env) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _removeGlobalEnv(_env);
+    }
+
+    function getJobExecutionFeePerMs(uint8 _env) public view returns (uint256) {
+        return executionEnv[_env].executionFeePerMs + executionEnv[_env].stakingRewardPerMs;
+    }
+
+    //------------------------------ external functions end -------------------------------//
+
+    //--------------------------------- Execution Env end ---------------------------------//
+
     //-------------------------------- Job start --------------------------------//
 
     struct Job {
@@ -151,6 +238,7 @@ contract Jobs is
         uint256 execStartTime;
         uint256 executionTime; // it stores the execution time for first output submitted only (in milliseconds)
         address jobOwner;
+        uint8 env;
         uint8 outputCount;
         address[] selectedExecutors;
         mapping(address => bool) hasExecutedJob; // selectedExecutor => hasExecuted
@@ -173,6 +261,7 @@ contract Jobs is
     /**
      * @dev Emitted when a new job is created.
      * @param jobId The ID of the job created.
+     * @param env The execution environment for the job.
      * @param jobOwner The address of the job owner.
      * @param codehash The transaction hash storing the job code.
      * @param codeInputs The inputs to the job code.
@@ -181,6 +270,7 @@ contract Jobs is
      */
     event JobCreated(
         uint256 indexed jobId,
+        uint8 indexed env,
         address indexed jobOwner,
         bytes32 codehash,
         bytes codeInputs,
@@ -196,7 +286,14 @@ contract Jobs is
      * @param errorCode The error code associated with the job execution.
      * @param outputCount The number of outputs submitted for the job.
      */
-    event JobResponded(uint256 indexed jobId, bytes output, uint256 totalTime, uint8 errorCode, uint8 outputCount);
+    event JobResponded(
+        uint256 indexed jobId,
+        address indexed executor,
+        bytes output,
+        uint256 totalTime,
+        uint8 errorCode,
+        uint8 outputCount
+    );
 
     /**
      * @dev Emitted when the job result callback is called.
@@ -226,12 +323,13 @@ contract Jobs is
     //-------------------------------- internal functions start --------------------------------//
 
     function _createJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline, // in milliseconds
         address _jobOwner
     ) internal returns (uint256 jobId) {
-        address[] memory selectedNodes = EXECUTORS.selectExecutors(NO_OF_NODES_TO_SELECT);
+        address[] memory selectedNodes = EXECUTORS.selectExecutors(_env, NO_OF_NODES_TO_SELECT);
         // if no executors are selected, then return with error code 1
         if (selectedNodes.length < NO_OF_NODES_TO_SELECT) {
             revert JobsUnavailableResources();
@@ -241,10 +339,10 @@ contract Jobs is
         USDC_TOKEN.safeTransferFrom(
             _jobOwner,
             address(this),
-            _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS)
+            _deadline * getJobExecutionFeePerMs(_env)
         );
 
-        jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, selectedNodes);
+        jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, _env, selectedNodes);
     }
 
     function _create(
@@ -252,6 +350,7 @@ contract Jobs is
         bytes memory _codeInputs,
         uint256 _deadline, // in milliseconds
         address _jobOwner,
+        uint8 _env,
         address[] memory _selectedNodes
     ) internal returns (uint256 jobId) {
         // create a struct
@@ -260,9 +359,10 @@ contract Jobs is
         jobs[jobId].deadline = _deadline;
         jobs[jobId].execStartTime = block.timestamp;
         jobs[jobId].jobOwner = _jobOwner;
+        jobs[jobId].env = _env;
         jobs[jobId].selectedExecutors = _selectedNodes;
 
-        emit JobCreated(jobId, _jobOwner, _codehash, _codeInputs, _deadline, _selectedNodes);
+        emit JobCreated(jobId, _env, _jobOwner, _codehash, _codeInputs, _deadline, _selectedNodes);
     }
 
     function _submitOutput(
@@ -309,7 +409,7 @@ contract Jobs is
             );
             emit JobResultCallbackCalled(_jobId, success);
         }
-        emit JobResponded(_jobId, _output, _totalTime, _errorCode, outputCount);
+        emit JobResponded(_jobId, enclaveAddress, _output, _totalTime, _errorCode, outputCount);
     }
 
     function _verifyOutputSign(
@@ -337,17 +437,19 @@ contract Jobs is
         uint256 executionTime = jobs[_jobId].executionTime;
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
-        uint256 executorsFee = executionTime * EXECUTOR_FEE_PER_MS;
+        uint256 executionFeePerMs = executionEnv[jobs[_jobId].env].executionFeePerMs;
+        uint256 stakingRewardPerMs = executionEnv[jobs[_jobId].env].stakingRewardPerMs;
+        uint256 executorsFee = executionTime * executionFeePerMs;
         // for first output
         if (_outputCount == 1) {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, (executorsFee * 4) / 9);
             // transfer payout to payment pool
-            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * STAKING_REWARD_PER_MS);
+            USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * stakingRewardPerMs);
             // transfer to job owner
             USDC_TOKEN.safeTransfer(
                 jobOwner,
-                (deadline - executionTime) * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS)
+                (deadline - executionTime) * (executionFeePerMs + stakingRewardPerMs)
             );
         }
         // for second output
@@ -389,17 +491,19 @@ contract Jobs is
 
     /**
      * @notice Creates a new job with the specified parameters.
+     * @param _env The execution environment supported by the enclave.
      * @param _codehash The transaction hash storing the code in calldata, that needs to be executed.
      * @param _codeInputs The inputs to the job code.
      * @param _deadline The deadline for the job in milliseconds.
      * @return jobId The ID of the job created.
      */
     function createJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline // in milliseconds
     ) external returns (uint256) {
-        return _createJob(_codehash, _codeInputs, _deadline, _msgSender());
+        return _createJob(_env, _codehash, _codeInputs, _deadline, _msgSender());
     }
 
     /**
@@ -457,7 +561,7 @@ contract Jobs is
         uint256 deadline = jobs[_jobId].deadline;
         uint256 executionTime = jobs[_jobId].executionTime;
 
-        _releaseEscrowAmount(jobOwner, outputCount, deadline, executionTime);
+        _releaseEscrowAmount(jobs[_jobId].env, jobOwner, outputCount, deadline, executionTime);
 
         // slash Execution node
         uint256 len = jobs[_jobId].selectedExecutors.length;
@@ -490,13 +594,16 @@ contract Jobs is
     }
 
     function _releaseEscrowAmount(
+        uint8 _env,
         address _jobOwner,
         uint8 _outputCount,
         uint256 _deadline,
         uint256 _executionTime
     ) internal {
-        uint256 jobOwnerDeposit = _deadline * (EXECUTOR_FEE_PER_MS + STAKING_REWARD_PER_MS);
-        uint256 executorsFee = _executionTime * EXECUTOR_FEE_PER_MS;
+        uint256 executionFeePerMs = executionEnv[_env].executionFeePerMs;
+        uint256 stakingRewardPerMs = executionEnv[_env].stakingRewardPerMs;
+        uint256 jobOwnerDeposit = _deadline * (executionFeePerMs + stakingRewardPerMs);
+        uint256 executorsFee = _executionTime * executionFeePerMs;
         if (_outputCount == 0) {
             // transfer back the whole escrow amount to gateway if no output submitted
             USDC_TOKEN.safeTransfer(_jobOwner, jobOwnerDeposit);

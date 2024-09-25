@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "./RelaySubscriptions.sol";
 
 contract UserSample is Ownable {
     using SafeERC20 for IERC20;
@@ -41,6 +42,7 @@ contract UserSample is Ownable {
     // bytes32 txhash = 0xc7d9122f583971d4801747ab24cf3e83984274b8d565349ed53a73e0a547d113;
 
     function relayJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _userTimeout,
@@ -56,7 +58,8 @@ contract UserSample is Ownable {
 
         (bool success, ) = relayAddress.call{value: _callbackDeposit}(
             abi.encodeWithSignature(
-                "relayJob(bytes32,bytes,uint256,uint256,address,address,uint256)",
+                "relayJob(uint8,bytes32,bytes,uint256,uint256,address,address,uint256)",
+                _env,
                 _codehash,
                 _codeInputs,
                 _userTimeout,
@@ -81,36 +84,16 @@ contract UserSample is Ownable {
     }
 
     function startJobSubscription(
-        bytes32 _codehash,
-        bytes memory _codeInputs,
-        uint256 _userTimeout,
-        uint256 _maxGasPrice,
-        uint256 _callbackDeposit,
-        address _refundAccount,
-        address _callbackContract,
-        uint256 _callbackGasLimit,
-        uint256 _periodicGap,
-        uint256 _usdcDeposit,
-        uint256 _startTimestamp,
-        uint256 _terminationTimestamp
+        RelaySubscriptions.JobSubscriptionParams memory _jobSubsParams,
+        uint256 _callbackDeposit
     ) external returns (bool) {
         // usdcDeposit = _userTimeout * EXECUTION_FEE_PER_MS + GATEWAY_FEE_PER_JOB;
-        token.safeIncreaseAllowance(relaySubscriptionsAddress, _usdcDeposit);
+        token.safeIncreaseAllowance(relaySubscriptionsAddress, _jobSubsParams.usdcDeposit);
 
         (bool success, ) = relaySubscriptionsAddress.call{value: _callbackDeposit}(
             abi.encodeWithSignature(
-                "startJobSubscription(bytes32,bytes,uint256,uint256,address,address,uint256,uint256,uint256,uint256,uint256)",
-                _codehash,
-                _codeInputs,
-                _userTimeout,
-                _maxGasPrice,
-                _refundAccount,
-                _callbackContract,
-                _callbackGasLimit,
-                _periodicGap,
-                _usdcDeposit,
-                _startTimestamp,
-                _terminationTimestamp
+                "startJobSubscription((uint8,uint256,uint256,uint256,uint256,address,bytes32,bytes,uint256,uint256,uint256,address))",
+                _jobSubsParams
             )
         );
         return success;
