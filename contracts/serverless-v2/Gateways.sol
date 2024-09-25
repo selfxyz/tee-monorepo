@@ -35,7 +35,7 @@ contract Gateways is
     /**
      * @notice Constructor for initializing the logic contract without any admins.
      * @dev Safeguard against the further takeover of the logic contract.
-     *      Regarding basis points, if slash percent is 0.1%, then _slashPercentInBips 
+     *      Regarding basis points, if slash percent is 0.1%, then _slashPercentInBips
      *      can be represented as 1, whereas _slashMaxBips will be 1000(=100%).
      * @param attestationVerifier The contract responsible for verifying attestations.
      * @param maxAge The maximum age of an attestation.
@@ -258,7 +258,13 @@ contract Gateways is
             uint256 chainId = _chainIds[index];
             requestChains[chainId] = reqChain;
 
-            emit ChainAddedGlobal(chainId, reqChain.relayAddress, reqChain.relaySubscriptionsAddress, reqChain.httpRpcUrl, reqChain.wsRpcUrl);
+            emit ChainAddedGlobal(
+                chainId,
+                reqChain.relayAddress,
+                reqChain.relaySubscriptionsAddress,
+                reqChain.httpRpcUrl,
+                reqChain.wsRpcUrl
+            );
         }
     }
 

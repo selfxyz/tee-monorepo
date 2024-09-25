@@ -99,11 +99,10 @@ contract UserSample is Ownable {
         return success;
     }
 
-    function withdrawEth() external onlyOwner() {
+    function withdrawEth() external onlyOwner {
         (bool success, ) = msg.sender.call{value: address(this).balance}("");
-        if(!success)
-            revert EthWithdrawalFailed();
-        
+        if (!success) revert EthWithdrawalFailed();
+
         emit OwnerEthWithdrawal();
     }
 

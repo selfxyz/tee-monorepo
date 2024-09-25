@@ -246,8 +246,7 @@ contract GatewayJobs is
     function setJobAllowance() external onlyRole(DEFAULT_ADMIN_ROLE) {
         // increasing allowance to be used while relaying jobs
         bool success = USDC_TOKEN.approve(address(JOB_MANAGER), type(uint256).max);
-        if(!success)
-            revert GatewaysJobsUsdcApprovalFailed(address(JOB_MANAGER), type(uint256).max);
+        if (!success) revert GatewaysJobsUsdcApprovalFailed(address(JOB_MANAGER), type(uint256).max);
     }
 
     //-------------------------------- admin functions end ----------------------------------//
@@ -293,7 +292,17 @@ contract GatewayJobs is
         uint256 usdcDeposit = _deadline * JOB_MANAGER.getJobExecutionFeePerMs(_env);
         USDC_TOKEN.safeTransferFrom(_gateway, address(this), usdcDeposit);
 
-        _createJob(_jobId, _codehash, _codeInputs, _deadline, _jobOwner, enclaveAddress, usdcDeposit, _sequenceId, _env);
+        _createJob(
+            _jobId,
+            _codehash,
+            _codeInputs,
+            _deadline,
+            _jobOwner,
+            enclaveAddress,
+            usdcDeposit,
+            _sequenceId,
+            _env
+        );
     }
 
     function _createJob(

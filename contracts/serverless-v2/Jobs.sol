@@ -12,7 +12,7 @@ import "./Executors.sol";
 
 /**
  * @title Jobs Contract
- * @dev This contract manages job creation, execution, and reward distribution. 
+ * @dev This contract manages job creation, execution, and reward distribution.
  * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
  */
 contract Jobs is
@@ -148,11 +148,7 @@ contract Jobs is
      * @param executionFeePerMs The fee paid to executors per millisecond.
      * @param stakingRewardPerMs The staking reward per millisecond, paid to the payment pool.
      */
-    event GlobalEnvAdded(
-        uint8 indexed env,
-        uint256 executionFeePerMs,
-        uint256 stakingRewardPerMs
-    );
+    event GlobalEnvAdded(uint8 indexed env, uint256 executionFeePerMs, uint256 stakingRewardPerMs);
 
     /**
      * @notice Emitted when an existing execution environment support is removed globally.
@@ -167,13 +163,8 @@ contract Jobs is
 
     //------------------------------ internal functions start ------------------------------//
 
-    function _addGlobalEnv(
-        uint8 _env,
-        uint256 _executionFeePerMs,
-        uint256 _stakingRewardPerMs
-    ) internal {
-        if(EXECUTORS.isTreeInitialized(_env))
-            revert JobsGlobalEnvAlreadySupported();
+    function _addGlobalEnv(uint8 _env, uint256 _executionFeePerMs, uint256 _stakingRewardPerMs) internal {
+        if (EXECUTORS.isTreeInitialized(_env)) revert JobsGlobalEnvAlreadySupported();
 
         executionEnv[_env] = ExecutionEnv({
             executionFeePerMs: _executionFeePerMs,
@@ -185,8 +176,7 @@ contract Jobs is
     }
 
     function _removeGlobalEnv(uint8 _env) internal {
-        if(!EXECUTORS.isTreeInitialized(_env))
-            revert JobsGlobalEnvAlreadyUnsupported();
+        if (!EXECUTORS.isTreeInitialized(_env)) revert JobsGlobalEnvAlreadyUnsupported();
 
         delete executionEnv[_env];
         EXECUTORS.removeTree(_env);
@@ -336,11 +326,7 @@ contract Jobs is
         }
 
         // deposit escrow amount(USDC)
-        USDC_TOKEN.safeTransferFrom(
-            _jobOwner,
-            address(this),
-            _deadline * getJobExecutionFeePerMs(_env)
-        );
+        USDC_TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * getJobExecutionFeePerMs(_env));
 
         jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, _env, selectedNodes);
     }
@@ -447,10 +433,7 @@ contract Jobs is
             // transfer payout to payment pool
             USDC_TOKEN.safeTransfer(USDC_PAYMENT_POOL, executionTime * stakingRewardPerMs);
             // transfer to job owner
-            USDC_TOKEN.safeTransfer(
-                jobOwner,
-                (deadline - executionTime) * (executionFeePerMs + stakingRewardPerMs)
-            );
+            USDC_TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (executionFeePerMs + stakingRewardPerMs));
         }
         // for second output
         else if (_outputCount == 2) {
@@ -626,7 +609,7 @@ contract Jobs is
 
     /**
      * @notice Slashes executors for a job if the execution has timed out.
-     * @dev This function is called externally to trigger the slashing mechanism for a 
+     * @dev This function is called externally to trigger the slashing mechanism for a
      *      job when the execution time has exceeded the allowed deadline plus buffer time.
      * @param _jobId The ID of the job for which executors are to be slashed.
      */
