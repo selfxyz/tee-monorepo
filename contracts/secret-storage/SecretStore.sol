@@ -181,7 +181,7 @@ contract SecretStore is
         uint256 sizeLimit,
         uint256 endTimestamp,
         uint256 usdcDeposit,
-        SelectedEnclave[] selectedEnclaves
+        address[] selectedEnclaves
     );
 
     event EnclaveAcknowledgedStore(
@@ -261,12 +261,15 @@ contract SecretStore is
         userStorage[id].startTimestamp = block.timestamp;
         userStorage[id].endTimestamp = _endTimestamp;
 
-        // cannot allocate memory array directly to storage var
-        for (uint256 index = 0; index < selectedEnclaves.length; index++) {
+        uint len = selectedEnclaves.length;
+        address[] memory enclaveAddresses;
+        for (uint256 index = 0; index < len; index++) {
+            // cannot allocate memory array directly to storage var
             userStorage[id].selectedEnclaves.push(selectedEnclaves[index]);
+            enclaveAddresses[index] = selectedEnclaves[index].enclaveAddress;
         }
 
-        emit SecretStoreCreated(secretId, _owner, _sizeLimit, _endTimestamp, _usdcDeposit, selectedEnclaves);
+        emit SecretStoreCreated(secretId, _owner, _sizeLimit, _endTimestamp, _usdcDeposit, enclaveAddresses);
     }
 
     function _checkUsdcDeposit(
