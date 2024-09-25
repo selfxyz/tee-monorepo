@@ -16,7 +16,7 @@
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage",
     "clean": "npx hardhat clean && rm -rf coverage && rm -rf artifacts && npx hardhat typechain",
-    "prettify:contracts": "npx prettier --write contracts/*.sol contracts/**/*.sol",
+    "prettify:contracts": "npx prettier --write --plugin=prettier-plugin-solidity contracts/*.sol contracts/**/*.sol",
     "prettify:test": "npx prettier --write test"
   },
   "repository": {
