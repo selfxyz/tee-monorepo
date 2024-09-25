@@ -12,7 +12,7 @@
   "scripts": {
     "test": "npx hardhat test",
     "benchmark": "npx hardhat test benchmarks/*.ts",
-    "solhint": "solhint -f table contracts/**/*.sol",
+    "solhint": "npx solhint -f table contracts/**/*.sol",
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage",
     "clean": "npx hardhat clean && rm -rf coverage && rm -rf artifacts && npx hardhat typechain",
