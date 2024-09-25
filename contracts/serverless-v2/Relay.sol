@@ -34,7 +34,7 @@ contract Relay is
     error RelayInvalidGlobalTimeouts();
 
     /**
-     * @notice Initializes the logic contract with essential parameters and disables further 
+     * @notice Initializes the logic contract with essential parameters and disables further
      * initializations of the logic contract.
      * @param attestationVerifier The contract responsible for verifying attestations.
      * @param maxAge The maximum age for attestations and signature, in seconds.
@@ -146,7 +146,7 @@ contract Relay is
 
     //-------------------------------- Admin methods start --------------------------------//
 
-    /** 
+    /**
      * @notice Whitelist an enclave image for use by gateways.
      * @param PCR0 The first PCR value of the enclave image.
      * @param PCR1 The second PCR value of the enclave image.
@@ -161,7 +161,7 @@ contract Relay is
         return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
     }
 
-    /** 
+    /**
      * @notice Revoke an enclave image.
      * @param imageId Image to be revoked.
      * @return true if the image was freshly revoked, false otherwise.
@@ -187,10 +187,7 @@ contract Relay is
      * @param env The execution environment added.
      * @param executionFeePerMs The fee per millisecond for job execution(in USDC).
      */
-    event GlobalEnvAdded(
-        uint8 indexed env,
-        uint256 executionFeePerMs
-    );
+    event GlobalEnvAdded(uint8 indexed env, uint256 executionFeePerMs);
 
     /**
      * @notice Emitted when an existing execution environment support is removed globally.
@@ -206,31 +203,22 @@ contract Relay is
     error RelayGlobalEnvAlreadyUnsupported();
 
     modifier isValidEnv(uint8 _env) {
-        if(!executionEnv[_env].status)
-            revert RelayEnvUnsupported();
+        if (!executionEnv[_env].status) revert RelayEnvUnsupported();
         _;
     }
 
     //-------------------------------- internal functions start --------------------------------//
 
-    function _addGlobalEnv(
-        uint8 _env,
-        uint256 _executionFeePerMs
-    ) internal {
-        if(executionEnv[_env].status)
-            revert RelayGlobalEnvAlreadySupported();
+    function _addGlobalEnv(uint8 _env, uint256 _executionFeePerMs) internal {
+        if (executionEnv[_env].status) revert RelayGlobalEnvAlreadySupported();
 
-        executionEnv[_env] = ExecutionEnv({
-            executionFeePerMs: _executionFeePerMs,
-            status: true
-        });
+        executionEnv[_env] = ExecutionEnv({executionFeePerMs: _executionFeePerMs, status: true});
 
         emit GlobalEnvAdded(_env, _executionFeePerMs);
     }
 
     function _removeGlobalEnv(uint8 _env) internal {
-        if(!executionEnv[_env].status)
-            revert RelayGlobalEnvAlreadyUnsupported();
+        if (!executionEnv[_env].status) revert RelayGlobalEnvAlreadyUnsupported();
 
         delete executionEnv[_env];
 
@@ -248,10 +236,7 @@ contract Relay is
      * @param _env The execution environment to be added.
      * @param _executionFeePerMs The fee per millisecond for job execution(in USDC).
      */
-    function addGlobalEnv(
-        uint8 _env,
-        uint256 _executionFeePerMs
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addGlobalEnv(uint8 _env, uint256 _executionFeePerMs) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _addGlobalEnv(_env, _executionFeePerMs);
     }
 
@@ -413,7 +398,7 @@ contract Relay is
 
     /**
      * @notice Tracks the jobs count.
-     * @dev It follows this scheme - 
+     * @dev It follows this scheme -
      *      | Chain ID (64 bit) | 0 (1 bit) | job_id (191 bits) |
      *      First 64 bits represent the chainId.
      *      65th bit is fixed as 0, which represents an individual job.
@@ -502,8 +487,7 @@ contract Relay is
     ) internal {
         if (_userTimeout <= GLOBAL_MIN_TIMEOUT || _userTimeout >= GLOBAL_MAX_TIMEOUT) revert RelayInvalidUserTimeout();
 
-        if (jobCount + 1 == (block.chainid << 192) | (uint256(1) << 191)) 
-            jobCount = block.chainid << 192;
+        if (jobCount + 1 == (block.chainid << 192) | (uint256(1) << 191)) jobCount = block.chainid << 192;
 
         if (_maxGasPrice < tx.gasprice) revert RelayInsufficientMaxGasPrice();
 
@@ -570,12 +554,7 @@ contract Relay is
         delete jobs[_jobId];
         _releaseEscrowAmount(job.env, enclaveAddress, job.jobOwner, _totalTime, job.usdcDeposit);
 
-        (bool success, uint256 callbackGas) = _callBackWithLimit(
-            _jobId,
-            job,
-            _output,
-            _errorCode
-        );
+        (bool success, uint256 callbackGas) = _callBackWithLimit(_jobId, job, _output, _errorCode);
 
         uint256 callbackCost = (callbackGas + FIXED_GAS) * tx.gasprice;
 
@@ -757,5 +736,4 @@ contract Relay is
     //-------------------------------- external functions end --------------------------------//
 
     //-------------------------------- Job End --------------------------------//
-
 }

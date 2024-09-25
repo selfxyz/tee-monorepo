@@ -31,7 +31,13 @@ contract JobsUser {
         token.safeIncreaseAllowance(jobs, _usdcDeposit);
 
         (bool _success, ) = jobs.call(
-            abi.encodeWithSignature("createJob(uint8,bytes32,bytes,uint256)", _env, _codehash, _codeInputs, _userTimeout)
+            abi.encodeWithSignature(
+                "createJob(uint8,bytes32,bytes,uint256)",
+                _env,
+                _codehash,
+                _codeInputs,
+                _userTimeout
+            )
         );
         return _success;
     }

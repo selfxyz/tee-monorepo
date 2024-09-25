@@ -126,8 +126,7 @@ contract Executors is
     //-------------------------------- Execution Env start --------------------------------//
 
     modifier isValidEnv(uint8 _env) {
-        if(!isTreeInitialized(_env))
-            revert ExecutorsUnsupportedEnv();
+        if (!isTreeInitialized(_env)) revert ExecutorsUnsupportedEnv();
         _;
     }
 
@@ -296,12 +295,7 @@ contract Executors is
         if (signer != _enclaveAddress) revert ExecutorsInvalidSigner();
     }
 
-    function _register(
-        address _enclaveAddress, 
-        address _owner, 
-        uint256 _jobCapacity,
-        uint8 _env
-    ) internal {
+    function _register(address _enclaveAddress, address _owner, uint256 _jobCapacity, uint8 _env) internal {
         executors[_enclaveAddress].jobCapacity = _jobCapacity;
         executors[_enclaveAddress].owner = _owner;
         executors[_enclaveAddress].env = _env;
@@ -328,7 +322,11 @@ contract Executors is
 
         // insert node in the tree
         if (executorNode.stakeAmount >= MIN_STAKE_AMOUNT && executorNode.activeJobs < executorNode.jobCapacity) {
-            _insert_unchecked(executorNode.env, _enclaveAddress, uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(
+                executorNode.env,
+                _enclaveAddress,
+                uint64(executorNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR)
+            );
         }
 
         emit ExecutorRevived(_enclaveAddress);
@@ -498,7 +496,10 @@ contract Executors is
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _selectExecutors(uint8 _env, uint256 _noOfNodesToSelect) internal returns (address[] memory selectedNodes) {
+    function _selectExecutors(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) internal returns (address[] memory selectedNodes) {
         selectedNodes = _selectNodes(_env, _noOfNodesToSelect);
         for (uint256 index = 0; index < selectedNodes.length; index++) {
             address enclaveAddress = selectedNodes[index];
@@ -510,7 +511,10 @@ contract Executors is
         }
     }
 
-    function _selectNodes(uint8 _env, uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
+    function _selectNodes(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) internal view returns (address[] memory selectedNodes) {
         uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
         selectedNodes = _selectN(_env, randomizer, _noOfNodesToSelect);
     }
@@ -568,7 +572,7 @@ contract Executors is
 
     /**
      * @notice Slashes the stake of an executor node.
-     * @dev Can only be called by an account with the `JOBS_ROLE`. This function 
+     * @dev Can only be called by an account with the `JOBS_ROLE`. This function
      *      triggers a slashing penalty on the specified executor node.
      * @param _enclaveAddress The address of the executor enclave to be slashed.
      * @return The amount of stake that was slashed from the executor node.

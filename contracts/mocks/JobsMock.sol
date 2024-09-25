@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 contract JobsMock {
-
     struct ExecutionEnv {
         // The fee paid to executors per millisecond.
         uint256 executionFeePerMs;
@@ -14,12 +13,7 @@ contract JobsMock {
 
     error JobsMockError();
 
-
-    constructor(
-        uint8 _env,
-        uint256 _executionFeePerMs,
-        uint256 _stakingRewardPerMs
-    ) {
+    constructor(uint8 _env, uint256 _executionFeePerMs, uint256 _stakingRewardPerMs) {
         executionEnv[_env] = ExecutionEnv({
             executionFeePerMs: _executionFeePerMs,
             stakingRewardPerMs: _stakingRewardPerMs
