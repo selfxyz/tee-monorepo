@@ -191,6 +191,7 @@ pub async fn sign_relay_job_request(
     job_start_time: U256,
     sequence_number: u8,
     job_owner: &Address,
+    env: u8,
 ) -> Option<(String, u64)> {
     let sign_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -198,7 +199,7 @@ pub async fn sign_relay_job_request(
         .as_secs();
 
     let relay_job_typehash = keccak256(
-            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint256 signTimestamp)"
+            "RelayJob(uint256 jobId,bytes32 codeHash,bytes codeInputs,uint256 deadline,uint256 jobRequestTimestamp,uint8 sequenceId,address jobOwner,uint8 env,uint256 signTimestamp)"
         );
 
     let code_inputs_hash = keccak256(code_inputs);
@@ -212,6 +213,7 @@ pub async fn sign_relay_job_request(
         Token::Uint(job_start_time),
         Token::Uint(sequence_number.into()),
         Token::Address(*job_owner),
+        Token::Uint(env.into()),
         Token::Uint(sign_timestamp.into()),
     ];
 
@@ -395,7 +397,7 @@ pub async fn confirm_event(
     let mut first_iteration = true;
     loop {
         if last_seen_block.load(Ordering::SeqCst)
-            >= log.block_number.unwrap_or(U64::from(0)).as_u64() + confirmation_blocks
+            >= log.block_number.unwrap_or(U64::zero()).as_u64() + confirmation_blocks
         {
             match provider
                 .get_transaction_receipt(log.transaction_hash.unwrap_or(H256::zero()))

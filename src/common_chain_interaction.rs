@@ -465,6 +465,7 @@ impl ContractsClient {
             sequence_number,
             gateway_address: None,
             job_mode: JobMode::Once,
+            env: log.topics[2].into_uint().as_u64() as u8,
         })
     }
 
@@ -549,16 +550,23 @@ impl ContractsClient {
             let ref topics = log.topics;
             if topics[0] == keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into() {
                 let decoded = decode(
-                    &vec![ParamType::Uint(256), ParamType::Address, ParamType::Address],
+                    &vec![
+                        ParamType::Uint(256),
+                        ParamType::Uint(8),
+                        ParamType::Address,
+                        ParamType::Address,
+                    ],
                     &log.data.0,
                 )
                 .unwrap();
 
                 let job_id = log.topics[1].into_uint();
-                let job_owner = decoded[1].clone().into_address().unwrap();
-                let gateway_operator = decoded[2].clone().into_address().unwrap();
+                let env = log.topics[1].into_uint().as_u64() as u8;
+                let job_owner = decoded[2].clone().into_address().unwrap();
+                let gateway_operator = decoded[3].clone().into_address().unwrap();
 
                 if job_id == job.job_id
+                    && env == job.env
                     && job_owner == job.job_owner
                     && gateway_operator != Address::zero()
                     && gateway_operator == job.gateway_address.unwrap()
@@ -722,6 +730,7 @@ impl ContractsClient {
             job.starttime,
             job.sequence_number,
             &job.job_owner,
+            job.env,
         )
         .await
         .unwrap();
@@ -740,6 +749,7 @@ impl ContractsClient {
             job.starttime,
             job.sequence_number,
             job.job_owner,
+            job.env.into(),
             sign_timestamp.into(),
         );
 
@@ -1396,13 +1406,14 @@ mod common_chain_interaction_tests {
     use super::*;
 
     async fn generate_job_relayed_log(job_id: Option<U256>, job_starttime: u64) -> Log {
-        let job_id = job_id.unwrap_or(U256::from(1));
+        let job_id = job_id.unwrap_or(U256::one());
 
         Log {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
                 keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
                 H256::from_uint(&job_id),
+                H256::from_uint(&U256::one()),
             ],
             data: encode(&[
                 Token::FixedBytes(
@@ -1433,7 +1444,7 @@ mod common_chain_interaction_tests {
     }
 
     async fn generate_job_responded_log(job_id: Option<U256>) -> Log {
-        let job_id = job_id.unwrap_or(U256::from(1));
+        let job_id = job_id.unwrap_or(U256::one());
 
         Log {
             address: H160::from_str(GATEWAY_JOBS_CONTRACT_ADDR).unwrap(),
@@ -1452,7 +1463,7 @@ mod common_chain_interaction_tests {
     }
 
     async fn generate_generic_job(job_id: Option<U256>, job_starttime: Option<u64>) -> Job {
-        let job_id = job_id.unwrap_or(U256::from(1));
+        let job_id = job_id.unwrap_or(U256::one());
 
         Job {
             job_id,
@@ -1480,11 +1491,12 @@ mod common_chain_interaction_tests {
             sequence_number: 1 as u8,
             gateway_address: None,
             job_mode: JobMode::Once,
+            env: 1u8,
         }
     }
 
     async fn generate_generic_response_job(job_id: Option<U256>) -> ResponseJob {
-        let job_id = job_id.unwrap_or(U256::from(1));
+        let job_id = job_id.unwrap_or(U256::one());
 
         ResponseJob {
             job_id,
@@ -1528,7 +1540,8 @@ mod common_chain_interaction_tests {
             address: H160::from_str(RELAY_CONTRACT_ADDR).unwrap(),
             topics: vec![
                 keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
-                H256::from_uint(&U256::from(1)),
+                H256::from_uint(&U256::one()),
+                H256::from_uint(&U256::one()),
             ],
             data: EthBytes::from(vec![0x00]),
             ..Default::default()

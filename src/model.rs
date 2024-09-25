@@ -173,6 +173,7 @@ pub struct Job {
     pub sequence_number: u8,
     pub gateway_address: Option<Address>,
     pub job_mode: JobMode,
+    pub env: u8,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -210,6 +211,7 @@ pub struct SubscriptionJob {
     pub tx_hash: FixedBytes,
     pub code_input: Bytes,
     pub starttime: U256,
+    pub env: u8,
 }
 
 #[derive(Debug, Clone)]
