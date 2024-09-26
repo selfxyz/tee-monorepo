@@ -1,6 +1,7 @@
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader, Write, ErrorKind};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
+use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 use std::fs::OpenOptions;
@@ -8,6 +9,7 @@ use tokio::sync::broadcast;
 use warp::Filter;
 use chrono::Local;
 use clap::Parser;
+use serde_json::json; 
 
 const TARGET_CID: u64 = 18;  // Equivalent to 88 in hexadecimal
 
@@ -35,13 +37,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log_message(&args.script_log_file, "Starting script...")?;
 
+    // Shared log_id counter (initially 1)
+    let log_id_counter = Arc::new(Mutex::new(1));
+    let log_id_counter_clone = Arc::clone(&log_id_counter);
+
     // Spawn a thread to monitor for the specific enclave and capture logs
     let sse_tx_clone = sse_tx.clone();
     let enclave_log_file_clone = args.enclave_log_file.clone();
     let script_log_file_clone = args.script_log_file.clone();
     thread::spawn(move || {
         loop {
-            if let Err(e) = monitor_and_capture_logs(&tx, &sse_tx_clone, &enclave_log_file_clone, &script_log_file_clone) {
+            if let Err(e) = monitor_and_capture_logs(&tx, &sse_tx_clone, &enclave_log_file_clone, &script_log_file_clone, &log_id_counter_clone) {
                 log_message(&script_log_file_clone, &format!("Error in monitor_and_capture_logs: {}. Retrying...", e)).unwrap();
                 thread::sleep(Duration::from_secs(5));
             }
@@ -58,15 +64,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up HTTP server for fetching all logs
     let enclave_log_file_clone = args.enclave_log_file.clone();
-    let script_log_file_clone = args.script_log_file.clone();
+
     let logs = warp::path("logs")
-        .map(move || {
-            let logs = std::fs::read_to_string(&enclave_log_file_clone).unwrap_or_else(|_| {
-                log_message(&script_log_file_clone, "Failed to read logs from file").unwrap();
-                "No logs available".to_string()
-            });
-            warp::reply::html(logs)
-        });
+    .and(warp::query::<HashMap<String, String>>()) // Handle query params
+    .map(move |params: HashMap<String, String>| {
+        // Extract log_id and offset from query params
+        let log_id = params.get("log_id").and_then(|id| id.parse::<u64>().ok()).unwrap_or(1);
+        let offset = params.get("offset").and_then(|off| off.parse::<usize>().ok()).unwrap_or(10);
+        
+        // Fetch the logs
+        match fetch_logs_with_offset(&enclave_log_file_clone, log_id, offset) {
+            Ok(logs) => warp::reply::json(&logs),  // Return logs as JSON
+            Err(_) => {
+                // Return an error message in JSON format
+                warp::reply::json(&json!({"error": "Failed to retrieve logs."}))
+            }
+        }
+    });
 
     // Set up SSE endpoint for streaming logs
     let sse = warp::path("stream")
@@ -84,20 +98,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let routes = logs.or(sse);
 
-    log_message(&args.script_log_file, "Server started at http://localhost:3030")?;
-    log_message(&args.script_log_file, "SSE endpoint: http://localhost:3030/stream")?;
+    log_message(&args.script_log_file, "Server started at http://localhost:515")?;
+    log_message(&args.script_log_file, "SSE endpoint: http://localhost:515/stream")?;
 
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    warp::serve(routes).run(([127, 0, 0, 1], 515)).await;
 
     Ok(())
 }
 
-fn monitor_and_capture_logs(tx: &mpsc::Sender<String>, sse_tx: &broadcast::Sender<String>, enclave_log_file: &str, script_log_file: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn monitor_and_capture_logs(tx: &mpsc::Sender<String>, sse_tx: &broadcast::Sender<String>, enclave_log_file: &str, script_log_file: &str, log_id_counter: &Arc<Mutex<u64>>) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         match wait_for_enclave_with_cid(TARGET_CID, script_log_file) {
             Ok(enclave_id) => {
                 log_message(script_log_file, &format!("Enclave with CID {} detected: {}. Starting log capture.", TARGET_CID, enclave_id))?;
-                if let Err(e) = capture_logs(tx, sse_tx, &enclave_id, enclave_log_file, script_log_file) {
+                if let Err(e) = capture_logs(tx, sse_tx, &enclave_id, enclave_log_file, script_log_file, log_id_counter) {
                     log_message(script_log_file, &format!("Error capturing logs for enclave {}: {}. Restarting capture.", enclave_id, e))?;
                 }
             }
@@ -137,8 +151,7 @@ fn wait_for_enclave_with_cid(target_cid: u64, script_log_file: &str) -> Result<S
         thread::sleep(Duration::from_secs(1));
     }
 }
-
-fn capture_logs(tx: &mpsc::Sender<String>, sse_tx: &broadcast::Sender<String>, enclave_id: &str, _enclave_log_file: &str, script_log_file: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn capture_logs(tx: &mpsc::Sender<String>, sse_tx: &broadcast::Sender<String>, enclave_id: &str, _enclave_log_file: &str, script_log_file: &str, log_id_counter: &Arc<Mutex<u64>>) -> Result<(), Box<dyn std::error::Error>> {
     let child = Command::new("nitro-cli")
         .args(&["console", "--enclave-id", enclave_id])
         .stdout(Stdio::piped())
@@ -151,19 +164,26 @@ fn capture_logs(tx: &mpsc::Sender<String>, sse_tx: &broadcast::Sender<String>, e
 
             for line in reader.lines() {
                 let line = line?;
+
+                // Lock and update log_id
+                let mut log_id = log_id_counter.lock().unwrap();
+                let log_entry = format!("[{}] {}", *log_id, line); // Store log in [log_id] message format
                 
                 // Send log to the mpsc channel for saving to file
-                if let Err(e) = tx.send(line.clone()) {
+                if let Err(e) = tx.send(log_entry.clone()) {
                     log_message(script_log_file, &format!("Error sending log to channel: {}", e))?;
                 }
 
-                // Try sending to the SSE channel, but handle the "channel closed" case
-                match sse_tx.send(line) {
+                // Send log to SSE channel
+                match sse_tx.send(log_entry.clone()) {
                     Ok(_) => { /* Successfully sent to SSE */ }
                     Err(broadcast::error::SendError(_)) => {
                         println!("No active SSE subscribers, skipping log transmission.");
                     }
                 }
+
+                // Increment the log_id
+                *log_id += 1;
             }
 
             log_message(script_log_file, "Nitro CLI process ended unexpectedly")?;
@@ -223,3 +243,43 @@ fn clear_log_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 }
+
+// Helper function to fetch logs
+fn fetch_logs_with_offset(enclave_log_file: &str, log_id: u64, offset: usize) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+    let start_log_id = if log_id > offset as u64 {
+        log_id - offset as u64
+    } else {
+        1  // If the calculated start log_id is less than 1, start from the first log
+    };
+    
+    let file = std::fs::File::open(enclave_log_file)?;
+    let reader = BufReader::new(file);
+    
+    let mut logs: Vec<serde_json::Value> = Vec::with_capacity(offset);
+
+    for line in reader.lines().flatten() {
+        // Parse each line in the [log_id] message format
+        if let Some((log_id_str, message)) = line.split_once("] ") {
+            let log_id_str = log_id_str.trim_start_matches('[');
+            if let Ok(current_log_id) = log_id_str.parse::<u64>() {
+                // Start collecting logs when we hit start_log_id
+                if current_log_id >= start_log_id {
+                    // Create a JSON object for each log (with log_id and message fields)
+                    let log_entry = json!({
+                        "log_id": current_log_id,
+                        "message": message
+                    });
+                    logs.push(log_entry);
+                }
+
+                // Stop if we collected enough logs
+                if logs.len() >= offset {
+                    break;
+                }
+            }
+        }
+    }
+    
+    Ok(logs)
+}
+
