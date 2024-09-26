@@ -151,6 +151,7 @@ fn wait_for_enclave_with_cid(target_cid: u64, script_log_file: &str) -> Result<S
         thread::sleep(Duration::from_secs(1));
     }
 }
+
 fn capture_logs(tx: &mpsc::Sender<String>, sse_tx: &broadcast::Sender<String>, enclave_id: &str, _enclave_log_file: &str, script_log_file: &str, log_id_counter: &Arc<Mutex<u64>>) -> Result<(), Box<dyn std::error::Error>> {
     let child = Command::new("nitro-cli")
         .args(&["console", "--enclave-id", enclave_id])
