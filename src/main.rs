@@ -245,7 +245,7 @@ fn clear_log_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Helper function to fetch logs
-fn fetch_logs_with_offset(enclave_log_file: &str, log_id: u64, offset: usize) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+fn fetch_logs_with_offset(enclave_log_file: &str, log_id: u64, offset: usize) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let start_log_id = if log_id > offset as u64 {
         log_id - offset as u64
     } else {
@@ -255,7 +255,7 @@ fn fetch_logs_with_offset(enclave_log_file: &str, log_id: u64, offset: usize) ->
     let file = std::fs::File::open(enclave_log_file)?;
     let reader = BufReader::new(file);
     
-    let mut logs: Vec<serde_json::Value> = Vec::with_capacity(offset);
+    let mut logs: Vec<String> = Vec::with_capacity(offset);
 
     for line in reader.lines().flatten() {
         // Parse each line in the [log_id] message format
@@ -264,11 +264,7 @@ fn fetch_logs_with_offset(enclave_log_file: &str, log_id: u64, offset: usize) ->
             if let Ok(current_log_id) = log_id_str.parse::<u64>() {
                 // Start collecting logs when we hit start_log_id
                 if current_log_id >= start_log_id {
-                    // Create a JSON object for each log (with log_id and message fields)
-                    let log_entry = json!({
-                        "log_id": current_log_id,
-                        "message": message
-                    });
+                    let log_entry = format!("[{}] {}", current_log_id, message);
                     logs.push(log_entry);
                 }
 
