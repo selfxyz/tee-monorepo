@@ -492,6 +492,7 @@ contract SecretStore is
 
             SecretManager.SelectedEnclave memory selectedEnclave;
             selectedEnclave.enclaveAddress = enclaveAddress;
+            selectedEnclave.selectTimestamp = block.timestamp;
             selectedEnclaves[index] = selectedEnclave;
 
             // TODO: need to have some buffer space for each enclave
@@ -555,6 +556,10 @@ contract SecretStore is
         uint256 _sizeLimit
     ) external onlyRole(SECRET_STORE_ROLE) {
         _releaseEnclave(_enclaveAddress, _sizeLimit);
+    }
+
+    function getSecretStoreOwner(address _enclaveAddress) external view returns (address) {
+        return secretStorage[_enclaveAddress].owner;
     }
 
     //---------------------------------- external functions end ----------------------------------//

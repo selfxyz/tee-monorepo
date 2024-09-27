@@ -126,6 +126,7 @@ contract SecretManager is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable MARK_ALIVE_TIMEOUT;
 
+    /// @notice Fee rate per unit size per second per secret store.
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SECRET_STORE_FEE_RATE;
 
@@ -159,6 +160,7 @@ contract SecretManager is
         address enclaveAddress;
         bool hasAcknowledgedStore;
         uint256 lastAliveTimestamp;
+        uint256 selectTimestamp;
     }
 
     struct UserStorage {
@@ -222,7 +224,7 @@ contract SecretManager is
     error SecretManagerInvalidEndTimestamp();
     error SecretManagerUnavailableResources();
     error SecretManagerAcknowledgementTimeOver();
-    error SecretManagerAcknowledgementTimeoutPending();
+    error SecretManagerAcknowledgementTimeoutPending(address enclaveAddress);
     error SecretManagerAcknowledgedAlready();
     error SecretManagerMarkAliveTimeoutOver();
     error SecretManagerUnacknowledged();
@@ -285,12 +287,12 @@ contract SecretManager is
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal {
-        if(block.timestamp > userStorage[_secretId].startTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
-            revert SecretManagerAcknowledgementTimeOver();
-
         address enclaveAddress = _verifyAcknowledgementSign(_secretId, _signTimestamp, _signature);
 
         uint256 enclaveIndex = _getSelectedEnclaveIndex(_secretId, enclaveAddress);
+        if(block.timestamp > userStorage[_secretId].selectedEnclaves[enclaveIndex].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
+            revert SecretManagerAcknowledgementTimeOver();
+
         userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore = true;
         userStorage[_secretId].selectedEnclaves[enclaveIndex].lastAliveTimestamp = _signTimestamp;
 
@@ -332,12 +334,12 @@ contract SecretManager is
         uint256 _secretId
     ) internal {
         UserStorage memory userStoreData = userStorage[_secretId];
-        if(block.timestamp <= userStoreData.startTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
-            revert SecretManagerAcknowledgementTimeoutPending();
-
         bool ackFailed;
         uint256 len = userStoreData.selectedEnclaves.length;
         for (uint256 index = 0; index < len; index++) {
+            if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
+                revert SecretManagerAcknowledgementTimeoutPending(userStoreData.selectedEnclaves[index].enclaveAddress);
+
             if(!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
                 ackFailed = true;
 
@@ -356,8 +358,7 @@ contract SecretManager is
     function _markStoreAlive(
         uint256 _secretId,
         uint256 _signTimestamp,
-        bytes memory _signature,
-        address _owner
+        bytes memory _signature
     ) internal {
         address enclaveAddress = _verifyStoreAliveSign(_secretId, _signTimestamp, _signature);
 
@@ -377,7 +378,7 @@ contract SecretManager is
         userStorage[_secretId].usdcDeposit -= usdcPayment;
         userStorage[_secretId].selectedEnclaves[enclaveIndex].lastAliveTimestamp = _signTimestamp;
 
-        USDC_TOKEN.safeTransfer(_owner, usdcPayment);
+        USDC_TOKEN.safeTransfer(SECRET_STORE.getSecretStoreOwner(enclaveAddress), usdcPayment);
 
         // TODO: delete from selectedNodes array and refund remaining usdc
         if(block.timestamp > userStorage[_secretId].endTimestamp) {
@@ -447,7 +448,8 @@ contract SecretManager is
                 userStorage[_secretId].selectedEnclaves[_enclaveIndex] = SelectedEnclave({
                     enclaveAddress: selectedEnclaves[0].enclaveAddress,
                     hasAcknowledgedStore: false,
-                    lastAliveTimestamp: 0
+                    lastAliveTimestamp: 0,
+                    selectTimestamp: selectedEnclaves[0].selectTimestamp
                 });
             }
 
@@ -558,7 +560,7 @@ contract SecretManager is
         uint256 _signTimestamp,
         bytes memory _signature
     ) external {
-        _markStoreAlive(_secretId, _signTimestamp, _signature, _msgSender());
+        _markStoreAlive(_secretId, _signTimestamp, _signature);
     }
 
     function markStoreDead(
@@ -576,10 +578,9 @@ contract SecretManager is
     }
 
     function terminateSecret(
-        uint256 _secretId,
-        address _owner
+        uint256 _secretId
     ) external {
-        _terminateSecret(_secretId, _owner);
+        _terminateSecret(_secretId, _msgSender());
     }
 
     //-------------------------------- external functions end ----------------------------------//
