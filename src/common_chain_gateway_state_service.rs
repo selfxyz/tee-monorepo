@@ -5,9 +5,9 @@ use ethers::utils::keccak256;
 use log::{error, info};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::Sender;
-use tokio::time;
+use tokio::time::{self, Duration, Instant};
 
 use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::{
@@ -87,19 +87,20 @@ pub async fn gateway_epoch_state_service(
         }
     }
 
-    let last_cycle_timestamp =
-        contracts_client.epoch + (current_cycle * contracts_client.time_interval);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-    let until_epoch = Duration::from_secs(last_cycle_timestamp + contracts_client.time_interval);
+    let next_cycle_timestamp =
+        contracts_client.epoch + ((current_cycle + 1) * contracts_client.time_interval);
 
-    if until_epoch > now {
-        let sleep_duration = until_epoch - now;
-        tokio::time::sleep(sleep_duration).await;
-    }
-
-    let mut interval = time::interval(Duration::from_secs(contracts_client.time_interval));
+    let mut interval = time::interval_at(
+        Instant::now()
+            + Duration::from_secs(
+                next_cycle_timestamp
+                    - SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards")
+                        .as_secs(),
+            ),
+        Duration::from_secs(contracts_client.time_interval),
+    );
 
     loop {
         interval.tick().await;
