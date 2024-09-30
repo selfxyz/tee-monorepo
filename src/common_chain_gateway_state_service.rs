@@ -87,18 +87,21 @@ pub async fn gateway_epoch_state_service(
         }
     }
 
-    let next_cycle_timestamp =
-        contracts_client.epoch + ((current_cycle + 1) * contracts_client.time_interval);
+    let next_cycle_timestamp: i64 =
+        (contracts_client.epoch + ((current_cycle + 1) * contracts_client.time_interval)) as i64;
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs() as i64;
+
+    let interval_start_instant = if next_cycle_timestamp > current_time {
+        Instant::now() + Duration::from_secs((next_cycle_timestamp - current_time) as u64)
+    } else {
+        Instant::now() - Duration::from_secs((current_time - next_cycle_timestamp) as u64)
+    };
 
     let mut interval = time::interval_at(
-        Instant::now()
-            + Duration::from_secs(
-                next_cycle_timestamp
-                    - SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_secs(),
-            ),
+        interval_start_instant,
         Duration::from_secs(contracts_client.time_interval),
     );
 
