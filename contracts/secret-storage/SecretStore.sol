@@ -129,7 +129,7 @@ contract SecretStore is
     /// @notice enclave stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
-    bytes32 public constant SECRET_STORE_ROLE = keccak256("SECRET_STORE_ROLE");
+    bytes32 public constant SECRET_MANAGER_ROLE = keccak256("SECRET_MANAGER_ROLE");
 
     //-------------------------------- SecretStore start --------------------------------//
 
@@ -484,9 +484,12 @@ contract SecretStore is
     function _selectEnclaves(
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit
-    ) internal returns (SecretManager.SelectedEnclave[] memory selectedEnclaves) {
+    ) internal returns (SecretManager.SelectedEnclave[] memory) {
         address[] memory selectedNodes = _selectNodes(_noOfNodesToSelect);
-        for (uint256 index = 0; index < selectedNodes.length; index++) {
+
+        uint len = selectedNodes.length;
+        SecretManager.SelectedEnclave[] memory  selectedEnclaves = new SecretManager.SelectedEnclave[](len);
+        for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = selectedNodes[index];
             secretStorage[enclaveAddress].storageOccupied += _sizeLimit;
 
@@ -499,6 +502,7 @@ contract SecretStore is
             if (secretStorage[enclaveAddress].storageOccupied >= secretStorage[enclaveAddress].storageCapacity)
                 _deleteIfPresent(ENV, enclaveAddress);
         }
+        return selectedEnclaves;
     }
 
     function _selectNodes(uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
@@ -508,12 +512,15 @@ contract SecretStore is
 
     function _slashEnclave(
         address _enclaveAddress,
+        uint256 _sizeLimit,
         address _recipient
     ) internal returns (uint256) {
         uint256 totalComp = (secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
         secretStorage[_enclaveAddress].stakeAmount -= totalComp;
 
         STAKING_TOKEN.safeTransfer(_recipient, totalComp);
+
+        _releaseEnclave(_enclaveAddress, _sizeLimit);
         return totalComp;
     }
 
@@ -540,21 +547,22 @@ contract SecretStore is
     function selectEnclaves(
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit
-    ) external onlyRole(SECRET_STORE_ROLE) returns (SecretManager.SelectedEnclave[] memory selectedEnclaves) {
+    ) external onlyRole(SECRET_MANAGER_ROLE) returns (SecretManager.SelectedEnclave[] memory) {
         return _selectEnclaves(_noOfNodesToSelect, _sizeLimit);
     }
 
     function slashEnclave(
         address _enclaveAddress,
+        uint256 _sizeLimit,
         address _recipient
-    ) external onlyRole(SECRET_STORE_ROLE) returns (uint256) {
-        return _slashEnclave(_enclaveAddress, _recipient);
+    ) external onlyRole(SECRET_MANAGER_ROLE) returns (uint256) {
+        return _slashEnclave(_enclaveAddress, _sizeLimit, _recipient);
     }
 
     function releaseEnclave(
         address _enclaveAddress,
         uint256 _sizeLimit
-    ) external onlyRole(SECRET_STORE_ROLE) {
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
         _releaseEnclave(_enclaveAddress, _sizeLimit);
     }
 

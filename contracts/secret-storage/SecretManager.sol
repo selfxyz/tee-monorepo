@@ -264,7 +264,7 @@ contract SecretManager is
         userStorage[id].endTimestamp = _endTimestamp;
 
         uint len = selectedEnclaves.length;
-        address[] memory enclaveAddresses;
+        address[] memory enclaveAddresses = new address[](len);
         for (uint256 index = 0; index < len; index++) {
             // cannot allocate memory array directly to storage var
             userStorage[id].selectedEnclaves.push(selectedEnclaves[index]);
@@ -461,8 +461,7 @@ contract SecretManager is
         }
 
         // TODO: slash prev enclave(who's recipient)
-        SECRET_STORE.slashEnclave(_enclaveAddress, STAKING_PAYMENT_POOL);
-        SECRET_STORE.releaseEnclave(_enclaveAddress, userStorage[_secretId].sizeLimit);
+        SECRET_STORE.slashEnclave(_enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
     }
 
     function _removeSelectedEnclave(
