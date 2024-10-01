@@ -1,20 +1,22 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use actix_web::web::Bytes;
+use actix_web::web::Data;
 use anyhow::{Context, Result};
-use ethers::abi::{Abi, Token};
+use ethers::abi::{encode, encode_packed, Abi, Token};
 use ethers::middleware::SignerMiddleware;
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::signers::LocalWallet;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::{Address, Eip1559TransactionRequest, H160, H256, U256};
+use ethers::utils::keccak256;
 use k256::ecdsa::SigningKey;
+use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
-use tokio::fs::File;
+use tokio::fs::{self, File};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
@@ -46,11 +48,12 @@ pub struct Config {
     pub common_chain_id: u64,
     pub http_rpc_url: String,
     pub web_socket_url: String,
-    pub enclave_store_contract_addr: H160,
     pub secret_store_contract_addr: H160,
+    pub secret_manager_contract_addr: H160,
     pub num_selected_stores: u8,
     pub enclave_signer_file: String,
-    pub acknowledgement_timeout: U256,
+    pub acknowledgement_timeout: u64,
+    pub mark_alive_timeout: u64,
 }
 
 // App data struct containing the necessary fields to run the secret store
@@ -60,8 +63,8 @@ pub struct AppState {
     pub common_chain_id: u64,
     pub http_rpc_url: String,
     pub web_socket_url: String,
-    pub enclave_store_contract_addr: Address,
     pub secret_store_contract_addr: Address,
+    pub secret_manager_contract_addr: Address,
     pub num_selected_stores: u8,
     pub enclave_address: H160,
     pub enclave_signer: SigningKey,
@@ -69,15 +72,16 @@ pub struct AppState {
     pub mutable_params_injected: Mutex<bool>,
     pub enclave_owner: Mutex<H160>,
     pub http_rpc_client: Mutex<Option<HttpSignerProvider>>,
-    pub secret_storage_contract_abi: Abi,
+    pub secret_manager_contract_abi: Abi,
     pub nonce_to_send: Mutex<U256>,
     pub enclave_registered: AtomicBool,
     pub events_listener_active: Mutex<bool>,
     pub last_block_seen: AtomicU64,
-    pub acknowledgement_timeout: U256,
+    pub acknowledgement_timeout: u64,
+    pub mark_alive_timeout: u64,
     pub secrets_awaiting_acknowledgement: Mutex<HashMap<U256, u8>>,
     pub secrets_created: Mutex<HashMap<U256, SecretCreatedMetadata>>,
-    pub secrets_stored: Mutex<HashMap<U256, SecretMetadata>>,
+    pub secrets_stored: Mutex<HashMap<U256, SecretStoredMetadata>>,
     pub secrets_txn_sender_channel: Mutex<Option<Sender<SecretsTxnMetadata>>>,
 }
 
@@ -98,35 +102,38 @@ pub struct CreateSecret {
     pub signature_hex: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct StorageProof {
-    pub secret_id: U256,
-}
-
 #[derive(Debug, Clone)]
 pub struct SecretMetadata {
     pub owner: Address,
     pub size_limit: U256,
-    pub end_timestamp_millis: U256,
+    pub end_timestamp: U256,
 }
 
 #[derive(Debug, Clone)]
 pub struct SecretCreatedMetadata {
     pub secret_metadata: SecretMetadata,
-    pub acknowledgement_deadline: Instant,
+    pub acknowledgement_deadline: SystemTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct SecretStoredMetadata {
+    pub secret_metadata: SecretMetadata,
+    pub last_alive_time: SystemTime,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SecretsTxnType {
-    ACKNOWLEDGEMENT,
+    Acknowledgement,
     AcknowledgementTimeout,
+    MarkStoreAlive,
 }
 
 impl SecretsTxnType {
     pub fn as_str(&self) -> &str {
         match self {
-            SecretsTxnType::ACKNOWLEDGEMENT => "acknowledgement",
+            SecretsTxnType::Acknowledgement => "acknowledgement",
             SecretsTxnType::AcknowledgementTimeout => "acknowledgement timeout",
+            SecretsTxnType::MarkStoreAlive => "mark alive",
         }
     }
 }
@@ -135,9 +142,7 @@ impl SecretsTxnType {
 pub struct SecretsTxnMetadata {
     pub txn_type: SecretsTxnType,
     pub secret_id: U256,
-    pub sign_timestamp: Option<U256>,
-    pub signature: Option<Bytes>,
-    pub retry_deadline: Instant,
+    pub retry_deadline: SystemTime,
 }
 
 #[derive(Debug, Clone)]
@@ -148,7 +153,7 @@ pub struct PendingTxnData {
     pub nonce: U256,
     pub gas_limit: U256,
     pub gas_price: U256,
-    pub last_monitor_instant: Instant,
+    pub last_monitor_instant: SystemTime,
 }
 
 pub enum RpcTxnSendError {
@@ -162,11 +167,11 @@ pub enum RpcTxnSendError {
     OtherRetryable,
 }
 
-// Returns the 'SecretStore' Contract Abi object for encoding transaction data, takes the JSON ABI from 'SecretStore.json' file
+// Returns the 'SecretManager' Contract Abi object for encoding transaction data, takes the JSON ABI from 'SecretManager.json' file
 pub fn load_abi_from_file() -> Result<Abi> {
-    let abi_json = include_str!("../SecretStore.json");
+    let abi_json = include_str!("../SecretManager.json");
     let contract: Abi = from_str(&abi_json).context(
-        "Failed to deserialize 'SecretStore' contract ABI from the Json file SecretStore.json",
+        "Failed to deserialize 'SecretManager' contract ABI from the Json file SecretManager.json",
     )?;
 
     Ok(contract)
@@ -192,37 +197,146 @@ pub async fn open_and_read_file(path: String) -> Result<Vec<u8>> {
     Ok(secret)
 }
 
-// Function to return the 'SecretStore' txn data based on the txn type received, using the contract Abi object
+// Check if a secret exists at a file location and if found delete it
+pub async fn check_and_delete_file(path: String) -> Result<()> {
+    // Check if the file exists
+    if fs::metadata(&path).await.is_ok() {
+        // If it exists, delete the file
+        fs::remove_file(path).await?;
+    }
+
+    Ok(())
+}
+
+// Function to return the 'SecretManager' txn data based on the txn type received, using the contract Abi object
 pub fn generate_txn(
-    secret_storage_contract_abi: &Abi,
-    secret_storage_contract_addr: Address,
+    app_state: Data<AppState>,
     secrets_txn_metadata: &SecretsTxnMetadata,
 ) -> Result<TypedTransaction> {
     let txn_data = match secrets_txn_metadata.txn_type {
-        SecretsTxnType::ACKNOWLEDGEMENT => {
+        SecretsTxnType::Acknowledgement => {
+            // Initialize the current sign timestamp and update the last alive time for the secret ID
+            let sign_timestamp = SystemTime::now();
+            app_state
+                .secrets_stored
+                .lock()
+                .unwrap()
+                .entry(secrets_txn_metadata.secret_id)
+                .and_modify(|secret| secret.last_alive_time = sign_timestamp);
+            let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+            // Encode and hash the acknowledgement of storing the secret following EIP712 format
+            let domain_separator = keccak256(encode(&[
+                Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+                Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
+                Token::FixedBytes(keccak256("1").to_vec()),
+            ]));
+            let acknowledge_typehash =
+                keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
+
+            let hash_struct = keccak256(encode(&[
+                Token::FixedBytes(acknowledge_typehash.to_vec()),
+                Token::Uint(secrets_txn_metadata.secret_id),
+                Token::Uint(sign_timestamp.into()),
+            ]));
+
+            // Create the digest
+            let digest = keccak256(
+                encode_packed(&[
+                    Token::String("\x19\x01".to_string()),
+                    Token::FixedBytes(domain_separator.to_vec()),
+                    Token::FixedBytes(hash_struct.to_vec()),
+                ])
+                .context("Failed to encode the acknowledgement message for signing")?,
+            );
+
+            // Sign the digest using enclave key
+            let (rs, v) = app_state
+                .enclave_signer
+                .sign_prehash_recoverable(&digest)
+                .context("Failed to sign the acknowledgement message using enclave key")?;
+            let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
+
             // Get the encoding 'Function' object for acknowledgeStore transaction
-            let acknowledge_store = secret_storage_contract_abi.function("acknowledgeStore")?;
+            let acknowledge_store = app_state
+                .secret_manager_contract_abi
+                .function("acknowledgeStore")?;
             let params = vec![
                 Token::Uint(secrets_txn_metadata.secret_id),
-                Token::Uint(secrets_txn_metadata.sign_timestamp.clone().unwrap()),
-                Token::Bytes(secrets_txn_metadata.signature.clone().unwrap().into()),
+                Token::Uint(sign_timestamp.into()),
+                Token::Bytes(signature.into()),
             ];
 
             acknowledge_store.encode_input(&params)?
         }
         SecretsTxnType::AcknowledgementTimeout => {
             // Get the encoding 'Function' object for acknowledgeStoreFailed transaction
-            let acknowledge_store_failed =
-                secret_storage_contract_abi.function("acknowledgeStoreFailed")?;
+            let acknowledge_store_failed = app_state
+                .secret_manager_contract_abi
+                .function("acknowledgeStoreFailed")?;
             let params = vec![Token::Uint(secrets_txn_metadata.secret_id)];
 
             acknowledge_store_failed.encode_input(&params)?
         }
+        SecretsTxnType::MarkStoreAlive => {
+            // Get the current sign timestamp and update the last alive time for the secret ID
+            let sign_timestamp = SystemTime::now();
+            app_state
+                .secrets_stored
+                .lock()
+                .unwrap()
+                .entry(secrets_txn_metadata.secret_id)
+                .and_modify(|secret| secret.last_alive_time = sign_timestamp);
+            let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+            // Encode and hash the mark store alive message for the secret following EIP712 format
+            let domain_separator = keccak256(encode(&[
+                Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+                Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
+                Token::FixedBytes(keccak256("1").to_vec()),
+            ]));
+            let alive_typehash = keccak256("Alive(uint256 secretId,uint256 signTimestamp)");
+
+            let hash_struct = keccak256(encode(&[
+                Token::FixedBytes(alive_typehash.to_vec()),
+                Token::Uint(secrets_txn_metadata.secret_id),
+                Token::Uint(sign_timestamp.into()),
+            ]));
+
+            // Create the digest
+            let digest = keccak256(
+                encode_packed(&[
+                    Token::String("\x19\x01".to_string()),
+                    Token::FixedBytes(domain_separator.to_vec()),
+                    Token::FixedBytes(hash_struct.to_vec()),
+                ])
+                .context("Failed to encode the alive message for signing")?,
+            );
+
+            // Sign the digest using enclave key
+            let (rs, v) = app_state
+                .enclave_signer
+                .sign_prehash_recoverable(&digest)
+                .context("Failed to sign the alive message using enclave key")?;
+            let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
+
+            // Get the encoding 'Function' object for markStoreAlive transaction
+            let mark_store_alive = app_state
+                .secret_manager_contract_abi
+                .function("markStoreAlive")?;
+            let params = vec![
+                Token::Uint(secrets_txn_metadata.secret_id),
+                Token::Uint(sign_timestamp.into()),
+                Token::Bytes(signature.into()),
+            ];
+
+            mark_store_alive.encode_input(&params)?
+        }
     };
 
-    // Return the TransactionRequest object using the encoded data and 'SecretStore' contract address
+    // Return the TransactionRequest object using the encoded data and 'SecretManager' contract address
     Ok(TypedTransaction::Eip1559(Eip1559TransactionRequest {
-        to: Some(secret_storage_contract_addr.into()),
+        to: Some(app_state.secret_manager_contract_addr.into()),
         data: Some(txn_data.into()),
         ..Default::default()
     }))
@@ -268,11 +382,11 @@ pub fn parse_send_error(error: String) -> RpcTxnSendError {
 pub async fn estimate_gas_and_price(
     http_rpc_client: HttpSignerProvider,
     txn: &TypedTransaction,
-    deadline: Instant,
+    deadline: SystemTime,
 ) -> Option<(U256, U256)> {
     let mut gas_price = U256::zero();
 
-    while Instant::now() < deadline {
+    while deadline.duration_since(SystemTime::now()).is_ok() {
         // Request the current gas price for the common chain from the rpc, retry otherwise
         let price = http_rpc_client.get_gas_price().await;
         let Ok(price) = price else {
@@ -293,13 +407,13 @@ pub async fn estimate_gas_and_price(
         return None;
     }
 
-    while Instant::now() < deadline {
+    while deadline.duration_since(SystemTime::now()).is_ok() {
         // Estimate the gas required for the TransactionRequest from the rpc, retry otherwise
         let estimated_gas = http_rpc_client.estimate_gas(txn, None).await;
         let Ok(estimated_gas) = estimated_gas else {
             let error_string = format!("{:?}", estimated_gas.unwrap_err());
             eprintln!(
-                "Failed to estimate gas from the rpc for sending a 'SecretStore' transaction: {:?}",
+                "Failed to estimate gas from the rpc for sending a 'SecretManager' transaction: {:?}",
                 error_string
             );
 
@@ -319,7 +433,7 @@ pub async fn estimate_gas_and_price(
     return None;
 }
 
-// Conversion function using pre-built `Address::from_slice`
+// Conversion function for H256 TxHash type to Address type
 pub fn h256_to_address(hash: H256) -> Address {
     Address::from_slice(&hash.as_bytes()[12..]) // Extract last 20 bytes
 }

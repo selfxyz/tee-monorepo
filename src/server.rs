@@ -15,7 +15,7 @@ use tokio_retry::Retry;
 use crate::events::events_listener;
 use crate::utils::{
     create_and_populate_file, AppState, CreateSecret, ImmutableConfig, MutableConfig,
-    SecretsTxnMetadata, SecretsTxnType, SECRET_STORAGE_CAPACITY,
+    SecretStoredMetadata, SecretsTxnMetadata, SecretsTxnType, SECRET_STORAGE_CAPACITY,
 };
 
 #[get("/")]
@@ -34,6 +34,7 @@ async fn inject_immutable_config(
         return HttpResponse::BadRequest().body("Immutable params already configured!\n");
     }
 
+    // Extract the owner address from the payload
     let owner_address = hex::decode(
         &immutable_config
             .owner_address_hex
@@ -64,6 +65,7 @@ async fn inject_mutable_config(
     Json(mutable_config): Json<MutableConfig>,
     app_state: Data<AppState>,
 ) -> impl Responder {
+    // Decode the gas private key from the payload
     let bytes32_gas_key = hex::decode(
         &mutable_config
             .gas_key_hex
@@ -139,6 +141,7 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
         return HttpResponse::BadRequest().body("Mutable params not configured yet!\n");
     }
 
+    // Initialize the storage capacity of the enclave store
     let storage_capacity = SECRET_STORAGE_CAPACITY;
     let owner = app_state.enclave_owner.lock().unwrap().clone();
     let sign_timestamp = SystemTime::now()
@@ -186,6 +189,7 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
     };
     let signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
+    // Get the current block number from the rpc to initiate event listening
     let http_rpc_client = app_state.http_rpc_client.lock().unwrap().clone().unwrap();
     let current_block_number = http_rpc_client.get_block_number().await;
 
@@ -212,6 +216,7 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
 }
 
 #[post("/inject-secret")]
+// Endpoint exposed to verify and store a secret inside the enclave
 async fn inject_and_store_secret(
     Json(create_secret): Json<CreateSecret>,
     app_state: Data<AppState>,
@@ -220,6 +225,7 @@ async fn inject_and_store_secret(
         return HttpResponse::BadRequest().body("Secret store enclave not registered yet!\n");
     }
 
+    // Decode the encrypted secret from the payload
     let encrypted_secret_bytes = hex::decode(
         &create_secret
             .encrypted_secret_hex
@@ -233,6 +239,7 @@ async fn inject_and_store_secret(
         ));
     };
 
+    // Decode the signature from the payload
     let signature_bytes = hex::decode(
         &create_secret
             .signature_hex
@@ -246,7 +253,7 @@ async fn inject_and_store_secret(
         ));
     };
 
-    // Reconstruct the signature
+    // Reconstruct the signature from the bytes data
     let signature = Signature::try_from(signature_bytes.as_slice());
     let Ok(signature) = signature else {
         return HttpResponse::BadRequest().body(format!(
@@ -255,12 +262,13 @@ async fn inject_and_store_secret(
         ));
     };
 
+    // Create the digest
     let data_hash = keccak256(encode(&[
         Token::Uint(create_secret.secret_id),
         Token::Bytes(encrypted_secret_bytes.clone()),
     ]));
 
-    // Recover the signer address from the signature
+    // Recover the signer address from the signature and digest
     let recovered_address = signature.recover(data_hash);
     let Ok(recovered_address) = recovered_address else {
         return HttpResponse::BadRequest().body(format!(
@@ -269,6 +277,7 @@ async fn inject_and_store_secret(
         ));
     };
 
+    // Decrypt the secret data using the enclave signer key
     let decrypted_secret = decrypt(
         &app_state.enclave_signer.to_bytes(),
         &encrypted_secret_bytes,
@@ -280,6 +289,7 @@ async fn inject_and_store_secret(
         ));
     };
 
+    // Check if the secret ID has been generated from the contract or not
     let Some(secret_created) = app_state
         .secrets_created
         .lock()
@@ -290,6 +300,7 @@ async fn inject_and_store_secret(
             .body("Secret ID not created yet or undergoing injection!\n");
     };
 
+    // Exit if the secret owner is not the same as the secret signer
     if recovered_address != secret_created.secret_metadata.owner {
         app_state
             .secrets_created
@@ -300,6 +311,7 @@ async fn inject_and_store_secret(
             .body("Signer address not the same as secret owner address!\n");
     }
 
+    // Create and store the secret data in the filesystem
     let secret_stored = Retry::spawn(
         ExponentialBackoff::from_millis(5).map(jitter).take(3),
         || async {
@@ -326,21 +338,20 @@ async fn inject_and_store_secret(
         ));
     }
 
-    app_state
-        .secrets_stored
-        .lock()
-        .unwrap()
-        .insert(create_secret.secret_id, secret_created.secret_metadata);
-
-    let sign_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let sign_timestamp = SystemTime::now();
+    app_state.secrets_stored.lock().unwrap().insert(
+        create_secret.secret_id,
+        SecretStoredMetadata {
+            secret_metadata: secret_created.secret_metadata,
+            last_alive_time: sign_timestamp,
+        },
+    );
+    let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // Encode and hash the acknowledgement of storing the secret following EIP712 format
     let domain_separator = keccak256(encode(&[
         Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.SecretStore").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
         Token::FixedBytes(keccak256("1").to_vec()),
     ]));
     let acknowledge_typehash = keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
@@ -375,6 +386,7 @@ async fn inject_and_store_secret(
     };
     let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
+    // Send the txn response with the acknowledgement counterpart to the common chain txn sender
     let _ = Retry::spawn(
         ExponentialBackoff::from_millis(5).map(jitter).take(3),
         || async {
@@ -385,10 +397,8 @@ async fn inject_and_store_secret(
                 .clone()
                 .unwrap()
                 .send(SecretsTxnMetadata {
-                    txn_type: SecretsTxnType::ACKNOWLEDGEMENT,
+                    txn_type: SecretsTxnType::Acknowledgement,
                     secret_id: create_secret.secret_id,
-                    sign_timestamp: Some(sign_timestamp.into()),
-                    signature: Some(signature.clone().into()),
                     retry_deadline: secret_created.acknowledgement_deadline,
                 })
                 .await
@@ -402,94 +412,3 @@ async fn inject_and_store_secret(
         "signature": format!("0x{}", hex::encode(signature)),
     }))
 }
-
-// #[post("/get-proof")]
-// async fn get_proof_of_storage(
-//     Json(storage_proof): Json<StorageProof>,
-//     app_state: Data<AppState>,
-// ) -> impl Responder {
-//     let secret_data = app_state
-//         .secrets_stored
-//         .lock()
-//         .unwrap()
-//         .get(&storage_proof.secret_id)
-//         .cloned();
-//     let Some(secret_data) = secret_data else {
-//         return HttpResponse::BadRequest().body("Secret not found!\n");
-//     };
-
-//     let secret_stored = Retry::spawn(
-//         ExponentialBackoff::from_millis(5).map(jitter).take(3),
-//         || async {
-//             open_and_read_file(
-//                 app_state.secret_store_path.to_owned()
-//                     + "/"
-//                     + &storage_proof.secret_id.to_string()
-//                     + ".bin",
-//             )
-//             .await
-//         },
-//     )
-//     .await;
-//     let Ok(secret) = secret_stored else {
-//         return HttpResponse::InternalServerError().body(format!(
-//             "Failed to retrieve the secret stored inside the enclave: {:?}",
-//             secret_stored.unwrap_err()
-//         ));
-//     };
-
-//     if secret_data.size_limit != secret.len().into() {
-//         return HttpResponse::InternalServerError()
-//             .body("Secret stored has size below the limit!\n");
-//     }
-
-//     let sign_timestamp = SystemTime::now()
-//         .duration_since(UNIX_EPOCH)
-//         .unwrap()
-//         .as_secs();
-
-//     // Encode and hash the acknowledgement of storing the secret following EIP712 format
-//     let domain_separator = keccak256(encode(&[
-//         Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-//         Token::FixedBytes(keccak256("marlin.oyster.SecretStore").to_vec()),
-//         Token::FixedBytes(keccak256("1").to_vec()),
-//     ]));
-//     let alive_typehash = keccak256("Alive(uint256 secretId,address owner,uint256 signTimestamp)");
-
-//     let hash_struct = keccak256(encode(&[
-//         Token::FixedBytes(alive_typehash.to_vec()),
-//         Token::Uint(storage_proof.secret_id),
-//         Token::Address(secret_data.owner),
-//         Token::Uint(sign_timestamp.into()),
-//     ]));
-
-//     // Create the digest
-//     let digest = encode_packed(&[
-//         Token::String("\x19\x01".to_string()),
-//         Token::FixedBytes(domain_separator.to_vec()),
-//         Token::FixedBytes(hash_struct.to_vec()),
-//     ]);
-//     let Ok(digest) = digest else {
-//         return HttpResponse::InternalServerError().body(format!(
-//             "Secret Stored! \nFailed to encode the alive message for signing: {:?}\n",
-//             digest.unwrap_err()
-//         ));
-//     };
-//     let digest = keccak256(digest);
-
-//     // Sign the digest using enclave key
-//     let sig = app_state.enclave_signer.sign_prehash_recoverable(&digest);
-//     let Ok((rs, v)) = sig else {
-//         return HttpResponse::InternalServerError().body(format!(
-//             "Secret Stored! \nFailed to sign the alive message using enclave key: {:?}\n",
-//             sig.unwrap_err()
-//         ));
-//     };
-//     let signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
-
-//     HttpResponse::Ok().json(json!({
-//         "secret_id": storage_proof.secret_id,
-//         "sign_timestamp": sign_timestamp,
-//         "signature": format!("0x{}", signature),
-//     }))
-// }

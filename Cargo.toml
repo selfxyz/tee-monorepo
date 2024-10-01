@@ -3,7 +3,13 @@ name = "oyster-secret-store"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "oyster-secret-store"
+path = "src/main.rs"
+
+[[bin]]
+name = "oyster-secret-user-utility"
+path = "src/user_utility/sign_secret.rs"
 
 [dependencies]
 actix-web = "4"

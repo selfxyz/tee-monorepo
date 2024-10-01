@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use actix_web::web::Data;
 use ethers::providers::Middleware;
@@ -14,7 +14,7 @@ use tokio_retry::Retry;
 
 use crate::utils::*;
 
-// Send 'SecretStore' transactions to the common chain
+// Send 'SecretManager' transactions to the common chain
 pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<SecretsTxnMetadata>) {
     let pending_txns_queue: Arc<Mutex<VecDeque<PendingTxnData>>> = Arc::new(VecDeque::new().into());
 
@@ -33,12 +33,15 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
 
     while let Some(secrets_txn_metadata) = rx.recv().await {
         // Initialize the txn object to send based on the txn type
-        let secrets_txn = generate_txn(
-            &app_state.secret_storage_contract_abi,
-            app_state.secret_store_contract_addr,
-            &secrets_txn_metadata,
-        )
-        .unwrap();
+        let secrets_txn = generate_txn(app_state.clone(), &secrets_txn_metadata);
+        let Ok(secrets_txn) = secrets_txn else {
+            eprintln!(
+                "Failed to sign and encode params for secret {} transaction: {:?}\n",
+                secrets_txn_metadata.txn_type.as_str(),
+                secrets_txn.unwrap_err()
+            );
+            continue;
+        };
 
         // Initialize retry metadata like gas price, gas limit and the need to update the nonce from the rpc
         let mut update_nonce = false;
@@ -54,8 +57,12 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
             continue;
         };
 
-        // Retry loop for sending the transaction to the common chain 'SecretStore' contract
-        while Instant::now() < secrets_txn_metadata.retry_deadline {
+        // Retry loop for sending the transaction to the common chain 'SecretManager' contract
+        while secrets_txn_metadata
+            .retry_deadline
+            .duration_since(SystemTime::now())
+            .is_ok()
+        {
             // Initialize the signer rpc client being used for sending the transaction in this retry loop
             let http_rpc_client = app_state.http_rpc_client.lock().unwrap().clone().unwrap();
             let mut txn = secrets_txn.clone();
@@ -67,7 +74,7 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
                     .await;
                 let Ok(new_nonce_to_send) = new_nonce_to_send else {
                     eprintln!(
-                        "Failed to fetch current nonce for the gas address ({:?}): {:?}",
+                        "Failed to fetch current nonce for the gas address ({:?}): {:?}\n",
                         http_rpc_client.address(),
                         new_nonce_to_send.unwrap_err()
                     );
@@ -95,7 +102,7 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
             let Ok(pending_txn) = pending_txn else {
                 let error_string = format!("{:?}", pending_txn.unwrap_err());
                 eprintln!(
-                    "Failed to send the secret {} transaction for secret id {}: {}",
+                    "Failed to send the secret {} transaction for secret id {}: {}\n",
                     secrets_txn_metadata.txn_type.as_str(),
                     secrets_txn_metadata.secret_id,
                     error_string
@@ -145,7 +152,7 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
                     nonce: current_nonce,
                     gas_limit: gas_limit,
                     gas_price: gas_price,
-                    last_monitor_instant: Instant::now(),
+                    last_monitor_instant: SystemTime::now(),
                 });
 
             // Increment nonce for the next transaction to send
@@ -165,12 +172,12 @@ async fn resend_pending_transaction(
     tx_sender: Sender<SecretsTxnMetadata>,
 ) {
     loop {
-        let Some(mut pending_txn_data) = pending_txns_queue.lock().unwrap().pop_front() else {
-            if !app_state.enclave_registered.load(Ordering::SeqCst) {
-                // Exit if the executor has been deregistered
-                return;
-            }
+        if !app_state.enclave_registered.load(Ordering::SeqCst) {
+            // Exit if the executor has been deregistered
+            return;
+        }
 
+        let Some(mut pending_txn_data) = pending_txns_queue.lock().unwrap().pop_front() else {
             // Continue if the pending txns deque is empty
             sleep(Duration::from_millis(200)).await;
             continue;
@@ -180,7 +187,11 @@ async fn resend_pending_transaction(
         let resend_interval = RESEND_TXN_INTERVAL
             - min(
                 RESEND_TXN_INTERVAL,
-                pending_txn_data.last_monitor_instant.elapsed().as_secs(),
+                pending_txn_data
+                    .last_monitor_instant
+                    .elapsed()
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
             );
 
         // Wait for the interval estimated, keeping track of the txn retry deadline as well
@@ -189,7 +200,8 @@ async fn resend_pending_transaction(
             pending_txn_data
                 .txn_data
                 .retry_deadline
-                .duration_since(Instant::now())
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::from_secs(0))
                 .as_secs(),
         )))
         .await;
@@ -220,14 +232,18 @@ async fn resend_pending_transaction(
         pending_txn_data.gas_price =
             U256::from(100 + RESEND_GAS_PRICE_INCREMENT_PERCENT) * pending_txn_data.gas_price / 100;
 
-        while Instant::now() < pending_txn_data.txn_data.retry_deadline {
+        while pending_txn_data
+            .txn_data
+            .retry_deadline
+            .duration_since(SystemTime::now())
+            .is_ok()
+        {
             // Initialize the pending transaction data and update its metadata accordingly
-            let mut replacement_txn = generate_txn(
-                &app_state.secret_storage_contract_abi,
-                app_state.secret_store_contract_addr,
-                &pending_txn_data.txn_data,
-            )
-            .unwrap();
+            let Ok(mut replacement_txn) =
+                generate_txn(app_state.clone(), &pending_txn_data.txn_data)
+            else {
+                break;
+            };
 
             // Check if the gas account has been updated and therefore send the replacement transaction to the main sender
             let current_gas_address = app_state
@@ -289,7 +305,7 @@ async fn resend_pending_transaction(
 
             // Monitor the newly sent pending txn
             pending_txn_data.txn_hash = pending_txn.tx_hash();
-            pending_txn_data.last_monitor_instant = Instant::now();
+            pending_txn_data.last_monitor_instant = SystemTime::now();
             pending_txns_queue
                 .lock()
                 .unwrap()
@@ -308,7 +324,7 @@ async fn resend_pending_transaction(
             sending 0 ETH to self (dummy txn) from the gas account for unblocking the current nonce {}", 
             pending_txn_data.txn_hash, pending_txn_data.nonce);
 
-        // If the current nonce has still not been resolved for the 'SecretStore' txn within the deadline then send a dummy txn to unblock it
+        // If the current nonce has still not been resolved for the 'SecretManager' txn within the deadline then send a dummy txn to unblock it
         loop {
             // Check if the gas account has been updated and therefore no need to unblock the current nonce for the old gas address
             let current_gas_address = app_state
