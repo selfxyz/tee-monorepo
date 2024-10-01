@@ -472,6 +472,7 @@ describe("SecretManager - Create secret", function () {
 
 		await expect(secretManager.createSecret(sizeLimit, endTimestamp, usdcDeposit))
 			.to.emit(secretManager, "SecretCreated");
+		expect(await usdcToken.balanceOf(secretManager.target)).to.eq(usdcDeposit);
 	});
 
 	it("cannot create secret with invalid size limit", async function() {
@@ -684,11 +685,19 @@ describe("SecretManager - Acknowledge secret", function () {
 
 	it("can mark acknowledgement failed", async function() {
 		let secretId = 1;
+		let usdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
+		let userInitialBal = await usdcToken.balanceOf(addrs[0]);
+
 		await time.increase(150);
 
 		await expect(secretManager.acknowledgeStoreFailed(secretId))
 			.to.emit(secretManager, "SecretStoreAcknowledgementFailed")
 			.withArgs(secretId);
+		
+		expect(await usdcToken.balanceOf(secretManager.target)).to.eq(0);
+
+		let userFinalBal = await usdcToken.balanceOf(addrs[0]);
+		expect(userFinalBal - userInitialBal).to.eq(usdcDeposit);
 	});
 
 	it("cannot mark acknowledgement failed if acknowledgement timeout is pending", async function() {
@@ -843,13 +852,19 @@ describe("SecretManager - Alive checks for secret", function () {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can submit alive check", async function() {
+		await time.increase(10);
 		let secretId = 1,
 			signTimestamp = await time.latest(),
 			signedDigest = await createAliveSignature(secretId, signTimestamp, wallets[17]);
+		let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
 
 		await expect(secretManager.markStoreAlive(secretId, signTimestamp, signedDigest))
 			.to.emit(secretManager, "SecretStoreAlive")
 			.withArgs(secretId, addrs[17]);
+
+		let usdcPayment = 10 * 1000 * 10; // duration * sizeLimit * feeRate
+		let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+		expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
 	});
 
 	it("cannot submit alive check with expired signature", async function() {
@@ -889,6 +904,8 @@ describe("SecretManager - Alive checks for secret", function () {
 		signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[19]);
 		await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
 
+		let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
+
 		await time.increase(850);
 		signTimestamp = await time.latest();
 		for (let index = 0; index < 3; index++) {
@@ -898,6 +915,10 @@ describe("SecretManager - Alive checks for secret", function () {
 
 		const userStorage = await secretManager.userStorage(secretId);
 		expect(userStorage.owner).to.eq(ZeroAddress);
+
+		let usdcPayment = 800 * 1000 * 10 * 3; // duration * sizeLimit * feeRate * noOfNodes
+		let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+		expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
 	});
 
 	// it("can mark secret store dead", async function () {
@@ -1052,20 +1073,37 @@ describe("SecretManager - Update end timestamp of secret", function () {
 		let secretId = 1,
 			endTimestamp = (await secretManager.userStorage(secretId)).endTimestamp + 100n,
 			usdcDeposit = parseUnits("3", 6);
-
+		let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
+		let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
+		
 		await expect(secretManager.updateSecretEndTimestamp(secretId, endTimestamp, usdcDeposit))
 			.to.emit(secretManager, "SecretEndTimestampUpdated")
 			.withArgs(secretId, endTimestamp);
+		expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(endTimestamp);
+
+		let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
+		let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
+		expect(secretManagerFinalBal - secretManagerInitialBal).to.eq(usdcDeposit);
+		expect(finalUsdcDeposit - initialUsdcDeposit).to.eq(usdcDeposit);
 	});
 
 	it("can decrease end timestamp", async function() {
 		let secretId = 1,
 			endTimestamp = (await secretManager.userStorage(secretId)).endTimestamp - 100n,
 			usdcDeposit = 0;
+		let usdcRefund = 100 * 1000 * 10 * 3; // reducedDuration * sizeLimit * feeRate * noOfNodes
+		let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
+		let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
 
 		await expect(secretManager.updateSecretEndTimestamp(secretId, endTimestamp, usdcDeposit))
 			.to.emit(secretManager, "SecretEndTimestampUpdated")
 			.withArgs(secretId, endTimestamp);
+		expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(endTimestamp);
+
+		let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
+		let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
+		expect(secretManagerInitialBal - secretManagerFinalBal).to.eq(usdcRefund);
+		expect(initialUsdcDeposit - finalUsdcDeposit).to.eq(usdcRefund);
 	});
 
 	it("cannot update end timestamp without secret owner", async function() {
@@ -1229,9 +1267,20 @@ describe("SecretManager - Update end timestamp of secret", function () {
 	takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
 	it("can terminate the secret before end timestamp", async function() {
+		await time.increase(100);
 		let secretId = 1;
+		let usdcRefund = 700 * 1000 * 10 * 3; // reductionInDuration * sizeLimit * feeRate * noOfNodes
+		let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
+		let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
+
 		await expect(secretManager.terminateSecret(secretId))
 			.to.emit(secretManager, "SecretTerminated").withArgs(secretId);
+		expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(await time.latest());
+
+		let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
+		let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
+		expect(secretManagerInitialBal - secretManagerFinalBal).to.eq(usdcRefund);
+		expect(initialUsdcDeposit - finalUsdcDeposit).to.eq(usdcRefund);
 	});
 
 	it("cannot update end timestamp without secret owner", async function() {
