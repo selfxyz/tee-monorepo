@@ -582,6 +582,10 @@ contract SecretManager is
         _terminateSecret(_secretId, _msgSender());
     }
 
+    function getSelectedEnclaves(uint256 _secretId) external view returns (SelectedEnclave[] memory) {
+        return userStorage[_secretId].selectedEnclaves;
+    }
+
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- SecretManager functions end --------------------------------//
