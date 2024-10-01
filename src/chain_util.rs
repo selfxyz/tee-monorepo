@@ -80,7 +80,7 @@ pub async fn get_block_number_by_timestamp(
                 "Failed to fetch block number. Error: {:#?}",
                 get_block_number_result.err()
             );
-            time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
             continue;
         }
 
@@ -93,9 +93,10 @@ pub async fn get_block_number_by_timestamp(
         return None;
     }
 
-    let mut count = 0;
-    let mut block_rate_per_second: f64;
-    let mut latest_block_timestamp = 0;
+    // A conservative estimate of the block rate per second before it is actually calculated below.
+    let mut block_rate_per_second: f64 = 3.0;
+    let mut first_block_number = 0;
+    let mut first_block_timestamp = 0;
 
     'less_than_block_number: while block_number > 0 {
         let block = provider.get_block(block_number).await;
@@ -130,14 +131,16 @@ pub async fn get_block_number_by_timestamp(
                             // so return the current block number
                             return Some(block_number);
                         }
-                        block_number += 1;
+                        block_number = block_number
+                            + ((target_timestamp - block.timestamp.as_u64()) as f64
+                                * block_rate_per_second) as u64;
                         continue 'less_than_block_number;
                     }
                     Ok(None) => {
                         // The next block does not exist.
                         // Wait for the next block to be created to be sure that
                         // the current block_number is the required block_number
-                        time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                        time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
                         continue 'next_block_check;
                     }
                     Err(err) => {
@@ -154,26 +157,24 @@ pub async fn get_block_number_by_timestamp(
                 }
             }
         } else {
-            count += 1;
-            if latest_block_timestamp == 0 {
-                latest_block_timestamp = block.timestamp.as_u64();
+            if first_block_timestamp == 0 {
+                first_block_timestamp = block.timestamp.as_u64();
+                first_block_number = block_number;
             }
-            // Calculate the block rate per second using the last 15 or greater blocks
-            // Check if the block rate per second can be calculated using latest block timestamp and block timestamp
-            if count > 15 && latest_block_timestamp - block.timestamp.as_u64() != 0 {
-                block_rate_per_second = (count as f64
-                    / (latest_block_timestamp as f64 - block.timestamp.as_u64() as f64))
-                    as f64;
+            // Calculate the avg block rate per second using the first recorded block timestamp
+            if first_block_timestamp > block.timestamp.as_u64() {
+                block_rate_per_second = (first_block_number - block_number) as f64
+                    / (first_block_timestamp - block.timestamp.as_u64()) as f64;
                 info!("Block rate per second: {}", block_rate_per_second);
-                count = 0;
-                latest_block_timestamp = 0;
 
                 let block_go_back = ((block.timestamp.as_u64() - target_timestamp) as f64
                     * block_rate_per_second) as u64;
-                if block_number >= block_go_back {
-                    block_number = block_number - block_go_back + 1;
-                } else {
-                    block_number = 1;
+                if block_go_back != 0 {
+                    if block_number >= block_go_back {
+                        block_number = block_number - block_go_back + 1;
+                    } else {
+                        block_number = 1;
+                    }
                 }
             }
         }
@@ -420,7 +421,7 @@ pub async fn confirm_event(
                         log.removed = Some(true);
                         break;
                     }
-                    time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                    time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
                     continue;
                 }
             };
@@ -429,14 +430,14 @@ pub async fn confirm_event(
         if first_iteration {
             first_iteration = false;
         } else {
-            time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
         }
 
         let curr_block_number = match provider.get_block_number().await {
             Ok(block_number) => block_number,
             Err(err) => {
                 error!("Failed to fetch block number. Error: {:#?}", err);
-                time::sleep(time::Duration::from_secs(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
                 continue;
             }
         };
