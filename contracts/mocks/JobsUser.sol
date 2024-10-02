@@ -22,6 +22,7 @@ contract JobsUser {
     event FailedCallback(uint256 indexed jobId, uint256 slashedAmount);
 
     function createJob(
+        uint8 _env,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _userTimeout,
@@ -30,7 +31,13 @@ contract JobsUser {
         token.safeIncreaseAllowance(jobs, _usdcDeposit);
 
         (bool _success, ) = jobs.call(
-            abi.encodeWithSignature("createJob(bytes32,bytes,uint256)", _codehash, _codeInputs, _userTimeout)
+            abi.encodeWithSignature(
+                "createJob(uint8,bytes32,bytes,uint256)",
+                _env,
+                _codehash,
+                _codeInputs,
+                _userTimeout
+            )
         );
         return _success;
     }
