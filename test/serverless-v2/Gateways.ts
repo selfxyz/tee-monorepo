@@ -462,6 +462,27 @@ describe("Gateways - Global chains", function () {
             .to.be.revertedWithCustomError(gateways, "GatewaysInvalidLength");
     });
 
+    it("cannot add already existing global chain again", async function () {
+        let chainIds = [1, 1];
+        let reqChains = [
+            {
+                relayAddress: addrs[1],
+                relaySubscriptionsAddress: addrs[2],
+                httpRpcUrl: "https://eth.rpc",
+                wsRpcUrl: "wss://eth.rpc"
+            },
+            {
+                relayAddress: addrs[3],
+                relaySubscriptionsAddress: addrs[4],
+                httpRpcUrl: "https://eth.rpc",
+                wsRpcUrl: "wss://eth.rpc"
+            }
+        ]
+        await expect(gateways.addChainGlobal(chainIds, reqChains))
+            .to.be.revertedWithCustomError(gateways, "GatewaysGlobalChainAlreadyExists")
+            .withArgs(1);
+    });
+
     it("can remove global chain", async function () {
         let chainIds = [1];
         await gateways.removeChainGlobal(chainIds);
