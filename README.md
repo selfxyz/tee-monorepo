@@ -2,6 +2,9 @@
 
 A simple and efficient logging server designed to run inside the host machine to stream logs from the AWS Nitro Enclave.
 
+1. GET `/stream` -- Creates an SSE connection which can be listened by the client to access realtime logs
+2. GET `/logs?log_id=50&offset=10` -- Responds with the logs starting with `offset` number of logs starting from log id = `log_id-1`
+
 ### Building the Server
 
 1. Clone the repository:
@@ -40,7 +43,7 @@ Before running the server, you need to grant it permission to bind to port 516. 
     ./target/release/logger
     ```
 
-3. The server will start and listen for log data on port 516.
+3. The server will start and listen for http requests on port 516.
 
 ## Additional Information
 
