@@ -136,7 +136,7 @@ pub async fn get_block_number_by_timestamp(
                             + ((target_timestamp - block.timestamp.as_u64()) as f64
                                 * block_rate_per_second) as u64;
 
-                        if block_number > smallest_block_number_not_satisfying {
+                        if block_number >= smallest_block_number_not_satisfying {
                             block_number = smallest_block_number_not_satisfying - 1;
                         }
                         continue 'less_than_block_number;
