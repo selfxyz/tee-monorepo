@@ -1,4 +1,4 @@
-import { getBytes, Wallet } from "ethers";
+import { getBytes, keccak256, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
 
 async function main() {
@@ -105,6 +105,9 @@ async function main() {
         }
     );
     console.log("SecretManager: ", secretManager.target);
+
+    await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("SECRET_MANAGER_ROLE")), secretManager.target);
+    console.log("Role granted");
 }
 
 function normalize(key: string): string {

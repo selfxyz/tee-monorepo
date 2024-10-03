@@ -91,10 +91,6 @@ describe("SecretManager - Init", function () {
         await expect(
             secretManager.initialize(addrs[0]),
         ).to.be.revertedWithCustomError(secretManager, "InvalidInitialization");
-
-        await expect(
-            secretManager.initialize(addrs[0]),
-        ).to.be.revertedWithCustomError(secretManager, "InvalidInitialization");
     });
 
     it("deploys as proxy and initializes", async function () {
@@ -1074,6 +1070,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
             endTimestamp = (await secretManager.userStorage(secretId)).endTimestamp + 100n,
             usdcDeposit = parseUnits("3", 6);
         let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
         let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
 
         await expect(secretManager.updateSecretEndTimestamp(secretId, endTimestamp, usdcDeposit))
@@ -1082,8 +1079,10 @@ describe("SecretManager - Update end timestamp of secret", function () {
         expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(endTimestamp);
 
         let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
         let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
         expect(secretManagerFinalBal - secretManagerInitialBal).to.eq(usdcDeposit);
+        expect(secretOwnerInitialBal - secretOwnerFinalBal).to.eq(usdcDeposit);
         expect(finalUsdcDeposit - initialUsdcDeposit).to.eq(usdcDeposit);
     });
 
@@ -1093,6 +1092,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
             usdcDeposit = 0;
         let usdcRefund = 100 * 1000 * 10 * 3; // reducedDuration * sizeLimit * feeRate * noOfNodes
         let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
         let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
 
         await expect(secretManager.updateSecretEndTimestamp(secretId, endTimestamp, usdcDeposit))
@@ -1101,8 +1101,10 @@ describe("SecretManager - Update end timestamp of secret", function () {
         expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(endTimestamp);
 
         let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
         let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
         expect(secretManagerInitialBal - secretManagerFinalBal).to.eq(usdcRefund);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(usdcRefund);
         expect(initialUsdcDeposit - finalUsdcDeposit).to.eq(usdcRefund);
     });
 
@@ -1135,7 +1137,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
     });
 });
 
-describe("SecretManager - Update end timestamp of secret", function () {
+describe("SecretManager - Terminate secret", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -1271,6 +1273,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
         let secretId = 1;
         let usdcRefund = 700 * 1000 * 10 * 3; // reductionInDuration * sizeLimit * feeRate * noOfNodes
         let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
         let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
 
         await expect(secretManager.terminateSecret(secretId))
@@ -1278,8 +1281,10 @@ describe("SecretManager - Update end timestamp of secret", function () {
         expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(await time.latest());
 
         let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
         let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
         expect(secretManagerInitialBal - secretManagerFinalBal).to.eq(usdcRefund);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(usdcRefund);
         expect(initialUsdcDeposit - finalUsdcDeposit).to.eq(usdcRefund);
     });
 

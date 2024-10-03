@@ -68,6 +68,7 @@ describe("SecretStore - Init", function () {
 
         expect(await secretStore.ATTESTATION_VERIFIER()).to.equal(attestationVerifier.target);
         expect(await secretStore.ATTESTATION_MAX_AGE()).to.equal(600);
+        expect(await secretStore.STAKING_TOKEN()).to.equal(token);
         expect(await secretStore.MIN_STAKE_AMOUNT()).to.equal(10 ** 10);
         expect(await secretStore.SLASH_PERCENT_IN_BIPS()).to.equal(10 ** 2);
         expect(await secretStore.SLASH_MAX_BIPS()).to.equal(10 ** 6);
@@ -104,6 +105,7 @@ describe("SecretStore - Init", function () {
 
         expect(await secretStore.ATTESTATION_VERIFIER()).to.equal(attestationVerifier.target);
         expect(await secretStore.ATTESTATION_MAX_AGE()).to.equal(600);
+        expect(await secretStore.STAKING_TOKEN()).to.equal(token);
         expect(await secretStore.MIN_STAKE_AMOUNT()).to.equal(10 ** 10);
         expect(await secretStore.SLASH_PERCENT_IN_BIPS()).to.equal(10 ** 2);
         expect(await secretStore.SLASH_MAX_BIPS()).to.equal(10 ** 6);
@@ -233,6 +235,7 @@ describe("SecretStore - Init", function () {
 
         expect(await secretStore.ATTESTATION_VERIFIER()).to.equal(attestationVerifier2.target);
         expect(await secretStore.ATTESTATION_MAX_AGE()).to.equal(100);
+        expect(await secretStore.STAKING_TOKEN()).to.equal(token2);
         expect(await secretStore.MIN_STAKE_AMOUNT()).to.equal(10);
         expect(await secretStore.SLASH_PERCENT_IN_BIPS()).to.equal(10);
         expect(await secretStore.SLASH_MAX_BIPS()).to.equal(1000);
@@ -324,7 +327,7 @@ testERC165(
     },
 );
 
-describe("SecretStore - Verify", function () {
+describe("SecretStore - Whitelist/Revoke enclave images", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -397,7 +400,7 @@ describe("SecretStore - Verify", function () {
     });
 });
 
-describe("SecretStore - Register secret store", function () {
+describe("SecretStore - Register/Deregister secret store", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -681,38 +684,9 @@ describe("SecretStore - Register secret store", function () {
             .to.revertedWithCustomError(secretStore, "SecretStoreInvalidEnclaveOwner");
     });
 
-    it('cannot drain secret store twice', async function () {
-        const timestamp = await time.latest() * 1000;
-        let signTimestamp = await time.latest() - 540;
-        let [attestationSign, attestation] = await createAttestation(
-            pubkeys[15],
-            image2,
-            wallets[14],
-            timestamp - 540000
-        );
-
-        let storageCapacity = 20;
-        let signedDigest = await createSecretStoreSignature(addrs[1], storageCapacity, signTimestamp,
-            wallets[15]);
-
-
-        await secretStore.connect(signers[1]).registerSecretStore(
-            attestationSign,
-            attestation,
-            storageCapacity,
-            signTimestamp,
-            signedDigest,
-            0
-        );
-
-        await secretStore.connect(signers[1]).drainSecretStore(addrs[15]);
-        await expect(secretStore.connect(signers[1]).drainSecretStore(addrs[15]))
-            .to.revertedWithCustomError(secretStore, "SecretStoreEnclaveAlreadyDraining");
-    });
-
 });
 
-describe("SecretStore - Staking", function () {
+describe("SecretStore - Staking/Unstaking", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -816,12 +790,6 @@ describe("SecretStore - Staking", function () {
             .to.be.revertedWithCustomError(secretStore, "SecretStoreInvalidEnclaveOwner");
     });
 
-    it("cannot drain without secret store owner", async function () {
-        let amount = 20;
-        await expect(secretStore.drainSecretStore(addrs[15]))
-            .to.be.revertedWithCustomError(secretStore, "SecretStoreInvalidEnclaveOwner");
-    });
-
     it("can unstake with draining if no occupied storage", async function () {
         let amount = 10;
         await secretStore.connect(signers[1]).drainSecretStore(addrs[15]);
@@ -866,7 +834,7 @@ describe("SecretStore - Staking", function () {
     });
 });
 
-describe("SecretStore - Revive", function () {
+describe("SecretStore - Drain/Revive secret store", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -939,6 +907,24 @@ describe("SecretStore - Revive", function () {
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+    it('can drain secret store', async function () {
+        await expect(secretStore.connect(signers[1]).drainSecretStore(addrs[15]))
+            .to.emit(secretStore, "SecretStoreDrained").withArgs(addrs[15]);
+
+        expect((await secretStore.secretStorage(addrs[15])).draining).to.be.eq(true);
+    });
+
+    it("cannot drain without secret store owner", async function () {
+        await expect(secretStore.drainSecretStore(addrs[15]))
+            .to.be.revertedWithCustomError(secretStore, "SecretStoreInvalidEnclaveOwner");
+    });
+
+    it('cannot drain secret store twice consecutively', async function () {
+        await secretStore.connect(signers[1]).drainSecretStore(addrs[15]);
+        await expect(secretStore.connect(signers[1]).drainSecretStore(addrs[15]))
+            .to.revertedWithCustomError(secretStore, "SecretStoreEnclaveAlreadyDraining");
+    });
 
     it("can revive secret store after draining", async function () {
         // Drain secret store

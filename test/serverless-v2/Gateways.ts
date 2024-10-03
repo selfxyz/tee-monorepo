@@ -812,7 +812,7 @@ describe("Gateways - Draining gateway", function () {
         expect((await gateways.gateways(addrs[15])).draining).to.be.eq(false);
     });
 
-    it('cannot drain without gateway owner', async function () {
+    it('cannot revive without gateway owner', async function () {
         await expect(gateways.connect(signers[0]).reviveGateway(addrs[15]))
             .to.be.revertedWithCustomError(gateways, "GatewaysNotGatewayOwner");
     });
