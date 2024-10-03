@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
                     )
                     .unwrap();
-                    thread::sleep(Duration::from_secs(5));
+                    thread::sleep(Duration::from_secs(1));
                 }
             }
         });
@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "SSE endpoint: http://localhost:515/stream",
     )?;
 
-    warp::serve(routes).run(([0, 0, 0, 0], 516)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], args.server_port)).await;
 
     Ok(())
 }

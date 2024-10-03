@@ -15,4 +15,7 @@ pub struct Args {
     /// Target CID for the enclave (optional, default is 18)
     #[clap(short, long, default_value = "18")]
     pub target_cid: u64,
+
+    #[clap(short, long, default_value = "516")]
+    pub server_port: u16,
 }

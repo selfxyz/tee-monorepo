@@ -27,11 +27,11 @@ A simple and efficient logging server designed to run inside the host machine to
 
 ### Running the Server
 
-Before running the server, you need to grant it permission to bind to port 516. This is required because ports below 1024 are privileged, and binding to them normally requires root access.
+Before running the server, you need to grant it permission to bind to server port (default = 516). This is required because ports below 1024 are privileged, and binding to them normally requires root access.
 
 #### Notes:
 
-1. Since the program uses port 516, run the command below to allow the program to bind to this privileged port:
+1. Since the program by default uses port 516, run the command below to allow the program to bind to this privileged port:
 
     ```bash
     sudo setcap 'cap_net_bind_service=+ep' ./target/release/logger
@@ -47,5 +47,5 @@ Before running the server, you need to grant it permission to bind to port 516. 
 
 ## Additional Information
 
-- Ensure your firewall and security groups allow traffic on port 516 if you intend to access the server from outside the enclave.
+- Ensure your firewall and security groups allow traffic on port 516 if you intend to access the server from outside the host machine.
 - To reapply the capability (`setcap`) on the binary, run the command again after each rebuild.
