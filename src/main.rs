@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "SSE endpoint: http://localhost:515/stream",
     )?;
 
-    warp::serve(routes).run(([0, 0, 0, 0], args.server_port)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], args.port)).await;
 
     Ok(())
 }

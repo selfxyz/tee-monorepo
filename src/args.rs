@@ -17,5 +17,5 @@ pub struct Args {
     pub target_cid: u64,
 
     #[clap(short, long, default_value = "516")]
-    pub server_port: u16,
+    pub port: u16,
 }
