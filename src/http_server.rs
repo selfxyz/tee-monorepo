@@ -83,5 +83,22 @@ pub fn create_routes(
             warp::sse::reply(warp::sse::keep_alive().stream(stream))
         });
 
-    logs_route.or(sse_route).with(warp::cors().allow_any_origin().allow_methods(&[Method::GET]))
+    let logs_options = warp::path("logs")
+        .and(warp::options())
+        .map(warp::reply);
+    
+    let sse_options = warp::path("stream")
+        .and(warp::options())
+        .map(warp::reply);
+
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(&[Method::GET, Method::OPTIONS])
+        .allow_headers(vec!["Content-Type", "Authorization"]);
+
+    logs_options
+        .or(logs_route)
+        .or(sse_options)
+        .or(sse_route)
+        .with(cors)
 }
