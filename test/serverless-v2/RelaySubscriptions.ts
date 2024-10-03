@@ -41,7 +41,7 @@ describe("RelaySubscriptions - Init", function () {
 
     it("deploys with initialization disabled", async function () {
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
-        const relaySubscriptions = await RelaySubscriptions.deploy(addrs[1]);
+        const relaySubscriptions = await RelaySubscriptions.deploy(addrs[1], 10, 10000, 1000000);
 
         await expect(
             relaySubscriptions.initialize(addrs[0]),
@@ -57,11 +57,18 @@ describe("RelaySubscriptions - Init", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    addrs[1]
+                    addrs[1],
+                    10,
+                    10000,
+                    1000000
                 ]
             },
         );
 
+        expect(await relaySubscriptions.RELAY()).to.eq(addrs[1]);
+        expect(await relaySubscriptions.MIN_PERIODIC_GAP()).to.eq(10);
+        expect(await relaySubscriptions.MAX_PERIODIC_GAP()).to.eq(10000);
+        expect(await relaySubscriptions.MAX_TERMINATION_DURATION()).to.eq(1000000);
         expect(await relaySubscriptions.hasRole(await relaySubscriptions.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
     });
 
@@ -75,7 +82,10 @@ describe("RelaySubscriptions - Init", function () {
                     kind: "uups",
                     initializer: "initialize",
                     constructorArgs: [
-                        ZeroAddress
+                        ZeroAddress,
+                        10,
+                        10000,
+                        1000000
                     ]
                 },
             )
@@ -94,7 +104,10 @@ describe("RelaySubscriptions - Init", function () {
                     kind: "uups",
                     initializer: "initialize",
                     constructorArgs: [
-                        addrs[1]
+                        addrs[1],
+                        10,
+                        10000,
+                        1000000
                     ]
                 },
             )
@@ -112,7 +125,10 @@ describe("RelaySubscriptions - Init", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    addrs[1]
+                    addrs[1],
+                    10,
+                    10000,
+                    1000000
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -122,13 +138,19 @@ describe("RelaySubscriptions - Init", function () {
             {
                 kind: "uups",
                 constructorArgs: [
-                    addrs[2]
+                    addrs[2],
+                    20,
+                    20000,
+                    2000000
                 ]
             }
         );
 
         expect(await relaySubscriptions.hasRole(await relaySubscriptions.DEFAULT_ADMIN_ROLE(), addrs[0])).to.be.true;
         expect(await relaySubscriptions.RELAY()).to.eq(addrs[2]);
+        expect(await relaySubscriptions.MIN_PERIODIC_GAP()).to.eq(20);
+        expect(await relaySubscriptions.MAX_PERIODIC_GAP()).to.eq(20000);
+        expect(await relaySubscriptions.MAX_TERMINATION_DURATION()).to.eq(2000000);
     });
 
     it("does not upgrade without admin", async function () {
@@ -140,7 +162,10 @@ describe("RelaySubscriptions - Init", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    addrs[1]
+                    addrs[1],
+                    20,
+                    20000,
+                    2000000
                 ]
             }
         );
@@ -151,7 +176,10 @@ describe("RelaySubscriptions - Init", function () {
                 {
                     kind: "uups",
                     constructorArgs: [
-                        addrs[2]
+                        addrs[2],
+                        20,
+                        20000,
+                        2000000
                     ]
                 }
             )
@@ -172,7 +200,10 @@ testERC165(
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay
+                    relay,
+                    10,
+                    1000,
+                    100000
                 ]
             },
         );
@@ -251,6 +282,9 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -259,7 +293,10 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -286,7 +323,7 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
         let callbackDeposit = parseUnits("1");
         let jobSubsParams = {
             startTime: await time.latest(),
-            maxGasPrice: 100,
+            maxGasPrice: parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 1000000,
             callbackContract: addrs[1],
@@ -374,6 +411,38 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
         let tx = relaySubscriptions.connect(signers[2])
             .startJobSubscription(jobSubsParams, { value: callbackDeposit });
         await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidTerminationTimestamp");
+    
+        jobSubsParams.terminationTimestamp = await time.latest() + 1e7;
+        tx = relaySubscriptions.connect(signers[2])
+            .startJobSubscription(jobSubsParams, { value: callbackDeposit });
+        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidTerminationTimestamp");
+    });
+
+    it("cannot start job subscription with invalid periodic gap", async function () {
+        let callbackDeposit = parseUnits("1");
+        let jobSubsParams = {
+            startTime: 0,
+            maxGasPrice: 100,
+            usdcDeposit: 2000000,
+            callbackGasLimit: 1000000,
+            callbackContract: addrs[1],
+            env: 1,
+            codehash: keccak256(solidityPacked(["string"], ["codehash"])),
+            codeInputs: solidityPacked(["string"], ["codeInput"]),
+            userTimeout: 50000,
+            refundAccount: addrs[1],
+            periodicGap: 1,
+            terminationTimestamp: await time.latest() + 20
+        };
+
+        let tx = relaySubscriptions.connect(signers[2])
+            .startJobSubscription(jobSubsParams, { value: callbackDeposit });
+        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidPeriodicGap");
+    
+        jobSubsParams.periodicGap = 1e6;
+        tx = relaySubscriptions.connect(signers[2])
+            .startJobSubscription(jobSubsParams, { value: callbackDeposit });
+        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidPeriodicGap");
     });
 
     it("cannot start job subscription with invalid user timeout", async function () {
@@ -406,7 +475,7 @@ describe("RelaySubscriptions - Start Job Subscription", function () {
         let callbackDeposit = 0;
         let jobSubsParams = {
             startTime: 0,
-            maxGasPrice: 100,
+            maxGasPrice: parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 1000000,
             callbackContract: addrs[1],
@@ -531,6 +600,9 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -539,7 +611,10 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -561,7 +636,7 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
 
         let jobSubsParams = {
             startTime: 0,
-            maxGasPrice: 10,
+            maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 0,
             callbackContract: addrs[1],
@@ -749,6 +824,9 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -757,7 +835,10 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -779,7 +860,7 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
 
         let jobSubsParams = {
             startTime: 0,
-            maxGasPrice: 10,
+            maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 0,
             callbackContract: addrs[1],
@@ -791,7 +872,7 @@ describe("RelaySubscriptions - Job Subscription Deposit", function () {
             periodicGap: 50,
             terminationTimestamp: await time.latest() + 100
         };
-        callbackDeposit = parseUnits("1", 7);
+        callbackDeposit = parseUnits("1", 15);
         await setNextBlockBaseFeePerGas(1);
         await relaySubscriptions.connect(signers[2])
             .startJobSubscription(jobSubsParams, { value: callbackDeposit });
@@ -891,6 +972,9 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -899,7 +983,10 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -921,7 +1008,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
 
         let jobSubsParams = {
             startTime: 0,
-            maxGasPrice: 10,
+            maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 0,
             callbackContract: addrs[1],
@@ -933,7 +1020,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
             periodicGap: 50,
             terminationTimestamp: await time.latest() + 100
         };
-        callbackDeposit = parseUnits("1", 7);
+        callbackDeposit = parseUnits("1", 15);
         await setNextBlockBaseFeePerGas(1);
         await relaySubscriptions.connect(signers[2])
             .startJobSubscription(jobSubsParams, { value: callbackDeposit });
@@ -1006,6 +1093,14 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
                 { value: callbackDeposit }
             );
         await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidTerminationTimestamp");
+    
+        terminationTimestamp = await time.latest() + 1e7;
+        tx = relaySubscriptions.connect(signers[2])
+            .updateJobSubsTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit,
+                { value: callbackDeposit }
+            );
+        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidTerminationTimestamp");
+    
     });
 
     it("cannot update job termination params after the termination condition is reached", async function () {
@@ -1109,6 +1204,9 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -1117,7 +1215,10 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -1139,7 +1240,7 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
 
         let jobSubsParams = {
             startTime: 0,
-            maxGasPrice: 10,
+            maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 0,
             callbackContract: addrs[1],
@@ -1151,7 +1252,7 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
             periodicGap: 50,
             terminationTimestamp: await time.latest() + 100
         };
-        callbackDeposit = parseUnits("1", 7);
+        callbackDeposit = parseUnits("1", 15);
         await setNextBlockBaseFeePerGas(1);
         await relaySubscriptions.connect(signers[2])
             .startJobSubscription(jobSubsParams, { value: callbackDeposit });
@@ -1260,6 +1361,9 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -1268,7 +1372,10 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
@@ -1290,7 +1397,7 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
 
         let jobSubsParams = {
             startTime: 0,
-            maxGasPrice: 10,
+            maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
             usdcDeposit: 2000000,
             callbackGasLimit: 0,
             callbackContract: addrs[1],
@@ -1302,7 +1409,7 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
             periodicGap: 50,
             terminationTimestamp: await time.latest() + 100
         };
-        callbackDeposit = parseUnits("1", 7);
+        callbackDeposit = parseUnits("1", 15);
         await setNextBlockBaseFeePerGas(1);
         await relaySubscriptions.connect(signers[2])
             .startJobSubscription(jobSubsParams, { value: callbackDeposit });
@@ -1400,6 +1507,9 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
             },
         ) as unknown as Relay;
 
+        let minPeriodicGap = 10,
+            maxPeriodicGap = 10000,
+            maxTerminationDuration = 1000000;
         const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
         relaySubscriptions = await upgrades.deployProxy(
             RelaySubscriptions,
@@ -1408,7 +1518,10 @@ describe("RelaySubscriptions - Job Subscription sent by UserSample contract", fu
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    relay.target
+                    relay.target,
+                    minPeriodicGap,
+                    maxPeriodicGap,
+                    maxTerminationDuration
                 ]
             },
         ) as unknown as RelaySubscriptions;
