@@ -68,8 +68,7 @@ pub fn create_routes(
             // Specify the error type as Infallible
             Ok::<_, Infallible>(response)
         }
-    })
-    .with(warp::cors().allow_any_origin().allow_methods(&[Method::GET]));
+    });
 
     let sse_route = warp::path("stream")
         .and(warp::get())
@@ -82,8 +81,7 @@ pub fn create_routes(
                 }
             };
             warp::sse::reply(warp::sse::keep_alive().stream(stream))
-        })
-        .with(warp::cors().allow_any_origin().allow_methods(&[Method::GET]));
+        });
 
-    logs_route.or(sse_route)
+    logs_route.or(sse_route).with(warp::cors().allow_any_origin().allow_methods(&[Method::GET]))
 }
