@@ -138,6 +138,7 @@ pub async fn get_block_number_by_timestamp(
 
                         if block_number >= smallest_block_number_not_satisfying {
                             block_number = smallest_block_number_not_satisfying - 1;
+                            smallest_block_number_not_satisfying -= 1;
                         }
                         continue 'less_than_block_number;
                     }
