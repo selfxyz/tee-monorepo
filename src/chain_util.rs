@@ -97,6 +97,7 @@ pub async fn get_block_number_by_timestamp(
     let mut block_rate_per_second: f64 = 3.0;
     let mut first_block_number = 0;
     let mut first_block_timestamp = 0;
+    let mut earliest_block_number_after_target_ts = u64::MAX;
 
     'less_than_block_number: while block_number > 0 {
         let block = provider.get_block(block_number).await;
@@ -134,6 +135,11 @@ pub async fn get_block_number_by_timestamp(
                         block_number = block_number
                             + ((target_timestamp - block.timestamp.as_u64()) as f64
                                 * block_rate_per_second) as u64;
+
+                        if block_number >= earliest_block_number_after_target_ts {
+                            block_number = earliest_block_number_after_target_ts - 1;
+                            earliest_block_number_after_target_ts -= 1;
+                        }
                         continue 'less_than_block_number;
                     }
                     Ok(None) => {
@@ -157,12 +163,16 @@ pub async fn get_block_number_by_timestamp(
                 }
             }
         } else {
+            if block_number < earliest_block_number_after_target_ts {
+                earliest_block_number_after_target_ts = block_number;
+            }
+
             if first_block_timestamp == 0 {
                 first_block_timestamp = block.timestamp.as_u64();
                 first_block_number = block_number;
             }
             // Calculate the avg block rate per second using the first recorded block timestamp
-            if first_block_timestamp > block.timestamp.as_u64() {
+            if first_block_timestamp > block.timestamp.as_u64() + 1 {
                 block_rate_per_second = (first_block_number - block_number) as f64
                     / (first_block_timestamp - block.timestamp.as_u64()) as f64;
                 info!("Block rate per second: {}", block_rate_per_second);
