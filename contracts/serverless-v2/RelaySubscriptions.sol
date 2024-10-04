@@ -429,13 +429,13 @@ contract RelaySubscriptions is
         JobSubscription memory jobSubs = jobSubscriptions[jobSubsId];
         if (jobSubs.job.jobOwner == address(0)) revert RelaySubscriptionsInvalidJobSubscription();
 
-        // getting the virtual start time of the job subscription current run
-        uint256 jobStartTime = jobSubs.job.startTime + (jobSubs.currentRuns * jobSubs.periodicGap);
-        if (block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT()) revert RelaySubscriptionsOverallTimeoutOver();
-
         uint256 instanceCount = _jobId & ((1 << 127) - 1);
         // note: instance count for the first output should be 0
         if (instanceCount < jobSubs.currentRuns) revert RelaySubscriptionsInvalidCurrentRuns();
+
+        // getting the virtual start time of the job subscription current run
+        uint256 jobStartTime = jobSubs.job.startTime + (instanceCount * jobSubs.periodicGap);
+        if (block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT()) revert RelaySubscriptionsOverallTimeoutOver();
 
         // signature check
         address enclaveAddress = _verifyJobResponseSign(

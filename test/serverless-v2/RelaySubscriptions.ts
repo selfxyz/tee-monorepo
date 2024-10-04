@@ -575,7 +575,7 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
             maxAge = 600,
             globalMinTimeout = 10 * 1000,  // in milliseconds
             globalMaxTimeout = 100 * 1000,  // in milliseconds
-            overallTimeout = 100,
+            overallTimeout = 5,
             gatewayFeePerJob = 10,
             fixedGas = 150000,
             callbackMeasureGas = 4530;
@@ -717,6 +717,33 @@ describe("RelaySubscriptions - Job Subscription Response", function () {
         signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
         tx = relaySubscriptions.connect(signers[1]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
         await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsInvalidCurrentRuns");
+    });
+
+    it("can submit response after skipping an instance count", async function () {
+        let jobId = await relaySubscriptions.jobSubsCount(),
+            output = solidityPacked(["string"], ["it is the output"]),
+            totalTime = 100,
+            errorCode = 0,
+            signTimestamp = await time.latest();
+
+        // submitting output for 1st periodic job
+        let signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+        let tx = relaySubscriptions.connect(signers[1]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionResponded");
+
+        // submitting output for 2nd periodic job - it will fail as time has exceeded the overall timeout
+        await time.increase(16);
+        ++jobId;
+        signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+        tx = relaySubscriptions.connect(signers[1]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsOverallTimeoutOver");
+
+        // submitting output for 3rd periodic job after skipping the previous instance count
+        await time.increase(5);
+        ++jobId;
+        signedDigest = await createJobResponseSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[15]);
+        tx = relaySubscriptions.connect(signers[1]).jobSubsResponse(signedDigest, jobId, output, totalTime, errorCode, signTimestamp);
+        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionResponded"); 
     });
 
     it("cannot submit response with expired signature", async function () {
