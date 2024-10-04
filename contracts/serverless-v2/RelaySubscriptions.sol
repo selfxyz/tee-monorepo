@@ -236,14 +236,14 @@ contract RelaySubscriptions is
     /**
      * @notice Emitted when job subscription remaining funds are withdrawn.
      * @param jobSubsId The unique identifier of the job subscription.
-     * @param withdrawer The address withdrawing the funds.
+     * @param jobOwner The owner account of the job subscription.
      * @param usdcAmountWithdrawn The amount of USDC withdrawn.
      * @param callbackAmountWithdrawn The amount of callback deposit withdrawn.
      * @param success A boolean indicating if the withdrawal was successful.
      */
-    event JobSubscriptionFundsWithdrawn(
+    event JobSubscriptionDepositsRefunded(
         uint256 indexed jobSubsId,
-        address indexed withdrawer,
+        address indexed jobOwner,
         uint256 usdcAmountWithdrawn,
         uint256 callbackAmountWithdrawn,
         bool success
@@ -281,6 +281,8 @@ contract RelaySubscriptions is
     error RelaySubscriptionsJobSubscriptionTerminated();
     /// @notice Error for when the msg.sender isn't the job subscription owner
     error RelaySubscriptionsNotJobSubscriptionOwner();
+    /// @notice Error for when the job subscription does not exists corresponding to a job subscription id.
+    error RelaySubscriptionsNotExists();
     /// @notice Error for when the job subscription owner tries to terminate the subscription
     ///         before the termination condition is reached.
     error RelaySubscriptionsTerminationConditionPending();
@@ -427,13 +429,13 @@ contract RelaySubscriptions is
         JobSubscription memory jobSubs = jobSubscriptions[jobSubsId];
         if (jobSubs.job.jobOwner == address(0)) revert RelaySubscriptionsInvalidJobSubscription();
 
-        // getting the virtual start time of the job subscription current run
-        uint256 jobStartTime = jobSubs.job.startTime + (jobSubs.currentRuns * jobSubs.periodicGap);
-        if (block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT()) revert RelaySubscriptionsOverallTimeoutOver();
-
         uint256 instanceCount = _jobId & ((1 << 127) - 1);
         // note: instance count for the first output should be 0
         if (instanceCount < jobSubs.currentRuns) revert RelaySubscriptionsInvalidCurrentRuns();
+
+        // getting the virtual start time of the job subscription current run
+        uint256 jobStartTime = jobSubs.job.startTime + (instanceCount * jobSubs.periodicGap);
+        if (block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT()) revert RelaySubscriptionsOverallTimeoutOver();
 
         // signature check
         address enclaveAddress = _verifyJobResponseSign(
@@ -617,8 +619,8 @@ contract RelaySubscriptions is
         emit JobSubscriptionTerminationParamsUpdated(_jobSubsId, _terminationTimestamp);
     }
 
-    function _withdrawJobSubsFunds(uint256 _jobSubsId, address _jobOwner) internal {
-        if (jobSubscriptions[_jobSubsId].job.jobOwner != _jobOwner) revert RelaySubscriptionsNotJobSubscriptionOwner();
+    function _refundJobSubsDeposits(uint256 _jobSubsId) internal {
+        if (jobSubscriptions[_jobSubsId].job.jobOwner == address(0)) revert RelaySubscriptionsNotExists();
 
         if (block.timestamp <= jobSubscriptions[_jobSubsId].terminationTimestamp + RELAY.OVERALL_TIMEOUT())
             revert RelaySubscriptionsTerminationConditionPending();
@@ -626,13 +628,14 @@ contract RelaySubscriptions is
         uint256 usdcAmount = jobSubscriptions[_jobSubsId].job.usdcDeposit;
         uint256 callbackAmount = jobSubscriptions[_jobSubsId].job.callbackDeposit;
 
+        address _jobOwner = jobSubscriptions[_jobSubsId].job.jobOwner;
         delete jobSubscriptions[_jobSubsId];
 
         RELAY.TOKEN().safeTransfer(_jobOwner, usdcAmount);
         // TODO: do we need to check this bool success
         (bool success, ) = _jobOwner.call{value: callbackAmount}("");
 
-        emit JobSubscriptionFundsWithdrawn(_jobSubsId, _jobOwner, usdcAmount, callbackAmount, success);
+        emit JobSubscriptionDepositsRefunded(_jobSubsId, _jobOwner, usdcAmount, callbackAmount, success);
     }
 
     function _terminateJobSubscription(uint256 _jobSubsId) internal {
@@ -724,8 +727,8 @@ contract RelaySubscriptions is
      * @dev This function deletes the job subscription data and refunds the deposited USDC and ETH, if any.
      * param _jobSubsId The unique identifier of the job subscription.
      */
-    function withdrawJobSubsFunds(uint256 _jobSubsId) external {
-        _withdrawJobSubsFunds(_jobSubsId, _msgSender());
+    function refundJobSubsDeposits(uint256 _jobSubsId) external {
+        _refundJobSubsDeposits(_jobSubsId);
     }
 
     /**
