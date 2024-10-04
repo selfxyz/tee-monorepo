@@ -1141,7 +1141,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
     });
 });
 
-describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
+describe("RelaySubscriptions - Job Subscription Deposits Refund", function () {
     let signers: Signer[];
     let addrs: string[];
     let token: USDCoin;
@@ -1267,9 +1267,9 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
         let jobOwnerEthBalInit = await ethers.provider.getBalance(addrs[2]);
 
         await time.increase(210);
-        let tx = await relaySubscriptions.connect(signers[2]).withdrawJobSubsFunds(jobSubsId);
+        let tx = await relaySubscriptions.connect(signers[2]).refundJobSubsDeposits(jobSubsId);
         let txReceipt = await tx.wait();
-        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionFundsWithdrawn");
+        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionDepositsRefunded");
 
         let jobSubsFinal = await relaySubscriptions.jobSubscriptions(jobSubsId);
         let jobOwnerUsdcBalFinal = await token.balanceOf(addrs[2]);
@@ -1283,17 +1283,36 @@ describe("RelaySubscriptions - Job Subscription Withdrawal", function () {
         expect(jobOwnerEthBalFinal).to.be.eq(jobOwnerEthBalInit + jobSubsInitial.job.callbackDeposit - gasCost);
     });
 
-    it("cannot withdraw funds from job subscription without job subscription owner account", async function () {
+    it("can withdraw funds from job subscription without job subscription owner account", async function () {
         let jobSubsId: any = await relaySubscriptions.jobSubsCount();
+        let jobSubsInitial = await relaySubscriptions.jobSubscriptions(jobSubsId);
+        let jobOwnerUsdcBalInit = await token.balanceOf(addrs[2]);
+        let jobOwnerEthBalInit = await ethers.provider.getBalance(addrs[2]);
 
-        let tx = relaySubscriptions.connect(signers[1]).withdrawJobSubsFunds(jobSubsId);
-        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsNotJobSubscriptionOwner");
+        await time.increase(210);
+        let tx = relaySubscriptions.connect(signers[3]).refundJobSubsDeposits(jobSubsId);
+        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionDepositsRefunded");
+
+        let jobSubsFinal = await relaySubscriptions.jobSubscriptions(jobSubsId);
+        let jobOwnerUsdcBalFinal = await token.balanceOf(addrs[2]);
+        let jobOwnerEthBalFinal = await ethers.provider.getBalance(addrs[2]);
+
+        expect(jobSubsFinal.job.jobOwner).to.eq(ZeroAddress);
+        expect(jobOwnerUsdcBalFinal).to.be.eq(jobOwnerUsdcBalInit + jobSubsInitial.job.usdcDeposit);
+        expect(jobOwnerEthBalFinal).to.be.eq(jobOwnerEthBalInit + jobSubsInitial.job.callbackDeposit);
     });
 
-    it("cannot withdraw funds from job subscription befre termination condition is met", async function () {
+    it("cannot withdraw funds from non-existant job subscription", async function () {
+        let jobSubsId = 10;
+
+        let tx = relaySubscriptions.connect(signers[2]).refundJobSubsDeposits(jobSubsId);
+        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsNotExists");
+    });
+
+    it("cannot withdraw funds from job subscription before termination condition is met", async function () {
         let jobSubsId: any = await relaySubscriptions.jobSubsCount();
 
-        let tx = relaySubscriptions.connect(signers[2]).withdrawJobSubsFunds(jobSubsId);
+        let tx = relaySubscriptions.connect(signers[2]).refundJobSubsDeposits(jobSubsId);
         await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsTerminationConditionPending");
     });
 });
