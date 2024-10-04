@@ -36,11 +36,19 @@ contract RelaySubscriptions is
      * @param _relay The Relay contract.
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor(Relay _relay) {
+    constructor(
+        Relay _relay,
+        uint256 _minPeriodicGap,
+        uint256 _maxPeriodicGap,
+        uint256 _maxTerminationDuration
+    ) {
         _disableInitializers();
 
         if (address(_relay) == address(0)) revert RelaySubscriptionsInvalidRelay();
         RELAY = _relay;
+        MIN_PERIODIC_GAP = _minPeriodicGap;
+        MAX_PERIODIC_GAP = _maxPeriodicGap;
+        MAX_TERMINATION_DURATION = _maxTerminationDuration;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -83,6 +91,15 @@ contract RelaySubscriptions is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     Relay public immutable RELAY;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MIN_PERIODIC_GAP;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MAX_PERIODIC_GAP;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MAX_TERMINATION_DURATION;
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -258,6 +275,8 @@ contract RelaySubscriptions is
     error RelaySubscriptionsSignatureTooOld();
     /// @notice Error for when the termination timestamp is an invalid value.
     error RelaySubscriptionsInvalidTerminationTimestamp();
+    /// @notice Error for when the periodic gap is an invalid value.
+    error RelaySubscriptionsInvalidPeriodicGap();
     /// @notice Error for when the termination timestamp is being updated after the termination condition is reached.
     error RelaySubscriptionsJobSubscriptionTerminated();
     /// @notice Error for when the msg.sender isn't the job subscription owner
@@ -285,8 +304,11 @@ contract RelaySubscriptions is
         if (_jobSubsParams.startTime >= _jobSubsParams.terminationTimestamp)
             revert RelaySubscriptionsInvalidStartTimestamp();
 
-        if (_jobSubsParams.terminationTimestamp <= block.timestamp)
+        if (_jobSubsParams.terminationTimestamp <= block.timestamp || _jobSubsParams.terminationTimestamp > block.timestamp + MAX_TERMINATION_DURATION)
             revert RelaySubscriptionsInvalidTerminationTimestamp();
+
+        if (_jobSubsParams.periodicGap < MIN_PERIODIC_GAP || _jobSubsParams.periodicGap > MAX_PERIODIC_GAP)
+            revert RelaySubscriptionsInvalidPeriodicGap();
 
         if (
             _jobSubsParams.userTimeout <= RELAY.GLOBAL_MIN_TIMEOUT() ||
@@ -303,6 +325,7 @@ contract RelaySubscriptions is
             _jobSubsParams.maxGasPrice,
             _jobSubsParams.callbackGasLimit,
             _jobSubsParams.periodicGap,
+            _callbackDeposit,
             _jobSubsParams.usdcDeposit,
             _jobSubsParams.startTime,
             _jobSubsParams.terminationTimestamp
@@ -339,18 +362,17 @@ contract RelaySubscriptions is
         uint256 _maxGasPrice,
         uint256 _callbackGasLimit,
         uint256 _periodicGap,
+        uint256 _callbackDeposit,
         uint256 _usdcDeposit,
         uint256 _startTimestamp,
         uint256 _terminationTimestamp
-    ) internal {
-        uint256 totalRuns = (_terminationTimestamp - _startTimestamp) / _periodicGap;
-        if (
-            _maxGasPrice * (_callbackGasLimit + RELAY.FIXED_GAS() + RELAY.CALLBACK_MEASURE_GAS()) * totalRuns >
-            msg.value
-        ) revert RelaySubscriptionsInsufficientCallbackDeposit();
+    ) internal view {
+        uint256 totalRuns = ((_terminationTimestamp - _startTimestamp) / _periodicGap) + 1;
 
-        uint256 minUsdcDeposit = (_userTimeout * RELAY.getJobExecutionFeePerMs(_env) + RELAY.GATEWAY_FEE_PER_JOB()) *
-            totalRuns;
+        uint256 minCallbackDeposit = _maxGasPrice * (_callbackGasLimit + RELAY.FIXED_GAS() + RELAY.CALLBACK_MEASURE_GAS()) * totalRuns;
+        if (_callbackDeposit < minCallbackDeposit) revert RelaySubscriptionsInsufficientCallbackDeposit();
+
+        uint256 minUsdcDeposit = (_userTimeout * RELAY.getJobExecutionFeePerMs(_env) + RELAY.GATEWAY_FEE_PER_JOB()) * totalRuns;
         if (_usdcDeposit < minUsdcDeposit) revert RelaySubscriptionsInsufficientUsdcDeposit();
     }
 
@@ -566,7 +588,7 @@ contract RelaySubscriptions is
         if (jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
             revert RelaySubscriptionsNotJobSubscriptionOwner();
 
-        if (_terminationTimestamp < block.timestamp + RELAY.OVERALL_TIMEOUT())
+        if (_terminationTimestamp < block.timestamp + RELAY.OVERALL_TIMEOUT() || _terminationTimestamp > block.timestamp + MAX_TERMINATION_DURATION)
             revert RelaySubscriptionsInvalidTerminationTimestamp();
 
         uint256 currentTerminationTimestamp = jobSubscriptions[_jobSubsId].terminationTimestamp;
@@ -577,7 +599,7 @@ contract RelaySubscriptions is
             _depositTokens(_jobSubsId, _usdcDeposit, _callbackDeposit);
 
             JobSubscription memory jobSubs = jobSubscriptions[_jobSubsId];
-            uint256 remainingRuns = (_terminationTimestamp - block.timestamp) / jobSubs.periodicGap;
+            uint256 remainingRuns = ((_terminationTimestamp - jobSubs.job.startTime) / jobSubs.periodicGap) + 1 - jobSubs.currentRuns;
 
             if (
                 jobSubs.job.maxGasPrice *
