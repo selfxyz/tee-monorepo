@@ -111,6 +111,9 @@ async function main() {
 
     await relay.addGlobalEnv(env, executionFeePerMs);
     
+    let minPeriodicGap = 10,
+        maxPeriodicGap = 60 * 60 * 24 * 365,    // 1 year
+        maxTerminationDuration = 60 * 60 * 24 * 365 * 5;    // 5 years
     const RelaySubscriptions = await ethers.getContractFactory("RelaySubscriptions");
     console.log("Deploying RelaySubscriptions...")
     let relaySubscriptions = await upgrades.deployProxy(
@@ -122,7 +125,10 @@ async function main() {
             initializer : "initialize",
             kind : "uups",
             constructorArgs : [
-                relay_addr
+                relay_addr,
+                minPeriodicGap,
+                maxPeriodicGap,
+                maxTerminationDuration
             ]
         });
     let relaySubscriptionsAddress = relaySubscriptions.target;
