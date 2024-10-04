@@ -311,6 +311,17 @@ async fn inject_and_store_secret(
             .body("Signer address not the same as secret owner address!\n");
     }
 
+    // Exit if the secret data is not the same size as the limit received from the SecretManager contract
+    if secret_created.secret_metadata.size_limit != decrypted_secret.len().into()  {
+        app_state
+            .secrets_created
+            .lock()
+            .unwrap()
+            .insert(create_secret.secret_id, secret_created);
+        return HttpResponse::BadRequest()
+            .body("Secret data not of the expected size!\n");
+    }
+
     // Create and store the secret data in the filesystem
     let secret_stored = Retry::spawn(
         ExponentialBackoff::from_millis(5).map(jitter).take(3),
