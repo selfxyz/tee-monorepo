@@ -9,7 +9,6 @@ use enclave_monitor::{monitor_and_capture_logs, save_logs_to_file};
 use logging::{clear_log_file, log_message};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -47,7 +46,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
                     )
                     .unwrap();
-                    thread::sleep(Duration::from_secs(1));
                 }
             }
         });

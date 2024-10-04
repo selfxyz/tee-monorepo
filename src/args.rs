@@ -13,7 +13,7 @@ pub struct Args {
     pub script_log_file: String,
 
     /// Target CID for the enclave (optional, default is 18)
-    #[clap(short, long, default_value = "18")]
+    #[clap(short, long, default_value = "88")]
     pub target_cid: u64,
 
     #[clap(short, long, default_value = "516")]

@@ -1,5 +1,5 @@
 use chrono::Local;
-use std::fs::{OpenOptions, Permissions};
+use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
