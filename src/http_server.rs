@@ -1,3 +1,4 @@
+use anyhow::Context;
 // src/http_server.rs
 use serde_json::json;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ pub fn fetch_logs_with_offset(
         1
     };
 
-    let file = File::open(enclave_log_file)?;
+    let file = File::open(enclave_log_file).context("http server: failed to open enclave log file")?;
     let reader = BufReader::new(file);
 
     let mut logs: Vec<String> = Vec::with_capacity(offset);

@@ -1,11 +1,10 @@
 // src/enclave_monitor.rs
 use crate::logging::log_message;
+use anyhow::{bail, Context};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 use tokio::sync::broadcast;
 use std::io::Write;
 
@@ -15,7 +14,7 @@ pub fn monitor_and_capture_logs(
     script_log_file: &str,
     log_id_counter: &Arc<Mutex<u64>>,
     target_cid: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     loop {
         match wait_for_enclave_with_cid(target_cid, script_log_file) {
             Ok(enclave_id) => {
@@ -47,7 +46,6 @@ pub fn monitor_and_capture_logs(
                     script_log_file,
                     &format!("Error waiting for enclave with CID {}: {}", target_cid, e),
                 )?;
-                thread::sleep(Duration::from_secs(5));
             }
         }
     }
@@ -64,8 +62,8 @@ fn wait_for_enclave_with_cid(
 
         match output {
             Ok(output) => {
-                let stdout = String::from_utf8(output.stdout)?;
-                let enclaves: Value = serde_json::from_str(&stdout)?;
+                let stdout = String::from_utf8(output.stdout).context("failed to typecast describe enclaves output to string")?;
+                let enclaves: Value = serde_json::from_str(&stdout).context("failed to parse describe enclaves to json")?;
                 if let Some(enclaves) = enclaves.as_array() {
                     for enclave in enclaves {
                         if let (Some(enclave_cid), Some(enclave_id)) = (
@@ -86,8 +84,6 @@ fn wait_for_enclave_with_cid(
                 )?;
             }
         }
-
-        thread::sleep(Duration::from_secs(1));
     }
 }
 
@@ -97,7 +93,7 @@ fn capture_logs(
     enclave_id: &str,
     script_log_file: &str,
     log_id_counter: &Arc<Mutex<u64>>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let child = Command::new("nitro-cli")
         .args(&["console", "--enclave-id", enclave_id])
         .stdout(Stdio::piped())
@@ -109,7 +105,7 @@ fn capture_logs(
             let reader = BufReader::new(stdout);
 
             for line in reader.lines() {
-                let line = line?;
+                let line = line.context("failed to read line from nitro console")?;
 
                 let mut log_id = log_id_counter.lock().unwrap();
                 let log_entry = format!("[{}] {}", *log_id, line);
@@ -132,7 +128,7 @@ fn capture_logs(
             }
 
             log_message(script_log_file, "Nitro CLI process ended unexpectedly")?;
-            Err("Nitro CLI process ended unexpectedly".into())
+            bail!("Nitro CLI process ended unexpectedly")
         }
         Err(e) => {
             log_message(
@@ -147,11 +143,11 @@ fn capture_logs(
 pub fn save_logs_to_file(
     rx: mpsc::Receiver<String>,
     enclave_log_file: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(enclave_log_file)?;
+        .open(enclave_log_file).context("failed to open enclave log file")?;
 
     for log in rx {
         if let Err(e) = writeln!(file, "{}", log) {

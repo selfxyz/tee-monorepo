@@ -3,20 +3,20 @@ mod enclave_monitor;
 mod http_server;
 mod logging;
 
+use anyhow::Context;
 use args::Args;
 use clap::Parser;
 use enclave_monitor::{monitor_and_capture_logs, save_logs_to_file};
 use logging::{clear_log_file, log_message};
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
 use tokio::sync::broadcast;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    clear_log_file(&args.enclave_log_file)?;
-    clear_log_file(&args.script_log_file)?;
+    clear_log_file(&args.enclave_log_file).context("failed to clear enclave log file at startup")?;
+    clear_log_file(&args.script_log_file).context("failed to clear debug log file at startup")?;
 
     let (tx, rx) = mpsc::channel();
     let (sse_tx, _) = broadcast::channel(100);
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let log_id_counter = Arc::clone(&log_id_counter);
         let target_cid = args.target_cid;
 
-        thread::spawn(move || {
+        tokio::spawn( async move {
             loop {
                 if let Err(e) = monitor_and_capture_logs(
                     &tx,
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let enclave_log_file = args.enclave_log_file.clone();
-        thread::spawn(move || {
+        tokio::spawn( async move {
             if let Err(e) = save_logs_to_file(rx, &enclave_log_file) {
                 eprintln!("Error saving logs to file: {}", e);
             }
