@@ -1,5 +1,4 @@
 use anyhow::Context;
-// src/http_server.rs
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs::File;
@@ -47,31 +46,39 @@ pub fn create_routes(
     sse_tx: tokio::sync::broadcast::Sender<String>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let logs_file = enclave_log_file.clone();
-    let logs_route = warp::path("logs")
-    .and(warp::query::<HashMap<String, String>>())
-    .and_then(move |params: HashMap<String, String>| {
-        let logs_file = logs_file.clone();
-        async move {
-            let log_id = params
-                .get("log_id")
-                .and_then(|id| id.parse::<u64>().ok())
-                .unwrap_or(1);
-            let offset = params
-                .get("offset")
-                .and_then(|off| off.parse::<usize>().ok())
-                .unwrap_or(10);
+    let home_html = include_str!("../assets/logs.html");
 
-            let response = match fetch_logs_with_offset(&logs_file, log_id, offset) {
-                Ok(logs) => warp::reply::json(&logs),
-                Err(_) => warp::reply::json(&json!({"error": "Failed to retrieve logs."})),
-            };
+    let home_route = warp::path("logs")
+        .and(warp::get())
+        .map(move || {
+            warp::reply::html(home_html)
+        });
 
-            // Specify the error type as Infallible
-            Ok::<_, Infallible>(response)
-        }
-    });
+    let history_route = warp::path("logs/history")
+        .and(warp::query::<HashMap<String, String>>())
+        .and_then(move |params: HashMap<String, String>| {
+            let logs_file = logs_file.clone();
+            async move {
+                let log_id = params
+                    .get("log_id")
+                    .and_then(|id| id.parse::<u64>().ok())
+                    .unwrap_or(1);
+                let offset = params
+                    .get("offset")
+                    .and_then(|off| off.parse::<usize>().ok())
+                    .unwrap_or(10);
 
-    let sse_route = warp::path("stream")
+                let response = match fetch_logs_with_offset(&logs_file, log_id, offset) {
+                    Ok(logs) => warp::reply::json(&logs),
+                    Err(_) => warp::reply::json(&json!({"error": "Failed to retrieve logs."})),
+                };
+
+                // Specify the error type as Infallible
+                Ok::<_, Infallible>(response)
+            }
+        });
+
+    let sse_route = warp::path("logs/stream")
         .and(warp::get())
         .map(move || {
             let sse_rx = sse_tx.subscribe();
@@ -88,7 +95,8 @@ pub fn create_routes(
         .allow_headers(vec!["Access-Control-Allow-Headers", "Access-Control-Request-Method", "Access-Control-Request-Headers", "Origin", "Accept", "X-Requested-With", "Content-Type"])
         .allow_methods(&[Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS, Method::HEAD]);
 
-    logs_route
+    home_route
+        .or(history_route)
         .or(sse_route)
         .with(cors)
 }
