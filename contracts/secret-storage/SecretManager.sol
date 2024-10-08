@@ -499,6 +499,8 @@ contract SecretManager is
         if(block.timestamp > currentEndTimestamp)
             revert SecretManagerAlreadyTerminated();
 
+        _checkIfSecretAcknowledged(_secretId);
+
         if(_endTimestamp > currentEndTimestamp) {
             USDC_TOKEN.safeTransferFrom(_owner, address(this), _usdcDeposit);
             userStorage[_secretId].usdcDeposit += _usdcDeposit;
@@ -517,6 +519,16 @@ contract SecretManager is
         userStorage[_secretId].endTimestamp = _endTimestamp;
 
         emit SecretEndTimestampUpdated(_secretId, _endTimestamp);
+    }
+
+    function _checkIfSecretAcknowledged(
+        uint256 _secretId
+    ) internal view {
+        uint256 len = userStorage[_secretId].selectedEnclaves.length;
+        for (uint256 index = 0; index < len; index++) {
+            if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
+                revert SecretManagerUnacknowledged();
+        }
     }
 
     function _terminateSecret(
