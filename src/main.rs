@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
     log_message(
         &args.script_log_file,
-        "SSE endpoint: http://localhost:515/stream",
+        "SSE endpoint: http://localhost:515/logs/stream",
     )?;
 
     warp::serve(routes).run(([0, 0, 0, 0], args.port)).await;

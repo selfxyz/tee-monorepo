@@ -95,8 +95,8 @@ pub fn create_routes(
         .allow_headers(vec!["Access-Control-Allow-Headers", "Access-Control-Request-Method", "Access-Control-Request-Headers", "Origin", "Accept", "X-Requested-With", "Content-Type"])
         .allow_methods(&[Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS, Method::HEAD]);
 
-    home_route
-        .or(history_route)
+    history_route
         .or(sse_route)
+        .or(home_route)
         .with(cors)
 }
