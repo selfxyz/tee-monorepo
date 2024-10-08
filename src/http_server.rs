@@ -54,7 +54,7 @@ pub fn create_routes(
             warp::reply::html(home_html)
         });
 
-    let history_route = warp::path("logs/history")
+    let history_route = warp::path("logs").and(warp::path("history"))
         .and(warp::query::<HashMap<String, String>>())
         .and_then(move |params: HashMap<String, String>| {
             let logs_file = logs_file.clone();
@@ -78,7 +78,7 @@ pub fn create_routes(
             }
         });
 
-    let sse_route = warp::path("logs/stream")
+    let sse_route = warp::path("logs").and(warp::path("stream"))
         .and(warp::get())
         .map(move || {
             let sse_rx = sse_tx.subscribe();
