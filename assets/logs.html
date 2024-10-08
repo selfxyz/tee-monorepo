@@ -52,7 +52,7 @@
     };
 
     const historyLogs = (url, logId) => {
-      fetch(`${url}/logs?logId=${logId}&offset=${LOG_OFFSET}`)
+      fetch(`${url}/logs/history?logId=${logId}&offset=${LOG_OFFSET}`)
         .then((response) => response.json())
         .then((data) => {
           const logData = data.reverse();
@@ -69,7 +69,7 @@
 
     const startLogs = (url) => {
       loader.style.display = "block";
-      let eventSource = new EventSource(`${url}/stream`);
+      let eventSource = new EventSource(`${url}/logs/stream`);
 
       eventSource.onmessage = async (event) => {
         loader.style.display = "none";
