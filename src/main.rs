@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         let log_id_counter = Arc::clone(&log_id_counter);
         let target_cid = args.target_cid;
 
-        tokio::spawn( async move {
+        tokio::task::spawn_blocking( move || {
             loop {
                 if let Err(e) = monitor_and_capture_logs(
                     &tx,
@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
 
     {
         let enclave_log_file = args.enclave_log_file.clone();
-        tokio::spawn( async move {
+        tokio::task::spawn_blocking(  move || {
             if let Err(e) = save_logs_to_file(rx, &enclave_log_file) {
                 eprintln!("Error saving logs to file: {}", e);
             }

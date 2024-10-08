@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader};
 use warp::{http::Method, Filter};
 use std::convert::Infallible;
 
-pub async fn fetch_logs_with_offset(
+pub fn fetch_logs_with_offset(
     enclave_log_file: &str,
     log_id: u64,
     offset: usize,
@@ -68,7 +68,7 @@ pub fn create_routes(
                     .and_then(|off| off.parse::<usize>().ok())
                     .unwrap_or(10);
 
-                let response = match fetch_logs_with_offset(&logs_file, log_id, offset).await {
+                let response = match fetch_logs_with_offset(&logs_file, log_id, offset) {
                     Ok(logs) => warp::reply::json(&logs),
                     Err(_) => warp::reply::json(&json!({"error": "Failed to retrieve logs."})),
                 };
