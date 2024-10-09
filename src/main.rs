@@ -89,6 +89,7 @@ async fn main() -> Result<()> {
             .service(index)
             .service(inject_immutable_config)
             .service(inject_mutable_config)
+            .service(get_secret_store_details)
             .service(export_signed_registration_message)
             .service(inject_and_store_secret)
     })

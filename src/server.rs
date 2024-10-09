@@ -15,7 +15,8 @@ use tokio_retry::Retry;
 use crate::events::events_listener;
 use crate::utils::{
     create_and_populate_file, AppState, CreateSecret, ImmutableConfig, MutableConfig,
-    SecretStoredMetadata, SecretsTxnMetadata, SecretsTxnType, SECRET_STORAGE_CAPACITY,
+    SecretStoredMetadata, SecretsTxnMetadata, SecretsTxnType, DOMAIN_SEPARATOR,
+    SECRET_STORAGE_CAPACITY,
 };
 
 #[get("/")]
@@ -130,6 +131,28 @@ async fn inject_mutable_config(
     HttpResponse::Ok().body("Mutable params configured!\n")
 }
 
+#[get("/store-details")]
+// Endpoint exposed to retrieve secret store enclave details
+async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
+    let mut gas_address = H160::zero();
+    if *app_state.mutable_params_injected.lock().unwrap() == true {
+        gas_address = app_state
+            .http_rpc_client
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap()
+            .address();
+    }
+
+    HttpResponse::Ok().json(json!({
+        "enclave_address": app_state.enclave_address,
+        "enclave_public_key": format!("0x{}", hex::encode(&(app_state.enclave_signer.verifying_key().to_encoded_point(false).as_bytes())[1..])),
+        "owner_address": *app_state.enclave_owner.lock().unwrap(),
+        "gas_address": gas_address,
+    }))
+}
+
 #[get("/signed-registration-message")]
 // Endpoint exposed to retrieve the metadata required to register the secret store on the common chain
 async fn export_signed_registration_message(app_state: Data<AppState>) -> impl Responder {
@@ -196,7 +219,10 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
     let mut events_listener_active_guard = app_state.events_listener_active.lock().unwrap();
     if *events_listener_active_guard == false {
         let Ok(current_block_number) = current_block_number else {
-            return HttpResponse::InternalServerError().body(format!("Failed to fetch the latest block number of the common chain for initiating event listening: {:?}\n", current_block_number.unwrap_err()));
+            return HttpResponse::InternalServerError().body(
+                format!("Failed to fetch the latest block number of the common chain for initiating event listening: {:?}\n", 
+                current_block_number.unwrap_err())
+            );
         };
 
         *events_listener_active_guard = true;
@@ -277,18 +303,6 @@ async fn inject_and_store_secret(
         ));
     };
 
-    // Decrypt the secret data using the enclave signer key
-    let decrypted_secret = decrypt(
-        &app_state.enclave_signer.to_bytes(),
-        &encrypted_secret_bytes,
-    );
-    let Ok(decrypted_secret) = decrypted_secret else {
-        return HttpResponse::BadRequest().body(format!(
-            "Failed to decrypt the encrypted secret using enclave private key: {:?}\n",
-            decrypted_secret.unwrap_err()
-        ));
-    };
-
     // Check if the secret ID has been generated from the contract or not
     let Some(secret_created) = app_state
         .secrets_created
@@ -311,30 +325,40 @@ async fn inject_and_store_secret(
             .body("Signer address not the same as secret owner address!\n");
     }
 
-    // Exit if the secret data is not the same size as the limit received from the SecretManager contract
-    if secret_created.secret_metadata.size_limit != decrypted_secret.len().into()  {
+    // Decrypt the secret data using the enclave signer key
+    let decrypted_secret = decrypt(
+        &app_state.enclave_signer.to_bytes(),
+        &encrypted_secret_bytes,
+    );
+    let Ok(decrypted_secret) = decrypted_secret else {
         app_state
             .secrets_created
             .lock()
             .unwrap()
             .insert(create_secret.secret_id, secret_created);
-        return HttpResponse::BadRequest()
-            .body("Secret data not of the expected size!\n");
+        return HttpResponse::BadRequest().body(format!(
+            "Failed to decrypt the encrypted secret using enclave private key: {:?}\n",
+            decrypted_secret.unwrap_err()
+        ));
+    };
+
+    // Exit if the secret data is not the same size as the limit received from the SecretManager contract
+    if secret_created.secret_metadata.size_limit != decrypted_secret.len().into() {
+        app_state
+            .secrets_created
+            .lock()
+            .unwrap()
+            .insert(create_secret.secret_id, secret_created);
+        return HttpResponse::BadRequest().body("Secret data not of the expected size!\n");
     }
 
     // Create and store the secret data in the filesystem
-    let secret_stored = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async {
-            create_and_populate_file(
-                app_state.secret_store_path.to_owned()
-                    + "/"
-                    + &create_secret.secret_id.to_string()
-                    + ".bin",
-                &decrypted_secret,
-            )
-            .await
-        },
+    let secret_stored = create_and_populate_file(
+        app_state.secret_store_path.to_owned()
+            + "/"
+            + &create_secret.secret_id.to_string()
+            + ".bin",
+        &decrypted_secret,
     )
     .await;
     if secret_stored.is_err() {
@@ -360,11 +384,6 @@ async fn inject_and_store_secret(
     let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // Encode and hash the acknowledgement of storing the secret following EIP712 format
-    let domain_separator = keccak256(encode(&[
-        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
-        Token::FixedBytes(keccak256("1").to_vec()),
-    ]));
     let acknowledge_typehash = keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
     let hash_struct = keccak256(encode(&[
@@ -376,7 +395,7 @@ async fn inject_and_store_secret(
     // Create the digest
     let digest = encode_packed(&[
         Token::String("\x19\x01".to_string()),
-        Token::FixedBytes(domain_separator.to_vec()),
+        Token::FixedBytes(DOMAIN_SEPARATOR.to_vec()),
         Token::FixedBytes(hash_struct.to_vec()),
     ]);
     let Ok(digest) = digest else {

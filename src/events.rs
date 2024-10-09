@@ -10,8 +10,6 @@ use scopeguard::defer;
 use tokio::select;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::time::sleep;
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::Retry;
 use tokio_stream::Stream;
 
 use crate::scheduler::secrets_monitor_and_garbage_cleaner;
@@ -93,7 +91,6 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: U64) {
                 keccak256("SecretCreated(uint256,address,uint256,uint256,uint256,address[])"),
                 keccak256("SecretStoreAcknowledgementSuccess(uint256,address)"),
                 keccak256("SecretStoreAcknowledgementFailed(uint256)"),
-                keccak256("SecretTerminated(uint256)"),
                 keccak256("SecretEndTimestampUpdated(uint256,uint256)"),
             ])
             .from_block(app_state.last_block_seen.load(Ordering::SeqCst));
@@ -314,9 +311,8 @@ async fn handle_event_logs(
                             .insert(secret_id, secret_ack_count+1);
                     }
                 }
-                // Capture the SecretStoreAcknowledgementFailed and SecretTerminated events emitted by the SecretManager contract
-                else if event.topics[0] == keccak256("SecretStoreAcknowledgementFailed(uint256)").into()
-                    || event.topics[0] == keccak256("SecretTerminated(uint256)").into() {
+                // Capture the SecretStoreAcknowledgementFailed event emitted by the SecretManager contract
+                else if event.topics[0] == keccak256("SecretStoreAcknowledgementFailed(uint256)").into() {
                     // Extract the secret ID from the event
                     let secret_id = event.topics[1].into_uint();
                     // Remove the secret ID from awaiting acknowledgement
@@ -340,19 +336,16 @@ async fn handle_event_logs(
                         .unwrap()
                         .remove(&secret_id).is_some() {
                         // Remove the secret stored in the filesystem
-                        let _ = Retry::spawn(
-                            ExponentialBackoff::from_millis(5).map(jitter).take(3),
-                            || async {
-                                check_and_delete_file(
-                                    app_state.secret_store_path.to_owned()
-                                    + "/"
-                                    + &secret_id.to_string()
-                                    + ".bin",
-                                )
-                                .await
-                            },
-                        )
-                        .await;
+                        let secret_store_path = app_state.secret_store_path.clone();
+                        tokio::spawn(async move {
+                            check_and_delete_file(
+                                secret_store_path
+                                + "/"
+                                + &secret_id.to_string()
+                                + ".bin",
+                            )
+                            .await
+                        });
                     }
                 }
                 // Capture the SecretEndTimestampUpdated event emitted by the SecretManager contract
@@ -385,13 +378,6 @@ async fn handle_event_logs(
                         continue;
                     };
 
-                    // Update the end timestamp of the secret if created but not stored yet
-                    app_state
-                        .secrets_created
-                        .lock()
-                        .unwrap()
-                        .entry(secret_id)
-                        .and_modify(|secret| secret.secret_metadata.end_timestamp = end_timestamp);
                     // Update the end timestamp of the stored secret
                     app_state
                         .secrets_stored

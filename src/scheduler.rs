@@ -53,17 +53,8 @@ pub async fn secrets_monitor_and_garbage_cleaner(
             }
 
             // Retrieve the secret from the file it is supposed to be stored in
-            let Ok(secret_data) = Retry::spawn(
-                ExponentialBackoff::from_millis(5).map(jitter).take(3),
-                || async {
-                    open_and_read_file(
-                        app_state.secret_store_path.to_owned()
-                            + "/"
-                            + &secret_id.to_string()
-                            + ".bin",
-                    )
-                    .await
-                },
+            let Ok(secret_data) = open_and_read_file(
+                app_state.secret_store_path.to_owned() + "/" + &secret_id.to_string() + ".bin",
             )
             .await
             else {
@@ -103,19 +94,12 @@ pub async fn secrets_monitor_and_garbage_cleaner(
             {
                 let _ = app_state.secrets_stored.lock().unwrap().remove(&secret_id);
 
-                let _ = Retry::spawn(
-                    ExponentialBackoff::from_millis(5).map(jitter).take(3),
-                    || async {
-                        check_and_delete_file(
-                            app_state.secret_store_path.to_owned()
-                                + "/"
-                                + &secret_id.to_string()
-                                + ".bin",
-                        )
+                // Remove the secret stored in the filesystem
+                let secret_store_path = app_state.secret_store_path.clone();
+                tokio::spawn(async move {
+                    check_and_delete_file(secret_store_path + "/" + &secret_id.to_string() + ".bin")
                         .await
-                    },
-                )
-                .await;
+                });
             }
         }
     }

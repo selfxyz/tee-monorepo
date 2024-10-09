@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use actix_web::web::Data;
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use ethers::abi::{encode, encode_packed, Abi, Token};
 use ethers::middleware::SignerMiddleware;
 use ethers::providers::{Http, Middleware, Provider};
@@ -14,12 +15,15 @@ use ethers::types::{Address, Eip1559TransactionRequest, H160, H256, U256};
 use ethers::utils::keccak256;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
+use tokio_retry::strategy::{jitter, ExponentialBackoff};
+use tokio_retry::Retry;
 
 // TODO: add support for automatically determining enclave storage capacity based on system config
 pub const SECRET_STORAGE_CAPACITY: usize = 100000000; // this is roughly 95 MB
@@ -34,6 +38,14 @@ pub const RESEND_GAS_PRICE_INCREMENT_PERCENT: u64 = 10;
 pub const RESEND_TXN_INTERVAL: u64 = 5;
 // Deadline (in secs) for resending pending/dropped acknowledgement timeout txns
 pub const ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE: u64 = 20;
+// Domain separator constant for SecretManager Transactions
+pub const DOMAIN_SEPARATOR: Lazy<[u8; 32]> = Lazy::new(|| {
+    keccak256(encode(&[
+        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
+        Token::FixedBytes(keccak256("1").to_vec()),
+    ]))
+});
 
 pub type HttpSignerProvider = SignerMiddleware<Provider<Http>, LocalWallet>;
 
@@ -177,35 +189,60 @@ pub fn load_abi_from_file() -> Result<Abi> {
     Ok(contract)
 }
 
-// Create and write secret to a file location asynchronously
+// Create and write secret to a file location asynchronously with retries
 pub async fn create_and_populate_file(path: String, data: &[u8]) -> Result<()> {
-    let mut file = File::create(&path).await?;
+    Ok(Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async {
+            // Create or open the file at the specified path
+            let mut file = File::create(&path).await?;
 
-    file.write_all(data).await?;
+            // Write the secret data as bytes to the file
+            file.write_all(data).await?;
 
-    Ok(())
+            Ok::<(), Error>(())
+        },
+    )
+    .await?)
 }
 
-// Open and read secret from the file location asynchronously
+// Open and read secret from the file location asynchronously with retries
 pub async fn open_and_read_file(path: String) -> Result<Vec<u8>> {
-    let mut file = File::open(path).await?;
+    Ok(Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async {
+            // Open the file at the provided location
+            let mut file = File::open(&path).await?;
 
-    let mut secret = Vec::new();
+            // Read and copy the file contents as bytes
+            let mut secret = Vec::new();
+            file.read_to_end(&mut secret).await?;
 
-    file.read_to_end(&mut secret).await?;
-
-    Ok(secret)
+            Ok::<Vec<u8>, Error>(secret)
+        },
+    )
+    .await?)
 }
 
-// Check if a secret exists at a file location and if found delete it
+// Delete a secret at a file location asynchronously if it exists there with retries
 pub async fn check_and_delete_file(path: String) -> Result<()> {
-    // Check if the file exists
-    if fs::metadata(&path).await.is_ok() {
-        // If it exists, delete the file
-        fs::remove_file(path).await?;
-    }
+    Ok(Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async {
+            match fs::remove_file(&path).await {
+                Ok(_) => Ok(()),
+                Err(err) => {
+                    // No need to delete if the file doesn't exist
+                    if err.kind() == ErrorKind::NotFound {
+                        return Ok(());
+                    }
 
-    Ok(())
+                    Err(err)
+                }
+            }
+        },
+    )
+    .await?)
 }
 
 // Function to return the 'SecretManager' txn data based on the txn type received, using the contract Abi object
@@ -226,11 +263,6 @@ pub fn generate_txn(
             let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
             // Encode and hash the acknowledgement of storing the secret following EIP712 format
-            let domain_separator = keccak256(encode(&[
-                Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-                Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
-                Token::FixedBytes(keccak256("1").to_vec()),
-            ]));
             let acknowledge_typehash =
                 keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
@@ -244,7 +276,7 @@ pub fn generate_txn(
             let digest = keccak256(
                 encode_packed(&[
                     Token::String("\x19\x01".to_string()),
-                    Token::FixedBytes(domain_separator.to_vec()),
+                    Token::FixedBytes(DOMAIN_SEPARATOR.to_vec()),
                     Token::FixedBytes(hash_struct.to_vec()),
                 ])
                 .context("Failed to encode the acknowledgement message for signing")?,
@@ -290,11 +322,6 @@ pub fn generate_txn(
             let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
             // Encode and hash the mark store alive message for the secret following EIP712 format
-            let domain_separator = keccak256(encode(&[
-                Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-                Token::FixedBytes(keccak256("marlin.oyster.SecretManager").to_vec()),
-                Token::FixedBytes(keccak256("1").to_vec()),
-            ]));
             let alive_typehash = keccak256("Alive(uint256 secretId,uint256 signTimestamp)");
 
             let hash_struct = keccak256(encode(&[
@@ -307,7 +334,7 @@ pub fn generate_txn(
             let digest = keccak256(
                 encode_packed(&[
                     Token::String("\x19\x01".to_string()),
-                    Token::FixedBytes(domain_separator.to_vec()),
+                    Token::FixedBytes(DOMAIN_SEPARATOR.to_vec()),
                     Token::FixedBytes(hash_struct.to_vec()),
                 ])
                 .context("Failed to encode the alive message for signing")?,
