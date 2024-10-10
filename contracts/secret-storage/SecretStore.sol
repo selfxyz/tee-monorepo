@@ -147,6 +147,7 @@ contract SecretStore is
         uint256 storageCapacity;
         uint256 storageOccupied;
         uint256 stakeAmount;
+        uint256 lastAliveTimestamp;
         address owner;
         bool draining;
     }
@@ -299,6 +300,7 @@ contract SecretStore is
         uint256 _storageCapacity
     ) internal {
         secretStorage[_enclaveAddress].storageCapacity = _storageCapacity;
+        secretStorage[_enclaveAddress].lastAliveTimestamp = block.timestamp;
         secretStorage[_enclaveAddress].owner = _owner;
 
         emit SecretStoreRegistered(_enclaveAddress, _owner, _storageCapacity);
@@ -568,6 +570,13 @@ contract SecretStore is
 
     function getSecretStoreOwner(address _enclaveAddress) external view returns (address) {
         return secretStorage[_enclaveAddress].owner;
+    }
+
+    function updateLastAliveTimestamp(
+        address _enclaveAddress,
+        uint256 _lastAliveTimestamp
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        secretStorage[_enclaveAddress].lastAliveTimestamp = _lastAliveTimestamp;
     }
 
     //---------------------------------- external functions end ----------------------------------//
