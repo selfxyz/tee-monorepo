@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
                     let _ = log_message(
                         &script_log_file,
                         &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
-                    ).inspect_err(|e| eprintln!("Failed to log message: {}", e));
+                    );
                 }
             }
         });    
