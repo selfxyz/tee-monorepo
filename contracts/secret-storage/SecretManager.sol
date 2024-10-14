@@ -490,6 +490,8 @@ contract SecretManager is
         else
             ackTimestamp = userStorage[_secretId].ackTimestamp;
 
+        if(lastAliveTimestamp <= ackTimestamp)
+            return;
         uint256 deadStorePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
         userStorage[_secretId].usdcDeposit -= deadStorePayment;
     }
@@ -674,6 +676,8 @@ contract SecretManager is
                     ackTimestamp = userStorage[_secretId].ackTimestamp;
             }
 
+            if(lastAliveTimestamp <= ackTimestamp)
+                continue;
             uint256 storePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
             usdcDeposit -= storePayment;
         }
@@ -706,6 +710,8 @@ contract SecretManager is
                     ackTimestamp = userStorage[_secretId].ackTimestamp;
             }
 
+            if(_endTimestamp <= ackTimestamp)
+                continue;
             uint256 storePayment = (_endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
             usdcDeposit -= storePayment;
         }
