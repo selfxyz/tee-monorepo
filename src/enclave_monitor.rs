@@ -7,14 +7,14 @@ use tokio::sync::broadcast;
 
 pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
-    enclave_log_file: &str,
-    script_log_file: &str,
+    enclave_log_file_path: &str,
+    script_log_file_path: &str,
     target_cid: u64,
 ) -> anyhow::Result<()> {
     loop {
         let enclave_id = wait_for_enclave_with_cid(target_cid).context("Error in wait for enclave with cid call")?;
         log_message(
-            script_log_file,
+            script_log_file_path,
             &format!(
                 "Enclave with CID {} detected: {}. Starting log capture.",
                 target_cid, enclave_id
@@ -23,11 +23,11 @@ pub async fn monitor_and_capture_logs(
         if let Err(e) = capture_logs(
             sse_tx,
             &enclave_id,
-            enclave_log_file,
-            script_log_file,
+            enclave_log_file_path,
+            script_log_file_path,
         ) {
             log_message(
-                script_log_file,
+                script_log_file_path,
                 &format!(
                     "Error capturing logs for enclave {}: {}. Restarting capture.",
                     enclave_id, e

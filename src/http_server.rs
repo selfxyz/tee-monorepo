@@ -9,7 +9,7 @@ use std::convert::Infallible;
 use crate::logging::log_message;
 
 pub fn fetch_logs_with_offset(
-    enclave_log_file: &str,
+    enclave_log_file_path: &str,
     log_id: u64,
     offset: usize,
 ) -> anyhow::Result<Vec<String>> {
@@ -19,7 +19,7 @@ pub fn fetch_logs_with_offset(
         1
     };
 
-    let file = File::open(enclave_log_file).context("http server: failed to open enclave log file")?;
+    let file = File::open(enclave_log_file_path).context("http server: failed to open enclave log file")?;
     let reader = BufReader::new(file);
     let mut logs: Vec<String> = Vec::with_capacity(offset);
 
@@ -42,10 +42,10 @@ pub fn fetch_logs_with_offset(
 }
 
 pub fn create_routes(
-    enclave_log_file: String,
+    enclave_log_file_path: String,
     sse_tx: tokio::sync::broadcast::Sender<String>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    let logs_file = enclave_log_file.clone();
+    let logs_file = enclave_log_file_path.clone();
     let home_html = include_str!("../assets/logs.html");
 
     let home_route = warp::path("logs")

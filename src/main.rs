@@ -14,17 +14,17 @@ use tokio::sync::broadcast;
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    clear_log_file(&args.enclave_log_file).context("failed to clear enclave log file at startup")?;
-    clear_log_file(&args.script_log_file).context("failed to clear debug log file at startup")?;
+    clear_log_file(&args.enclave_log_file_path).context("failed to clear enclave log file at startup")?;
+    clear_log_file(&args.script_log_file_path).context("failed to clear debug log file at startup")?;
 
     let (sse_tx, _) = broadcast::channel(100);
 
-    log_message(&args.script_log_file, "Starting script...")?;
+    log_message(&args.script_log_file_path, "Starting script...")?;
 
     {
         let sse_tx = sse_tx.clone();
-        let script_log_file = args.script_log_file.clone();
-        let enclave_log_file = args.enclave_log_file.clone();
+        let script_log_file = args.script_log_file_path.clone();
+        let enclave_log_file = args.enclave_log_file_path.clone();
         let target_cid = args.target_cid;
 
         tokio::task::spawn(async move {
@@ -44,10 +44,10 @@ async fn main() -> anyhow::Result<()> {
         });    
     }
 
-    let routes = http_server::create_routes(args.enclave_log_file.clone(), sse_tx.clone());
+    let routes = http_server::create_routes(args.enclave_log_file_path.clone(), sse_tx.clone());
 
     log_message(
-        &args.script_log_file,
+        &args.script_log_file_path,
         "Server started. SSE endpoint: <host>/logs/stream",
     )?;
     println!("running port {}", args.port);
