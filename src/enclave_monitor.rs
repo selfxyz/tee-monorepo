@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use tokio::sync::broadcast;
 
-pub async fn monitor_and_capture_logs(
+pub fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
