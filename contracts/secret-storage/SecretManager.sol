@@ -140,7 +140,7 @@ contract SecretManager is
 
     modifier isValidSecretOwner(uint256 _secretId) {
         if(userStorage[_secretId].owner != _msgSender())
-            revert SecretManagerNotUserStoreOwner();
+            revert SecretManagerInvalidSecretOwner();
         _;
     }
 
@@ -157,7 +157,7 @@ contract SecretManager is
         keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
     bytes32 private constant ALIVE_TYPEHASH =
-        keccak256("Alive(uint256 signTimestamp)");
+        keccak256("Alive(uint256 storageTimeUsage,uint256 signTimestamp)");
 
     /// @notice Thrown when the signature timestamp has expired.
     error SecretManagerSignatureTooOld();
@@ -202,14 +202,15 @@ contract SecretManager is
         uint256 indexed secretId
     );
 
-    event SecretStoreAlive(
-        address indexed enclaveAddress
-    );
-
-    event SecretStoreDead(
+    event SecretStoreReplaced(
         uint256 indexed secretId,
         address indexed prevEnclaveAddress,
-        address indexed newEnclaveAddress
+        address indexed newEnclaveAddress,
+        bool isMarkedDead   // true if event is emitted due to mark dead, false if emitted due to replaced store ack fail
+    );
+
+    event SecretStoreAlive(
+        address indexed enclaveAddress
     );
 
     event SecretReplicationReduced(
@@ -241,7 +242,7 @@ contract SecretManager is
     error SecretManagerUnacknowledged();
     error SecretManagerEnclaveNotFound();
     error SecretManagerStoreIsAlive();
-    error SecretManagerNotUserStoreOwner();
+    error SecretManagerInvalidSecretOwner();
     error SecretManagerAlreadyTerminated();
     error SecretManagerTerminationPending();
     error SecretManagerAlreadyAcknowledged();
@@ -364,50 +365,120 @@ contract SecretManager is
     ) internal {
         UserStorage memory userStoreData = userStorage[_secretId];
         bool ackFailed;
+        bool reselectedAckFailed;
+        bool hasReplacedStores = _checkIfSecretHasReplacedStores(_secretId);
+
         uint256 len = userStoreData.selectedEnclaves.length;
         for (uint256 index = 0; index < len; index++) {
+            address enclaveAddress = userStoreData.selectedEnclaves[index].enclaveAddress;
             if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
-                revert SecretManagerAcknowledgementTimeoutPending(userStoreData.selectedEnclaves[index].enclaveAddress);
+                revert SecretManagerAcknowledgementTimeoutPending(enclaveAddress);
 
-            // cannot be called after store dead check(when a store is replaced)
-            if(!_isReplacedStore(_secretId, index) && !userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
-                ackFailed = true;
+            // notOriginal
+            if(hasReplacedStores) {
+                if(!userStoreData.selectedEnclaves[index].hasAcknowledgedStore) {
+                    SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
 
-            SECRET_STORE.releaseEnclave(userStoreData.selectedEnclaves[index].enclaveAddress, userStoreData.sizeLimit);
+                    reselectedAckFailed = true;
+                    bool isArrayLenReduced = _replaceStore(_secretId, enclaveAddress, index, false);
+                    if(isArrayLenReduced)
+                        --index;
+                }
+            } else {
+                if(!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
+                    ackFailed = true;
+
+                SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
+            }
         }
 
-        if(!ackFailed)
+        if(!reselectedAckFailed && !ackFailed)
             revert SecretManagerAcknowledgedAlready();
 
-        delete userStorage[_secretId];
-        USDC_TOKEN.safeTransfer(userStoreData.owner, userStoreData.usdcDeposit);
+        if(ackFailed) {
+            delete userStorage[_secretId];
+            USDC_TOKEN.safeTransfer(userStoreData.owner, userStoreData.usdcDeposit);
 
-        emit SecretStoreAcknowledgementFailed(_secretId);
+            emit SecretStoreAcknowledgementFailed(_secretId);
+        }
+    }
+
+    function _checkIfSecretHasReplacedStores(
+        uint256 _secretId
+    ) internal view returns (bool) {
+        uint256 startTimestamp =  userStorage[secretId].startTimestamp;
+        uint256 len = userStorage[_secretId].selectedEnclaves.length;
+        for (uint256 index = 0; index < len; index++) {
+            if(userStorage[_secretId].selectedEnclaves[index].selectTimestamp != startTimestamp)
+                return true;
+        }
+        return false;
+    }
+
+    function _replaceStore(
+        uint256 _secretId,
+        address _enclaveAddress,
+        uint256 _enclaveIndex,
+        bool _isMarkedDead  // true if called due to mark dead, false if called due to replaced store ack fail
+    ) internal returns (bool isArrayLenReduced) {
+        // case for when the termination condition is reached, we won't select any new enclave
+        if(block.timestamp > userStorage[_secretId].endTimestamp) {
+            isArrayLenReduced = true;
+            _removeSelectedEnclave(_secretId, _enclaveIndex);
+            if(userStorage[_secretId].selectedEnclaves.length == 0)
+                _refundExcessDepositAndRemoveStore(_secretId);
+        }
+        // case for when a newly selected enclave will replace the dead enclave
+        else {
+            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectEnclaves(1, userStorage[_secretId].sizeLimit);
+            // case for when a new enclave can't be selected as they all are already occupied to their max storage capacity
+            if (selectedEnclaves.length == 0) {
+                isArrayLenReduced = true;
+                _removeSelectedEnclave(_secretId, _enclaveIndex);
+                emit SecretReplicationReduced(_secretId, userStorage[_secretId].selectedEnclaves.length);
+            }
+            // case for when a newly selected enclave will replace the dead enclave
+            else {
+                userStorage[_secretId].selectedEnclaves[_enclaveIndex] = SelectedEnclave({
+                    enclaveAddress: selectedEnclaves[0].enclaveAddress,
+                    hasAcknowledgedStore: false,
+                    selectTimestamp: selectedEnclaves[0].selectTimestamp,
+                    replacedAckTimestamp: 0
+                });
+            }
+            emit SecretStoreReplaced(
+                _secretId,
+                _enclaveAddress,
+                selectedEnclaves.length != 0 ? selectedEnclaves[0].enclaveAddress : address(0),
+                _isMarkedDead
+            );
+        }
     }
 
     function _markStoreAlive(
+        uint256 _storageTimeUsage,
         uint256 _signTimestamp,
-        bytes memory _signature,
-        uint256 _durationAndSizeCurveArea
+        bytes memory _signature
     ) internal {
-        address enclaveAddress = _verifyStoreAliveSign(_signTimestamp, _signature);
+        address enclaveAddress = _verifyStoreAliveSign(_storageTimeUsage, _signTimestamp, _signature);
 
         address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
         SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
 
-        uint256 usdcPayment = _durationAndSizeCurveArea * SECRET_STORE_FEE_RATE;
+        uint256 usdcPayment = _storageTimeUsage * SECRET_STORE_FEE_RATE;
         USDC_TOKEN.safeTransfer(owner, usdcPayment);
 
         emit SecretStoreAlive(enclaveAddress);
     }
 
     function _verifyStoreAliveSign(
+        uint256 _storageTimeUsage,
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal view returns(address signer) {
         _checkSignValidity(_signTimestamp);
 
-        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
@@ -438,40 +509,9 @@ contract SecretManager is
         if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore)
             return;
 
-        uint256 noOfSelectedEnclaves = userStorage[_secretId].selectedEnclaves.length;
         _updateUsdcDepositPostDeadMark(_secretId, _enclaveAddress, enclaveIndex);
 
-        // case for when the termination condition is reached, we won't select any new enclave
-        if(block.timestamp > userStorage[_secretId].endTimestamp) {
-            _removeSelectedEnclave(_secretId, enclaveIndex);
-            if(userStorage[_secretId].selectedEnclaves.length == 0)
-                _refundExcessDepositAndRemoveStore(_secretId);
-        }
-        // case for when the termination condition is pending, we will try to select a new enclave in place of the dead enclave
-        else {
-            // TODO: what if the newly selected node is one of the previously selected nodes?
-            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectEnclaves(1, userStorage[_secretId].sizeLimit);
-            // case for when a new enclave can't be selected as they all are already occupied to their max storage capacity
-            if (selectedEnclaves.length == 0) {
-                _removeSelectedEnclave(_secretId, enclaveIndex);
-                emit SecretReplicationReduced(_secretId, noOfSelectedEnclaves - 1);
-            }
-            // case for when a newly selected enclave will replace the dead enclave
-            else {
-                userStorage[_secretId].selectedEnclaves[enclaveIndex] = SelectedEnclave({
-                    enclaveAddress: selectedEnclaves[0].enclaveAddress,
-                    hasAcknowledgedStore: false,
-                    selectTimestamp: selectedEnclaves[0].selectTimestamp,
-                    replacedAckTimestamp: 0
-                });
-            }
-
-            emit SecretStoreDead(
-                _secretId,
-                _enclaveAddress, 
-                selectedEnclaves.length != 0 ? selectedEnclaves[0].enclaveAddress : address(0)
-            );
-        }
+        _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
 
         // TODO: slash prev enclave(who's recipient)
         SECRET_STORE.slashEnclave(_enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
@@ -572,6 +612,11 @@ contract SecretManager is
         uint256 usdcDeposit = getCurrentUnconfirmedUsdcDeposit(_secretId);
         userStorage[_secretId].usdcDeposit = usdcDeposit;
 
+        uint256 len = userStorage[_secretId].selectedEnclaves.length;
+        for (uint256 index = 0; index < len; index++) {
+            SECRET_STORE.releaseEnclave(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, userStorage[_secretId].sizeLimit);
+        }
+
         _refundExcessDepositAndRemoveStore(_secretId);
 
         emit SecretTerminated(_secretId);
@@ -586,6 +631,40 @@ contract SecretManager is
         _terminateSecret(_secretId);
         
         emit SecretRemoved(_secretId);
+    }
+
+    function _getCurrentUnconfirmedUsdcDeposit(
+        uint256 _secretId,
+        uint256 _endTimestamp
+    ) internal view returns (uint256) {
+        uint256 usdcDeposit = userStorage[_secretId].usdcDeposit;
+        if(_endTimestamp > userStorage[_secretId].endTimestamp)
+            _endTimestamp = userStorage[_secretId].endTimestamp;
+
+        SelectedEnclave[] memory selectedEnclaves = userStorage[_secretId].selectedEnclaves;
+        uint256 len = selectedEnclaves.length;
+        for (uint256 index = 0; index < len; index++) {
+            if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
+                continue;
+
+            uint256 ackTimestamp;
+            if(_isReplacedStore(_secretId, index))
+                ackTimestamp = userStorage[_secretId].selectedEnclaves[index].replacedAckTimestamp;
+            else {
+                // if all the stores haven't marked ack
+                if(userStorage[_secretId].ackTimestamp == 0)
+                    return usdcDeposit;
+                else
+                    ackTimestamp = userStorage[_secretId].ackTimestamp;
+            }
+
+            if(_endTimestamp <= ackTimestamp)
+                continue;
+            uint256 storePayment = (_endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
+            usdcDeposit -= storePayment;
+        }
+
+        return usdcDeposit;
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -615,11 +694,11 @@ contract SecretManager is
     }
 
     function markStoreAlive(
+        uint256 _storageTimeUsage,
         uint256 _signTimestamp,
-        bytes memory _signature,
-        uint256 _durationAndSizeCurveArea
+        bytes memory _signature
     ) external {
-        _markStoreAlive(_signTimestamp, _signature, _durationAndSizeCurveArea);
+        _markStoreAlive(_storageTimeUsage, _signTimestamp, _signature);
     }
 
     function markStoreDead(
@@ -679,40 +758,6 @@ contract SecretManager is
             if(lastAliveTimestamp <= ackTimestamp)
                 continue;
             uint256 storePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
-            usdcDeposit -= storePayment;
-        }
-
-        return usdcDeposit;
-    }
-
-    function _getCurrentUnconfirmedUsdcDeposit(
-        uint256 _secretId,
-        uint256 _endTimestamp
-    ) internal view returns (uint256) {
-        uint256 usdcDeposit = userStorage[_secretId].usdcDeposit;
-        if(_endTimestamp > userStorage[_secretId].endTimestamp)
-            _endTimestamp = userStorage[_secretId].endTimestamp;
-
-        SelectedEnclave[] memory selectedEnclaves = userStorage[_secretId].selectedEnclaves;
-        uint256 len = selectedEnclaves.length;
-        for (uint256 index = 0; index < len; index++) {
-            if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
-                continue;
-
-            uint256 ackTimestamp;
-            if(_isReplacedStore(_secretId, index))
-                ackTimestamp = userStorage[_secretId].selectedEnclaves[index].replacedAckTimestamp;
-            else {
-                // if all the stores haven't marked ack
-                if(userStorage[_secretId].ackTimestamp == 0)
-                    return usdcDeposit;
-                else
-                    ackTimestamp = userStorage[_secretId].ackTimestamp;
-            }
-
-            if(_endTimestamp <= ackTimestamp)
-                continue;
-            uint256 storePayment = (_endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
             usdcDeposit -= storePayment;
         }
 
