@@ -609,6 +609,17 @@ contract SecretManager is
     function _terminateSecret(
         uint256 _secretId
     ) internal {
+        if(block.timestamp > userStorage[_secretId].endTimestamp)
+            revert SecretManagerAlreadyTerminated();
+
+        _clearSecretData(_secretId);
+
+        emit SecretTerminated(_secretId);
+    }
+
+    function _clearSecretData(
+        uint256 _secretId
+    ) internal {
         uint256 usdcDeposit = getCurrentUnconfirmedUsdcDeposit(_secretId);
         userStorage[_secretId].usdcDeposit = usdcDeposit;
 
@@ -618,8 +629,6 @@ contract SecretManager is
         }
 
         _refundExcessDepositAndRemoveStore(_secretId);
-
-        emit SecretTerminated(_secretId);
     }
 
     function _removeSecret(
@@ -628,7 +637,7 @@ contract SecretManager is
         if(block.timestamp <= userStorage[_secretId].endTimestamp)
             revert SecretManagerTerminationPending();
 
-        _terminateSecret(_secretId);
+        _clearSecretData(_secretId);
         
         emit SecretRemoved(_secretId);
     }
