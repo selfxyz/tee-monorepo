@@ -6,9 +6,8 @@ mod logging;
 use anyhow::Context;
 use args::Args;
 use clap::Parser;
-use enclave_monitor::{monitor_and_capture_logs, save_logs_to_file};
+use enclave_monitor::monitor_and_capture_logs;
 use logging::{clear_log_file, log_message};
-use std::sync::{mpsc, Arc, Mutex};
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -18,46 +17,31 @@ async fn main() -> anyhow::Result<()> {
     clear_log_file(&args.enclave_log_file).context("failed to clear enclave log file at startup")?;
     clear_log_file(&args.script_log_file).context("failed to clear debug log file at startup")?;
 
-    let (tx, rx) = mpsc::channel();
     let (sse_tx, _) = broadcast::channel(100);
 
     log_message(&args.script_log_file, "Starting script...")?;
 
-    let log_id_counter = Arc::new(Mutex::new(1));
-
     {
-        let tx = tx.clone();
         let sse_tx = sse_tx.clone();
         let script_log_file = args.script_log_file.clone();
-        let log_id_counter = Arc::clone(&log_id_counter);
+        let enclave_log_file = args.enclave_log_file.clone();
         let target_cid = args.target_cid;
 
-        tokio::task::spawn_blocking( move || {
+        tokio::task::spawn(async move {
             loop {
                 if let Err(e) = monitor_and_capture_logs(
-                    &tx,
                     &sse_tx,
+                    &enclave_log_file,
                     &script_log_file,
-                    &log_id_counter,
                     target_cid,
-                ) {
-                    log_message(
+                ).await { // Ensure you await the async function
+                    let _ = log_message(
                         &script_log_file,
                         &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
-                    )
-                    .unwrap();
+                    ).inspect_err(|e| eprintln!("Failed to log message: {}", e));
                 }
             }
-        });
-    }
-
-    {
-        let enclave_log_file = args.enclave_log_file.clone();
-        tokio::task::spawn_blocking(  move || {
-            if let Err(e) = save_logs_to_file(rx, &enclave_log_file) {
-                eprintln!("Error saving logs to file: {}", e);
-            }
-        });
+        });    
     }
 
     let routes = http_server::create_routes(args.enclave_log_file.clone(), sse_tx.clone());

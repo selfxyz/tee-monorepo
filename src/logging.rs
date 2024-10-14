@@ -22,14 +22,16 @@ pub fn log_message(log_file: &str, message: &str) -> anyhow::Result<()> {
 
 
 pub fn clear_log_file(file_path: &str) -> anyhow::Result<()> {
-    match OpenOptions::new().write(true).truncate(true).open(file_path) {
-        Ok(_) => Ok(()),
-        Err(e) => {
+    OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(file_path)
+        .map(|_| ())
+        .or_else(|e| {
             if e.kind() == ErrorKind::NotFound {
                 Ok(())
             } else {
-                Err(e.into())
+                Err(e).context("Failed to clear the log file")
             }
-        }
-    }
+        })
 }

@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs::File;
@@ -6,11 +6,13 @@ use std::io::{BufRead, BufReader};
 use warp::{http::Method, Filter};
 use std::convert::Infallible;
 
+use crate::logging::log_message;
+
 pub fn fetch_logs_with_offset(
     enclave_log_file: &str,
     log_id: u64,
     offset: usize,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> anyhow::Result<Vec<String>> {
     let start_log_id = if log_id > offset as u64 {
         log_id - offset as u64
     } else {
@@ -19,22 +21,20 @@ pub fn fetch_logs_with_offset(
 
     let file = File::open(enclave_log_file).context("http server: failed to open enclave log file")?;
     let reader = BufReader::new(file);
-
     let mut logs: Vec<String> = Vec::with_capacity(offset);
 
     for line in reader.lines().flatten() {
-        if let Some((log_id_str, message)) = line.split_once("] ") {
-            let log_id_str = log_id_str.trim_start_matches('[');
-            if let Ok(current_log_id) = log_id_str.parse::<u64>() {
-                if current_log_id >= start_log_id {
-                    let log_entry = format!("[{}] {}", current_log_id, message);
-                    logs.push(log_entry);
-                }
-
-                if logs.len() >= offset {
-                    break;
-                }
-            }
+        let Some((log_id_str, message)) = line.split_once("] ") else {
+            return Err(anyhow!("Error"));
+        };
+        let log_id_str = log_id_str.trim_start_matches('[');
+        let current_log_id = log_id_str.parse::<u64>().context("failed to parse log id")?;
+        if current_log_id >= start_log_id {
+                let log_entry = format!("[{}] {}", current_log_id, message);
+                logs.push(log_entry);
+        }
+        if logs.len() >= offset {
+            break;
         }
     }
 
@@ -63,17 +63,18 @@ pub fn create_routes(
                     .get("log_id")
                     .and_then(|id| id.parse::<u64>().ok())
                     .unwrap_or(1);
+
                 let offset = params
                     .get("offset")
                     .and_then(|off| off.parse::<usize>().ok())
                     .unwrap_or(10);
 
-                let response = match fetch_logs_with_offset(&logs_file, log_id, offset) {
-                    Ok(logs) => warp::reply::json(&logs),
-                    Err(_) => warp::reply::json(&json!({"error": "Failed to retrieve logs."})),
-                };
+                let response = fetch_logs_with_offset(&logs_file, log_id, offset)
+                    .map_or_else(|err| {
+                        let _ = log_message(&logs_file, &err.context("failed to fetch logs with offset").to_string());
+                        warp::reply::json(&json!({"error": "Failed to retrieve logs."}))
+                    }, |logs| warp::reply::json(&logs));
 
-                // Specify the error type as Infallible
                 Ok::<_, Infallible>(response)
             }
         });
