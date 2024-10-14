@@ -572,6 +572,10 @@ contract SecretStore is
         return secretStorage[_enclaveAddress].owner;
     }
 
+    function getSecretStoreLastAliveTimestamp(address _enclaveAddress) external view returns (uint256) {
+        return secretStorage[_enclaveAddress].lastAliveTimestamp;
+    }
+
     function updateLastAliveTimestamp(
         address _enclaveAddress,
         uint256 _lastAliveTimestamp
