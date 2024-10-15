@@ -4,7 +4,6 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use tokio::sync::broadcast;
-use expectrl::spawn;
 
 pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
@@ -70,8 +69,10 @@ fn capture_logs(
     enclave_log_file_path: &str,
     script_log_file_path: &str,
 ) -> anyhow::Result<()> {
-    let command = format!("nitro-cli console --enclave-id {}", enclave_id);
-    let mut process = spawn(&command).context("Failed to spawn nitro-cli console")?;
+    let mut child = Command::new("nitro-cli")
+        .args(&["console", "--enclave-id", enclave_id])
+        .stdout(Stdio::piped())
+        .spawn()?;
 
     let mut log_id_counter: u64 = 0;
     let mut enclave_file = std::fs::OpenOptions::new()
@@ -80,27 +81,19 @@ fn capture_logs(
         .open(enclave_log_file_path)
         .context("failed to open enclave log file")?;
 
-    loop {
-        let mut buf = String::new();
-        let bytes_read = process
-            .read_line(&mut buf)
-            .context("failed to read line from nitro console")?;
-        if bytes_read == 0 {
-            break;
+    let stdout = child.stdout.take().expect("Failed to capture stdout");
+    let reader = BufReader::new(stdout);
+
+    for line in reader.lines() {
+        let line = line?;
+        let log_entry = format!("[{}] {}", log_id_counter, line);
+        
+        writeln!(enclave_file, "{}", log_entry.clone()).context("Failed to write logs to enclave log file")?;
+        enclave_file.flush().context("failed to flush all changes from buffer to log file")?;
+        
+        if let Err(_) = sse_tx.send(log_entry.clone()) {
+            println!("No active SSE subscribers, skipping log transmission.");
         }
-
-        let log_entry = format!("[{}] {}", log_id_counter, buf.trim());
-
-        if let Err(e) = sse_tx.send(log_entry.clone()) {
-            log_message(
-                script_log_file_path,
-                &format!("No active SSE subscribers, skipping log transmission: {}", e),
-            )?;
-        }
-
-        writeln!(enclave_file, "{}", log_entry).context("Error writing to enclave file")?;
-        enclave_file.flush().context("Error flushing log file")?;
-
         log_id_counter += 1;
     }
 
