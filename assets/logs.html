@@ -53,7 +53,7 @@
     };
 
     const historyLogs = (url, logId) => {
-      fetch(`${url}/logs/history?logId=${logId}&offset=${LOG_OFFSET}`)
+      fetch(`${url}/logs/history?log_id=${logId}&offset=${LOG_OFFSET}`)
         .then((response) => response.json())
         .then((data) => {
           const logData = data.reverse();
