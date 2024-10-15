@@ -87,11 +87,12 @@ fn capture_logs(
     for line in reader.lines() {
         let line = line?;
         let log_entry = format!("[{}] {}", log_id_counter, line);
+        let sse_event_message = log_entry.clone();
         
-        writeln!(enclave_file, "{}", log_entry.clone()).context("Failed to write logs to enclave log file")?;
+        writeln!(enclave_file, "{}", sse_event_message).context("Failed to write logs to enclave log file")?;
         enclave_file.flush().context("failed to flush all changes from buffer to log file")?;
         
-        if let Err(_) = sse_tx.send(log_entry.clone()) {
+        if let Err(_) = sse_tx.send(log_entry) {
             println!("No active SSE subscribers, skipping log transmission.");
         }
         log_id_counter += 1;
