@@ -363,20 +363,18 @@ contract SecretManager is
     function _acknowledgeStoreFailed(
         uint256 _secretId
     ) internal {
-        UserStorage memory userStoreData = userStorage[_secretId];
         bool ackFailed;
         bool reselectedAckFailed;
-        bool hasReplacedStores = _checkIfSecretHasReplacedStores(_secretId);
-
-        uint256 len = userStoreData.selectedEnclaves.length;
-        for (uint256 index = 0; index < len; index++) {
+        for (uint256 index = 0; index < userStorage[_secretId].selectedEnclaves.length; index++) {
+            UserStorage memory userStoreData = userStorage[_secretId];
             address enclaveAddress = userStoreData.selectedEnclaves[index].enclaveAddress;
-            if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
-                revert SecretManagerAcknowledgementTimeoutPending(enclaveAddress);
 
-            // notOriginal
-            if(hasReplacedStores) {
-                if(!userStoreData.selectedEnclaves[index].hasAcknowledgedStore) {
+            // case for replaced stores(after mark dead txn)
+            if (userStoreData.selectedEnclaves[index].selectTimestamp != userStoreData.startTimestamp) {
+                if (
+                    !userStoreData.selectedEnclaves[index].hasAcknowledgedStore &&
+                    block.timestamp > userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT
+                ) {
                     SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
 
                     reselectedAckFailed = true;
@@ -385,7 +383,10 @@ contract SecretManager is
                         --index;
                 }
             } else {
-                if(!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
+                if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
+                    revert SecretManagerAcknowledgementTimeoutPending(enclaveAddress);
+
+                if (!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
                     ackFailed = true;
 
                 SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
@@ -397,22 +398,10 @@ contract SecretManager is
 
         if(ackFailed) {
             delete userStorage[_secretId];
-            USDC_TOKEN.safeTransfer(userStoreData.owner, userStoreData.usdcDeposit);
+            USDC_TOKEN.safeTransfer(userStorage[_secretId].owner, userStorage[_secretId].usdcDeposit);
 
             emit SecretStoreAcknowledgementFailed(_secretId);
         }
-    }
-
-    function _checkIfSecretHasReplacedStores(
-        uint256 _secretId
-    ) internal view returns (bool) {
-        uint256 startTimestamp =  userStorage[secretId].startTimestamp;
-        uint256 len = userStorage[_secretId].selectedEnclaves.length;
-        for (uint256 index = 0; index < len; index++) {
-            if(userStorage[_secretId].selectedEnclaves[index].selectTimestamp != startTimestamp)
-                return true;
-        }
-        return false;
     }
 
     function _replaceStore(
