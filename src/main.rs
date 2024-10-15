@@ -28,7 +28,6 @@ async fn main() -> anyhow::Result<()> {
         let target_cid = args.target_cid;
 
         tokio::task::spawn(async move {
-            loop {
                 if let Err(e) = monitor_and_capture_logs(
                     &sse_tx,
                     &enclave_log_file,
@@ -40,7 +39,6 @@ async fn main() -> anyhow::Result<()> {
                         &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
                     );
                 }
-            }
         });    
     }
 

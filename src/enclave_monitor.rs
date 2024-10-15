@@ -1,9 +1,11 @@
 use crate::logging::log_message;
 use anyhow::{bail, Context};
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command;
 use tokio::sync::broadcast;
+use tokio::sync::Mutex;
 
 pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
@@ -12,7 +14,9 @@ pub async fn monitor_and_capture_logs(
     target_cid: u64,
 ) -> anyhow::Result<()> {
     loop {
-        let enclave_id = wait_for_enclave_with_cid(target_cid).context("Error in wait for enclave with cid call")?;
+        let enclave_id = wait_for_enclave_with_cid(target_cid)
+            .await
+            .context("Error in wait for enclave with cid call")?;
         log_message(
             script_log_file_path,
             &format!(
@@ -25,7 +29,9 @@ pub async fn monitor_and_capture_logs(
             &enclave_id,
             enclave_log_file_path,
             script_log_file_path,
-        ) {
+        )
+        .await
+        {
             log_message(
                 script_log_file_path,
                 &format!(
@@ -37,17 +43,20 @@ pub async fn monitor_and_capture_logs(
     }
 }
 
-fn wait_for_enclave_with_cid(
+async fn wait_for_enclave_with_cid(
     target_cid: u64,
 ) -> anyhow::Result<String> {
     loop {
         let output = Command::new("nitro-cli")
             .args(&["describe-enclaves"])
             .output()
+            .await
             .context("Failed to execute nitro-cli describe-enclaves")?;
 
-        let stdout = String::from_utf8(output.stdout).context("failed to typecast describe enclaves output to string")?;
-        let enclaves: Value = serde_json::from_str(&stdout).context("failed to parse describe enclaves to json")?;
+        let stdout = String::from_utf8(output.stdout)
+            .context("failed to typecast describe enclaves output to string")?;
+        let enclaves: Value = serde_json::from_str(&stdout)
+            .context("failed to parse describe enclaves to json")?;
         if let Some(enclaves) = enclaves.as_array() {
             for enclave in enclaves {
                 if let (Some(enclave_cid), Some(enclave_id)) = (
@@ -63,7 +72,7 @@ fn wait_for_enclave_with_cid(
     }
 }
 
-fn capture_logs(
+async fn capture_logs(
     sse_tx: &broadcast::Sender<String>,
     enclave_id: &str,
     enclave_log_file_path: &str,
@@ -72,30 +81,49 @@ fn capture_logs(
     let mut child = Command::new("nitro-cli")
         .args(&["console", "--enclave-id", enclave_id])
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .context("Failed to spawn nitro-cli process")?;
 
     let mut log_id_counter: u64 = 0;
-    let mut enclave_file = std::fs::OpenOptions::new()
+
+    // Open the file asynchronously
+    let file = tokio::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(enclave_log_file_path)
-        .context("failed to open enclave log file")?;
+        .await
+        .context("Failed to open enclave log file")?;
 
     let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let reader = BufReader::new(stdout);
+    let reader = BufReader::new(stdout).lines();
 
-    for line in reader.lines() {
-        let line = line?;
+    // Wrap the file in a Mutex to allow safe concurrent writes
+    let file = Mutex::new(file);
+
+    tokio::pin!(reader); // Pin the reader to use it in the loop
+
+    while let Some(line) = reader.next_line().await? {
         let log_entry = format!("[{}] {}", log_id_counter, line);
-        let sse_event_message = log_entry.clone();
-        
-        writeln!(enclave_file, "{}", sse_event_message).context("Failed to write logs to enclave log file")?;
-        enclave_file.flush().context("failed to flush all changes from buffer to log file")?;
-        
-        if let Err(_) = sse_tx.send(log_entry) {
+
+        // Asynchronously write to the file
+        {
+            let mut file = file.lock().await;
+            file.write_all(log_entry.as_bytes()).await?;
+            file.write_all(b"\n").await?;
+            file.flush().await?;
+        }
+
+        // Send via SSE
+        if sse_tx.send(log_entry).is_err() {
             println!("No active SSE subscribers, skipping log transmission.");
         }
         log_id_counter += 1;
+    }
+
+    // Wait for the child process to exit
+    let status = child.wait().await?;
+    if !status.success() {
+        bail!("Nitro CLI process exited with error");
     }
 
     log_message(script_log_file_path, "Nitro CLI process ended unexpectedly")?;
