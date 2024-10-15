@@ -42,6 +42,7 @@
     const LOG_OFFSET = 10;
     const logs = document.getElementById("logs");
     const loader = document.getElementById("loader");
+    let isHistoryView = false;
 
     const stripLogPrefix = (log) => {
       const parts = log.split("] ");
@@ -64,33 +65,44 @@
             messageElement.textContent = newLog.message;
             logs.prepend(messageElement);
           });
+          // After adding history logs, scroll to the top to prevent jumping to the bottom
+          logs.scrollTop = 0;
+          isHistoryView = true;
         });
     };
 
     const startLogs = (url) => {
-      loader.style.display = "block";
       let eventSource = new EventSource(`${url}/logs/stream`);
 
       eventSource.onmessage = async (event) => {
-        loader.style.display = "none";
+        if(loader){
+          loader.remove();
+        }
         let log = stripLogPrefix(event.data);
         let message = log.message.trim();
         let messageElement = document.createElement("li");
         messageElement.id = log.id;
         messageElement.textContent = message;
         logs.appendChild(messageElement);
+        // Scroll to the bottom after adding new logs to ensure the user sees the latest logs
+        if(!isHistoryView){
+          logs.scrollTop += messageElement.offsetHeight;
+        }
       };
 
       eventSource.onerror = (error) => {
         console.error("EventSource failed:", error);
         eventSource.close();
-        loader.style.display = "none";
+        logs.removeChild(loader);
+        if(loader){
+          loader.remove()
+        }
       };
     };
 
     logs.addEventListener("scroll", () => {
       if (logs.scrollTop === 0) {
-        let firstLog = logs.firstChild;
+        let firstLog = document.getElementById("logs").firstElementChild;
         let firstLogId = firstLog.id;
         historyLogs(`http://${window.location.hostname}:${PORT}`, firstLogId);
       }

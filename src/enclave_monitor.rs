@@ -4,8 +4,9 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use tokio::sync::broadcast;
+use expectrl::spawn;
 
-pub fn monitor_and_capture_logs(
+pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
@@ -69,27 +70,35 @@ fn capture_logs(
     enclave_log_file_path: &str,
     script_log_file_path: &str,
 ) -> anyhow::Result<()> {
-    let mut child = Command::new("nitro-cli")
-        .args(&["console", "--enclave-id", enclave_id])
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to start nitro-cli process")?;
+    let command = format!("nitro-cli console --enclave-id {}", enclave_id);
+    let mut process = spawn(&command).context("Failed to spawn nitro-cli console")?;
 
     let mut log_id_counter: u64 = 0;
-    let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let reader = BufReader::new(stdout);
     let mut enclave_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(enclave_log_file_path).context("failed to open enclave log file")?;
+        .open(enclave_log_file_path)
+        .context("failed to open enclave log file")?;
 
-    for line in reader.lines() {
-        let line = line.context("failed to read line from nitro console")?;
-        let log_entry = format!("[{}] {}", log_id_counter, line);
+    loop {
+        let mut buf = String::new();
+        let bytes_read = process
+            .read_line(&mut buf)
+            .context("failed to read line from nitro console")?;
+        if bytes_read == 0 {
+            break;
+        }
 
-        sse_tx.send(log_entry.clone()).context("No active SSE subscribers, skipping log transmission.")?;
+        let log_entry = format!("[{}] {}", log_id_counter, buf.trim());
 
-        writeln!(enclave_file, "{}", log_entry.clone()).context("Error writing to enclave file")?;
+        if let Err(e) = sse_tx.send(log_entry.clone()) {
+            log_message(
+                script_log_file_path,
+                &format!("No active SSE subscribers, skipping log transmission: {}", e),
+            )?;
+        }
+
+        writeln!(enclave_file, "{}", log_entry).context("Error writing to enclave file")?;
         enclave_file.flush().context("Error flushing log file")?;
 
         log_id_counter += 1;

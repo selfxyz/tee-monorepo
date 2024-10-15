@@ -27,31 +27,18 @@ async fn main() -> anyhow::Result<()> {
         let enclave_log_file = args.enclave_log_file_path.clone();
         let target_cid = args.target_cid;
 
-        // tokio::task::spawn(async move {
-        //     loop {
-        //         if let Err(e) = monitor_and_capture_logs(
-        //             &sse_tx,
-        //             &enclave_log_file,
-        //             &script_log_file,
-        //             target_cid,
-        //         ).await { // Ensure you await the async function
-        //             let _ = log_message(
-        //                 &script_log_file,
-        //                 &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
-        //             );
-        //         }
-        //     }
-        // });
-
-        tokio::task::spawn_blocking( move || {
+        tokio::task::spawn(async move {
             loop {
-                if let Err(_) = monitor_and_capture_logs(
+                if let Err(e) = monitor_and_capture_logs(
                     &sse_tx,
                     &enclave_log_file,
                     &script_log_file,
                     target_cid,
-                ) {
-                    println!("Error capturing logs");
+                ).await { // Ensure you await the async function
+                    let _ = log_message(
+                        &script_log_file,
+                        &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
+                    );
                 }
             }
         });    
