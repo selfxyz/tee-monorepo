@@ -42,20 +42,18 @@ pub async fn monitor_and_capture_logs(
     }
 }
 
-async fn wait_for_enclave_with_cid(
-    target_cid: u64,
-) -> anyhow::Result<String> {
+async fn wait_for_enclave_with_cid(target_cid: u64) -> anyhow::Result<String> {
     loop {
         let output = Command::new("nitro-cli")
-            .args(&["describe-enclaves"])
+            .args(["describe-enclaves"])
             .output()
             .await
             .context("Failed to execute nitro-cli describe-enclaves")?;
 
         let stdout = String::from_utf8(output.stdout)
             .context("failed to typecast describe enclaves output to string")?;
-        let enclaves: Value = serde_json::from_str(&stdout)
-            .context("failed to parse describe enclaves to json")?;
+        let enclaves: Value =
+            serde_json::from_str(&stdout).context("failed to parse describe enclaves to json")?;
         if let Some(enclaves) = enclaves.as_array() {
             for enclave in enclaves {
                 if let (Some(enclave_cid), Some(enclave_id)) = (
@@ -78,7 +76,7 @@ async fn capture_logs(
     script_log_file_path: &str,
 ) -> anyhow::Result<()> {
     let mut child = Command::new("nitro-cli")
-        .args(&["console", "--enclave-id", enclave_id])
+        .args(["console", "--enclave-id", enclave_id])
         .stdout(Stdio::piped())
         .spawn()
         .context("Failed to spawn nitro-cli process")?;

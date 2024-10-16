@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Context};
 use serde_json::json;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use warp::{http::Method, Filter};
-use std::convert::Infallible;
 
 use crate::logging::log_message;
 
@@ -19,19 +19,22 @@ pub fn fetch_logs_with_offset(
         1
     };
 
-    let file = File::open(enclave_log_file_path).context("http server: failed to open enclave log file")?;
-    let reader = BufReader::new(file);
+    let file = File::open(enclave_log_file_path)
+        .context("http server: failed to open enclave log file")?;
+    let reader = BufReader::new(file); 
     let mut logs: Vec<String> = Vec::with_capacity(offset);
 
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         let Some((log_id_str, message)) = line.split_once("] ") else {
             return Err(anyhow!("Error"));
         };
         let log_id_str = log_id_str.trim_start_matches('[');
-        let current_log_id = log_id_str.parse::<u64>().context("failed to parse log id")?;
+        let current_log_id = log_id_str
+            .parse::<u64>()
+            .context("failed to parse log id")?;
         if current_log_id >= start_log_id {
-                let log_entry = format!("[{}] {}", current_log_id, message);
-                logs.push(log_entry);
+            let log_entry = format!("[{}] {}", current_log_id, message);
+            logs.push(log_entry);
         }
         if logs.len() >= offset {
             break;
@@ -50,11 +53,10 @@ pub fn create_routes(
 
     let home_route = warp::path("logs")
         .and(warp::get())
-        .map(move || {
-            warp::reply::html(home_html)
-        });
+        .map(move || warp::reply::html(home_html));
 
-    let history_route = warp::path("logs").and(warp::path("history"))
+    let history_route = warp::path("logs")
+        .and(warp::path("history"))
         .and(warp::query::<HashMap<String, String>>())
         .and_then(move |params: HashMap<String, String>| {
             let logs_file = logs_file.clone();
@@ -69,17 +71,23 @@ pub fn create_routes(
                     .and_then(|off| off.parse::<usize>().ok())
                     .unwrap_or(10);
 
-                let response = fetch_logs_with_offset(&logs_file, log_id, offset)
-                    .map_or_else(|err| {
-                        let _ = log_message(&logs_file, &err.context("failed to fetch logs with offset").to_string());
+                let response = fetch_logs_with_offset(&logs_file, log_id, offset).map_or_else(
+                    |err| {
+                        let _ = log_message(
+                            &logs_file,
+                            &err.context("failed to fetch logs with offset").to_string(),
+                        );
                         warp::reply::json(&json!({"error": "Failed to retrieve logs."}))
-                    }, |logs| warp::reply::json(&logs));
+                    },
+                    |logs| warp::reply::json(&logs),
+                );
 
                 Ok::<_, Infallible>(response)
             }
         });
 
-    let sse_route = warp::path("logs").and(warp::path("stream"))
+    let sse_route = warp::path("logs")
+        .and(warp::path("stream"))
         .and(warp::get())
         .map(move || {
             let sse_rx = sse_tx.subscribe();
@@ -92,12 +100,26 @@ pub fn create_routes(
             warp::sse::reply(warp::sse::keep_alive().stream(stream))
         });
 
-    let cors = warp::cors().allow_any_origin()
-        .allow_headers(vec!["Access-Control-Allow-Headers", "Access-Control-Request-Method", "Access-Control-Request-Headers", "Origin", "Accept", "X-Requested-With", "Content-Type"])
-        .allow_methods(&[Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS, Method::HEAD]);
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_headers(vec![
+            "Access-Control-Allow-Headers",
+            "Access-Control-Request-Method",
+            "Access-Control-Request-Headers",
+            "Origin",
+            "Accept",
+            "X-Requested-With",
+            "Content-Type",
+        ])
+        .allow_methods(&[
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+            Method::HEAD,
+        ]);
 
-    history_route
-        .or(sse_route)
-        .or(home_route)
-        .with(cors)
+    history_route.or(sse_route).or(home_route).with(cors)
 }

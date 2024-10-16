@@ -14,8 +14,10 @@ use tokio::sync::broadcast;
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    clear_log_file(&args.enclave_log_file_path).context("failed to clear enclave log file at startup")?;
-    clear_log_file(&args.script_log_file_path).context("failed to clear debug log file at startup")?;
+    clear_log_file(&args.enclave_log_file_path)
+        .context("failed to clear enclave log file at startup")?;
+    clear_log_file(&args.script_log_file_path)
+        .context("failed to clear debug log file at startup")?;
 
     let (sse_tx, _) = broadcast::channel(100);
 
@@ -28,18 +30,17 @@ async fn main() -> anyhow::Result<()> {
         let target_cid = args.target_cid;
 
         tokio::task::spawn(async move {
-                if let Err(e) = monitor_and_capture_logs(
-                    &sse_tx,
-                    &enclave_log_file,
+            if let Err(e) =
+                monitor_and_capture_logs(&sse_tx, &enclave_log_file, &script_log_file, target_cid)
+                    .await
+            {
+                // Ensure you await the async function
+                let _ = log_message(
                     &script_log_file,
-                    target_cid,
-                ).await { // Ensure you await the async function
-                    let _ = log_message(
-                        &script_log_file,
-                        &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
-                    );
-                }
-        });    
+                    &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
+                );
+            }
+        });
     }
 
     let routes = http_server::create_routes(args.enclave_log_file_path.clone(), sse_tx.clone());
