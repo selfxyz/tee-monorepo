@@ -2,13 +2,15 @@ use anyhow::{anyhow, Context};
 use serde_json::json;
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use tokio::{
+    fs::File,
+    io::{AsyncBufReadExt, BufReader},
+};
 use warp::{http::Method, Filter};
 
 use crate::logging::log_message;
 
-pub fn fetch_logs_with_offset(
+pub async fn fetch_logs_with_offset(
     enclave_log_file_path: &str,
     log_id: u64,
     offset: usize,
@@ -20,11 +22,12 @@ pub fn fetch_logs_with_offset(
     };
 
     let file = File::open(enclave_log_file_path)
+        .await
         .context("http server: failed to open enclave log file")?;
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file).lines();
     let mut logs: Vec<String> = Vec::with_capacity(offset);
 
-    for line in reader.lines().map_while(Result::ok) {
+    while let Some(line) = reader.next_line().await? {
         let Some((log_id_str, message)) = line.split_once("] ") else {
             return Err(anyhow!("Error"));
         };
@@ -71,16 +74,19 @@ pub fn create_routes(
                     .and_then(|off| off.parse::<usize>().ok())
                     .unwrap_or(10);
 
-                let response = fetch_logs_with_offset(&logs_file, log_id, offset).map_or_else(
-                    |err| {
+                let result = fetch_logs_with_offset(&logs_file, log_id, offset).await;
+
+                let response = match result {
+                    Ok(logs) => warp::reply::json(&logs),
+                    Err(err) => {
                         let _ = log_message(
                             &logs_file,
                             &err.context("failed to fetch logs with offset").to_string(),
-                        );
+                        )
+                        .await;
                         warp::reply::json(&json!({"error": "Failed to retrieve logs."}))
-                    },
-                    |logs| warp::reply::json(&logs),
-                );
+                    }
+                };
 
                 Ok::<_, Infallible>(response)
             }

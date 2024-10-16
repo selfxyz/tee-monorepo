@@ -22,7 +22,8 @@ pub async fn monitor_and_capture_logs(
                 "Enclave with CID {} detected: {}. Starting log capture.",
                 target_cid, enclave_id
             ),
-        )?;
+        )
+        .await?;
         if let Err(e) = capture_logs(
             sse_tx,
             &enclave_id,
@@ -37,7 +38,8 @@ pub async fn monitor_and_capture_logs(
                     "Error capturing logs for enclave {}: {}. Restarting capture.",
                     enclave_id, e
                 ),
-            )?;
+            )
+            .await?;
         }
     }
 }
@@ -115,6 +117,6 @@ async fn capture_logs(
         bail!("Nitro CLI process exited with error");
     }
 
-    log_message(script_log_file_path, "Nitro CLI process ended unexpectedly")?;
+    log_message(script_log_file_path, "Nitro CLI process ended unexpectedly").await?;
     bail!("Nitro CLI process ended unexpectedly")
 }

@@ -1,33 +1,36 @@
 use anyhow::Context;
 use chrono::Local;
-use std::fs::OpenOptions;
-use std::io::{ErrorKind, Write};
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncWriteExt, ErrorKind};
 
-pub fn log_message(log_file: &str, message: &str) -> anyhow::Result<()> {
+pub async fn log_message(log_file: &str, message: &str) -> anyhow::Result<()> {
     // Create OpenOptions
-    let mut options = OpenOptions::new();
-    options.create(true).append(true);
-
-    // Open the file with the specified options
-    let mut file = options
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
         .open(log_file)
-        .context("failed to open debug log file")?;
+        .await
+        .context("Failed to open enclave log file")?;
 
-    // Get the current time in a human-readable format
     let now = Local::now().format("%Y-%m-%d %H:%M:%S");
+    let log_message = format!("[{}] {}", now, message);
 
-    // Write the log message with the timestamp
-    writeln!(file, "[{}] {}", now, message).context("failed to write log to debug log file")?;
+    file.write_all(log_message.as_bytes())
+        .await
+        .context("failed to write log to debug log file")?;
+    file.write_all(b"\n").await?;
     file.flush()
+        .await
         .context("failed to flush all changes from buffer to log file")?;
     Ok(())
 }
 
-pub fn clear_log_file(file_path: &str) -> anyhow::Result<()> {
+pub async fn clear_log_file(file_path: &str) -> anyhow::Result<()> {
     OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(file_path)
+        .await
         .map(|_| ())
         .or_else(|e| {
             if e.kind() == ErrorKind::NotFound {

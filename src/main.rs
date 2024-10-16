@@ -15,13 +15,15 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     clear_log_file(&args.enclave_log_file_path)
+        .await
         .context("failed to clear enclave log file at startup")?;
     clear_log_file(&args.script_log_file_path)
+        .await
         .context("failed to clear debug log file at startup")?;
 
     let (sse_tx, _) = broadcast::channel(100);
 
-    log_message(&args.script_log_file_path, "Starting script...")?;
+    log_message(&args.script_log_file_path, "Starting script...").await?;
 
     {
         let sse_tx = sse_tx.clone();
@@ -38,7 +40,8 @@ async fn main() -> anyhow::Result<()> {
                 let _ = log_message(
                     &script_log_file,
                     &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
-                );
+                )
+                .await;
             }
         });
     }
@@ -48,7 +51,8 @@ async fn main() -> anyhow::Result<()> {
     log_message(
         &args.script_log_file_path,
         "Server started. SSE endpoint: <host>/logs/stream",
-    )?;
+    )
+    .await?;
     println!("running port {}", args.port);
 
     warp::serve(routes).run(([0, 0, 0, 0], args.port)).await;
