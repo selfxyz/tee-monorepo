@@ -5,7 +5,6 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::broadcast;
-use tokio::sync::Mutex;
 
 pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
@@ -87,7 +86,7 @@ async fn capture_logs(
     let mut log_id_counter: u64 = 0;
 
     // Open the file asynchronously
-    let file = tokio::fs::OpenOptions::new()
+    let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(enclave_log_file_path)
@@ -95,32 +94,24 @@ async fn capture_logs(
         .context("Failed to open enclave log file")?;
 
     let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let reader = BufReader::new(stdout).lines();
-
-    // Wrap the file in a Mutex to allow safe concurrent writes
-    let file = Mutex::new(file);
-
-    tokio::pin!(reader); // Pin the reader to use it in the loop
+    let mut reader = BufReader::new(stdout).lines();
 
     while let Some(line) = reader.next_line().await? {
         let log_entry = format!("[{}] {}", log_id_counter, line);
 
-        // Asynchronously write to the file
         {
-            let mut file = file.lock().await;
             file.write_all(log_entry.as_bytes()).await?;
             file.write_all(b"\n").await?;
             file.flush().await?;
         }
 
-        // Send via SSE
         if sse_tx.send(log_entry).is_err() {
             println!("No active SSE subscribers, skipping log transmission.");
         }
+
         log_id_counter += 1;
     }
 
-    // Wait for the child process to exit
     let status = child.wait().await?;
     if !status.success() {
         bail!("Nitro CLI process exited with error");
