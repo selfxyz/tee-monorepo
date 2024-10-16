@@ -21,7 +21,7 @@ pub fn fetch_logs_with_offset(
 
     let file = File::open(enclave_log_file_path)
         .context("http server: failed to open enclave log file")?;
-    let reader = BufReader::new(file); 
+    let reader = BufReader::new(file);
     let mut logs: Vec<String> = Vec::with_capacity(offset);
 
     for line in reader.lines().map_while(Result::ok) {
