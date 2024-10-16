@@ -370,7 +370,8 @@ contract SecretManager is
             address enclaveAddress = userStoreData.selectedEnclaves[index].enclaveAddress;
 
             // case for replaced stores(after mark dead txn)
-            if (userStoreData.selectedEnclaves[index].selectTimestamp != userStoreData.startTimestamp) {
+            if (_isReplacedStore(_secretId, index)) {
+                // TODO: should revert ack fail txn after the endTimestamp has surpassed
                 if (
                     !userStoreData.selectedEnclaves[index].hasAcknowledgedStore &&
                     block.timestamp > userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT
@@ -447,9 +448,24 @@ contract SecretManager is
     function _markStoreAlive(
         uint256 _storageTimeUsage,
         uint256 _signTimestamp,
-        bytes memory _signature
+        bytes memory _signature,
+        uint256[] memory _secretIds // secrets for which the endTimestamp has passed after the last alive check
     ) internal {
         address enclaveAddress = _verifyStoreAliveSign(_storageTimeUsage, _signTimestamp, _signature);
+
+        for (uint256 index = 0; index < _secretIds.length; index++) {
+            uint256 secId = _secretIds[index];
+            uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
+            SECRET_STORE.releaseEnclave(enclaveAddress, userStorage[secId].sizeLimit);
+
+            uint256 storePayment = _getStoreUsdcPayment(secId, enclaveAddress, enclaveIndex);
+            userStorage[secId].usdcDeposit -= storePayment;
+
+            _removeSelectedEnclave(secId, enclaveIndex);
+
+            if(userStorage[secId].selectedEnclaves.length == 0)
+                _refundExcessDepositAndRemoveStore(secId);
+        }
 
         address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
         SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
@@ -498,20 +514,28 @@ contract SecretManager is
         if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore)
             return;
 
-        _updateUsdcDepositPostDeadMark(_secretId, _enclaveAddress, enclaveIndex);
+        uint256 deadStorePayment = _getStoreUsdcPayment(_secretId, _enclaveAddress, enclaveIndex);
+        userStorage[_secretId].usdcDeposit -= deadStorePayment;
 
-        _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
+        uint256 sizeLimit = userStorage[_secretId].sizeLimit;
+        if(block.timestamp > userStorage[_secretId].endTimestamp) {
+            _removeSelectedEnclave(_secretId, enclaveIndex);
+            if(userStorage[_secretId].selectedEnclaves.length == 0)
+                _refundExcessDepositAndRemoveStore(_secretId);
+        }
+        else
+            _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
 
         // TODO: slash prev enclave(who's recipient)
-        SECRET_STORE.slashEnclave(_enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
+        SECRET_STORE.slashEnclave(_enclaveAddress, sizeLimit, STAKING_PAYMENT_POOL);
     }
 
     /// @dev It removes the dead store payment from the usdc deposit of the secret.
-    function _updateUsdcDepositPostDeadMark(
+    function _getStoreUsdcPayment(
         uint256 _secretId,
         address _enclaveAddress,
         uint256 _enclaveIndex
-    ) internal {
+    ) internal view returns (uint256) {
         uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
         uint256 ackTimestamp;
         if(_isReplacedStore(_secretId, _enclaveIndex))
@@ -520,9 +544,9 @@ contract SecretManager is
             ackTimestamp = userStorage[_secretId].ackTimestamp;
 
         if(lastAliveTimestamp <= ackTimestamp)
-            return;
-        uint256 deadStorePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
-        userStorage[_secretId].usdcDeposit -= deadStorePayment;
+            return 0;
+        uint256 storePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
+        return storePayment;
     }
 
     function _removeSelectedEnclave(
@@ -601,68 +625,24 @@ contract SecretManager is
         if(block.timestamp > userStorage[_secretId].endTimestamp)
             revert SecretManagerAlreadyTerminated();
 
-        _clearSecretData(_secretId);
+        userStorage[_secretId].endTimestamp = block.timestamp;
 
         emit SecretTerminated(_secretId);
-    }
-
-    function _clearSecretData(
-        uint256 _secretId
-    ) internal {
-        uint256 usdcDeposit = getCurrentUnconfirmedUsdcDeposit(_secretId);
-        userStorage[_secretId].usdcDeposit = usdcDeposit;
-
-        uint256 len = userStorage[_secretId].selectedEnclaves.length;
-        for (uint256 index = 0; index < len; index++) {
-            SECRET_STORE.releaseEnclave(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, userStorage[_secretId].sizeLimit);
-        }
-
-        _refundExcessDepositAndRemoveStore(_secretId);
     }
 
     function _removeSecret(
         uint256 _secretId
     ) internal {
-        if(block.timestamp <= userStorage[_secretId].endTimestamp)
+        if(block.timestamp <= userStorage[_secretId].endTimestamp + MARK_ALIVE_TIMEOUT)
             revert SecretManagerTerminationPending();
 
-        _clearSecretData(_secretId);
+        uint256 len = userStorage[_secretId].selectedEnclaves.length;
+        for (uint256 index = 0; index < len; index++)
+            // TODO: shall we slash or release here?
+            SECRET_STORE.slashEnclave(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
+        _refundExcessDepositAndRemoveStore(_secretId);
         
         emit SecretRemoved(_secretId);
-    }
-
-    function _getCurrentUnconfirmedUsdcDeposit(
-        uint256 _secretId,
-        uint256 _endTimestamp
-    ) internal view returns (uint256) {
-        uint256 usdcDeposit = userStorage[_secretId].usdcDeposit;
-        if(_endTimestamp > userStorage[_secretId].endTimestamp)
-            _endTimestamp = userStorage[_secretId].endTimestamp;
-
-        SelectedEnclave[] memory selectedEnclaves = userStorage[_secretId].selectedEnclaves;
-        uint256 len = selectedEnclaves.length;
-        for (uint256 index = 0; index < len; index++) {
-            if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
-                continue;
-
-            uint256 ackTimestamp;
-            if(_isReplacedStore(_secretId, index))
-                ackTimestamp = userStorage[_secretId].selectedEnclaves[index].replacedAckTimestamp;
-            else {
-                // if all the stores haven't marked ack
-                if(userStorage[_secretId].ackTimestamp == 0)
-                    return usdcDeposit;
-                else
-                    ackTimestamp = userStorage[_secretId].ackTimestamp;
-            }
-
-            if(_endTimestamp <= ackTimestamp)
-                continue;
-            uint256 storePayment = (_endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
-            usdcDeposit -= storePayment;
-        }
-
-        return usdcDeposit;
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -694,9 +674,10 @@ contract SecretManager is
     function markStoreAlive(
         uint256 _storageTimeUsage,
         uint256 _signTimestamp,
-        bytes memory _signature
+        bytes memory _signature,
+        uint256[] memory _secretIds
     ) external {
-        _markStoreAlive(_storageTimeUsage, _signTimestamp, _signature);
+        _markStoreAlive(_storageTimeUsage, _signTimestamp, _signature, _secretIds);
     }
 
     function markStoreDead(
@@ -760,12 +741,6 @@ contract SecretManager is
         }
 
         return usdcDeposit;
-    }
-
-    function getCurrentUnconfirmedUsdcDeposit(
-        uint256 _secretId
-    ) public view returns (uint256) {
-        return _getCurrentUnconfirmedUsdcDeposit(_secretId, block.timestamp);
     }
 
     //-------------------------------- external functions end ----------------------------------//
