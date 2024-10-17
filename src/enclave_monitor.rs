@@ -2,20 +2,23 @@ use crate::logging::log_message;
 use anyhow::{bail, Context};
 use serde_json::Value;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 
 pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
     target_cid: u64,
+    log_counter: Arc<Mutex<u64>>,
 ) -> anyhow::Result<()> {
     loop {
         let enclave_id = wait_for_enclave_with_cid(target_cid)
             .await
             .context("Error in wait for enclave with cid call")?;
+        let log_counter = log_counter.clone();
         log_message(
             script_log_file_path,
             &format!(
@@ -29,6 +32,7 @@ pub async fn monitor_and_capture_logs(
             &enclave_id,
             enclave_log_file_path,
             script_log_file_path,
+            log_counter
         )
         .await
         {
@@ -76,14 +80,13 @@ async fn capture_logs(
     enclave_id: &str,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
+    log_counter: Arc<Mutex<u64>>,
 ) -> anyhow::Result<()> {
     let mut child = Command::new("nitro-cli")
         .args(["console", "--enclave-id", enclave_id])
         .stdout(Stdio::piped())
         .spawn()
         .context("Failed to spawn nitro-cli process")?;
-
-    let mut log_id_counter: u64 = 0;
 
     // Open the file asynchronously
     let mut file = tokio::fs::OpenOptions::new()
@@ -95,9 +98,10 @@ async fn capture_logs(
 
     let stdout = child.stdout.take().expect("Failed to capture stdout");
     let mut reader = BufReader::new(stdout).lines();
+    let mut log_counter = log_counter.lock().await;
 
     while let Some(line) = reader.next_line().await? {
-        let log_entry = format!("[{}] {}", log_id_counter, line);
+        let log_entry = format!("[{}] {}", *log_counter, line);
 
         {
             file.write_all(log_entry.as_bytes()).await?;
@@ -109,7 +113,7 @@ async fn capture_logs(
             println!("No active SSE subscribers, skipping log transmission.");
         }
 
-        log_id_counter += 1;
+        *log_counter += 1;
     }
 
     let status = child.wait().await?;

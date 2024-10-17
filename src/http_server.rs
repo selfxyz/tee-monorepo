@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Context};
 use serde_json::json;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use std::convert::Infallible;
 use tokio::{
     fs::File,
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, BufReader}, sync::Mutex,
 };
 use warp::{http::Method, Filter};
 
@@ -50,24 +50,40 @@ pub async fn fetch_logs_with_offset(
 pub fn create_routes(
     enclave_log_file_path: String,
     sse_tx: tokio::sync::broadcast::Sender<String>,
+    log_counter: Arc<Mutex<u64>>
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let logs_file = enclave_log_file_path.clone();
+    let log_counter1 = log_counter.clone();
+    let log_counter2 = log_counter.clone();
     let home_html = include_str!("../assets/logs.html");
 
     let home_route = warp::path("logs")
         .and(warp::get())
         .map(move || warp::reply::html(home_html));
 
+    let tail_log_route = warp::path("logs")
+        .and(warp::path("tail-log-id"))
+        .and(warp::get())
+        .and_then(move || {
+            let log_counter = log_counter1.clone();
+            async move {
+                let latest_log_id = log_counter.lock().await;
+                Ok::<_, Infallible>(warp::reply::json(&json!({"log_id": *latest_log_id})))
+            }
+        });
+
     let history_route = warp::path("logs")
         .and(warp::path("history"))
         .and(warp::query::<HashMap<String, String>>())
-        .and_then(move |params: HashMap<String, String>| {
+        .and_then( move |params: HashMap<String, String>| {
             let logs_file = logs_file.clone();
+            let log_counter = log_counter2.clone();
             async move {
+                let latest_log_id = log_counter.lock().await;
                 let log_id = params
                     .get("log_id")
                     .and_then(|id| id.parse::<u64>().ok())
-                    .unwrap_or(1);
+                    .unwrap_or(*latest_log_id);
 
                 let offset = params
                     .get("offset")
@@ -127,5 +143,5 @@ pub fn create_routes(
             Method::HEAD,
         ]);
 
-    history_route.or(sse_route).or(home_route).with(cors)
+    history_route.or(tail_log_route).or(sse_route).or(home_route).with(cors)
 }
