@@ -98,9 +98,9 @@ async fn capture_logs(
 
     let stdout = child.stdout.take().expect("Failed to capture stdout");
     let mut reader = BufReader::new(stdout).lines();
-    let mut log_counter = log_counter.lock().await;
 
     while let Some(line) = reader.next_line().await? {
+        let mut log_counter = log_counter.lock().await;
         let log_entry = format!("[{}] {}", *log_counter, line);
 
         {
