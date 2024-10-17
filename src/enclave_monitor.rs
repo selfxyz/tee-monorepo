@@ -32,7 +32,7 @@ pub async fn monitor_and_capture_logs(
             &enclave_id,
             enclave_log_file_path,
             script_log_file_path,
-            log_counter
+            log_counter,
         )
         .await
         {

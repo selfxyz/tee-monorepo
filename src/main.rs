@@ -36,9 +36,14 @@ async fn main() -> anyhow::Result<()> {
         let log_counter = Arc::clone(&log_counter);
 
         tokio::task::spawn(async move {
-            if let Err(e) =
-                monitor_and_capture_logs(&sse_tx, &enclave_log_file, &script_log_file, target_cid, log_counter)
-                    .await
+            if let Err(e) = monitor_and_capture_logs(
+                &sse_tx,
+                &enclave_log_file,
+                &script_log_file,
+                target_cid,
+                log_counter,
+            )
+            .await
             {
                 // Ensure you await the async function
                 let _ = log_message(
@@ -50,7 +55,11 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let routes = http_server::create_routes(args.enclave_log_file_path.clone(), sse_tx.clone(),log_counter);
+    let routes = http_server::create_routes(
+        args.enclave_log_file_path.clone(),
+        sse_tx.clone(),
+        log_counter,
+    );
 
     log_message(
         &args.script_log_file_path,
