@@ -157,7 +157,7 @@ contract SecretManager is
         keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
     bytes32 private constant ALIVE_TYPEHASH =
-        keccak256("Alive(uint256 storageTimeUsage,uint256 signTimestamp)");
+        keccak256("Alive(uint256 storageTimeUsage,uint256[] terminatedSecretIds,uint256 signTimestamp)");
 
     /// @notice Thrown when the signature timestamp has expired.
     error SecretManagerSignatureTooOld();
@@ -224,7 +224,8 @@ contract SecretManager is
     );
 
     event SecretTerminated(
-        uint256 indexed secretId
+        uint256 indexed secretId,
+        uint256 timestamp
     );
 
     event SecretRemoved(
@@ -447,28 +448,27 @@ contract SecretManager is
 
     function _markStoreAlive(
         uint256 _storageTimeUsage,
+        uint256[] memory _terminatedSecretIds, // secrets for which the endTimestamp has passed after the last alive check
         uint256 _signTimestamp,
-        bytes memory _signature,
-        uint256[] memory _secretIds // secrets for which the endTimestamp has passed after the last alive check
+        bytes memory _signature
     ) internal {
-        address enclaveAddress = _verifyStoreAliveSign(_storageTimeUsage, _signTimestamp, _signature);
+        address enclaveAddress = _verifyStoreAliveSign(_storageTimeUsage, _terminatedSecretIds, _signTimestamp, _signature);
 
-        for (uint256 index = 0; index < _secretIds.length; index++) {
-            uint256 secId = _secretIds[index];
+        address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
+        SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
+
+        for (uint256 index = 0; index < _terminatedSecretIds.length; index++) {
+            uint256 secId = _terminatedSecretIds[index];
             uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
             SECRET_STORE.releaseEnclave(enclaveAddress, userStorage[secId].sizeLimit);
 
-            uint256 storePayment = _getStoreUsdcPayment(secId, enclaveAddress, enclaveIndex);
-            userStorage[secId].usdcDeposit -= storePayment;
+            _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
 
             _removeSelectedEnclave(secId, enclaveIndex);
 
             if(userStorage[secId].selectedEnclaves.length == 0)
                 _refundExcessDepositAndRemoveStore(secId);
         }
-
-        address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
-        SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
 
         uint256 usdcPayment = _storageTimeUsage * SECRET_STORE_FEE_RATE;
         USDC_TOKEN.safeTransfer(owner, usdcPayment);
@@ -478,12 +478,13 @@ contract SecretManager is
 
     function _verifyStoreAliveSign(
         uint256 _storageTimeUsage,
+        uint256[] memory _terminatedSecretIds,
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal view returns(address signer) {
         _checkSignValidity(_signTimestamp);
 
-        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, _terminatedSecretIds, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
@@ -514,8 +515,7 @@ contract SecretManager is
         if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore)
             return;
 
-        uint256 deadStorePayment = _getStoreUsdcPayment(_secretId, _enclaveAddress, enclaveIndex);
-        userStorage[_secretId].usdcDeposit -= deadStorePayment;
+        _updateUsdcDepositPostPayment(_secretId, _enclaveAddress, enclaveIndex);
 
         uint256 sizeLimit = userStorage[_secretId].sizeLimit;
         if(block.timestamp > userStorage[_secretId].endTimestamp) {
@@ -530,23 +530,33 @@ contract SecretManager is
         SECRET_STORE.slashEnclave(_enclaveAddress, sizeLimit, STAKING_PAYMENT_POOL);
     }
 
-    /// @dev It removes the dead store payment from the usdc deposit of the secret.
-    function _getStoreUsdcPayment(
+    /**
+     * @dev It updates usdc deposit based on the payment to the selected store.
+     *      It is executed when - 
+     *      (1) alive check is submitted for terminated secretId
+     *      (2) dead check
+     *      (3) remove secret is called post termination
+     */
+    function _updateUsdcDepositPostPayment(
         uint256 _secretId,
         address _enclaveAddress,
         uint256 _enclaveIndex
-    ) internal view returns (uint256) {
+    ) internal {
         uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
+        uint256 endTimestamp = userStorage[_secretId].endTimestamp;
+        if(lastAliveTimestamp < endTimestamp)
+            endTimestamp = lastAliveTimestamp;
+
         uint256 ackTimestamp;
         if(_isReplacedStore(_secretId, _enclaveIndex))
             ackTimestamp = userStorage[_secretId].selectedEnclaves[_enclaveIndex].replacedAckTimestamp;
         else
             ackTimestamp = userStorage[_secretId].ackTimestamp;
 
-        if(lastAliveTimestamp <= ackTimestamp)
-            return 0;
-        uint256 storePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
-        return storePayment;
+        if(endTimestamp <= ackTimestamp)
+            return;
+        uint256 storePayment = (endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
+        userStorage[_secretId].usdcDeposit -= storePayment;
     }
 
     function _removeSelectedEnclave(
@@ -627,7 +637,7 @@ contract SecretManager is
 
         userStorage[_secretId].endTimestamp = block.timestamp;
 
-        emit SecretTerminated(_secretId);
+        emit SecretTerminated(_secretId, block.timestamp);
     }
 
     function _removeSecret(
@@ -637,11 +647,14 @@ contract SecretManager is
             revert SecretManagerTerminationPending();
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
-        for (uint256 index = 0; index < len; index++)
+        for (uint256 index = 0; index < len; index++) {
+            _updateUsdcDepositPostPayment(_secretId, userStorage[_secretId].selectedEnclaves[index].enclaveAddress, index);
+
             // TODO: shall we slash or release here?
             SECRET_STORE.slashEnclave(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
+        }
         _refundExcessDepositAndRemoveStore(_secretId);
-        
+
         emit SecretRemoved(_secretId);
     }
 
@@ -673,11 +686,11 @@ contract SecretManager is
 
     function markStoreAlive(
         uint256 _storageTimeUsage,
+        uint256[] memory _terminatedSecretIds,
         uint256 _signTimestamp,
-        bytes memory _signature,
-        uint256[] memory _secretIds
+        bytes memory _signature
     ) external {
-        _markStoreAlive(_storageTimeUsage, _signTimestamp, _signature, _secretIds);
+        _markStoreAlive(_storageTimeUsage, _terminatedSecretIds, _signTimestamp, _signature);
     }
 
     function markStoreDead(
