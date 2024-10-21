@@ -157,7 +157,7 @@ contract SecretManager is
         keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
     bytes32 private constant ALIVE_TYPEHASH =
-        keccak256("Alive(uint256 storageTimeUsage,uint256[] terminatedSecretIds,uint256 signTimestamp)");
+        keccak256("Alive(uint256 storageTimeUsage,uint256 signTimestamp)");
 
     /// @notice Thrown when the signature timestamp has expired.
     error SecretManagerSignatureTooOld();
@@ -304,6 +304,8 @@ contract SecretManager is
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal {
+        if(_signTimestamp > userStorage[_secretId].endTimestamp)
+            revert SecretManagerAlreadyTerminated();
         address enclaveAddress = _verifyAcknowledgementSign(_secretId, _signTimestamp, _signature);
 
         uint256 enclaveIndex = _getSelectedEnclaveIndex(_secretId, enclaveAddress);
@@ -399,8 +401,10 @@ contract SecretManager is
             revert SecretManagerAcknowledgedAlready();
 
         if(ackFailed) {
+            address owner = userStorage[_secretId].owner;
+            uint256 usdcDeposit = userStorage[_secretId].usdcDeposit;
             delete userStorage[_secretId];
-            USDC_TOKEN.safeTransfer(userStorage[_secretId].owner, userStorage[_secretId].usdcDeposit);
+            USDC_TOKEN.safeTransfer(owner, usdcDeposit);
 
             emit SecretStoreAcknowledgementFailed(_secretId);
         }
@@ -421,7 +425,12 @@ contract SecretManager is
         }
         // case for when a newly selected enclave will replace the dead enclave
         else {
+            // remove the already selected stores from the tree so they are not selected back again as duplicates
+            address[] memory removedStores =_deleteSelectedStoresFromTree(_secretId, _enclaveIndex);
             SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectEnclaves(1, userStorage[_secretId].sizeLimit);
+            // add back the removed stores to the tree
+            _addbackSelectedStoresToTree(removedStores);
+
             // case for when a new enclave can't be selected as they all are already occupied to their max storage capacity
             if (selectedEnclaves.length == 0) {
                 isArrayLenReduced = true;
@@ -444,6 +453,27 @@ contract SecretManager is
                 _isMarkedDead
             );
         }
+    }
+
+    function _deleteSelectedStoresFromTree(
+        uint256 _secretId,
+        uint256 _enclaveIndex
+    ) internal returns (address[] memory) {
+        uint256 key;
+        uint256 len = userStorage[_secretId].selectedEnclaves.length;
+        address[] memory stores = new address[](len - 1);
+        for (uint256 index = 0; index < len; index++) {
+            if(index != _enclaveIndex)
+                stores[key++] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+        }
+        SECRET_STORE.deleteTreeNodes(stores);
+        return stores;
+    }
+
+    function _addbackSelectedStoresToTree(
+        address[] memory _stores
+    ) internal {
+        SECRET_STORE.addTreeNodes(_stores);
     }
 
     function _markStoreAlive(
@@ -484,7 +514,7 @@ contract SecretManager is
     ) internal view returns(address signer) {
         _checkSignValidity(_signTimestamp);
 
-        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, _terminatedSecretIds, _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
@@ -518,13 +548,7 @@ contract SecretManager is
         _updateUsdcDepositPostPayment(_secretId, _enclaveAddress, enclaveIndex);
 
         uint256 sizeLimit = userStorage[_secretId].sizeLimit;
-        if(block.timestamp > userStorage[_secretId].endTimestamp) {
-            _removeSelectedEnclave(_secretId, enclaveIndex);
-            if(userStorage[_secretId].selectedEnclaves.length == 0)
-                _refundExcessDepositAndRemoveStore(_secretId);
-        }
-        else
-            _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
+        _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
 
         // TODO: slash prev enclave(who's recipient)
         SECRET_STORE.slashEnclave(_enclaveAddress, sizeLimit, STAKING_PAYMENT_POOL);
@@ -652,6 +676,7 @@ contract SecretManager is
 
             // TODO: shall we slash or release here?
             SECRET_STORE.slashEnclave(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
+            // TODO: should we update lastTimestamp here? then how do we can call markStoreDead for remining secretIds?
         }
         _refundExcessDepositAndRemoveStore(_secretId);
 

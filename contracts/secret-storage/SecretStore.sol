@@ -583,6 +583,24 @@ contract SecretStore is
         secretStorage[_enclaveAddress].lastAliveTimestamp = _lastAliveTimestamp;
     }
 
+    function deleteTreeNodes(
+        address[] memory _enclaveAddresses
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        uint256 len = _enclaveAddresses.length;
+        for (uint256 index = 0; index < len; index++)
+            _deleteIfPresent(ENV, _enclaveAddresses[index]);
+    }
+
+    function addTreeNodes(
+        address[] memory _enclaveAddresses
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        uint256 len = _enclaveAddresses.length;
+        for (uint256 index = 0; index < len; index++)
+            _insert_unchecked(ENV, _enclaveAddresses[index], uint64(secretStorage[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+    }
+
+
+
     //---------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- SecretManagerRole functions end --------------------------------//

@@ -660,6 +660,15 @@ describe("SecretManager - Acknowledge secret", function () {
             .withArgs(secretId, addrs[17]);
     });
 
+    it("cannot acknowledge secret after secret is terminated", async function () {
+        await time.increase(1100);
+        let secretId = 1,
+            signTimestamp = await time.latest(),
+            signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17]);
+        await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerAlreadyTerminated")
+    });
+
     it("cannot acknowledge secret after acknowledgement timeout", async function () {
         let secretId = 1,
             signTimestamp = await time.latest(),
@@ -670,6 +679,17 @@ describe("SecretManager - Acknowledge secret", function () {
             .to.be.revertedWithCustomError(secretManager, "SecretManagerAcknowledgementTimeOver")
     });
 
+    it("cannot acknowledge the secret twice", async function () {
+        let secretId = 1,
+            signTimestamp = await time.latest(),
+            signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17]);
+
+        await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+
+        await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerAlreadyAcknowledged")
+    });
+
     it("cannot acknowledge secret after signature expired", async function () {
         let secretId = 1,
             signTimestamp = await time.latest() - 610,
@@ -678,6 +698,36 @@ describe("SecretManager - Acknowledge secret", function () {
         await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
             .to.be.revertedWithCustomError(secretManager, "SecretManagerSignatureTooOld")
     });
+
+    // it.only("can acknowledge secret with the replaced store", async function () {
+    //     let secretId = 1,
+    //         signTimestamp = await time.latest();
+    //     console.log("signTime: ", signTimestamp, (await secretManager.userStorage(secretId)).endTimestamp);
+    //     for (let index = 0; index < 3; index++) {
+    //         let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17 + index]);
+    //         await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+    //     }
+
+    //     await time.increase(910);
+    //     let userStorage = await secretManager.userStorage(secretId),
+    //         signTime = BigInt(await time.latest()),
+    //         duration = signTime - userStorage.ackTimestamp,
+    //         storageTimeUsage = duration * 1000n,    // duration * sizeLimit
+    //         terminatedSecretIds: number[] = [];
+    //     for (let index = 0; index < 2; index++) {
+    //         let signedDigest = await createAliveSignature(storageTimeUsage, terminatedSecretIds, signTimestamp, wallets[17 + index]);
+    //         await secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest);
+    //     }
+
+    //     // 3rd fails to submit alive check and will be replaced
+    //     await secretManager.acknowledgeStoreFailed(secretId);
+
+    //     signTimestamp = await time.latest();
+    //     signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[19]);
+    //     await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
+    //         .to.emit(secretManager, "SecretStoreAcknowledgementSuccess")
+    //         .withArgs(secretId, addrs[19]);
+    // });
 
     it("can mark acknowledgement failed", async function () {
         let secretId = 1;
@@ -716,11 +766,12 @@ describe("SecretManager - Acknowledge secret", function () {
     });
 });
 
-describe("SecretManager - Alive checks for secret", function () {
+describe("SecretManager - Alive/Dead checks for secret", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
     let pubkeys: string[];
+    let stakingToken: Pond;
     let usdcToken: USDCoin;
     let secretStore: SecretStore;
     let secretManager: SecretManager;
@@ -739,7 +790,7 @@ describe("SecretManager - Alive checks for secret", function () {
         ) as unknown as AttestationVerifier;
 
         const Pond = await ethers.getContractFactory("Pond");
-        const stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
             kind: "uups",
         }) as unknown as Pond;
 
@@ -776,7 +827,7 @@ describe("SecretManager - Alive checks for secret", function () {
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
-            markAliveTimeout = 900,
+            markAliveTimeout = 500,
             secretStoreFeeRate = 10,
             stakingPaymentPool = addrs[2];
 
@@ -840,9 +891,11 @@ describe("SecretManager - Alive checks for secret", function () {
             usdcDeposit = parseUnits("30", 6);
         await secretManager.createSecret(sizeLimit, endTimestamp, usdcDeposit);
 
-        let secretId = 1,
-            signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17]);
-        await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        let secretId = 1;
+        for (let index = 0; index < 3; index++) {
+            let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17 + index]);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);    
+        }
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -851,87 +904,155 @@ describe("SecretManager - Alive checks for secret", function () {
         await time.increase(10);
         let secretId = 1,
             signTimestamp = await time.latest(),
-            signedDigest = await createAliveSignature(secretId, signTimestamp, wallets[17]);
+            duration = BigInt(signTimestamp) - ((await secretManager.userStorage(secretId)).ackTimestamp),
+            storageTimeUsage = duration * 1000n,    // duration * sizeLimit
+            terminatedSecretIds: number[] = [],
+            signedDigest = await createAliveSignature(storageTimeUsage, terminatedSecretIds, signTimestamp, wallets[17]);
         let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
 
-        await expect(secretManager.markStoreAlive(secretId, signTimestamp, signedDigest))
+        await expect(secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest))
             .to.emit(secretManager, "SecretStoreAlive")
-            .withArgs(secretId, addrs[17]);
+            .withArgs(addrs[17]);
 
-        let usdcPayment = 10 * 1000 * 10; // duration * sizeLimit * feeRate
+        let usdcPayment = storageTimeUsage * 10n; // storageTimeUsage * feeRate
         let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
         expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
     });
 
     it("cannot submit alive check with expired signature", async function () {
         let secretId = 1,
-            signTimestamp = await time.latest() - 610,
-            signedDigest = await createAliveSignature(secretId, signTimestamp, wallets[17]);
+            signTimestamp = await time.latest(),
+            duration = BigInt(signTimestamp) - ((await secretManager.userStorage(secretId)).ackTimestamp),
+            storageTimeUsage = duration * 1000n,    // duration * sizeLimit
+            terminatedSecretIds: number[] = [],
+            signedDigest = await createAliveSignature(storageTimeUsage, terminatedSecretIds, signTimestamp, wallets[17]);
+        
+        await time.increase(610);
 
-        await expect(secretManager.markStoreAlive(secretId, signTimestamp, signedDigest))
+        await expect(secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest))
             .to.be.revertedWithCustomError(secretManager, "SecretManagerSignatureTooOld")
     });
 
-    it("cannot submit alive check before acknowledgement", async function () {
-        let secretId = 1,
-            signTimestamp = await time.latest(),
-            signedDigest = await createAliveSignature(secretId, signTimestamp, wallets[18]);
-
-        await expect(secretManager.markStoreAlive(secretId, signTimestamp, signedDigest))
-            .to.be.revertedWithCustomError(secretManager, "SecretManagerUnacknowledged")
-    });
-
-    it("cannot submit alive check after alive timeout", async function () {
-        await time.increase(1000);
-        let secretId = 1,
-            signTimestamp = await time.latest(),
-            signedDigest = await createAliveSignature(secretId, signTimestamp, wallets[17]);
-
-        await expect(secretManager.markStoreAlive(secretId, signTimestamp, signedDigest))
-            .to.be.revertedWithCustomError(secretManager, "SecretManagerMarkAliveTimeoutOver")
-    });
-
     it("can submit alive check after end timestamp, and delete the secret data", async function () {
+        await time.increase(850);
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
+        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
         let secretId = 1,
             signTimestamp = await time.latest(),
-            signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[18]);
-        await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
-
-        signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[19]);
-        await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
-
-        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
-
-        await time.increase(850);
-        signTimestamp = await time.latest();
+            userStorage = await secretManager.userStorage(secretId),
+            duration = userStorage.endTimestamp - userStorage.ackTimestamp,
+            storageTimeUsage = duration * 1000n,    // duration * sizeLimit
+            terminatedSecretIds: number[] = [secretId];
         for (let index = 0; index < 3; index++) {
-            signedDigest = await createAliveSignature(secretId, signTimestamp, wallets[17 + index]);
-            await secretManager.markStoreAlive(secretId, signTimestamp, signedDigest);
+            let signedDigest = await createAliveSignature(storageTimeUsage, terminatedSecretIds, signTimestamp, wallets[17 + index]);
+            await secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest);
         }
-
-        const userStorage = await secretManager.userStorage(secretId);
-        expect(userStorage.owner).to.eq(ZeroAddress);
-
-        let usdcPayment = 800 * 1000 * 10 * 3; // duration * sizeLimit * feeRate * noOfNodes
+        
+        let usdcPayment = storageTimeUsage * 10n * 3n; // storageTimeUsage * feeRate * noOfNodes
         let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
         expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
+        
+        userStorage = await secretManager.userStorage(secretId);
+        // secret should be removed after all stores marked alive post endTimestamp
+        expect(userStorage.owner).to.eq(ZeroAddress);
     });
 
-    // it("can mark secret store dead", async function () {
-    // 	let secretId = 1,
-    // 		signTimestamp = await time.latest(),
-    // 		signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[18]);
-    // 	await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+    it("can mark store dead to replace and acknowledge it", async function () {
+    	await time.increase(510);
+        let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+    	let secretIds = [1];
+    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    		.to.emit(secretManager, "SecretStoreReplaced")
+            .withArgs(secretIds[0], addrs[17], addrs[17], true);
 
-    // 	await time.increase(910);
-    // 	// let secretId = 1;
-    // 	await expect(secretManager.markStoreDead(secretId))
-    // 		// .to.emit(secretManager, "SecretResourceUnavailable").withArgs(secretId);
+    	const selectedEnclaves = await secretManager.getSelectedEnclaves(secretIds[0]);
+    	expect(selectedEnclaves.length).to.eq(3);
 
-    // 	const selectedEnclaves = await secretManager.getSelectedEnclaves(secretId);
-    // 	console.log("selectedEnclaves: ", selectedEnclaves, selectedEnclaves.length);
-    // 	// expect(selectedEnclaves.length).to.eq(2);
-    // });
+        let slashedAmount = parseUnits("10") * 100n / 1000000n;
+        let storeFinalStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(storeInitialStakeAmount - storeFinalStakeAmount).to.eq(slashedAmount);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+
+        let signTimestamp = await time.latest(),
+            signedDigest = await createAcknowledgeSignature(secretIds[0], signTimestamp, wallets[17]);
+        await secretManager.acknowledgeStore(secretIds[0], signTimestamp, signedDigest);
+    });
+
+    it("can mark store dead to replace it but fails to acknowledge it", async function () {
+    	await time.increase(510);
+        let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+    	let secretIds = [1];
+    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    		.to.emit(secretManager, "SecretStoreReplaced")
+            .withArgs(secretIds[0], addrs[17], addrs[17], true);
+
+    	const selectedEnclaves = await secretManager.getSelectedEnclaves(secretIds[0]);
+    	expect(selectedEnclaves.length).to.eq(3);
+
+        let slashedAmount = parseUnits("10") * 100n / 1000000n;
+        let storeFinalStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(storeInitialStakeAmount - storeFinalStakeAmount).to.eq(slashedAmount);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+
+        await time.increase(150);
+        await secretManager.acknowledgeStoreFailed(secretIds[0]);
+        expect((await secretManager.getSelectedEnclaves(secretIds[0])).length).to.eq(3);
+    });
+
+    it("can mark store dead with reduced replication factor", async function () {
+        // drain this store so that no other store is available to be selected
+        await secretStore.connect(signers[1]).drainSecretStore(addrs[17]);
+    	await time.increase(510);
+
+        let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+    	let secretIds = [1];
+    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    		.to.emit(secretManager, "SecretReplicationReduced")
+            .withArgs(secretIds[0], 2);
+
+    	const selectedEnclaves = await secretManager.getSelectedEnclaves(secretIds[0]);
+    	expect(selectedEnclaves.length).to.eq(2);
+
+        let slashedAmount = parseUnits("10") * 100n / 1000000n;
+        let storeFinalStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(storeInitialStakeAmount - storeFinalStakeAmount).to.eq(slashedAmount);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+    });
+
+    it("can mark secret store dead after end timestamp of a secret", async function () {
+    	await time.increase(810);
+
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+    	let secretIds = [1];
+        for (let index = 0; index < 3; index++)
+            await secretManager.markStoreDead(addrs[17 + index], secretIds);
+
+        let userStorage = await secretManager.userStorage(secretIds[0]);
+        // secret should be removed after all stores marked dead post endTimestamp
+        expect(userStorage.owner).to.eq(ZeroAddress);
+
+        const selectedEnclaves = await secretManager.getSelectedEnclaves(secretIds[0]);
+    	expect(selectedEnclaves.length).to.eq(0);
+
+        let slashedAmount = 3n * parseUnits("10") * 100n / 1000000n;
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+    });
+
+    it("cannot mark store dead before alive timeout", async function () {
+    	let secretIds = [1];
+    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    		.to.be.revertedWithCustomError(secretManager, "SecretManagerStoreIsAlive");
+    });
 });
 
 describe("SecretManager - Update end timestamp of secret", function () {
@@ -1138,7 +1259,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
             usdcDeposit = 0;
 
         await expect(secretManager.connect(signers[1]).updateSecretEndTimestamp(secretId, endTimestamp, usdcDeposit))
-            .to.be.revertedWithCustomError(secretManager, "SecretManagerNotUserStoreOwner");
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerInvalidSecretOwner");
     });
 
     it("cannot update end timestamp to earlier than the current timestamp", async function () {
@@ -1293,29 +1414,269 @@ describe("SecretManager - Terminate secret", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can terminate the secret before end timestamp", async function () {
-        await time.increase(100);
         let secretId = 1;
-        let usdcRefund = 700 * 1000 * 10 * 3; // reductionInDuration * sizeLimit * feeRate * noOfNodes
-        let secretManagerInitialBal = await usdcToken.balanceOf(secretManager.target);
-        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
-        let initialUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
-
         await expect(secretManager.terminateSecret(secretId))
-            .to.emit(secretManager, "SecretTerminated").withArgs(secretId);
+            .to.emit(secretManager, "SecretTerminated")
+            .withArgs(secretId, await time.latest());
         expect((await secretManager.userStorage(secretId)).endTimestamp).to.eq(await time.latest());
-
-        let secretManagerFinalBal = await usdcToken.balanceOf(secretManager.target);
-        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
-        let finalUsdcDeposit = (await secretManager.userStorage(secretId)).usdcDeposit;
-        expect(secretManagerInitialBal - secretManagerFinalBal).to.eq(usdcRefund);
-        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(usdcRefund);
-        expect(initialUsdcDeposit - finalUsdcDeposit).to.eq(usdcRefund);
     });
 
     it("cannot update end timestamp without secret owner", async function () {
         let secretId = 1;
         await expect(secretManager.connect(signers[1]).terminateSecret(secretId))
-            .to.be.revertedWithCustomError(secretManager, "SecretManagerNotUserStoreOwner");
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerInvalidSecretOwner");
+    });
+
+    it("cannot update end timestamp after end timestamp", async function () {
+        await time.increase(810);
+        let secretId = 1;
+        await expect(secretManager.terminateSecret(secretId))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerAlreadyTerminated");
+    });
+});
+
+describe("SecretManager - Terminate secret", function () {
+    let signers: Signer[];
+    let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
+    let stakingToken: Pond;
+    let usdcToken: USDCoin;
+    let secretStore: SecretStore;
+    let secretManager: SecretManager;
+
+    before(async function () {
+        signers = await ethers.getSigners();
+        addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+        const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+        const attestationVerifier = await upgrades.deployProxy(
+            AttestationVerifier,
+            [[image1], [pubkeys[14]], addrs[0]],
+            { kind: "uups" },
+        ) as unknown as AttestationVerifier;
+
+        const Pond = await ethers.getContractFactory("Pond");
+        stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        }) as unknown as Pond;
+
+        const USDCoin = await ethers.getContractFactory("USDCoin");
+        usdcToken = await upgrades.deployProxy(
+            USDCoin,
+            [addrs[0]],
+            {
+                kind: "uups",
+            }
+        ) as unknown as USDCoin;
+
+        const SecretStore = await ethers.getContractFactory("SecretStore");
+        secretStore = await upgrades.deployProxy(
+            SecretStore,
+            [addrs[0], [image2, image3]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    attestationVerifier.target,
+                    600,
+                    stakingToken.target,
+                    10,
+                    10 ** 2,
+                    10 ** 6,
+                    1
+                ]
+            },
+        ) as unknown as SecretStore;
+
+        let noOfNodesToSelect = 3,
+            globalMaxStoreSize = 1e6,
+            globalMinStoreDuration = 10,
+            globalMaxStoreDuration = 1e6,
+            acknowledgementTimeout = 120,
+            markAliveTimeout = 500,
+            secretStoreFeeRate = 10,
+            stakingPaymentPool = addrs[2];
+
+        const SecretManager = await ethers.getContractFactory("SecretManager");
+        secretManager = await upgrades.deployProxy(
+            SecretManager,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    usdcToken.target,
+                    noOfNodesToSelect,
+                    globalMaxStoreSize,
+                    globalMinStoreDuration,
+                    globalMaxStoreDuration,
+                    acknowledgementTimeout,
+                    markAliveTimeout,
+                    secretStoreFeeRate,
+                    stakingPaymentPool,
+                    secretStore.target
+                ]
+            },
+        ) as unknown as SecretManager;
+
+        await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("SECRET_MANAGER_ROLE")), secretManager.target);
+        await usdcToken.approve(secretManager.target, parseUnits("10000", 6));
+
+        await stakingToken.transfer(addrs[1], 10n ** 20n);
+        await stakingToken.connect(signers[1]).approve(secretStore.target, 10n ** 20n);
+
+        // REGISTER SECRET STORE ENCLAVES
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest();
+        let storageCapacity = 1e9,
+            stakeAmount = parseUnits("10");	// 10 POND
+        for (let index = 0; index < 3; index++) {
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[17 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+
+            let signedDigest = await createSecretStoreSignature(addrs[1], storageCapacity, signTimestamp,
+                wallets[17 + index]);
+
+            await secretStore.connect(signers[1]).registerSecretStore(
+                attestationSign,
+                attestation,
+                storageCapacity,
+                signTimestamp,
+                signedDigest,
+                stakeAmount
+            );
+        }
+
+        // CREATE SECRET
+        let sizeLimit = 1000,
+            endTimestamp = await time.latest() + 800,
+            usdcDeposit = parseUnits("30", 6);
+        await secretManager.createSecret(sizeLimit, endTimestamp, usdcDeposit);
+
+        let secretId = 1;
+        for (let index = 0; index < 3; index++) {
+            let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17 + index]);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);    
+        }
+    });
+
+    takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+    it('can remove secret if no alive/dead check is submitted post termination', async function() {
+        await time.increase(1310);
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
+        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+        let secretId = 1,
+            userStorage = await secretManager.userStorage(secretId),
+            duration = userStorage.endTimestamp - userStorage.ackTimestamp;
+
+        await expect(secretManager.removeSecret(secretId))
+            .to.emit(secretManager, "SecretRemoved")
+            .withArgs(secretId);
+
+        userStorage = await secretManager.userStorage(secretId);
+        expect(userStorage.owner).to.eq(ZeroAddress);
+
+        let usdcPayment = 0n; // as no alive check is submitted till end timestamp
+        let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+        expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
+
+        let slashedAmount = 3n * parseUnits("10") * 100n / 1000000n;
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+    });
+
+    it('cannot remove secret before end timestamp', async function() {
+        let secretId = 1;
+        await expect(secretManager.removeSecret(secretId))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerTerminationPending");
+    });
+
+    it('can remove secret if partial alive/dead checks are submitted post termination', async function() {
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
+        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+        
+        await time.increase(810);
+        let secretId = 1,
+            signTimestamp = await time.latest(),
+            userStorage = await secretManager.userStorage(secretId),
+            duration = userStorage.endTimestamp - userStorage.ackTimestamp,
+            storageTimeUsage = duration * 1000n,    // duration * sizeLimit
+            terminatedSecretIds: number[] = [secretId];
+        
+        // Mark 1st store as alive post secret termination
+        let signedDigest = await createAliveSignature(storageTimeUsage, terminatedSecretIds, signTimestamp, wallets[17]);
+        await secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest);
+        let usdcPayment = storageTimeUsage * 10n;   // storageTimeUsage * feeRate
+
+        // Mark 1st store as dead post secret termination
+        await secretManager.markStoreDead(addrs[18], [secretId]);
+
+        await time.increase(510);
+        // Submit remove secret for the last store
+        await expect(secretManager.removeSecret(secretId))
+            .to.emit(secretManager, "SecretRemoved")
+            .withArgs(secretId);
+
+        userStorage = await secretManager.userStorage(secretId);
+        expect(userStorage.owner).to.eq(ZeroAddress);
+
+        let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+        expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
+
+        let slashedAmount = 2n * parseUnits("10") * 100n / 1000000n;    // only 2 stores will be slashed as they were marked dead
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+    });
+
+    it('can remove secret after early termination of the secret', async function() {
+        await time.increase(200);
+        let secretId = 1;
+        await secretManager.terminateSecret(secretId);
+
+        // cannot terminate before endTimestamp + MARK_ALIVE_TIMEOUT
+        await expect(secretManager.removeSecret(secretId))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerTerminationPending");
+        
+        await time.increase(510);
+
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
+        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
+        let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
+        let userStorage = await secretManager.userStorage(secretId);
+
+        await expect(secretManager.removeSecret(secretId))
+            .to.emit(secretManager, "SecretRemoved")
+            .withArgs(secretId);
+
+        userStorage = await secretManager.userStorage(secretId);
+        expect(userStorage.owner).to.eq(ZeroAddress);
+
+        let usdcPayment = 0n; // as no alive check is submitted till end timestamp
+        let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+        expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal).to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
+
+        let slashedAmount = 3n * parseUnits("10") * 100n / 1000000n;
+        let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
     });
 });
 
@@ -1420,7 +1781,8 @@ async function createAcknowledgeSignature(
 }
 
 async function createAliveSignature(
-    secretId: number,
+    storageTimeUsage: bigint,
+    terminatedSecretIds: number[] | bigint[],
     signTimestamp: number,
     sourceEnclaveWallet: Wallet
 ): Promise<string> {
@@ -1431,15 +1793,18 @@ async function createAliveSignature(
 
     const types = {
         Alive: [
-            { name: 'secretId', type: 'uint256' },
+            { name: 'storageTimeUsage', type: 'uint256' },
+            // { name: 'terminatedSecretIds', type: 'uint256[]' },
             { name: 'signTimestamp', type: 'uint256' }
         ]
     };
 
     const value = {
-        secretId,
+        storageTimeUsage,
+        // terminatedSecretIds,
         signTimestamp
     };
+    // console.log("value: ", value);
 
     const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
     return ethers.Signature.from(sign).serialized;
