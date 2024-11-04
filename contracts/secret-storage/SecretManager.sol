@@ -543,7 +543,7 @@ contract SecretManager is
         address _enclaveAddress
     ) internal {
         uint256 enclaveIndex = _getSelectedEnclaveIndex(_secretId, _enclaveAddress);
-        if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore)
+        if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore || userStorage[_secretId].ackTimestamp == 0)
             return;
 
         _updateUsdcDepositPostPayment(_secretId, _enclaveAddress, enclaveIndex);
