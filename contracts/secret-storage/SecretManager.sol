@@ -157,7 +157,7 @@ contract SecretManager is
         keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
     bytes32 private constant ALIVE_TYPEHASH =
-        keccak256("Alive(uint256 storageTimeUsage,uint256 signTimestamp)");
+        keccak256("Alive(uint256 storageTimeUsage,uint256[] terminatedSecretIds,uint256 signTimestamp)");
 
     /// @notice Thrown when the signature timestamp has expired.
     error SecretManagerSignatureTooOld();
@@ -514,7 +514,7 @@ contract SecretManager is
     ) internal view returns(address signer) {
         _checkSignValidity(_signTimestamp);
 
-        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, keccak256(abi.encodePacked(_terminatedSecretIds)), _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
@@ -557,19 +557,22 @@ contract SecretManager is
     /**
      * @dev It updates usdc deposit based on the payment to the selected store.
      *      It is executed when - 
-     *      (1) alive check is submitted for terminated secretId
+     *      (1) alive check is submitted for terminated secretId 
+                (duration considered for the reward = min(lastAliveTimestamp, endTimestamp) - ackTimemstamp)
      *      (2) dead check
+                (duration considered for the reward = lastAliveTimestamp - ackTimemstamp)
      *      (3) remove secret is called post termination
+                (duration considered for the reward = lastAliveTimestamp - ackTimemstamp)
      */
     function _updateUsdcDepositPostPayment(
         uint256 _secretId,
         address _enclaveAddress,
         uint256 _enclaveIndex
     ) internal {
-        uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
+        uint256 latestAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
         uint256 endTimestamp = userStorage[_secretId].endTimestamp;
-        if(lastAliveTimestamp < endTimestamp)
-            endTimestamp = lastAliveTimestamp;
+        if(latestAliveTimestamp < endTimestamp)
+            endTimestamp = latestAliveTimestamp;
 
         uint256 ackTimestamp;
         if(_isReplacedStore(_secretId, _enclaveIndex))

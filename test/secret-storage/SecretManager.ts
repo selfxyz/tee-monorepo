@@ -1794,14 +1794,14 @@ async function createAliveSignature(
     const types = {
         Alive: [
             { name: 'storageTimeUsage', type: 'uint256' },
-            // { name: 'terminatedSecretIds', type: 'uint256[]' },
+            { name: 'terminatedSecretIds', type: 'uint256[]' },
             { name: 'signTimestamp', type: 'uint256' }
         ]
     };
 
     const value = {
         storageTimeUsage,
-        // terminatedSecretIds,
+        terminatedSecretIds,
         signTimestamp
     };
     // console.log("value: ", value);
