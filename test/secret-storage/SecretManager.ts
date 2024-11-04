@@ -658,6 +658,8 @@ describe("SecretManager - Acknowledge secret", function () {
         await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
             .to.emit(secretManager, "SecretStoreAcknowledgementSuccess")
             .withArgs(secretId, addrs[17]);
+
+        expect(await secretManager.getCurrentConfirmedUsdcDeposit(secretId)).to.eq((await secretManager.userStorage(secretId)).usdcDeposit);
     });
 
     it("cannot acknowledge secret after secret is terminated", async function () {
@@ -887,6 +889,8 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let usdcPayment = storageTimeUsage * 10n; // storageTimeUsage * feeRate
         let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
         expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        expect(await secretManager.getCurrentConfirmedUsdcDeposit(secretId)).to.eq((await secretManager.userStorage(secretId)).usdcDeposit - usdcPayment);
     });
 
     it("cannot submit alive check with expired signature", async function () {
@@ -951,6 +955,8 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let signTimestamp = await time.latest(),
             signedDigest = await createAcknowledgeSignature(secretIds[0], signTimestamp, wallets[17]);
         await secretManager.acknowledgeStore(secretIds[0], signTimestamp, signedDigest);
+
+        expect(await secretManager.getCurrentConfirmedUsdcDeposit(secretIds[0])).to.eq((await secretManager.userStorage(secretIds[0])).usdcDeposit);
     });
 
     it("can mark store dead to replace it but fails to acknowledge it", async function () {
@@ -1029,6 +1035,8 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let usdcPayment = storageTimeUsage * 10n; // storageTimeUsage * feeRate
         let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
         expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        expect(await secretManager.getCurrentConfirmedUsdcDeposit(secretId)).to.eq((await secretManager.userStorage(secretId)).usdcDeposit - usdcPayment);
     });
 
     it("can mark store dead and mark acknowledgement failed for the replaced store after end timestamp", async function () {

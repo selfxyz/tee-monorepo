@@ -764,6 +764,9 @@ contract SecretManager is
                 continue;
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
             uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
+            uint256 endTimestamp = userStorage[_secretId].endTimestamp;
+            if(lastAliveTimestamp < endTimestamp)
+                endTimestamp = lastAliveTimestamp;
 
             uint256 ackTimestamp;
             if(_isReplacedStore(_secretId, index))
@@ -776,9 +779,9 @@ contract SecretManager is
                     ackTimestamp = userStorage[_secretId].ackTimestamp;
             }
 
-            if(lastAliveTimestamp <= ackTimestamp)
+            if(endTimestamp <= ackTimestamp)
                 continue;
-            uint256 storePayment = (lastAliveTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
+            uint256 storePayment = (endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
             usdcDeposit -= storePayment;
         }
 
