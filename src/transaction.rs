@@ -1,52 +1,530 @@
-use alloy::primitives::{Address, Bytes, FixedBytes, Token, I8, U256};
-use alloy::providers::Provider;
-use std::error::Error;
+use alloy::network::{Ethereum, EthereumWallet, TransactionBuilder};
+use alloy::primitives::{Address, Bytes, U256};
+use alloy::providers::fillers::{FillProvider, JoinFill, WalletFiller};
+use alloy::providers::{Identity, Provider, ProviderBuilder, RootProvider, WalletProvider};
+use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
+use alloy::signers::local::PrivateKeySigner;
+use alloy::signers::Signer;
+use alloy::transports::http::Http;
+use reqwest::{Client, Url};
+use std::cmp::min;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+use tokio::time::sleep;
+use tokio_retry::strategy::{jitter, ExponentialBackoff};
+use tokio_retry::Retry;
 
-fn convert_params_to_tokens(params: Vec<(&str, &dyn std::any::Any)>) -> Vec<Token> {
-    params
-        .into_iter()
-        .map(|(type_name, value)| match type_name {
-            "Address" => Token::Address(*value.downcast_ref::<Address>().unwrap()),
-            "FixedBytes" => {
-                Token::FixedBytes(value.downcast_ref::<FixedBytes<32>>().unwrap().clone())
-            }
-            "Bytes" => Token::Bytes(value.downcast_ref::<Bytes>().unwrap().clone()),
-            "Int" => Token::Int(*value.downcast_ref::<I8>().unwrap()),
-            "Uint" => Token::Uint(*value.downcast_ref::<U256>().unwrap()),
-            "Bool" => Token::Bool(*value.downcast_ref::<bool>().unwrap()),
-            "String" => Token::String(value.downcast_ref::<String>().unwrap().clone()),
-            "FixedArray" => Token::FixedArray(value.downcast_ref::<Vec<Token>>().unwrap().clone()),
-            "Array" => Token::Array(value.downcast_ref::<Vec<Token>>().unwrap().clone()),
-            "Tuple" => Token::Tuple(value.downcast_ref::<Vec<Token>>().unwrap().clone()),
-            _ => panic!("Unsupported type"),
-        })
-        .collect()
-}
+use crate::constants::{
+    GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME, RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL,
+};
+use crate::errors::TxnManagerSendError;
+use crate::models::{Transaction, TxnManager, TxnResendError, TxnStatus};
+use crate::utils::{parse_send_error, verify_gas_wallet, verify_rpc_url};
 
-pub async fn call_contract_function(
-    contract: &Contract<Provider<Http>>,
-    function_name: &str,
-    params: Vec<(&str, &dyn std::any::Any)>,
-) -> Result<(), Box<dyn Error>> {
-    // Convert parameters to Token types
-    let tokens = convert_params_to_tokens(params);
+type HttpProvider = FillProvider<
+    JoinFill<Identity, WalletFiller<EthereumWallet>>,
+    RootProvider<Http<Client>>,
+    Http<Client>,
+    Ethereum,
+>;
 
-    // Get the method object for the specified function
-    let method = contract.method::<_, ()>(function_name, tokens)?;
+impl TxnManager {
+    pub async fn new(
+        rpc_url: String,
+        chain_id: u64,
+        gas_wallet: Arc<RwLock<String>>,
+        gas_price_increment_percent: Option<u128>,
+        gas_limit_increment_amount: Option<u64>,
+    ) -> Result<Arc<Self>, TxnManagerSendError> {
+        match verify_rpc_url(&rpc_url) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+        match verify_gas_wallet(&gas_wallet).await {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
 
-    for _ in 0..3 {
-        let pending_txn = method.send().await;
-        if let Err(err) = pending_txn {
-            let err_string = format!("{:#?}", err);
-            if err_string.contains("code: -32000") && err_string.contains("nonce") {
-                // Handle the specific error case
+        let txn_manager = Arc::new(Self {
+            rpc_url,
+            chain_id,
+            gas_wallet,
+            nonce_to_send: Arc::new(RwLock::new(0)),
+            transactions: Arc::new(RwLock::new(HashMap::new())),
+            gas_price_increment_percent: gas_price_increment_percent
+                .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
+            gas_limit_increment_amount: gas_limit_increment_amount.unwrap_or(GAS_INCREMENT_AMOUNT),
+            transactions_queue: Arc::new(RwLock::new(VecDeque::new())),
+        });
+
+        let txn_manager_clone = txn_manager.clone();
+        tokio::spawn(async move {
+            let _ = txn_manager_clone.process_transaction().await;
+        });
+
+        Ok(txn_manager)
+    }
+
+    pub async fn call_contract_function(
+        self: Arc<Self>,
+        contract_address: Address,
+        data: Bytes,
+        timeout: Instant,
+    ) -> Result<String, TxnManagerSendError> {
+        let mut update_nonce = false;
+
+        let mut transaction = Transaction {
+            id: uuid::Uuid::new_v4().to_string(),
+            contract_address,
+            data: data.clone(),
+            timeout,
+            gas_wallet: self.gas_wallet.read().await.clone(),
+            nonce: None,
+            txn_hash: None,
+            status: TxnStatus::Sending,
+            gas_price: 0,
+            estimated_gas: 0,
+            last_monitored: Instant::now(),
+        };
+
+        while Instant::now() < timeout {
+            let Ok(provider) = self.clone().create_provider(&transaction, false).await else {
+                transaction.gas_wallet = self.gas_wallet.read().await.clone();
+                continue;
+            };
+
+            let res = self
+                .clone()
+                .manage_nonce(&provider, &mut transaction, update_nonce)
+                .await;
+            if res.is_err() {
                 continue;
             }
-        } else {
-            // Handle successful transaction
+
+            let transaction_request = TransactionRequest::default()
+                .with_to(transaction.contract_address)
+                .with_input(transaction.data.clone())
+                .with_nonce(transaction.nonce.unwrap());
+
+            if transaction.gas_price == 0 || transaction.estimated_gas == 0 {
+                let res = self
+                    .clone()
+                    .estimate_gas_limit_and_price(
+                        &provider,
+                        &mut transaction,
+                        transaction_request.clone(),
+                    )
+                    .await;
+                if res.is_err() {
+                    continue;
+                }
+            }
+
+            let transaction_request = transaction_request
+                .with_gas_limit(transaction.estimated_gas)
+                .with_gas_price(transaction.gas_price);
+
+            let pending_txn = provider.send_transaction(transaction_request).await;
+            let pending_txn = match pending_txn {
+                Ok(pending_txn) => pending_txn,
+                Err(err) => {
+                    let err = parse_send_error(err.to_string());
+                    match err {
+                        TxnManagerSendError::NonceTooLow => {
+                            update_nonce = true;
+                            continue;
+                        }
+                        TxnManagerSendError::OutOfGas => {
+                            update_nonce = false;
+                            transaction.estimated_gas =
+                                transaction.estimated_gas + self.gas_limit_increment_amount;
+                            continue;
+                        }
+                        TxnManagerSendError::GasPriceLow => {
+                            update_nonce = false;
+                            transaction.gas_price = transaction.gas_price
+                                * (100 + self.gas_price_increment_percent)
+                                / 100;
+                            continue;
+                        }
+                        // Break in case the contract execution is failing for this txn
+                        // Or the gas required is way high compared to block gas limit
+                        TxnManagerSendError::GasTooHigh
+                        | TxnManagerSendError::ContractExecution => {
+                            return Err(err);
+                        }
+                        _ => {
+                            update_nonce = false;
+                            sleep(Duration::from_millis(200)).await;
+                            continue;
+                        }
+                    }
+                }
+            };
+            let txn_hash = *pending_txn.tx_hash();
+
+            transaction.txn_hash = Some(txn_hash.to_string());
+            transaction.status = TxnStatus::Pending;
+
+            self.transactions
+                .write()
+                .await
+                .insert(transaction.id.clone(), transaction.clone());
+
+            self.transactions_queue
+                .write()
+                .await
+                .push_back(transaction.clone());
+
+            return Ok(transaction.id);
+        }
+
+        Err(TxnManagerSendError::Timeout)
+    }
+
+    async fn process_transaction(self: Arc<Self>) -> Result<(), TxnManagerSendError> {
+        loop {
+            let Some(mut transaction) = self.transactions_queue.write().await.pop_front() else {
+                sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                continue;
+            };
+            let resend_txn_interval = RESEND_INTERVAL
+                - min(
+                    RESEND_INTERVAL,
+                    transaction.last_monitored.elapsed().as_secs(),
+                );
+
+            sleep(Duration::from_secs(min(
+                resend_txn_interval,
+                transaction.timeout.elapsed().as_secs(),
+            )))
+            .await;
+
+            let provider = self
+                .clone()
+                .create_provider(&transaction, true)
+                .await
+                .unwrap();
+
+            let txn_hash = transaction.txn_hash.clone().unwrap();
+
+            if Retry::spawn(
+                ExponentialBackoff::from_millis(HTTP_SLEEP_TIME)
+                    .map(jitter)
+                    .take(3),
+                || async {
+                    self.clone()
+                        .get_transaction_receipt(provider.clone(), txn_hash.clone())
+                        .await
+                },
+            )
+            .await
+            .is_ok()
+            {
+                transaction.status = TxnStatus::Confirmed;
+                transaction.last_monitored = Instant::now();
+
+                let mut transactions_guard = self.transactions.write().await;
+                transactions_guard.insert(transaction.id.clone(), transaction.clone());
+                continue;
+            }
+
+            let mut send_dummy = false;
+
+            let txn_hash = self.clone().resend_transaction(&mut transaction).await;
+            match txn_hash {
+                Ok(()) => (),
+                Err(TxnResendError::NonceTooLow | TxnResendError::GasWalletChanged) => continue,
+                Err(TxnResendError::Timeout | TxnResendError::TransactionFailed) => {
+                    send_dummy = true;
+                }
+            };
+
+            if send_dummy {
+                self.clone().send_dummy_transaction(&mut transaction).await;
+            }
+        }
+    }
+
+    pub async fn get_transaction_status(self: Arc<Self>, txn_hash: String) -> Option<TxnStatus> {
+        let transactions = self.transactions.read().await.clone();
+        transactions.get(&txn_hash).map(|txn| txn.status.clone())
+    }
+
+    async fn get_transaction_receipt(
+        self: Arc<Self>,
+        provider: HttpProvider,
+        txn_hash: String,
+    ) -> Result<TransactionReceipt, TxnManagerSendError> {
+        let receipt = provider
+            .get_transaction_receipt(txn_hash.parse().unwrap())
+            .await;
+        if receipt.is_err() {
+            return Err(TxnManagerSendError::NetworkConnectivity);
+        }
+
+        let receipt = receipt.unwrap();
+        if receipt.is_none() {
+            return Err(TxnManagerSendError::ReceiptNotFound);
+        }
+
+        Ok(receipt.unwrap())
+    }
+
+    async fn resend_transaction(
+        self: Arc<Self>,
+        transaction: &mut Transaction,
+    ) -> Result<(), TxnResendError> {
+        transaction.status = TxnStatus::Sending;
+
+        transaction.estimated_gas = transaction.estimated_gas + self.gas_limit_increment_amount;
+        transaction.gas_price =
+            transaction.gas_price * (100 + self.gas_price_increment_percent) / 100;
+
+        let transaction_request = TransactionRequest::default()
+            .with_to(transaction.contract_address)
+            .with_input(transaction.data.clone())
+            .with_nonce(transaction.nonce.unwrap())
+            .with_gas_limit(transaction.estimated_gas)
+            .with_gas_price(transaction.gas_price);
+
+        let mut success: TxnResendError = TxnResendError::Timeout;
+
+        while Instant::now() < transaction.timeout {
+            let provider = self.clone().create_provider(&transaction, false).await;
+            let provider = match provider {
+                Ok(provider) => provider,
+                Err(TxnManagerSendError::GasWalletChanged) => {
+                    let self_clone = self.clone();
+                    let transaction_clone = transaction.clone();
+                    tokio::spawn(async move {
+                        let _ = self_clone
+                            .call_contract_function(
+                                transaction_clone.contract_address,
+                                transaction_clone.data,
+                                transaction_clone.timeout,
+                            )
+                            .await;
+                    });
+                    success = TxnResendError::GasWalletChanged;
+                    break;
+                }
+                Err(_) => continue,
+            };
+
+            let pending_txn = provider.send_transaction(transaction_request.clone()).await;
+            let pending_txn = match pending_txn {
+                Ok(pending_txn) => pending_txn,
+                Err(err) => {
+                    let err = parse_send_error(err.to_string());
+                    match err {
+                        TxnManagerSendError::NonceTooLow => {
+                            success = TxnResendError::NonceTooLow;
+                            break;
+                        }
+                        TxnManagerSendError::OutOfGas => {
+                            transaction.estimated_gas =
+                                transaction.estimated_gas + self.gas_limit_increment_amount;
+                            continue;
+                        }
+                        TxnManagerSendError::GasPriceLow => {
+                            transaction.gas_price = transaction.gas_price
+                                * (100 + self.gas_price_increment_percent)
+                                / 100;
+                            continue;
+                        }
+                        // Break in case the contract execution is failing for this txn
+                        // Or the gas required is way high compared to block gas limit
+                        TxnManagerSendError::GasTooHigh
+                        | TxnManagerSendError::ContractExecution => {
+                            return Err(TxnResendError::TransactionFailed);
+                        }
+                        _ => {
+                            sleep(Duration::from_millis(200)).await;
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            let txn_hash = pending_txn.tx_hash().to_string();
+
+            transaction.status = TxnStatus::Pending;
+            transaction.last_monitored = Instant::now();
+
+            let mut transactions_guard = self.transactions.write().await;
+
+            transactions_guard.remove(&transaction.id.clone());
+            transaction.txn_hash = Some(txn_hash.clone());
+
+            transactions_guard.insert(transaction.id.clone(), transaction.clone());
+
+            return Ok(());
+        }
+
+        return Err(success);
+    }
+
+    async fn send_dummy_transaction(self: Arc<Self>, transaction: &mut Transaction) {
+        loop {
+            let dummy_txn = TransactionRequest::default()
+                .with_to(self.gas_wallet.read().await.parse().unwrap())
+                .with_value(U256::ZERO)
+                .with_nonce(transaction.nonce.unwrap())
+                .with_gas_limit(transaction.estimated_gas)
+                .with_gas_price(transaction.gas_price);
+
+            let provider = self
+                .clone()
+                .create_provider(&transaction, true)
+                .await
+                .unwrap();
+
+            let pending_txn = provider.send_transaction(dummy_txn).await;
+            let Ok(pending_txn) = pending_txn else {
+                let err = parse_send_error(pending_txn.err().unwrap().to_string());
+                match err {
+                    TxnManagerSendError::NonceTooLow => {
+                        break;
+                    }
+                    TxnManagerSendError::OutOfGas => {
+                        transaction.estimated_gas =
+                            transaction.estimated_gas + self.gas_limit_increment_amount;
+                        continue;
+                    }
+                    TxnManagerSendError::GasPriceLow => {
+                        transaction.gas_price =
+                            transaction.gas_price * (100 + self.gas_price_increment_percent) / 100;
+                        continue;
+                    }
+                    _ => {
+                        sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                        continue;
+                    }
+                }
+            };
+
+            let tx_hash = pending_txn.watch().await.unwrap();
+            transaction.txn_hash = Some(tx_hash.to_string());
+            transaction.status = TxnStatus::Failed;
+            transaction.last_monitored = Instant::now();
+
+            let mut transactions_guard = self.transactions.write().await;
+            transactions_guard.insert(transaction.id.clone(), transaction.clone());
+
             break;
         }
     }
 
-    Ok(())
+    async fn create_provider(
+        self: Arc<Self>,
+        transaction: &Transaction,
+        ignore_gas_wallet_check: bool,
+    ) -> Result<HttpProvider, TxnManagerSendError> {
+        if !ignore_gas_wallet_check
+            && transaction.gas_wallet != self.gas_wallet.read().await.clone()
+        {
+            return Err(TxnManagerSendError::GasWalletChanged);
+        }
+        let signer: PrivateKeySigner = transaction.gas_wallet.parse().unwrap();
+        let signer = signer.with_chain_id(Some(self.chain_id));
+        let signer_wallet = EthereumWallet::from(signer);
+
+        Ok(ProviderBuilder::new()
+            .wallet(signer_wallet)
+            .on_http(Url::parse(&self.rpc_url).unwrap()))
+    }
+
+    async fn manage_nonce(
+        self: Arc<Self>,
+        provider: &HttpProvider,
+        transaction: &mut Transaction,
+        update_nonce: bool,
+    ) -> Result<(), TxnManagerSendError> {
+        while Instant::now() < transaction.timeout {
+            let mut current_nonce: u64 = 0;
+
+            if update_nonce {
+                let gas_wallet = provider.wallet().default_signer().address();
+                let current_nonce_res = provider.get_transaction_count(gas_wallet).await;
+                current_nonce = match current_nonce_res {
+                    Ok(current_nonce) => current_nonce,
+                    Err(_) => {
+                        sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                        continue;
+                    }
+                };
+            } else {
+                if transaction.nonce.is_some() {
+                    return Ok(());
+                }
+            }
+
+            let mut nonce_to_send_guard = self.nonce_to_send.write().await;
+            if current_nonce > *nonce_to_send_guard {
+                *nonce_to_send_guard = current_nonce;
+            }
+            transaction.nonce = Some(*nonce_to_send_guard);
+            *nonce_to_send_guard += 1;
+
+            return Ok(());
+        }
+
+        return Err(TxnManagerSendError::Timeout);
+    }
+
+    async fn estimate_gas_limit_and_price(
+        self: Arc<Self>,
+        provider: &HttpProvider,
+        transaction: &mut Transaction,
+        transaction_request: TransactionRequest,
+    ) -> Result<(), TxnManagerSendError> {
+        let mut gas_price: u128 = 0;
+        while Instant::now() < transaction.timeout {
+            let gas_price_res = provider.get_gas_price().await;
+            gas_price = match gas_price_res {
+                Ok(gas_price) => gas_price,
+                Err(_) => {
+                    sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                    continue;
+                }
+            };
+
+            break;
+        }
+
+        let mut estimated_gas: u64 = 0;
+        while Instant::now() < transaction.timeout {
+            let estimated_gas_res = provider.estimate_gas(&transaction_request).await;
+            estimated_gas = match estimated_gas_res {
+                Ok(estimated_gas) => estimated_gas,
+                Err(err) => {
+                    let err = parse_send_error(err.to_string());
+                    match err {
+                        TxnManagerSendError::GasTooHigh
+                        | TxnManagerSendError::ContractExecution => {
+                            return Err(err);
+                        }
+                        _ => {
+                            sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            break;
+        }
+
+        if gas_price == 0 || estimated_gas == 0 {
+            return Err(TxnManagerSendError::Timeout);
+        }
+
+        transaction.gas_price = gas_price;
+        transaction.estimated_gas = estimated_gas;
+
+        Ok(())
+    }
 }
