@@ -368,7 +368,7 @@ contract SecretManager is
     ) internal {
         bool ackFailed;
         bool reselectedAckFailed;
-        for (uint256 index = 0; index < userStorage[_secretId].selectedEnclaves.length; index++) {
+        for (uint256 index = 0; index < userStorage[_secretId].selectedEnclaves.length; ) {
             UserStorage memory userStoreData = userStorage[_secretId];
             address enclaveAddress = userStoreData.selectedEnclaves[index].enclaveAddress;
 
@@ -384,7 +384,7 @@ contract SecretManager is
                     reselectedAckFailed = true;
                     bool isArrayLenReduced = _replaceStore(_secretId, enclaveAddress, index, false);
                     if(isArrayLenReduced)
-                        --index;
+                        continue;
                 }
             } else {
                 if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
@@ -395,6 +395,7 @@ contract SecretManager is
 
                 SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
             }
+            ++index;
         }
 
         if(!reselectedAckFailed && !ackFailed)
