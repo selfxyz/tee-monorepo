@@ -1162,6 +1162,112 @@ describe("SecretStore - Select/Release/Slash", function () {
     });
 });
 
+describe("SecretStore - Other only secret manager functions", function () {
+    let signers: Signer[];
+    let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
+    let token: Pond;
+    let attestationVerifier: AttestationVerifier;
+    let secretStore: SecretStore;
+
+    before(async function () {
+        signers = await ethers.getSigners();
+        addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+        const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+        attestationVerifier = await upgrades.deployProxy(
+            AttestationVerifier,
+            [[image1], [pubkeys[14]], addrs[0]],
+            { kind: "uups" },
+        ) as unknown as AttestationVerifier;
+
+        const Pond = await ethers.getContractFactory("Pond");
+        token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        }) as unknown as Pond;
+
+        const SecretStore = await ethers.getContractFactory("SecretStore");
+        secretStore = await upgrades.deployProxy(
+            SecretStore,
+            [addrs[0], [image2, image3]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    attestationVerifier.target,
+                    600,
+                    token.target,
+                    10,
+                    10 ** 2,
+                    10 ** 6,
+                    1
+                ]
+            },
+        ) as unknown as SecretStore;
+
+        await secretStore.grantRole(await secretStore.SECRET_MANAGER_ROLE(), addrs[0]);
+
+        await token.transfer(addrs[1], 10n ** 19n);
+        await token.connect(signers[1]).approve(secretStore.target, 10n ** 19n);
+
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        let storageCapacity = 100,
+            stakeAmount = 10n ** 19n;
+        let signedDigest = await createSecretStoreSignature(addrs[1], storageCapacity, signTimestamp, wallets[15]);
+        await secretStore.connect(signers[1]).registerSecretStore(
+            attestationSign,
+            attestation,
+            storageCapacity,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+    });
+
+    takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+    it("can update last alive timestamp", async function () {
+        await secretStore.updateLastAliveTimestamp(addrs[0], 10);
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[0])).to.eq(10);
+    });
+
+    it('cannot update last alive timestamp without secret manager role account', async function () {
+        await expect(secretStore.connect(signers[1]).updateLastAliveTimestamp(addrs[0], 10))
+            .to.be.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[0])).to.eq(0);
+    });
+
+    it("can add tree nodes", async function () {
+        await secretStore.addTreeNodes([addrs[15]]);
+        expect(await secretStore.nodesInTree(1)).to.eq(2);
+    });
+
+    it("cannot add tree nodes without secret manager role account", async function () {
+        await expect(secretStore.connect(signers[1]).addTreeNodes([addrs[15]]))
+            .to.be.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+
+    it("can delete tree nodes", async function () {
+        await secretStore.deleteTreeNodes([addrs[15]]);
+        expect(await secretStore.nodesInTree(1)).to.eq(0);
+    });
+
+    it("cannot delete tree nodes without secret manager role account", async function () {
+        await expect(secretStore.connect(signers[1]).deleteTreeNodes([addrs[15]]))
+            .to.be.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+});
+
 function normalize(key: string): string {
     return '0x' + key.substring(4);
 }
