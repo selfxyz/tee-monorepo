@@ -5,7 +5,7 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug)]
-pub struct Transaction {
+pub(crate) struct Transaction {
     pub id: String,
     pub contract_address: Address,
     pub data: Bytes,
@@ -25,7 +25,7 @@ pub struct TxnManager {
     pub chain_id: u64,
     pub gas_wallet: Arc<RwLock<String>>,
     pub(crate) nonce_to_send: Arc<RwLock<u64>>,
-    pub transactions: Arc<RwLock<HashMap<String, Transaction>>>,
+    pub(crate) transactions: Arc<RwLock<HashMap<String, Transaction>>>,
     pub(crate) gas_price_increment_percent: u128,
     pub(crate) gas_limit_increment_amount: u64,
     pub(crate) transactions_queue: Arc<RwLock<VecDeque<Transaction>>>,
