@@ -169,6 +169,7 @@ impl TxnManager {
 
             transaction.txn_hash = Some(txn_hash.to_string());
             transaction.status = TxnStatus::Pending;
+            transaction.last_monitored = Instant::now();
 
             self.transactions
                 .write()
