@@ -214,9 +214,11 @@ impl TxnManager {
             let txn_hash = transaction.txn_hash.clone().unwrap();
 
             if Retry::spawn(
-                ExponentialBackoff::from_millis(HTTP_SLEEP_TIME)
+                ExponentialBackoff::from_millis(2)
+                    .factor(100)
+                    .max_delay(Duration::from_secs(2))
                     .map(jitter)
-                    .take(3),
+                    .take(10),
                 || async {
                     self.clone()
                         .get_transaction_receipt(provider.clone(), txn_hash.clone())
