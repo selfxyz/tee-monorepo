@@ -20,10 +20,8 @@ use crate::constants::{
     GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME, RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL,
 };
 use crate::errors::TxnManagerSendError;
-use crate::models::{Transaction, TxnResendError, TxnStatus};
+use crate::models::{Transaction, TxnManager, TxnResendError, TxnStatus};
 use crate::utils::{parse_send_error, verify_gas_wallet, verify_rpc_url};
-
-pub use crate::models::TxnManager;
 
 type HttpProvider = FillProvider<
     JoinFill<Identity, WalletFiller<EthereumWallet>>,
