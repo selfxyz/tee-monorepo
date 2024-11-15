@@ -148,8 +148,10 @@ contract SecretStore is
         uint256 storageOccupied;
         uint256 stakeAmount;
         uint256 lastAliveTimestamp;
+        uint256 deadTimestamp;
         address owner;
         bool draining;
+        uint256[] ackSecretIds;
     }
 
     // enclaveAddress => Storage node details
@@ -515,20 +517,22 @@ contract SecretStore is
     function _slashEnclave(
         address _enclaveAddress,
         uint256 _sizeLimit,
-        address _recipient
+        address _recipient,
+        uint256 _secretId
     ) internal returns (uint256) {
         uint256 totalComp = (secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
         secretStorage[_enclaveAddress].stakeAmount -= totalComp;
 
         STAKING_TOKEN.safeTransfer(_recipient, totalComp);
 
-        _releaseEnclave(_enclaveAddress, _sizeLimit);
+        _releaseEnclave(_enclaveAddress, _sizeLimit, _secretId);
         return totalComp;
     }
 
     function _releaseEnclave(
         address _enclaveAddress,
-        uint256 _sizeLimit
+        uint256 _sizeLimit,
+        uint256 _secretId
     ) internal {
         if (!secretStorage[_enclaveAddress].draining) {
             // node might have been deleted due to max job capacity reached
@@ -540,6 +544,22 @@ contract SecretStore is
         }
 
         secretStorage[_enclaveAddress].storageOccupied -= _sizeLimit;
+        _removeStoreSecretId(_enclaveAddress, _secretId);
+    }
+
+    function _removeStoreSecretId(
+        address _enclaveAddress,
+        uint256 _secretId
+    ) internal {
+        uint256 len = secretStorage[_enclaveAddress].ackSecretIds.length;
+        for (uint256 index = 0; index < len; index++) {
+            if(secretStorage[_enclaveAddress].ackSecretIds[index] == _secretId) {
+                if(index != len - 1)
+                    secretStorage[_enclaveAddress].ackSecretIds[index] = secretStorage[_enclaveAddress].ackSecretIds[len - 1];
+                secretStorage[_enclaveAddress].ackSecretIds.pop();
+                break;
+            }
+        }
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -556,16 +576,18 @@ contract SecretStore is
     function slashEnclave(
         address _enclaveAddress,
         uint256 _sizeLimit,
-        address _recipient
+        address _recipient,
+        uint256 _secretId
     ) external onlyRole(SECRET_MANAGER_ROLE) returns (uint256) {
-        return _slashEnclave(_enclaveAddress, _sizeLimit, _recipient);
+        return _slashEnclave(_enclaveAddress, _sizeLimit, _recipient, _secretId);
     }
 
     function releaseEnclave(
         address _enclaveAddress,
-        uint256 _sizeLimit
+        uint256 _sizeLimit,
+        uint256 _secretId
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _releaseEnclave(_enclaveAddress, _sizeLimit);
+        _releaseEnclave(_enclaveAddress, _sizeLimit, _secretId);
     }
 
     function getSecretStoreOwner(address _enclaveAddress) external view returns (address) {
@@ -583,6 +605,28 @@ contract SecretStore is
         secretStorage[_enclaveAddress].lastAliveTimestamp = _lastAliveTimestamp;
     }
 
+    function getSecretStoreDeadTimestamp(address _enclaveAddress) external view returns (uint256) {
+        return secretStorage[_enclaveAddress].deadTimestamp;
+    }
+
+    function updateDeadTimestamp(
+        address _enclaveAddress,
+        uint256 _deadTimestamp
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        secretStorage[_enclaveAddress].deadTimestamp = _deadTimestamp;
+    }
+
+    function getStoreAckSecretIds(address _enclaveAddress) external view returns (uint256[] memory) {
+        return secretStorage[_enclaveAddress].ackSecretIds;
+    }
+
+    function addAckSecretIdToStore(
+        address _enclaveAddress,
+        uint256 _ackSecretId
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        secretStorage[_enclaveAddress].ackSecretIds.push(_ackSecretId);
+    }
+
     function deleteTreeNodes(
         address[] memory _enclaveAddresses
     ) external onlyRole(SECRET_MANAGER_ROLE) {
@@ -598,18 +642,6 @@ contract SecretStore is
         for (uint256 index = 0; index < len; index++)
             _insert_unchecked(ENV, _enclaveAddresses[index], uint64(secretStorage[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
     }
-
-    function getSecretStoresStake(
-        address[] memory _enclaveAddresses
-    ) external view returns (uint256[] memory) {
-        uint256[] memory stakeAmounts;
-        uint256 len = _enclaveAddresses.length;
-        for (uint256 index = 0; index < len; index++)
-            stakeAmounts[index] = secretStorage[_enclaveAddresses[index]].stakeAmount;
-
-        return stakeAmounts;
-    }
-
 
     //---------------------------------- external functions end ----------------------------------//
 
