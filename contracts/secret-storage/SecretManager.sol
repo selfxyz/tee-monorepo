@@ -184,6 +184,10 @@ contract SecretManager is
 
     uint256 public secretId;
 
+    mapping(address => uint256[]) public storeSecretIds;
+
+    mapping(address => uint256) public deadTimestamp;
+
     event SecretCreated(
         uint256 indexed secretId,
         address indexed owner,
@@ -286,6 +290,7 @@ contract SecretManager is
             // cannot allocate memory array directly to storage var
             userStorage[id].selectedEnclaves.push(selectedEnclaves[index]);
             enclaveAddresses[index] = selectedEnclaves[index].enclaveAddress;
+            storeSecretIds[selectedEnclaves[index].enclaveAddress].push(id);
         }
 
         emit SecretCreated(secretId, _owner, _sizeLimit, _endTimestamp, _usdcDeposit, enclaveAddresses);
@@ -394,6 +399,7 @@ contract SecretManager is
                     ackFailed = true;
 
                 SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
+                _removeStoreSecretId(enclaveAddress, _secretId);
             }
             ++index;
         }
@@ -411,12 +417,28 @@ contract SecretManager is
         }
     }
 
+    function _removeStoreSecretId(
+        address _enclaveAddress,
+        uint256 _secretId
+    ) internal {
+        uint256 len = storeSecretIds[_enclaveAddress].length;
+        for (uint256 index = 0; index < len; index++) {
+            if(storeSecretIds[_enclaveAddress][index] == _secretId) {
+                if(index != len - 1)
+                    storeSecretIds[_enclaveAddress][index] = storeSecretIds[_enclaveAddress][len - 1];
+                storeSecretIds[_enclaveAddress].pop();
+                break;
+            }
+        }
+    }
+
     function _replaceStore(
         uint256 _secretId,
         address _enclaveAddress,
         uint256 _enclaveIndex,
         bool _isMarkedDead  // true if called due to mark dead, false if called due to replaced store ack fail
     ) internal returns (bool isArrayLenReduced) {
+        _removeStoreSecretId(_enclaveAddress, _secretId);
         // case for when the termination condition is reached, we won't select any new enclave
         if(block.timestamp > userStorage[_secretId].endTimestamp) {
             isArrayLenReduced = true;
@@ -446,6 +468,7 @@ contract SecretManager is
                     selectTimestamp: selectedEnclaves[0].selectTimestamp,
                     replacedAckTimestamp: 0
                 });
+                storeSecretIds[selectedEnclaves[0].enclaveAddress].push(_secretId);
             }
             emit SecretStoreReplaced(
                 _secretId,
@@ -484,8 +507,11 @@ contract SecretManager is
         bytes memory _signature
     ) internal {
         address enclaveAddress = _verifyStoreAliveSign(_storageTimeUsage, _terminatedSecretIds, _signTimestamp, _signature);
+        if(_signTimestamp <= deadTimestamp[enclaveAddress])
+            revert SecretManagerSignatureTooOld();
 
         address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
+        // TODO: slash the store for missed epochs - ((_signTimestamp - lastAliveTimestamp) / MARK_ALIVE_TIMESTAMP)
         SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
 
         for (uint256 index = 0; index < _terminatedSecretIds.length; index++) {
@@ -522,29 +548,33 @@ contract SecretManager is
         SECRET_STORE.allowOnlyVerified(signer);
     }
 
-    // TODO: what if the replaced store doesn't ack the secret. Then how to mark it dead?
+    // TODO: reward the sender
     function _markStoreDead(
-        address _enclaveAddress,
-        uint256[] memory _secretIds
+        address _enclaveAddress
     ) internal {
         uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
         if(block.timestamp <= lastAliveTimestamp + MARK_ALIVE_TIMEOUT)
             revert SecretManagerStoreIsAlive();
 
-        for (uint256 index = 0; index < _secretIds.length; index++) {
-            _markEnclaveDead(_secretIds[index], _enclaveAddress);
+        uint256[] memory remainingSecretIds;
+        uint256 key;
+        for (uint256 index = 0; index < storeSecretIds[_enclaveAddress].length; index++) {
+            bool isMarkedDead = _markEnclaveDead(storeSecretIds[_enclaveAddress][index], _enclaveAddress);
+            if(!isMarkedDead)
+                remainingSecretIds[key++] = storeSecretIds[_enclaveAddress][index];
         }
 
-        SECRET_STORE.updateLastAliveTimestamp(_enclaveAddress, block.timestamp);
+        storeSecretIds[_enclaveAddress] = remainingSecretIds;
+        deadTimestamp[_enclaveAddress] = block.timestamp;
     }
 
     function _markEnclaveDead(
         uint256 _secretId,
         address _enclaveAddress
-    ) internal {
+    ) internal returns (bool isMarkedDead) {
         uint256 enclaveIndex = _getSelectedEnclaveIndex(_secretId, _enclaveAddress);
         if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore || userStorage[_secretId].ackTimestamp == 0)
-            return;
+            return false;
 
         _updateUsdcDepositPostPayment(_secretId, _enclaveAddress, enclaveIndex);
 
@@ -553,6 +583,7 @@ contract SecretManager is
 
         // TODO: slash prev enclave(who's recipient)
         SECRET_STORE.slashEnclave(_enclaveAddress, sizeLimit, STAKING_PAYMENT_POOL);
+        return true;
     }
 
     /**
@@ -676,10 +707,12 @@ contract SecretManager is
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         for (uint256 index = 0; index < len; index++) {
-            _updateUsdcDepositPostPayment(_secretId, userStorage[_secretId].selectedEnclaves[index].enclaveAddress, index);
+            address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+            _updateUsdcDepositPostPayment(_secretId, enclaveAddress, index);
+            _removeStoreSecretId(enclaveAddress, _secretId);
 
             // TODO: shall we slash or release here?
-            SECRET_STORE.slashEnclave(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
+            SECRET_STORE.slashEnclave(enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
             // TODO: should we update lastTimestamp here? then how do we can call markStoreDead for remining secretIds?
         }
         _refundExcessDepositAndRemoveStore(_secretId);
@@ -723,10 +756,9 @@ contract SecretManager is
     }
 
     function markStoreDead(
-        address _enclaveAddress,
-        uint256[] memory _secretIds
+        address _enclaveAddress
     ) external {
-        _markStoreDead(_enclaveAddress, _secretIds);
+        _markStoreDead(_enclaveAddress);
     }
 
     function updateSecretEndTimestamp(
@@ -751,6 +783,10 @@ contract SecretManager is
 
     function getSelectedEnclaves(uint256 _secretId) external view returns (SelectedEnclave[] memory) {
         return userStorage[_secretId].selectedEnclaves;
+    }
+
+    function getStoreSecretIds(address _enclaveAddress) external view returns (uint256[] memory) {
+        return storeSecretIds[_enclaveAddress];
     }
 
     function getCurrentConfirmedUsdcDeposit(

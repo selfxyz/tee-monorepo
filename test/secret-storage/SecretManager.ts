@@ -469,6 +469,10 @@ describe("SecretManager - Create secret", function () {
         await expect(secretManager.createSecret(sizeLimit, endTimestamp, usdcDeposit))
             .to.emit(secretManager, "SecretCreated");
         expect(await usdcToken.balanceOf(secretManager.target)).to.eq(usdcDeposit);
+        const selectedEnclaves = await secretManager.getSelectedEnclaves(1);
+        for (let index = 0; index < selectedEnclaves.length; index++) {
+            expect(await secretManager.getStoreSecretIds(selectedEnclaves[index].enclaveAddress)).to.deep.eq([1n]);
+        }
     });
 
     it("cannot create secret with invalid size limit", async function () {
@@ -716,6 +720,10 @@ describe("SecretManager - Acknowledge secret", function () {
 
         let userFinalBal = await usdcToken.balanceOf(addrs[0]);
         expect(userFinalBal - userInitialBal).to.eq(usdcDeposit);
+
+        for (let index = 0; index < 3; index++) {
+            expect((await secretManager.getStoreSecretIds(addrs[17 + index])).length).to.eq(0);
+        }
     });
 
     it("cannot mark acknowledgement failed if acknowledgement timeout is pending", async function () {
@@ -939,12 +947,15 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
     	let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.emit(secretManager, "SecretStoreReplaced")
             .withArgs(secretIds[0], addrs[17], addrs[17], true);
 
     	const selectedEnclaves = await secretManager.getSelectedEnclaves(secretIds[0]);
     	expect(selectedEnclaves.length).to.eq(3);
+
+        expect(await secretManager.getStoreSecretIds(addrs[17])).to.deep.eq([]);
+        expect(await secretManager.deadTimestamp(addrs[17])).to.eq(await time.latest());
 
         let slashedAmount = parseUnits("10") * 100n / 1000000n;
         let storeFinalStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
@@ -964,7 +975,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
     	let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.emit(secretManager, "SecretStoreReplaced")
             .withArgs(secretIds[0], addrs[17], addrs[17], true);
 
@@ -982,12 +993,25 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         expect((await secretManager.getSelectedEnclaves(secretIds[0])).length).to.eq(3);
     });
 
+    it("cannot submit alive check with signTimestamp <= deadTimestamp", async function () {
+        await time.increase(510);
+        let signTimestamp = await time.latest(),
+            storageTimeUsage = 0n,
+            terminatedSecretIds: number[] = [],
+            signedDigest = await createAliveSignature(storageTimeUsage, terminatedSecretIds, signTimestamp, wallets[17]);
+        
+        await secretManager.markStoreDead(addrs[17]);
+
+        await expect(secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerSignatureTooOld")
+    });
+
     it("cannot mark ack failed for a replaced store that is already acknowledged", async function () {
     	await time.increase(510);
         let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
     	let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.emit(secretManager, "SecretStoreReplaced")
             .withArgs(secretIds[0], addrs[17], addrs[17], true);
 
@@ -1011,7 +1035,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
     it("can submit alive check for the replaced store after end timestamp", async function () {
         await time.increase(510);
         let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.emit(secretManager, "SecretStoreReplaced")
             .withArgs(secretIds[0], addrs[17], addrs[17], true);
 
@@ -1044,7 +1068,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
     	let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.emit(secretManager, "SecretStoreReplaced")
             .withArgs(secretIds[0], addrs[17], addrs[17], true);
 
@@ -1070,7 +1094,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
     	let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.emit(secretManager, "SecretReplicationReduced")
             .withArgs(secretIds[0], 2);
 
@@ -1090,7 +1114,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
     	let secretIds = [1];
         for (let index = 0; index < 3; index++)
-            await secretManager.markStoreDead(addrs[17 + index], secretIds);
+            await secretManager.markStoreDead(addrs[17 + index]);
 
         let userStorage = await secretManager.userStorage(secretIds[0]);
         // secret should be removed after all stores marked dead post endTimestamp
@@ -1106,7 +1130,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
 
     it("cannot mark store dead before alive timeout", async function () {
     	let secretIds = [1];
-    	await expect(secretManager.markStoreDead(addrs[17], secretIds))
+    	await expect(secretManager.markStoreDead(addrs[17]))
     		.to.be.revertedWithCustomError(secretManager, "SecretManagerStoreIsAlive");
     });
 
@@ -1116,18 +1140,19 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
             usdcDeposit = parseUnits("30", 6);
         await secretManager.createSecret(sizeLimit, endTimestamp, usdcDeposit);
 
-    	let secretIds = [2];
         let storeInitialStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolInitialBal = await stakingToken.balanceOf(addrs[2]);
 
         await time.increase(510);
-    	await secretManager.markStoreDead(addrs[17], secretIds);
+        // secret 1 will be marked dead, while secret 2 won't as it is unackowledged
+    	await secretManager.markStoreDead(addrs[17]);
 
+        let slashedAmount = parseUnits("10") * 100n / 1000000n;
         let storeFinalStakeAmount = (await secretStore.secretStorage(addrs[17])).stakeAmount;
         let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
 
-        expect(storeFinalStakeAmount).to.eq(storeInitialStakeAmount);
-        expect(stakingPoolFinalBal).to.eq(stakingPoolInitialBal);
+        expect(storeInitialStakeAmount - storeFinalStakeAmount).to.eq(slashedAmount);
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
     });
 });
 
@@ -1697,8 +1722,8 @@ describe("SecretManager - Remove secret", function () {
         await secretManager.markStoreAlive(storageTimeUsage, terminatedSecretIds, signTimestamp, signedDigest);
         let usdcPayment = storageTimeUsage * 10n;   // storageTimeUsage * feeRate
 
-        // Mark 1st store as dead post secret termination
-        await secretManager.markStoreDead(addrs[18], [secretId]);
+        // Mark 2nd store as dead post secret termination
+        await secretManager.markStoreDead(addrs[18]);
 
         await time.increase(510);
         // Submit remove secret for the last store

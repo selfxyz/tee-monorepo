@@ -599,6 +599,16 @@ contract SecretStore is
             _insert_unchecked(ENV, _enclaveAddresses[index], uint64(secretStorage[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
     }
 
+    function getSecretStoresStake(
+        address[] memory _enclaveAddresses
+    ) external view returns (uint256[] memory) {
+        uint256[] memory stakeAmounts;
+        uint256 len = _enclaveAddresses.length;
+        for (uint256 index = 0; index < len; index++)
+            stakeAmounts[index] = secretStorage[_enclaveAddresses[index]].stakeAmount;
+
+        return stakeAmounts;
+    }
 
 
     //---------------------------------- external functions end ----------------------------------//
