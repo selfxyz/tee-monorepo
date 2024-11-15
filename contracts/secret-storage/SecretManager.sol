@@ -444,7 +444,7 @@ contract SecretManager is
             isArrayLenReduced = true;
             _removeSelectedEnclave(_secretId, _enclaveIndex);
             if(userStorage[_secretId].selectedEnclaves.length == 0)
-                _refundExcessDepositAndRemoveStore(_secretId);
+                _refundExcessDepositAndRemoveSecret(_secretId);
         }
         // case for when a newly selected enclave will replace the dead enclave
         else {
@@ -524,7 +524,7 @@ contract SecretManager is
             _removeSelectedEnclave(secId, enclaveIndex);
 
             if(userStorage[secId].selectedEnclaves.length == 0)
-                _refundExcessDepositAndRemoveStore(secId);
+                _refundExcessDepositAndRemoveSecret(secId);
         }
 
         uint256 usdcPayment = _storageTimeUsage * SECRET_STORE_FEE_RATE;
@@ -628,7 +628,7 @@ contract SecretManager is
         userStorage[_secretId].selectedEnclaves.pop();
     }
 
-    function _refundExcessDepositAndRemoveStore(
+    function _refundExcessDepositAndRemoveSecret(
         uint256 _secretId
     ) internal {
         address owner = userStorage[_secretId].owner;
@@ -715,7 +715,7 @@ contract SecretManager is
             SECRET_STORE.slashEnclave(enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL);
             // TODO: should we update lastTimestamp here? then how do we can call markStoreDead for remining secretIds?
         }
-        _refundExcessDepositAndRemoveStore(_secretId);
+        _refundExcessDepositAndRemoveSecret(_secretId);
 
         emit SecretRemoved(_secretId);
     }
