@@ -1,12 +1,5 @@
-use abi::encode;
 use anyhow::Result;
-use ethers::abi::{encode_packed, FixedBytes, Token};
-use ethers::prelude::*;
-use ethers::types::{Address, U256};
-use ethers::utils::keccak256;
 use futures_core::stream::Stream;
-use k256::ecdsa::SigningKey;
-use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::{error, info};
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +11,7 @@ use crate::constant::{
     MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK,
 };
 use crate::error::ServerlessError;
-use crate::model::{Job, JobMode, RequestChainClient};
+use crate::model::{Job, JobMode, RequestChainData};
 
 pub trait LogsProvider {
     fn common_chain_jobs<'a>(
@@ -29,7 +22,7 @@ pub trait LogsProvider {
     fn req_chain_jobs<'a>(
         &'a self,
         req_chain_ws_client: &'a Provider<Ws>,
-        req_chain_client: &'a RequestChainClient,
+        req_chain_client: &'a RequestChainData,
     ) -> impl Future<Output = Result<impl Stream<Item = Log> + Unpin>>;
 
     fn gateways_job_relayed_logs<'a, P: HttpProviderLogs>(
@@ -40,7 +33,7 @@ pub trait LogsProvider {
 
     fn request_chain_historic_subscription_jobs<'a, P: HttpProviderLogs>(
         &'a self,
-        req_chain_client: &'a RequestChainClient,
+        req_chain_client: &'a RequestChainData,
         req_chain_http_provider: &'a P,
     ) -> impl Future<Output = Result<Vec<Log>>>;
 }

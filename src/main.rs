@@ -14,13 +14,12 @@ mod test_util;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
+use alloy::primitives::Address;
+use alloy::signers::k256::ecdsa::SigningKey;
+use alloy::signers::utils::public_key_to_address;
 use anyhow::Context;
 use clap::Parser;
 use env_logger::Env;
-use ethers::prelude::*;
-use ethers::providers::Provider;
-use ethers::utils::public_key_to_address;
-use k256::ecdsa::SigningKey;
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::atomic::AtomicBool;
@@ -32,8 +31,6 @@ use crate::api_impl::{
     inject_mutable_config,
 };
 use crate::model::{AppState, ConfigManager};
-
-type HttpProviderType = NonceManagerMiddleware<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -56,7 +53,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let config_manager = ConfigManager::new(&args.config_file);
     let config = config_manager.load_config().unwrap();
 
-    let enclave_signer_key = SigningKey::from_slice(
+    let enclave_signer_key: SigningKey = SigningKey::from_slice(
         fs::read(config.enclave_secret_key)
             .await
             .context("Failed to read the enclave signer key")?
@@ -70,21 +67,21 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let app_data = Data::new(AppState {
         enclave_signer_key,
         enclave_address,
-        wallet: None.into(),
+        wallet: Mutex::new(None),
         common_chain_id: config.common_chain_id,
         common_chain_http_url: config.common_chain_http_url,
         common_chain_ws_url: config.common_chain_ws_url,
         gateways_contract_addr: config.gateways_contract_addr,
         gateway_jobs_contract_addr: config.gateway_jobs_contract_addr,
-        request_chain_ids: HashSet::new().into(),
+        request_chain_ids: Mutex::new(HashSet::new()),
         registered: Arc::new(AtomicBool::new(false)),
         epoch: config.epoch,
         time_interval: config.time_interval,
         offset_for_epoch: config.offset_for_epoch,
-        enclave_owner: H160::zero().into(),
+        enclave_owner: Mutex::new(Address::ZERO),
         immutable_params_injected: Mutex::new(false),
         mutable_params_injected: Arc::new(AtomicBool::new(false)),
-        registration_events_listener_active: false.into(),
+        registration_events_listener_active: Mutex::new(false),
         contracts_client: Mutex::new(None),
     });
     // Start a http server

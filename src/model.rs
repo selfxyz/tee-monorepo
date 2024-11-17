@@ -1,20 +1,15 @@
-use ethers::abi::FixedBytes;
-use ethers::signers::LocalWallet;
-use ethers::types::{Address, Bytes, H160, U256};
-use k256::ecdsa::SigningKey;
+use alloy::primitives::{Address, Bytes, FixedBytes, U256};
+use alloy::signers::k256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::contract_abi::{GatewayJobsContract, RelayContract, RelaySubscriptionsContract};
-use crate::HttpProviderType;
-
 #[derive(Debug)]
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
-    pub enclave_address: H160,
-    pub wallet: Mutex<Option<LocalWallet>>,
+    pub enclave_address: Address,
+    pub wallet: Mutex<Option<String>>,
     pub common_chain_id: u64,
     pub common_chain_http_url: String,
     pub common_chain_ws_url: String,
@@ -25,7 +20,7 @@ pub struct AppState {
     pub epoch: u64,
     pub time_interval: u64,
     pub offset_for_epoch: u64,
-    pub enclave_owner: Mutex<H160>,
+    pub enclave_owner: Mutex<Address>,
     pub immutable_params_injected: Mutex<bool>,
     pub mutable_params_injected: Arc<AtomicBool>,
     pub registration_events_listener_active: Mutex<bool>,
@@ -49,7 +44,7 @@ pub struct SignedRegistrationBody {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SignedRegistrationResponse {
-    pub owner: H160,
+    pub owner: Address,
     pub sign_timestamp: usize,
     pub chain_ids: Vec<u64>,
     pub common_chain_signature: String,
@@ -59,8 +54,8 @@ pub struct SignedRegistrationResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GatewayDetailsResponse {
     pub enclave_public_key: String,
-    pub enclave_address: H160,
-    pub owner_address: H160,
+    pub enclave_address: Address,
+    pub owner_address: Address,
     pub gas_address: Address,
 }
 
@@ -83,8 +78,8 @@ pub struct Config {
     pub common_chain_id: u64,
     pub common_chain_http_url: String,
     pub common_chain_ws_url: String,
-    pub gateways_contract_addr: H160,
-    pub gateway_jobs_contract_addr: H160,
+    pub gateways_contract_addr: Address,
+    pub gateway_jobs_contract_addr: Address,
     pub enclave_secret_key: String,
     pub epoch: u64,
     pub time_interval: u64,
@@ -105,11 +100,12 @@ pub struct ContractsClient {
     pub enclave_owner: Address,
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
+    pub gas_wallet: Arc<RwLock<String>>,
     pub common_chain_ws_url: String,
     pub common_chain_http_url: String,
     pub gateways_contract_address: Address,
-    pub gateway_jobs_contract: Arc<RwLock<GatewayJobsContract<HttpProviderType>>>,
-    pub request_chain_clients: HashMap<u64, Arc<RequestChainClient>>,
+    pub gateway_jobs_contract_address: Address,
+    pub request_chain_data: HashMap<u64, RequestChainData>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_ids: HashSet<u64>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
@@ -125,22 +121,11 @@ pub struct ContractsClient {
 
 #[derive(Debug, Clone)]
 pub struct RequestChainData {
-    pub relay_address: Address,
-    pub relay_subscriptions_address: Address,
-    pub http_rpc_url: String,
-    pub ws_rpc_url: String,
-    pub block_number: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct RequestChainClient {
     pub chain_id: u64,
     pub relay_address: Address,
     pub relay_subscriptions_address: Address,
     pub ws_rpc_url: String,
     pub http_rpc_url: String,
-    pub relay_contract: Arc<RwLock<RelayContract<HttpProviderType>>>,
-    pub relay_subscriptions_contract: Arc<RwLock<RelaySubscriptionsContract<HttpProviderType>>>,
     pub request_chain_start_block_number: u64,
     pub confirmation_blocks: u64,
     pub last_seen_block: Arc<AtomicU64>,
@@ -164,7 +149,7 @@ pub enum JobMode {
 pub struct Job {
     pub job_id: U256,
     pub request_chain_id: u64,
-    pub tx_hash: FixedBytes,
+    pub tx_hash: FixedBytes<32>,
     pub code_input: Bytes,
     pub user_timeout: U256,
     pub starttime: U256,
@@ -208,7 +193,7 @@ pub struct SubscriptionJob {
     pub interval: U256,
     pub termination_time: U256,
     pub user_timeout: U256,
-    pub tx_hash: FixedBytes,
+    pub tx_hash: FixedBytes<32>,
     pub code_input: Bytes,
     pub starttime: U256,
     pub env: u8,

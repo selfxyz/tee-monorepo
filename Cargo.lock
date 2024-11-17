@@ -2836,7 +2836,6 @@ dependencies = [
  "elliptic-curve",
  "once_cell",
  "sha2",
- "signature",
 ]
 
 [[package]]
@@ -3916,13 +3915,10 @@ dependencies = [
  "actix-web",
  "alloy 0.6.2",
  "anyhow",
- "bytes",
  "clap",
  "config",
  "env_logger",
  "futures-core",
- "hex",
- "k256",
  "lazy_static",
  "log",
  "multi-block-txns",
@@ -3931,7 +3927,6 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "thiserror",
- "tiny-keccak",
  "tokio",
 ]
 

@@ -40,7 +40,7 @@ use crate::job_subscription_management::{
 };
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayJobType, Job, JobMode, JobSubscriptionAction,
-    JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainClient, ResponseJob,
+    JobSubscriptionChannelType, RegisterType, RegisteredData, RequestChainData, ResponseJob,
 };
 
 impl ContractsClient {
@@ -1306,7 +1306,7 @@ impl LogsProvider for ContractsClient {
     async fn req_chain_jobs<'a>(
         &'a self,
         req_chain_ws_client: &'a Provider<Ws>,
-        req_chain_client: &'a RequestChainClient,
+        req_chain_client: &'a RequestChainData,
     ) -> Result<impl Stream<Item = Log> + Unpin> {
         info!(
             "Subscribing to events for Req Chain chain_id: {}",
@@ -1373,7 +1373,7 @@ impl LogsProvider for ContractsClient {
 
     async fn request_chain_historic_subscription_jobs<'a, P: HttpProviderLogs>(
         &'a self,
-        req_chain_client: &'a RequestChainClient,
+        req_chain_client: &'a RequestChainData,
         http_provider: &'a P,
     ) -> Result<Vec<Log>> {
         let event_filter = Filter::new()

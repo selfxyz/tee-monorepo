@@ -23,8 +23,7 @@ use crate::{
     error::ServerlessError,
     model::{
         ContractsClient, GatewayJobType, Job, JobMode, JobSubscriptionAction,
-        JobSubscriptionChannelType, RequestChainClient, SubscriptionJob,
-        SubscriptionJobInstanceHeap,
+        JobSubscriptionChannelType, RequestChainData, SubscriptionJob, SubscriptionJobInstanceHeap,
     },
 };
 
@@ -107,7 +106,7 @@ pub async fn process_historic_job_subscriptions(
 
 pub async fn process_historic_subscription_jobs_on_request_chain<'a, P: HttpProviderLogs>(
     contracts_client: &Arc<ContractsClient>,
-    request_chain_client: &Arc<RequestChainClient>,
+    request_chain_client: &Arc<RequestChainData>,
     req_chain_tx: Sender<Job>,
     job_sub_tx: Sender<JobSubscriptionChannelType>,
     http_provider: P,
