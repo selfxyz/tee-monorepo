@@ -506,7 +506,7 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: Invalid input length".as_bytes()
+            "Invalid owner address provided: OddLength".as_bytes()
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
@@ -525,7 +525,7 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: Invalid character 'z' at position 0".as_bytes()
+            "Invalid owner address provided: InvalidHexCharacter { c: 'z', index: 0 }".as_bytes()
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
@@ -634,7 +634,7 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })"
+            "Invalid gas private key provided: signature::Error { source: None }"
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
@@ -683,20 +683,24 @@ mod api_impl_tests {
             .to_request();
         let resp = actix_web::test::call_service(&app, req).await;
         assert_eq!(resp.status(), http::StatusCode::OK);
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .gas_wallet
+            .read()
+            .await
+            .clone()
+            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .address();
         assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .common_chain_txn_manager
-                .clone()
-                .gas_wallet
-                .read()
-                .await
-                .clone(),
-            GAS_WALLET_PUBLIC_ADDRESS.to_string()
+            gas_wallet_address,
+            GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
         );
 
         // Inject the same valid private key for gas wallet again
@@ -717,20 +721,24 @@ mod api_impl_tests {
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY.to_string());
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .gas_wallet
+            .read()
+            .await
+            .clone()
+            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .address();
         assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .common_chain_txn_manager
-                .clone()
-                .gas_wallet
-                .read()
-                .await
-                .clone(),
-            GAS_WALLET_PUBLIC_ADDRESS.to_string()
+            gas_wallet_address,
+            GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
         );
 
         const GAS_WALLET_KEY_2: &str =
@@ -755,20 +763,24 @@ mod api_impl_tests {
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY_2.to_string());
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .gas_wallet
+            .read()
+            .await
+            .clone()
+            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .address();
         assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .common_chain_txn_manager
-                .clone()
-                .gas_wallet
-                .read()
-                .await
-                .clone(),
-            GAS_WALLET_PUBLIC_ADDRESS_2.to_string()
+            gas_wallet_address,
+            GAS_WALLET_PUBLIC_ADDRESS_2.parse::<Address>().unwrap()
         );
     }
 
@@ -1233,6 +1245,14 @@ mod api_impl_tests {
         assert!(response.is_ok());
 
         let response = response.unwrap();
+        let gas_address = app_state
+            .wallet
+            .read()
+            .await
+            .clone()
+            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .address();
         let expected_response = GatewayDetailsResponse {
             enclave_public_key: "0x".to_string()
                 + &hex::encode(
@@ -1244,7 +1264,7 @@ mod api_impl_tests {
                 ),
             enclave_address: app_state.enclave_address,
             owner_address: *app_state.enclave_owner.lock().unwrap(),
-            gas_address: Address::from_str(&app_state.wallet.read().await).unwrap(),
+            gas_address,
         };
         assert_eq!(
             response.enclave_public_key,
