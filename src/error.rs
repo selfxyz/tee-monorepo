@@ -23,8 +23,4 @@ pub enum ServerlessError {
     #[cfg(test)]
     #[error("Empty Topics")]
     EmptyTopics,
-
-    #[cfg(test)]
-    #[error("Empty Topic 0")]
-    EmptyTopic0,
 }
