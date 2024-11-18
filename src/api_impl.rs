@@ -8,6 +8,7 @@ use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::local::PrivateKeySigner;
 use anyhow::Context;
 use log::info;
+use multi_block_txns::TxnManager;
 use serde_json::json;
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::str::FromStr;
@@ -79,25 +80,12 @@ async fn inject_mutable_config(
         ));
     };
 
-    let mut wallet_guard = app_state.wallet.lock().unwrap();
-    if *wallet_guard == Some(mutable_config.gas_key_hex.clone()) {
+    let mut wallet_guard = app_state.wallet.write().await;
+    if *wallet_guard == mutable_config.gas_key_hex.clone() {
         return HttpResponse::NotAcceptable().body("The same wallet address already set.");
     }
 
-    let contracts_client_guard = app_state.contracts_client.lock().unwrap();
-
-    if contracts_client_guard.is_some() {
-        info!("Updating Contracts Client with the new wallet address");
-        let mut gas_wallet_guard = contracts_client_guard
-            .as_ref()
-            .unwrap()
-            .gas_wallet
-            .write()
-            .unwrap();
-        *gas_wallet_guard = mutable_config.gas_key_hex.clone();
-    }
-
-    *wallet_guard = Some(mutable_config.gas_key_hex);
+    *wallet_guard = mutable_config.gas_key_hex.clone();
 
     app_state
         .mutable_params_injected
@@ -155,7 +143,7 @@ async fn export_signed_registration_message(
     }
 
     // if wallet is not configured, return error
-    if app_state.wallet.lock().unwrap().is_none() {
+    if app_state.wallet.read().await.is_empty() {
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
@@ -287,9 +275,9 @@ async fn export_signed_registration_message(
             common_chain_http_provider.clone(),
         ));
 
-        let gateways_contract_clone = Arc::clone(&gateways_contract);
-        let request_chain_info = match gateways_contract_clone
+        let request_chain_info = match gateways_contract
             .requestChains(U256::from(chain_id))
+            .call()
             .await
         {
             Ok(info) => info,
@@ -326,6 +314,16 @@ async fn export_signed_registration_message(
 
         drop(request_chain_http_provider);
 
+        let request_chain_txn_manager = TxnManager::new(
+            request_chain_info.httpRpcUrl.to_string(),
+            chain_id,
+            app_state.wallet.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
         request_chain_data.insert(
             chain_id,
             RequestChainData {
@@ -337,6 +335,7 @@ async fn export_signed_registration_message(
                 request_chain_start_block_number: block_number,
                 confirmation_blocks: 5,
                 last_seen_block: Arc::new(0.into()),
+                request_chain_txn_manager,
             },
         );
     }
@@ -368,15 +367,24 @@ async fn export_signed_registration_message(
         let subscription_job_instance_heap = Arc::new(RwLock::new(BinaryHeap::new()));
         let subscription_jobs = Arc::new(RwLock::new(HashMap::new()));
 
+        let common_chain_txn_manager = TxnManager::new(
+            app_state.common_chain_http_url.clone(),
+            app_state.common_chain_id,
+            app_state.wallet.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
         let contracts_client = Arc::new(ContractsClient {
             enclave_owner,
             enclave_signer_key: app_state.enclave_signer_key.clone(),
             enclave_address: app_state.enclave_address,
-            gas_wallet: Arc::new(RwLock::new(
-                app_state.wallet.lock().unwrap().clone().unwrap(),
-            )),
+            gas_wallet: app_state.wallet.clone(),
             common_chain_ws_url: app_state.common_chain_ws_url.clone(),
             common_chain_http_url: app_state.common_chain_http_url.clone(),
+            common_chain_txn_manager,
             gateways_contract_address: app_state.gateways_contract_addr,
             gateway_jobs_contract_address: app_state.gateway_jobs_contract_addr,
             request_chain_data,
@@ -429,10 +437,9 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
 
     let wallet: PrivateKeySigner = app_state
         .wallet
-        .lock()
-        .unwrap()
+        .read()
+        .await
         .clone()
-        .unwrap()
         .parse::<PrivateKeySigner>()
         .unwrap();
 
@@ -606,7 +613,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+        assert_eq!(*app_state.wallet.read().await, String::new());
 
         // Inject invalid private(signing) key
         let req = actix_web::test::TestRequest::post()
@@ -626,7 +633,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+        assert_eq!(*app_state.wallet.read().await, String::new());
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
         let req = actix_web::test::TestRequest::post()
@@ -645,7 +652,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+        assert_eq!(*app_state.wallet.read().await, String::new());
 
         // Inject a valid private key for gas wallet
         let req = actix_web::test::TestRequest::post()
@@ -664,10 +671,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(GAS_WALLET_KEY.to_string())
-        );
+        assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY.to_string());
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(app_state.contracts_client.lock().unwrap().is_none());
         assert!(!*app_state
@@ -702,7 +706,7 @@ mod api_impl_tests {
                 .unwrap()
                 .gas_wallet
                 .read()
-                .unwrap()
+                .await
                 .clone(),
             GAS_WALLET_PUBLIC_ADDRESS.to_string()
         );
@@ -724,10 +728,7 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(GAS_WALLET_KEY.to_string())
-        );
+        assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY.to_string());
         assert_eq!(
             app_state
                 .contracts_client
@@ -737,7 +738,7 @@ mod api_impl_tests {
                 .unwrap()
                 .gas_wallet
                 .read()
-                .unwrap()
+                .await
                 .clone(),
             GAS_WALLET_PUBLIC_ADDRESS.to_string()
         );
@@ -763,10 +764,7 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(GAS_WALLET_KEY_2.to_string())
-        );
+        assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY_2.to_string());
         assert_eq!(
             app_state
                 .contracts_client
@@ -776,7 +774,7 @@ mod api_impl_tests {
                 .unwrap()
                 .gas_wallet
                 .read()
-                .unwrap()
+                .await
                 .clone(),
             GAS_WALLET_PUBLIC_ADDRESS_2.to_string()
         );
@@ -1254,8 +1252,7 @@ mod api_impl_tests {
                 ),
             enclave_address: app_state.enclave_address,
             owner_address: *app_state.enclave_owner.lock().unwrap(),
-            gas_address: Address::from_str(&app_state.wallet.lock().unwrap().clone().unwrap())
-                .unwrap(),
+            gas_address: Address::from_str(&app_state.wallet.read().await).unwrap(),
         };
         assert_eq!(
             response.enclave_public_key,

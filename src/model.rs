@@ -1,15 +1,16 @@
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::signers::k256::ecdsa::SigningKey;
+use multi_block_txns::TxnManager;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
-
+use tokio::sync::RwLock as TokioRwLock;
 #[derive(Debug)]
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
-    pub wallet: Mutex<Option<String>>,
+    pub wallet: Arc<TokioRwLock<String>>,
     pub common_chain_id: u64,
     pub common_chain_http_url: String,
     pub common_chain_ws_url: String,
@@ -100,11 +101,12 @@ pub struct ContractsClient {
     pub enclave_owner: Address,
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
-    pub gas_wallet: Arc<RwLock<String>>,
+    pub gas_wallet: Arc<TokioRwLock<String>>,
     pub common_chain_ws_url: String,
     pub common_chain_http_url: String,
     pub gateways_contract_address: Address,
     pub gateway_jobs_contract_address: Address,
+    pub common_chain_txn_manager: Arc<TxnManager>,
     pub request_chain_data: HashMap<u64, RequestChainData>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_ids: HashSet<u64>,
@@ -129,6 +131,7 @@ pub struct RequestChainData {
     pub request_chain_start_block_number: u64,
     pub confirmation_blocks: u64,
     pub last_seen_block: Arc<AtomicU64>,
+    pub request_chain_txn_manager: Arc<TxnManager>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -152,7 +155,7 @@ pub struct Job {
     pub tx_hash: FixedBytes<32>,
     pub code_input: Bytes,
     pub user_timeout: U256,
-    pub starttime: U256,
+    pub starttime: u64,
     pub job_owner: Address,
     pub job_type: GatewayJobType,
     pub sequence_number: u8,
@@ -191,11 +194,11 @@ pub struct SubscriptionJob {
     pub request_chain_id: u64,
     pub subscriber: Address,
     pub interval: U256,
-    pub termination_time: U256,
+    pub termination_time: u64,
     pub user_timeout: U256,
     pub tx_hash: FixedBytes<32>,
     pub code_input: Bytes,
-    pub starttime: U256,
+    pub starttime: u64,
     pub env: u8,
 }
 

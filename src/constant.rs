@@ -1,4 +1,4 @@
-use ethers::types::U256;
+use alloy::primitives::U256;
 use lazy_static::lazy_static;
 
 pub const REQUEST_RELAY_TIMEOUT: u64 = 40;
@@ -42,3 +42,16 @@ pub const COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT: &str =
     "JobResourceUnavailable(uint256,address)";
 pub const COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT: &str =
     "GatewayReassigned(uint256,address,address,uint8)";
+
+pub const COMMON_CHAIN_TXN_CALL_TIMEOUT: u64 = 60;
+pub const REQUEST_CHAIN_TXN_CALL_TIMEOUT: u64 = 60;
+
+pub const COMMON_CHAIN_RELAY_JOB_CALL: &str =
+    "relayJob(bytes,uint256,bytes32,bytes,uint256,uint256,uint8,address,uint8,uint256)";
+pub const COMMON_CHAIN_REASSIGN_GATEWAY_RELAY_CALL: &str =
+    "reassignGatewayRelay(address,uint256,bytes,uint8,uint256,address,uint256)";
+
+pub const REQUEST_CHAIN_JOB_RESPONSE_CALL: &str =
+    "jobResponse(bytes,uint256,bytes,uint256,uint8,uint256)";
+pub const REQUEST_CHAIN_JOB_SUBS_RESPONSE_CALL: &str =
+    "jobSubsResponse(bytes,uint256,bytes,uint256,uint8,uint256)";

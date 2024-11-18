@@ -25,6 +25,7 @@ use std::error::Error;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tokio::fs;
+use tokio::sync::RwLock as TokioRwLock;
 
 use crate::api_impl::{
     export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
@@ -67,7 +68,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let app_data = Data::new(AppState {
         enclave_signer_key,
         enclave_address,
-        wallet: Mutex::new(None),
+        wallet: Arc::new(TokioRwLock::new(String::new())),
         common_chain_id: config.common_chain_id,
         common_chain_http_url: config.common_chain_http_url,
         common_chain_ws_url: config.common_chain_ws_url,

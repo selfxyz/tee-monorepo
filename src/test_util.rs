@@ -17,9 +17,9 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock as TokioRwLock;
 
 use crate::api_impl::{
     export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
@@ -93,7 +93,7 @@ pub async fn generate_app_state() -> Data<AppState> {
     Data::new(AppState {
         enclave_signer_key: signer_key.clone(),
         enclave_address: public_key_to_address(&signer_key.verifying_key()),
-        wallet: Mutex::new(None),
+        wallet: Arc::new(TokioRwLock::new(String::new())),
         common_chain_id: CHAIN_ID,
         common_chain_http_url: HTTP_RPC_URL.to_owned(),
         common_chain_ws_url: WS_URL.to_owned(),
@@ -366,15 +366,13 @@ pub fn generate_generic_subscription_job(
     job_id: Option<u64>,
     starttime_delta: Option<i64>,
 ) -> SubscriptionJob {
-    let starttime = U256::from(
-        ((SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()) as i64
-            + starttime_delta.unwrap_or(0)) as u64,
-    );
+    let starttime = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs())
+        + starttime_delta.unwrap_or(0) as u64;
 
-    let termination_time = starttime + U256::from(1000);
+    let termination_time = starttime + 1000;
 
     SubscriptionJob {
         subscription_id: U256::from(job_id.unwrap_or(1)),
