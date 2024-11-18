@@ -1,7 +1,11 @@
+use alloy::eips::BlockId;
+use alloy::primitives::{keccak256, Address, U256};
+use alloy::providers::{Provider, ProviderBuilder, RootProvider};
+use alloy::rpc::types::{Filter, Log};
+use alloy::sol_types::SolEvent;
+use alloy::transports::http::reqwest::Url;
+use alloy::transports::http::{Client, Http};
 use anyhow::{Context, Error, Result};
-use ethers::abi::{decode, ParamType, Token};
-use ethers::prelude::*;
-use ethers::utils::keccak256;
 use log::{error, info};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
@@ -15,7 +19,7 @@ use crate::constant::{
     COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
     GATEWAY_BLOCK_STATES_TO_MAINTAIN,
 };
-use crate::contract_abi::GatewaysContract;
+use crate::contract_abi::GatewaysContract::{self, GatewaysContractInstance};
 use crate::model::{ContractsClient, GatewayData, Job};
 
 // Initialize the gateway epoch state
@@ -25,7 +29,8 @@ pub async fn gateway_epoch_state_service(
     contracts_client: Arc<ContractsClient>,
     tx: Sender<Job>,
 ) {
-    let provider: Provider<Http> = Provider::<Http>::try_from(&common_chain_rpc_http_url).unwrap();
+    let provider: RootProvider<Http<Client>> =
+        ProviderBuilder::new().on_http(Url::parse(&common_chain_rpc_http_url).unwrap());
     let provider = Arc::new(provider);
 
     let current_cycle = (current_time - contracts_client.epoch) / contracts_client.time_interval;
@@ -168,8 +173,10 @@ pub async fn gateway_epoch_state_service(
 
 pub async fn generate_gateway_epoch_state_for_cycle(
     contract_address: Address,
-    provider: &Provider<Http>,
-    com_chain_gateway_contract: Arc<GatewaysContract<Provider<Http>>>,
+    provider: &RootProvider<Http<Client>>,
+    com_chain_gateway_contract: Arc<
+        GatewaysContractInstance<Http<Client>, Arc<RootProvider<Http<Client>>>>,
+    >,
     gateway_epoch_state: &Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     cycle_number: u64,
     epoch: u64,
@@ -261,7 +268,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .address(contract_address)
         .from_block(from_block_number)
         .to_block(to_block_number)
-        .topic0(vec![
+        .event_signature(vec![
             keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT),
             keccak256(COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT),
             keccak256(COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT),
@@ -275,16 +282,16 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .unwrap();
 
     for log in logs {
-        let ref topics = log.topics;
+        let topics = log.topics();
 
-        if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT).into() {
+        if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT) {
             process_gateway_registered_event(log, to_block_number, &mut current_cycle_state_epoch)
                 .await;
-        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT).into() {
+        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT) {
             process_gateway_deregistered_event(log, &mut current_cycle_state_epoch).await;
-        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT).into() {
+        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT) {
             process_chain_added_event(log, &mut current_cycle_state_epoch).await;
-        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT).into() {
+        } else if topics[0] == keccak256(COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT) {
             process_chain_removed_event(log, &mut current_cycle_state_epoch).await;
         }
     }
@@ -307,12 +314,12 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             );
             continue;
         }
-        let (_, stake_amount, draining, _) = gateways_info.unwrap();
+        let gateways_info = gateways_info.unwrap();
 
         let current_cycle_gateway_data = current_cycle_state_epoch.get_mut(&address).unwrap();
 
-        current_cycle_gateway_data.stake_amount = stake_amount;
-        current_cycle_gateway_data.draining = draining;
+        current_cycle_gateway_data.stake_amount = gateways_info.stakeAmount;
+        current_cycle_gateway_data.draining = gateways_info.draining;
     }
 
     // Write current cycle state to the gateway epoch state
@@ -331,31 +338,26 @@ async fn process_gateway_registered_event(
     to_block_number: u64,
     current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
 ) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+    let gateway_registered_event_decoded =
+        GatewaysContract::GatewayRegistered::decode_log(&log.inner, true);
 
-    let decoded = decode(
-        &vec![ParamType::Array(Box::new(ParamType::Uint(256)))],
-        &log.data.0,
-    );
-
-    if decoded.is_err() {
+    if gateway_registered_event_decoded.is_err() {
         error!(
             "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
+            gateway_registered_event_decoded.err().unwrap()
         );
         return;
     }
 
-    let decoded = decoded.unwrap();
+    let gateway_registered_event_decoded = gateway_registered_event_decoded.unwrap();
+
+    let log_topics = log.topics();
+    let address = Address::from_slice(log_topics[1][12..].try_into().unwrap());
 
     let mut req_chain_ids = BTreeSet::new();
 
-    if let Token::Array(array_tokens) = decoded[0].clone() {
-        for token in array_tokens {
-            if let Token::Uint(request_chain_id) = token {
-                req_chain_ids.insert(U256::from(request_chain_id).as_u64());
-            }
-        }
+    for &request_chain_id in gateway_registered_event_decoded.chainIds.iter() {
+        req_chain_ids.insert(request_chain_id.to::<u64>());
     }
 
     current_cycle_state_epoch.insert(
@@ -363,7 +365,7 @@ async fn process_gateway_registered_event(
         GatewayData {
             last_block_number: to_block_number,
             address,
-            stake_amount: U256::zero(), // gateways call is used to get the stake amount
+            stake_amount: U256::from(0), // gateways call is used to get the stake amount
             req_chain_ids,
             draining: false,
         },
@@ -374,7 +376,8 @@ async fn process_gateway_deregistered_event(
     log: Log,
     current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
 ) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+    let log_topics = log.topics();
+    let address = Address::from_slice(log_topics[1][12..].try_into().unwrap());
 
     current_cycle_state_epoch.remove(&address);
 }
@@ -383,20 +386,22 @@ async fn process_chain_added_event(
     log: Log,
     current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
 ) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+    let chain_added_event_decoded = GatewaysContract::ChainAdded::decode_log(&log.inner, true);
 
-    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
-
-    if decoded.is_err() {
+    if chain_added_event_decoded.is_err() {
         error!(
-            "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
+            "Failed to decode chain added event {}",
+            chain_added_event_decoded.err().unwrap()
         );
         return;
     }
 
-    let decoded = decoded.unwrap();
-    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
+    let chain_added_event_decoded = chain_added_event_decoded.unwrap();
+
+    let log_topics = log.topics();
+    let address = Address::from_slice(log_topics[1][12..].try_into().unwrap());
+
+    let chain_id = chain_added_event_decoded.chainId.to::<u64>();
 
     if let Some(gateway_data) = current_cycle_state_epoch.get_mut(&address) {
         gateway_data.req_chain_ids.insert(chain_id);
@@ -407,20 +412,22 @@ async fn process_chain_removed_event(
     log: Log,
     current_cycle_state_epoch: &mut BTreeMap<Address, GatewayData>,
 ) {
-    let address = Address::from_slice(log.topics[1][12..].try_into().unwrap());
+    let chain_removed_event_decoded = GatewaysContract::ChainRemoved::decode_log(&log.inner, true);
 
-    let decoded = decode(&vec![ParamType::Uint(256)], &log.data.0);
-
-    if decoded.is_err() {
+    if chain_removed_event_decoded.is_err() {
         error!(
-            "Failed to decode gateway registered event {}",
-            decoded.err().unwrap()
+            "Failed to decode chain removed event {}",
+            chain_removed_event_decoded.err().unwrap()
         );
         return;
     }
 
-    let decoded = decoded.unwrap();
-    let chain_id = decoded[0].clone().into_uint().unwrap().as_u64();
+    let chain_removed_event_decoded = chain_removed_event_decoded.unwrap();
+
+    let log_topics = log.topics();
+    let address = Address::from_slice(log_topics[1][12..].try_into().unwrap());
+
+    let chain_id = chain_removed_event_decoded.chainId.to::<u64>();
 
     if let Some(gateway_data) = current_cycle_state_epoch.get_mut(&address) {
         gateway_data.req_chain_ids.remove(&chain_id);

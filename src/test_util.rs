@@ -378,7 +378,7 @@ pub fn generate_generic_subscription_job(
         subscription_id: U256::from(job_id.unwrap_or(1)),
         request_chain_id: CHAIN_ID,
         subscriber: Address::from_str(SUBSCRIPTION_RELAY_CONTRACT_ADDR).unwrap(),
-        interval: U256::from(10),
+        interval: 10,
         termination_time,
         user_timeout: U256::from(100),
         tx_hash: keccak256("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e"),

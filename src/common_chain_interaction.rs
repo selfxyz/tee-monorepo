@@ -1225,8 +1225,8 @@ impl ContractsClient {
 
             let txn_data = Bytes::from(txn_data);
 
-            txn = self
-                .common_chain_txn_manager
+            txn = req_chain_data
+                .request_chain_txn_manager
                 .clone()
                 .call_contract_function(
                     req_chain_data.relay_address,
@@ -1254,8 +1254,8 @@ impl ContractsClient {
 
             let txn_data = Bytes::from(txn_data);
 
-            txn = self
-                .common_chain_txn_manager
+            txn = req_chain_data
+                .request_chain_txn_manager
                 .clone()
                 .call_contract_function(
                     req_chain_data.relay_subscriptions_address,

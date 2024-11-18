@@ -381,7 +381,6 @@ async fn export_signed_registration_message(
             enclave_owner,
             enclave_signer_key: app_state.enclave_signer_key.clone(),
             enclave_address: app_state.enclave_address,
-            gas_wallet: app_state.wallet.clone(),
             common_chain_ws_url: app_state.common_chain_ws_url.clone(),
             common_chain_http_url: app_state.common_chain_http_url.clone(),
             common_chain_txn_manager,
@@ -468,13 +467,7 @@ mod api_impl_tests {
     use std::str::FromStr;
 
     use actix_web::{body::MessageBody, http};
-    use alloy::{
-        network::EthereumWallet,
-        signers::{
-            k256::ecdsa::{RecoveryId, Signature, VerifyingKey},
-            Signer,
-        },
-    };
+    use alloy::signers::k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
     use serde_json::json;
 
     use crate::test_util::{
@@ -581,13 +574,6 @@ mod api_impl_tests {
             *app_state.enclave_owner.lock().unwrap(),
             Address::from_str(OWNER_ADDRESS).unwrap()
         );
-    }
-
-    fn wallet_from_hex(hex: &str) -> Address {
-        let signer: PrivateKeySigner = hex.parse().unwrap();
-        let signer = signer.with_chain_id(Some(CHAIN_ID));
-        let wallet = EthereumWallet::from(signer);
-        wallet.default_signer().address()
     }
 
     // Test the various response cases for the 'mutable-config' endpoint
@@ -704,6 +690,8 @@ mod api_impl_tests {
                 .unwrap()
                 .as_ref()
                 .unwrap()
+                .common_chain_txn_manager
+                .clone()
                 .gas_wallet
                 .read()
                 .await
@@ -736,6 +724,8 @@ mod api_impl_tests {
                 .unwrap()
                 .as_ref()
                 .unwrap()
+                .common_chain_txn_manager
+                .clone()
                 .gas_wallet
                 .read()
                 .await
@@ -772,6 +762,8 @@ mod api_impl_tests {
                 .unwrap()
                 .as_ref()
                 .unwrap()
+                .common_chain_txn_manager
+                .clone()
                 .gas_wallet
                 .read()
                 .await
