@@ -496,6 +496,7 @@ contract SecretManager is
         uint256 storageTimeUsage;
         for (uint256 index = 0; index < len; index++) {
             uint256 secId = storeAckSecretIds[index];
+            uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
 
             // secret terminated
             if(_signTimestamp > userStorage[secId].endTimestamp) {
@@ -510,7 +511,14 @@ contract SecretManager is
                     _refundExcessDepositAndRemoveSecret(secId);
             }
             else {
-                storageTimeUsage += ((_signTimestamp - lastAliveTimestamp) * userStorage[secId].sizeLimit);
+                uint256 ackTimestamp;
+                if(_isReplacedStore(secId, enclaveIndex))
+                    ackTimestamp = userStorage[secId].selectedEnclaves[enclaveIndex].replacedAckTimestamp;
+                else
+                    ackTimestamp = userStorage[secId].ackTimestamp;
+
+                uint256 startTimestamp = ackTimestamp > lastAliveTimestamp ? ackTimestamp : lastAliveTimestamp;
+                storageTimeUsage += ((_signTimestamp - startTimestamp) * userStorage[secId].sizeLimit);
             }
         }
 
