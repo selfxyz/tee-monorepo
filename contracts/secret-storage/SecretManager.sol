@@ -157,7 +157,7 @@ contract SecretManager is
         keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
     bytes32 private constant ALIVE_TYPEHASH =
-        keccak256("Alive(uint256 storageTimeUsage,uint256[] terminatedSecretIds,uint256 signTimestamp)");
+        keccak256("Alive(uint256 signTimestamp)");
 
     /// @notice Thrown when the signature timestamp has expired.
     error SecretManagerSignatureTooOld();
@@ -479,47 +479,54 @@ contract SecretManager is
     }
 
     function _markStoreAlive(
-        uint256 _storageTimeUsage,
-        uint256[] memory _terminatedSecretIds, // secrets for which the endTimestamp has passed after the last alive check
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal {
-        address enclaveAddress = _verifyStoreAliveSign(_storageTimeUsage, _terminatedSecretIds, _signTimestamp, _signature);
+        address enclaveAddress = _verifyStoreAliveSign(_signTimestamp, _signature);
         if(_signTimestamp <= SECRET_STORE.getSecretStoreDeadTimestamp(enclaveAddress))
             revert SecretManagerSignatureTooOld();
 
         address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
+        uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
         // TODO: slash the store for missed epochs - ((_signTimestamp - lastAliveTimestamp) / MARK_ALIVE_TIMESTAMP)
         SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
 
-        for (uint256 index = 0; index < _terminatedSecretIds.length; index++) {
-            uint256 secId = _terminatedSecretIds[index];
-            uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
-            SECRET_STORE.releaseEnclave(enclaveAddress, userStorage[secId].sizeLimit, secId);
+        uint256[] memory storeAckSecretIds = SECRET_STORE.getStoreAckSecretIds(enclaveAddress);
+        uint256 len = storeAckSecretIds.length;
+        uint256 storageTimeUsage;
+        for (uint256 index = 0; index < len; index++) {
+            uint256 secId = storeAckSecretIds[index];
 
-            _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
+            // secret terminated
+            if(_signTimestamp > userStorage[secId].endTimestamp) {
+                uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
+                SECRET_STORE.releaseEnclave(enclaveAddress, userStorage[secId].sizeLimit, secId);
 
-            _removeSelectedEnclave(secId, enclaveIndex);
+                _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
 
-            if(userStorage[secId].selectedEnclaves.length == 0)
-                _refundExcessDepositAndRemoveSecret(secId);
+                _removeSelectedEnclave(secId, enclaveIndex);
+
+                if(userStorage[secId].selectedEnclaves.length == 0)
+                    _refundExcessDepositAndRemoveSecret(secId);
+            }
+            else {
+                storageTimeUsage += ((_signTimestamp - lastAliveTimestamp) * userStorage[secId].sizeLimit);
+            }
         }
 
-        uint256 usdcPayment = _storageTimeUsage * SECRET_STORE_FEE_RATE;
+        uint256 usdcPayment = storageTimeUsage * SECRET_STORE_FEE_RATE;
         USDC_TOKEN.safeTransfer(owner, usdcPayment);
 
         emit SecretStoreAlive(enclaveAddress);
     }
 
     function _verifyStoreAliveSign(
-        uint256 _storageTimeUsage,
-        uint256[] memory _terminatedSecretIds,
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal view returns(address signer) {
         _checkSignValidity(_signTimestamp);
 
-        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _storageTimeUsage, keccak256(abi.encodePacked(_terminatedSecretIds)), _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(ALIVE_TYPEHASH, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
@@ -719,12 +726,10 @@ contract SecretManager is
     }
 
     function markStoreAlive(
-        uint256 _storageTimeUsage,
-        uint256[] memory _terminatedSecretIds,
         uint256 _signTimestamp,
         bytes memory _signature
     ) external {
-        _markStoreAlive(_storageTimeUsage, _terminatedSecretIds, _signTimestamp, _signature);
+        _markStoreAlive(_signTimestamp, _signature);
     }
 
     function markStoreDead(
