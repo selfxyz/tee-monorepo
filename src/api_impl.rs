@@ -161,7 +161,7 @@ async fn export_signed_registration_message(
         .into_iter()
         .map(|&x| DynSolValue::Uint(U256::from(x), 256))
         .collect::<Vec<DynSolValue>>();
-    let chain_ids_bytes = keccak256(DynSolValue::Array(chain_ids_tokens).abi_encode());
+    let chain_ids_bytes = keccak256(DynSolValue::Array(chain_ids_tokens).abi_encode_packed());
 
     let hash_struct = keccak256(
         DynSolValue::Tuple(vec![
