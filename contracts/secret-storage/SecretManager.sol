@@ -500,7 +500,6 @@ contract SecretManager is
 
             // secret terminated
             if(_signTimestamp > userStorage[secId].endTimestamp) {
-                uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
                 SECRET_STORE.releaseEnclave(enclaveAddress, userStorage[secId].sizeLimit, secId);
 
                 _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
