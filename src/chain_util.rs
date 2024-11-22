@@ -256,8 +256,6 @@ pub fn sign_relay_job_request(
         .abi_encode_packed(),
     );
 
-    let digest = keccak256(digest);
-
     let sig = signer_key.sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
         error!("Failed to sign the digest: {:#?}", sig.err());
@@ -316,8 +314,6 @@ pub fn sign_reassign_gateway_relay_request(
         ])
         .abi_encode_packed(),
     );
-
-    let digest = keccak256(digest);
 
     // Sign the digest using enclave key
     let sig = signer_key.sign_prehash_recoverable(&digest.to_vec());
@@ -386,8 +382,6 @@ pub fn sign_job_response_request(
         ])
         .abi_encode_packed(),
     );
-
-    let digest = keccak256(digest);
 
     // Sign the digest using enclave key
     let sig = signer_key.sign_prehash_recoverable(&digest.to_vec());

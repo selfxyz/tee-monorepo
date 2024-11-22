@@ -1,7 +1,7 @@
 use actix_web::web::Data;
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex::FromHex;
-use alloy::primitives::{keccak256, Address, Bytes, U256, U8};
+use alloy::primitives::{keccak256, Address, Bytes, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy::pubsub::{PubSubFrontend, SubscriptionStream};
 use alloy::rpc::types::{Filter, Log};
@@ -60,9 +60,9 @@ impl ContractsClient {
         let common_chain_registered_filter = Filter::new()
             .address(self.gateways_contract_address)
             .select(common_chain_block_number..)
-            .event_signature(vec![keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT)])
-            .topic1(vec![keccak256(self.enclave_address)])
-            .topic2(vec![keccak256(self.enclave_owner)]);
+            .event(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT)
+            .topic1(B256::from(self.enclave_address.into_word()))
+            .topic2(B256::from(self.enclave_owner.into_word()));
 
         let tx_clone = tx.clone();
         let self_clone = Arc::clone(&self);
@@ -121,9 +121,9 @@ impl ContractsClient {
             let request_chain_registered_filter = Filter::new()
                 .address(request_chain_data.relay_address)
                 .select(request_chain_data.request_chain_start_block_number..)
-                .event_signature(vec![keccak256(REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT)])
-                .topic1(vec![keccak256(self.enclave_owner)])
-                .topic2(vec![keccak256(self.enclave_address)]);
+                .event(REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT)
+                .topic1(B256::from(self.enclave_owner.into_word()))
+                .topic2(B256::from(self.enclave_address.into_word()));
 
             let tx_clone = tx.clone();
             let request_chain_data_clone = request_chain_data.clone();
@@ -465,7 +465,7 @@ impl ContractsClient {
 
         let job_topics = log.topics();
         let job_id: U256 = U256::from_be_slice(job_topics[1].as_slice());
-        let env: u8 = U8::from_be_slice(job_topics[2].as_slice()).to::<u8>();
+        let env: u8 = U256::from_be_slice(job_topics[2].as_slice()).to::<u8>();
 
         Ok(Job {
             job_id,
@@ -573,7 +573,7 @@ impl ContractsClient {
                 let decoded = common_chain_job_relayed_event_decoded.unwrap();
 
                 let job_id = U256::from_be_slice(topics[1].as_slice());
-                let env = U8::from_be_slice(topics[2].as_slice()).to::<u8>();
+                let env = U256::from_be_slice(topics[2].as_slice()).to::<u8>();
                 let job_owner = decoded.jobOwner;
                 let gateway_operator = decoded.gateway;
 
@@ -1291,10 +1291,10 @@ impl LogsProvider for ContractsClient {
         let event_filter: Filter = Filter::new()
             .address(self.gateway_jobs_contract_address)
             .select(common_chain_start_block_number..)
-            .event_signature(vec![
-                keccak256(COMMON_CHAIN_JOB_RESPONDED_EVENT),
-                keccak256(COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT),
-                keccak256(COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT),
+            .events(vec![
+                COMMON_CHAIN_JOB_RESPONDED_EVENT,
+                COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT,
+                COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT,
             ]);
 
         let subscription = common_chain_ws_provider
@@ -1323,12 +1323,12 @@ impl LogsProvider for ContractsClient {
                 req_chain_client.relay_subscriptions_address,
             ])
             .select(req_chain_client.request_chain_start_block_number..)
-            .event_signature(vec![
-                keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT),
-                keccak256(REQUEST_CHAIN_JOB_CANCELLED_EVENT),
-                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
-                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
-                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
+            .events(vec![
+                REQUEST_CHAIN_JOB_RELAYED_EVENT,
+                REQUEST_CHAIN_JOB_CANCELLED_EVENT,
+                REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+                REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+                REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT,
             ]);
 
         // register subscription
@@ -1367,8 +1367,8 @@ impl LogsProvider for ContractsClient {
         let job_relayed_event_filter = Filter::new()
             .address(self.gateway_jobs_contract_address)
             .select(common_chain_start_block_number..)
-            .event_signature(vec![keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT)])
-            .topic1(job.job_id);
+            .event(COMMON_CHAIN_JOB_RELAYED_EVENT)
+            .topic1(B256::from(job.job_id));
 
         let logs = common_chain_http_provider
             .get_logs(&job_relayed_event_filter)
@@ -1386,10 +1386,10 @@ impl LogsProvider for ContractsClient {
         let event_filter = Filter::new()
             .address(req_chain_data.relay_subscriptions_address)
             .select(req_chain_data.request_chain_start_block_number - 1..)
-            .event_signature(vec![
-                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT),
-                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT),
-                keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT),
+            .events(vec![
+                REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
+                REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+                REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT,
             ]);
 
         let logs = http_provider.get_logs(&event_filter).await.unwrap();

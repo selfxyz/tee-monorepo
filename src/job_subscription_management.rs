@@ -1,5 +1,5 @@
 use alloy::{
-    primitives::{keccak256, Address, U256, U8},
+    primitives::{keccak256, Address, U256},
     rpc::types::Log,
     sol_types::SolEvent,
 };
@@ -288,7 +288,7 @@ pub fn add_subscription_job(
         tx_hash: decoded.codehash,
         code_input: decoded.codeInputs.clone(),
         starttime: decoded.startTime.to::<u64>(),
-        env: U8::from_be_slice(&subscription_job_topics[2].as_slice()).to::<u8>(),
+        env: U256::from_be_slice(&subscription_job_topics[2].as_slice()).to::<u8>(),
     };
 
     let current_timestamp = SystemTime::now()

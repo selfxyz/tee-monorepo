@@ -268,11 +268,11 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         .address(contract_address)
         .from_block(from_block_number)
         .to_block(to_block_number)
-        .event_signature(vec![
-            keccak256(COMMON_CHAIN_GATEWAY_REGISTERED_EVENT),
-            keccak256(COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT),
-            keccak256(COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT),
-            keccak256(COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT),
+        .events(vec![
+            COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
+            COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT,
+            COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT,
+            COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT,
         ]);
 
     let logs = provider
