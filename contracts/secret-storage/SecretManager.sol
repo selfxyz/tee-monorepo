@@ -316,12 +316,19 @@ contract SecretManager is
             revert SecretManagerAlreadyAcknowledged();
 
         userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore = true;
-        SECRET_STORE.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[enclaveIndex].enclaveAddress, _secretId);
 
-        if(_isReplacedStore(_secretId, enclaveIndex))
+        // Add secretId to the ackSecretIds list only when the secret has been acknowledged by the first set of selected stores
+        if(_isReplacedStore(_secretId, enclaveIndex)) {
             userStorage[_secretId].selectedEnclaves[enclaveIndex].replacedAckTimestamp = _signTimestamp;
-        else if(_checkIfSecretAcknowledged(_secretId))
+            SECRET_STORE.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[enclaveIndex].enclaveAddress, _secretId);
+        }
+        else if(_checkIfSecretAcknowledged(_secretId)) {
             userStorage[_secretId].ackTimestamp = _signTimestamp;
+            uint256 len = userStorage[_secretId].selectedEnclaves.length;
+            for (uint256 index = 0; index < len; index++) {
+                SECRET_STORE.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[enclaveIndex].enclaveAddress, _secretId);
+            }
+        }
 
         emit SecretStoreAcknowledgementSuccess(_secretId, enclaveAddress);
     }
@@ -380,7 +387,7 @@ contract SecretManager is
                     !userStoreData.selectedEnclaves[index].hasAcknowledgedStore &&
                     block.timestamp > userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT
                 ) {
-                    SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit, _secretId);
+                    SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
 
                     reselectedAckFailed = true;
                     bool isArrayLenReduced = _replaceStore(_secretId, enclaveAddress, index, false);
@@ -394,7 +401,7 @@ contract SecretManager is
                 if (!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
                     ackFailed = true;
 
-                SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit, _secretId);
+                SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
             }
             ++index;
         }
@@ -489,7 +496,7 @@ contract SecretManager is
         address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
         uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
         // TODO: slash the store for missed epochs - ((_signTimestamp - lastAliveTimestamp) / MARK_ALIVE_TIMESTAMP)
-        SECRET_STORE.updateLastAliveTimestamp(enclaveAddress, _signTimestamp);
+        SECRET_STORE.markAliveUpdate(enclaveAddress, _signTimestamp, MARK_ALIVE_TIMEOUT, STAKING_PAYMENT_POOL);
 
         uint256[] memory storeAckSecretIds = SECRET_STORE.getStoreAckSecretIds(enclaveAddress);
         uint256 len = storeAckSecretIds.length;
@@ -500,7 +507,7 @@ contract SecretManager is
 
             // secret terminated
             if(_signTimestamp > userStorage[secId].endTimestamp) {
-                SECRET_STORE.releaseEnclave(enclaveAddress, userStorage[secId].sizeLimit, secId);
+                SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[secId].sizeLimit, secId);
 
                 _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
 
@@ -550,10 +557,14 @@ contract SecretManager is
 
         uint256[] memory storeAckSecretIds = SECRET_STORE.getStoreAckSecretIds(_enclaveAddress);
         uint256 len = storeAckSecretIds.length;
-        for (uint256 index = 0; index < len; index++)
-            _markEnclaveDead(storeAckSecretIds[index], _enclaveAddress);
+        uint256 occupiedStorage;
+        for (uint256 index = 0; index < len; index++) {
+            uint256 secId = storeAckSecretIds[index];
+            occupiedStorage += userStorage[secId].sizeLimit;
+            _markEnclaveDead(secId, _enclaveAddress);
+        }
 
-        SECRET_STORE.updateDeadTimestamp(_enclaveAddress, block.timestamp);
+        SECRET_STORE.markDeadUpdate(_enclaveAddress, block.timestamp, MARK_ALIVE_TIMEOUT, occupiedStorage, STAKING_PAYMENT_POOL);
     }
 
     function _markEnclaveDead(
@@ -561,16 +572,12 @@ contract SecretManager is
         address _enclaveAddress
     ) internal {
         uint256 enclaveIndex = _getSelectedEnclaveIndex(_secretId, _enclaveAddress);
-        if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore || userStorage[_secretId].ackTimestamp == 0)
-            return;
+        // if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore || userStorage[_secretId].ackTimestamp == 0)
+        //     return;
 
         _updateUsdcDepositPostPayment(_secretId, _enclaveAddress, enclaveIndex);
 
-        uint256 sizeLimit = userStorage[_secretId].sizeLimit;
         _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
-
-        // TODO: slash prev enclave(who's recipient)
-        SECRET_STORE.slashEnclave(_enclaveAddress, sizeLimit, STAKING_PAYMENT_POOL, _secretId);
     }
 
     /**
@@ -697,9 +704,7 @@ contract SecretManager is
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
             _updateUsdcDepositPostPayment(_secretId, enclaveAddress, index);
 
-            // TODO: shall we slash or release here?
-            SECRET_STORE.slashEnclave(enclaveAddress, userStorage[_secretId].sizeLimit, STAKING_PAYMENT_POOL, _secretId);
-            // TODO: should we update lastTimestamp here? then how do we can call markStoreDead for remining secretIds?
+            SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[_secretId].sizeLimit, _secretId);
         }
         _refundExcessDepositAndRemoveSecret(_secretId);
 

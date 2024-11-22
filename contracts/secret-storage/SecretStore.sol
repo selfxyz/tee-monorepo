@@ -516,23 +516,26 @@ contract SecretStore is
 
     function _slashEnclave(
         address _enclaveAddress,
-        uint256 _sizeLimit,
-        address _recipient,
-        uint256 _secretId
-    ) internal returns (uint256) {
-        uint256 totalComp = (secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
-        secretStorage[_enclaveAddress].stakeAmount -= totalComp;
+        uint256 _endTimestamp,
+        uint256 _markAliveTimeout,
+        address _recipient
+    ) internal {
+        uint256 lastAliveTimestamp = secretStorage[_enclaveAddress].lastAliveTimestamp;
+        uint256 deadTimestamp = secretStorage[_enclaveAddress].deadTimestamp;
+        uint256 lastCheckTimestamp = (lastAliveTimestamp > deadTimestamp) ? lastAliveTimestamp : deadTimestamp;
+        uint256 missedEpochsCount = (_endTimestamp - lastCheckTimestamp) / _markAliveTimeout;
 
-        STAKING_TOKEN.safeTransfer(_recipient, totalComp);
+        if(missedEpochsCount > 0) {
+            uint256 totalComp = (missedEpochsCount * secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
+            secretStorage[_enclaveAddress].stakeAmount -= totalComp;
 
-        _releaseEnclave(_enclaveAddress, _sizeLimit, _secretId);
-        return totalComp;
+            STAKING_TOKEN.safeTransfer(_recipient, totalComp);
+        }
     }
 
     function _releaseEnclave(
         address _enclaveAddress,
-        uint256 _sizeLimit,
-        uint256 _secretId
+        uint256 _sizeLimit
     ) internal {
         if (!secretStorage[_enclaveAddress].draining) {
             // node might have been deleted due to max job capacity reached
@@ -544,7 +547,6 @@ contract SecretStore is
         }
 
         secretStorage[_enclaveAddress].storageOccupied -= _sizeLimit;
-        _removeStoreSecretId(_enclaveAddress, _secretId);
     }
 
     function _removeStoreSecretId(
@@ -562,6 +564,39 @@ contract SecretStore is
         }
     }
 
+    function _markAliveUpdate(
+        address _enclaveAddress,
+        uint256 _endTimestamp,
+        uint256 _markAliveTimeout,
+        address _recipient
+    ) internal {
+        _slashEnclave(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
+        secretStorage[_enclaveAddress].lastAliveTimestamp = _endTimestamp;
+    }
+
+    function _markDeadUpdate(
+        address _enclaveAddress,
+        uint256 _endTimestamp,
+        uint256 _markAliveTimeout,
+        uint256 _storageOccupied,
+        address _recipient
+    ) internal {
+        _slashEnclave(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
+        secretStorage[_enclaveAddress].deadTimestamp = _endTimestamp;
+
+        _releaseEnclave(_enclaveAddress, _storageOccupied);
+        delete secretStorage[_enclaveAddress].ackSecretIds;
+    }
+
+    function _secretTerminationUpdate(
+        address _enclaveAddress,
+        uint256 _sizeLimit,
+        uint256 _secretId
+    ) internal {
+        _releaseEnclave(_enclaveAddress, _sizeLimit);
+        _removeStoreSecretId(_enclaveAddress, _secretId);
+    }
+
     //-------------------------------- internal functions end ----------------------------------//
 
     //-------------------------------- external functions start ----------------------------------//
@@ -575,19 +610,45 @@ contract SecretStore is
 
     function slashEnclave(
         address _enclaveAddress,
-        uint256 _sizeLimit,
-        address _recipient,
-        uint256 _secretId
-    ) external onlyRole(SECRET_MANAGER_ROLE) returns (uint256) {
-        return _slashEnclave(_enclaveAddress, _sizeLimit, _recipient, _secretId);
+        uint256 _endTimestamp,
+        uint256 _markAliveTimeout,
+        address _recipient
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        _slashEnclave(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
     }
 
     function releaseEnclave(
         address _enclaveAddress,
+        uint256 _sizeLimit
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        _releaseEnclave(_enclaveAddress, _sizeLimit);
+    }
+
+    function markAliveUpdate(
+        address _enclaveAddress,
+        uint256 _endTimestamp,
+        uint256 _markAliveTimeout,
+        address _recipient
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        _markAliveUpdate(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
+    }
+
+    function markDeadUpdate(
+        address _enclaveAddress,
+        uint256 _endTimestamp,
+        uint256 _markAliveTimeout,
+        uint256 _storageOccupied,
+        address _recipient
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        _markDeadUpdate(_enclaveAddress, _endTimestamp, _markAliveTimeout, _storageOccupied, _recipient);
+    }
+
+    function secretTerminationUpdate(
+        address _enclaveAddress,
         uint256 _sizeLimit,
         uint256 _secretId
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _releaseEnclave(_enclaveAddress, _sizeLimit, _secretId);
+        _secretTerminationUpdate(_enclaveAddress, _sizeLimit, _secretId);
     }
 
     function getSecretStoreOwner(address _enclaveAddress) external view returns (address) {
@@ -598,22 +659,8 @@ contract SecretStore is
         return secretStorage[_enclaveAddress].lastAliveTimestamp;
     }
 
-    function updateLastAliveTimestamp(
-        address _enclaveAddress,
-        uint256 _lastAliveTimestamp
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        secretStorage[_enclaveAddress].lastAliveTimestamp = _lastAliveTimestamp;
-    }
-
     function getSecretStoreDeadTimestamp(address _enclaveAddress) external view returns (uint256) {
         return secretStorage[_enclaveAddress].deadTimestamp;
-    }
-
-    function updateDeadTimestamp(
-        address _enclaveAddress,
-        uint256 _deadTimestamp
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        secretStorage[_enclaveAddress].deadTimestamp = _deadTimestamp;
     }
 
     function getStoreAckSecretIds(address _enclaveAddress) external view returns (uint256[] memory) {
