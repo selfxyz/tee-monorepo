@@ -516,20 +516,23 @@ contract SecretStore is
 
     function _slashEnclave(
         address _enclaveAddress,
-        uint256 _endTimestamp,
+        uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         address _recipient
     ) internal {
         uint256 lastAliveTimestamp = secretStorage[_enclaveAddress].lastAliveTimestamp;
         uint256 deadTimestamp = secretStorage[_enclaveAddress].deadTimestamp;
         uint256 lastCheckTimestamp = (lastAliveTimestamp > deadTimestamp) ? lastAliveTimestamp : deadTimestamp;
-        uint256 missedEpochsCount = (_endTimestamp - lastCheckTimestamp) / _markAliveTimeout;
+        uint256 missedEpochsCount = (_currentCheckTimestamp - lastCheckTimestamp) / _markAliveTimeout;
 
         if(missedEpochsCount > 0) {
-            uint256 totalComp = (missedEpochsCount * secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
-            secretStorage[_enclaveAddress].stakeAmount -= totalComp;
+            uint256 stakeAmount = secretStorage[_enclaveAddress].stakeAmount;
+            // compounding slashing formula: remainingStakeAmount = stakeAmount * (1 - (r/100)) ^ n
+            uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** missedEpochsCount) / (SLASH_MAX_BIPS ** missedEpochsCount);
+            uint256 slashAmount = stakeAmount - remainingStakeAmount;
+            secretStorage[_enclaveAddress].stakeAmount = remainingStakeAmount;
 
-            STAKING_TOKEN.safeTransfer(_recipient, totalComp);
+            STAKING_TOKEN.safeTransfer(_recipient, slashAmount);
         }
     }
 
@@ -566,23 +569,23 @@ contract SecretStore is
 
     function _markAliveUpdate(
         address _enclaveAddress,
-        uint256 _endTimestamp,
+        uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         address _recipient
     ) internal {
-        _slashEnclave(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
-        secretStorage[_enclaveAddress].lastAliveTimestamp = _endTimestamp;
+        _slashEnclave(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
+        secretStorage[_enclaveAddress].lastAliveTimestamp = _currentCheckTimestamp;
     }
 
     function _markDeadUpdate(
         address _enclaveAddress,
-        uint256 _endTimestamp,
+        uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         uint256 _storageOccupied,
         address _recipient
     ) internal {
-        _slashEnclave(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
-        secretStorage[_enclaveAddress].deadTimestamp = _endTimestamp;
+        _slashEnclave(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
+        secretStorage[_enclaveAddress].deadTimestamp = _currentCheckTimestamp;
 
         _releaseEnclave(_enclaveAddress, _storageOccupied);
         delete secretStorage[_enclaveAddress].ackSecretIds;
@@ -610,11 +613,11 @@ contract SecretStore is
 
     function slashEnclave(
         address _enclaveAddress,
-        uint256 _endTimestamp,
+        uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         address _recipient
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _slashEnclave(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
+        _slashEnclave(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
     }
 
     function releaseEnclave(
@@ -626,21 +629,21 @@ contract SecretStore is
 
     function markAliveUpdate(
         address _enclaveAddress,
-        uint256 _endTimestamp,
+        uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         address _recipient
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _markAliveUpdate(_enclaveAddress, _endTimestamp, _markAliveTimeout, _recipient);
+        _markAliveUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
     }
 
     function markDeadUpdate(
         address _enclaveAddress,
-        uint256 _endTimestamp,
+        uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         uint256 _storageOccupied,
         address _recipient
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _markDeadUpdate(_enclaveAddress, _endTimestamp, _markAliveTimeout, _storageOccupied, _recipient);
+        _markDeadUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _storageOccupied, _recipient);
     }
 
     function secretTerminationUpdate(

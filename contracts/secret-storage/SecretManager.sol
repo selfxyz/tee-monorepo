@@ -326,7 +326,7 @@ contract SecretManager is
             userStorage[_secretId].ackTimestamp = _signTimestamp;
             uint256 len = userStorage[_secretId].selectedEnclaves.length;
             for (uint256 index = 0; index < len; index++) {
-                SECRET_STORE.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[enclaveIndex].enclaveAddress, _secretId);
+                SECRET_STORE.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, _secretId);
             }
         }
 
