@@ -786,6 +786,11 @@ impl ContractsClient {
                 "Failed to submit transaction for relayJob: {:?}",
                 txn.err().unwrap()
             );
+        } else {
+            info!(
+                "Transaction submitted for relayJob for Job ID: {:?}",
+                job.job_id
+            );
         }
     }
 
@@ -838,6 +843,11 @@ impl ContractsClient {
             error!(
                 "Failed to submit transaction for reassignGatewayRelay: {:?}",
                 txn.err().unwrap()
+            );
+        } else {
+            info!(
+                "Transaction submitted for reassignGatewayRelay for Job ID: {:?}",
+                job.job_id
             );
         }
     }
@@ -1269,6 +1279,11 @@ impl ContractsClient {
             error!(
                 "Failed to submit transaction for jobResponse: {:?}",
                 txn.err().unwrap()
+            );
+        } else {
+            info!(
+                "Transaction submitted for jobResponse for Job ID: {:?}",
+                response_job.job_id
             );
         }
     }

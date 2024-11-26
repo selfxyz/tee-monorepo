@@ -105,7 +105,7 @@ pub async fn get_block_number_by_timestamp(
 
     'less_than_block_number: while block_number > 0 {
         let block = provider
-            .get_block(block_number.into(), BlockTransactionsKind::Full)
+            .get_block(block_number.into(), BlockTransactionsKind::Hashes)
             .await;
         if block.is_err() {
             error!(
@@ -129,7 +129,7 @@ pub async fn get_block_number_by_timestamp(
             let mut retry_on_error = 0;
             'next_block_check: loop {
                 let next_block_result = provider
-                    .get_block(next_block_number.into(), BlockTransactionsKind::Full)
+                    .get_block(next_block_number.into(), BlockTransactionsKind::Hashes)
                     .await;
 
                 match next_block_result {
