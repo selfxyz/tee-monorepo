@@ -756,8 +756,8 @@ impl ContractsClient {
             DynSolValue::Bytes(job.code_input.to_vec()),
             DynSolValue::Uint(job.user_timeout, 256),
             DynSolValue::Uint(U256::from(job.starttime), 256),
-            DynSolValue::Uint(U256::from(1), 8),
-            DynSolValue::Address(self.enclave_address),
+            DynSolValue::Uint(U256::from(job.sequence_number), 8),
+            DynSolValue::Address(job.job_owner),
             DynSolValue::Uint(U256::from(job.env), 8),
             DynSolValue::Uint(U256::from(sign_timestamp), 256),
         ])
