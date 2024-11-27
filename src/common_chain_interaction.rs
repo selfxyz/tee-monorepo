@@ -1435,7 +1435,7 @@ mod common_chain_interaction_tests {
                 address: Address::from_str(RELAY_CONTRACT_ADDR).unwrap(),
                 data: LogData::new_unchecked(
                     vec![
-                        keccak256(COMMON_CHAIN_JOB_RELAYED_EVENT).into(),
+                        keccak256(REQUEST_CHAIN_JOB_RELAYED_EVENT).into(),
                         job_id.into(),
                         U256::from(1).into(),
                     ],
