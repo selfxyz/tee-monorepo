@@ -505,9 +505,19 @@ contract SecretManager is
             uint256 secId = storeAckSecretIds[index];
             uint256 enclaveIndex = _getSelectedEnclaveIndex(secId, enclaveAddress);
 
+            uint256 ackTimestamp;
+            if(_isReplacedStore(secId, enclaveIndex))
+                ackTimestamp = userStorage[secId].selectedEnclaves[enclaveIndex].replacedAckTimestamp;
+            else
+                ackTimestamp = userStorage[secId].ackTimestamp;
+
+            uint256 startTimestamp = ackTimestamp > lastAliveTimestamp ? ackTimestamp : lastAliveTimestamp;
+            uint256 endTimestamp = userStorage[secId].endTimestamp;
+            uint256 sizeLimit = userStorage[secId].sizeLimit;
+
             // secret terminated
-            if(_signTimestamp > userStorage[secId].endTimestamp) {
-                SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[secId].sizeLimit, secId);
+            if(_signTimestamp > endTimestamp) {
+                SECRET_STORE.secretTerminationUpdate(enclaveAddress, sizeLimit, secId);
 
                 _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
 
@@ -516,16 +526,10 @@ contract SecretManager is
                 if(userStorage[secId].selectedEnclaves.length == 0)
                     _refundExcessDepositAndRemoveSecret(secId);
             }
-            else {
-                uint256 ackTimestamp;
-                if(_isReplacedStore(secId, enclaveIndex))
-                    ackTimestamp = userStorage[secId].selectedEnclaves[enclaveIndex].replacedAckTimestamp;
-                else
-                    ackTimestamp = userStorage[secId].ackTimestamp;
+            else
+                endTimestamp = _signTimestamp;
 
-                uint256 startTimestamp = ackTimestamp > lastAliveTimestamp ? ackTimestamp : lastAliveTimestamp;
-                storageTimeUsage += ((_signTimestamp - startTimestamp) * userStorage[secId].sizeLimit);
-            }
+            storageTimeUsage += ((endTimestamp - startTimestamp) * sizeLimit);
         }
 
         uint256 usdcPayment = storageTimeUsage * SECRET_STORE_FEE_RATE;
