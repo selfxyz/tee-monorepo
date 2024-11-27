@@ -276,7 +276,7 @@ pub fn add_subscription_job(
     let decoded = job_subscription_started_event_decoded.unwrap();
 
     let subscription_job_topics = subscription_log.topics();
-    let subscriber = Address::from_slice(&subscription_job_topics[3].as_slice());
+    let subscriber = Address::from_slice(&subscription_job_topics[3].as_slice()[12..]);
 
     let subscription_job = SubscriptionJob {
         subscription_id: U256::from_be_slice(&subscription_job_topics[1].as_slice()),
