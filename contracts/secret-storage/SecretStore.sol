@@ -611,15 +611,6 @@ contract SecretStore is
         return _selectEnclaves(_noOfNodesToSelect, _sizeLimit);
     }
 
-    function slashEnclave(
-        address _enclaveAddress,
-        uint256 _currentCheckTimestamp,
-        uint256 _markAliveTimeout,
-        address _recipient
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _slashEnclave(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
-    }
-
     function releaseEnclave(
         address _enclaveAddress,
         uint256 _sizeLimit

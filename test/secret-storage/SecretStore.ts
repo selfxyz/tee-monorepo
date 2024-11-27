@@ -1,6 +1,6 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Pond, SecretStore } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
@@ -1000,7 +1000,7 @@ describe("SecretStore - Drain/Revive secret store", function () {
     });
 });
 
-describe("SecretStore - Select/Release/Slash", function () {
+describe("SecretStore - Select/Release", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -1123,29 +1123,6 @@ describe("SecretStore - Select/Release/Slash", function () {
         expect(secretStorage.storageOccupied).to.be.eq(0);
     });
 
-    it("low stakes while releasing secret store", async function () {
-        // Select one enclave
-        await secretStore.selectEnclaves(1, 100);
-
-        // Check storage occpied to be max(=100)
-        let secretStorage = await secretStore.secretStorage(addrs[15]);
-        expect(secretStorage.storageOccupied).to.be.eq(100);
-
-        // Slash Enclave (enclave will be released within slashEnclave)
-        await secretStore.connect(signers[0]).slashEnclave(addrs[15], 100, addrs[2]);
-
-        // Check storage occupied to be 0
-        secretStorage = await secretStore.secretStorage(addrs[15]);
-        expect(secretStorage.storageOccupied).to.be.eq(0);
-
-        // Select one enclave
-        await secretStore.selectEnclaves(1, 100);
-
-        // Check storage occupied to be 0
-        secretStorage = await secretStore.secretStorage(addrs[15]);
-        expect(secretStorage.storageOccupied).to.be.eq(0);
-    });
-
     it("cannot release secret store without SECRET_MANAGER_ROLE", async function () {
         await expect(secretStore.connect(signers[1]).releaseEnclave(addrs[15], 100))
             .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
@@ -1153,11 +1130,6 @@ describe("SecretStore - Select/Release/Slash", function () {
 
     it("cannot select secret store without SECRET_MANAGER_ROLE", async function () {
         await expect(secretStore.connect(signers[1]).selectEnclaves(1, 100))
-            .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
-    });
-
-    it("cannot slash secret store without SECRET_MANAGER_ROLE", async function () {
-        await expect(secretStore.connect(signers[1]).slashEnclave(addrs[15], 100, addrs[2]))
             .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
     });
 });
@@ -1200,7 +1172,7 @@ describe("SecretStore - Other only secret manager functions", function () {
                     attestationVerifier.target,
                     600,
                     token.target,
-                    10,
+                    parseUnits("10"),   // min stake = 10 POND
                     10 ** 2,
                     10 ** 6,
                     1
@@ -1236,17 +1208,6 @@ describe("SecretStore - Other only secret manager functions", function () {
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-    it("can update last alive timestamp", async function () {
-        await secretStore.updateLastAliveTimestamp(addrs[0], 10);
-        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[0])).to.eq(10);
-    });
-
-    it('cannot update last alive timestamp without secret manager role account', async function () {
-        await expect(secretStore.connect(signers[1]).updateLastAliveTimestamp(addrs[0], 10))
-            .to.be.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
-        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[0])).to.eq(0);
-    });
-
     it("can add tree nodes", async function () {
         await secretStore.addTreeNodes([addrs[15]]);
         expect(await secretStore.nodesInTree(1)).to.eq(2);
@@ -1265,6 +1226,119 @@ describe("SecretStore - Other only secret manager functions", function () {
     it("cannot delete tree nodes without secret manager role account", async function () {
         await expect(secretStore.connect(signers[1]).deleteTreeNodes([addrs[15]]))
             .to.be.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+
+    it("can add acknowledged secretId to ackSecretIds list", async function () {
+        // Select one enclave
+        let secretId = 1;
+        await expect(secretStore.addAckSecretIdToStore(addrs[15], secretId))
+            .to.not.be.reverted;
+
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([1n]);
+    });
+
+    it("cannot add ack secretId to ackSecretIds list without SECRET_MANAGER_ROLE", async function () {
+        await expect(secretStore.connect(signers[1]).addAckSecretIdToStore(addrs[15], 1))
+            .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+
+    it("can do mark alive updates", async function () {
+        // Select one enclave
+        await secretStore.selectEnclaves(1, 100);
+
+        let currentCheckTimestamp = await time.latest();
+        await expect(secretStore.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, addrs[2]))
+            .to.not.be.reverted;
+
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+    });
+
+    it("can do mark alive updates with slashing", async function () {
+        // Select one enclave
+        await secretStore.selectEnclaves(1, 100);
+
+        let stakingPoolInitialBal = await token.balanceOf(addrs[2]);
+        await time.increase(510);
+        let currentCheckTimestamp = await time.latest();
+        await expect(secretStore.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, addrs[2]))
+            .to.not.be.reverted;
+
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+        let stakingPoolFinalBal = await token.balanceOf(addrs[2]),
+            stakeAmount = 10n ** 19n,
+            slashedAmount = stakeAmount * 100n / 1000000n;
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+    });
+
+    it("cannot do mark alive updates without SECRET_MANAGER_ROLE", async function () {
+        await expect(secretStore.connect(signers[1]).markAliveUpdate(addrs[15], await time.latest(), 500, addrs[2]))
+            .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+
+    it("can do mark dead updates", async function () {
+        // Select one enclave
+        let sizeLimit = 100;
+        await secretStore.selectEnclaves(1, sizeLimit);
+
+        let currentCheckTimestamp = await time.latest();
+        await expect(secretStore.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, sizeLimit, addrs[2]))
+            .to.not.be.reverted;
+
+        expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+        expect((await secretStore.secretStorage(addrs[15])).storageOccupied).to.be.eq(0);
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+    });
+
+    it("can do mark dead updates with slashing", async function () {
+        // Select one enclave
+        let sizeLimit = 100;
+        await secretStore.selectEnclaves(1, sizeLimit);
+
+        let stakingPoolInitialBal = await token.balanceOf(addrs[2]);
+        await time.increase(1010);  // 2 epochs passed
+        let lastAliveTimestamp = await secretStore.getSecretStoreLastAliveTimestamp(addrs[15]),
+            currentCheckTimestamp = BigInt(await time.latest()),
+            markAliveTimeout = 500n;
+        await expect(secretStore.markDeadUpdate(addrs[15], currentCheckTimestamp, markAliveTimeout, sizeLimit, addrs[2]))
+            .to.not.be.reverted;
+
+        expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+        expect((await secretStore.secretStorage(addrs[15])).storageOccupied).to.be.eq(0);
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        let missedEpochsCount = (currentCheckTimestamp - lastAliveTimestamp) / markAliveTimeout,
+            stakingPoolFinalBal = await token.balanceOf(addrs[2]),
+            stakeAmount = 10n ** 19n,
+            slashedAmount = stakeAmount - (stakeAmount * ((1000000n - 100n) ** missedEpochsCount) / (1000000n ** missedEpochsCount));
+        expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+
+        // Select one enclave. Enclave won't be selected as its stake has fallen below minimum stake
+        await secretStore.selectEnclaves(1, 100);
+        // Check storage occupied to be 0
+        expect((await secretStore.secretStorage(addrs[15])).storageOccupied).to.be.eq(0);
+    });
+
+    it("cannot do mark dead updates without SECRET_MANAGER_ROLE", async function () {
+        await expect(secretStore.connect(signers[1]).markDeadUpdate(addrs[15], await time.latest(), 500, 100, addrs[2]))
+            .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+
+    it("can do secret termination updates", async function () {
+        // Select one enclave
+        let secretId = 1,
+            sizeLimit = 100;
+        await secretStore.selectEnclaves(1, sizeLimit);
+        await secretStore.addAckSecretIdToStore(addrs[15], secretId);
+
+        await expect(secretStore.secretTerminationUpdate(addrs[15], sizeLimit, secretId))
+            .to.not.be.reverted;
+
+        expect((await secretStore.secretStorage(addrs[15])).storageOccupied).to.be.eq(0);
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+    });
+
+    it("cannot do secret termination updates without SECRET_MANAGER_ROLE", async function () {
+        await expect(secretStore.connect(signers[1]).secretTerminationUpdate(addrs[15], 100, 1))
+            .to.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
     });
 });
 
