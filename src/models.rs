@@ -38,11 +38,3 @@ pub enum TxnStatus {
     Confirmed,
     Failed,
 }
-
-#[derive(Debug)]
-pub enum TxnResendError {
-    NonceTooLow,
-    Timeout,
-    TransactionFailed,
-    GasWalletChanged,
-}

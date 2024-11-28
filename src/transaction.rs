@@ -20,7 +20,7 @@ use crate::constants::{
     GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME, RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL,
 };
 use crate::errors::TxnManagerSendError;
-use crate::models::{Transaction, TxnManager, TxnResendError, TxnStatus};
+use crate::models::{Transaction, TxnManager, TxnStatus};
 use crate::utils::{parse_send_error, verify_gas_wallet, verify_rpc_url};
 
 type HttpProvider = FillProvider<
@@ -89,10 +89,15 @@ impl TxnManager {
             last_monitored: Instant::now(),
         };
 
+        let mut failure_reason = String::new();
+
         while Instant::now() < timeout {
-            let Ok(provider) = self.clone().create_provider(&transaction, false).await else {
-                transaction.gas_wallet = self.gas_wallet.read().await.clone();
-                continue;
+            let provider = match self.clone().create_provider(&transaction, false).await {
+                Ok(provider) => provider,
+                Err(err) => {
+                    failure_reason = err.to_string();
+                    continue;
+                }
             };
 
             let res = self
@@ -100,6 +105,7 @@ impl TxnManager {
                 .manage_nonce(&provider, &mut transaction, update_nonce)
                 .await;
             if res.is_err() {
+                failure_reason = res.err().unwrap().to_string();
                 continue;
             }
 
@@ -118,6 +124,7 @@ impl TxnManager {
                     )
                     .await;
                 if res.is_err() {
+                    failure_reason = res.err().unwrap().to_string();
                     continue;
                 }
             }
@@ -130,19 +137,20 @@ impl TxnManager {
             let pending_txn = match pending_txn {
                 Ok(pending_txn) => pending_txn,
                 Err(err) => {
-                    let err = parse_send_error(err.to_string());
-                    match err {
-                        TxnManagerSendError::NonceTooLow => {
+                    failure_reason = err.to_string();
+                    let txn_manager_err = parse_send_error(failure_reason.clone());
+                    match txn_manager_err {
+                        TxnManagerSendError::NonceTooLow(_) => {
                             update_nonce = true;
                             continue;
                         }
-                        TxnManagerSendError::OutOfGas => {
+                        TxnManagerSendError::OutOfGas(_) => {
                             update_nonce = false;
                             transaction.estimated_gas =
                                 transaction.estimated_gas + self.gas_limit_increment_amount;
                             continue;
                         }
-                        TxnManagerSendError::GasPriceLow => {
+                        TxnManagerSendError::GasPriceLow(_) => {
                             update_nonce = false;
                             transaction.gas_price = transaction.gas_price
                                 * (100 + self.gas_price_increment_percent)
@@ -151,9 +159,9 @@ impl TxnManager {
                         }
                         // Break in case the contract execution is failing for this txn
                         // Or the gas required is way high compared to block gas limit
-                        TxnManagerSendError::GasTooHigh
-                        | TxnManagerSendError::ContractExecution => {
-                            return Err(err);
+                        TxnManagerSendError::GasTooHigh(_)
+                        | TxnManagerSendError::ContractExecution(_) => {
+                            return Err(txn_manager_err);
                         }
                         _ => {
                             update_nonce = false;
@@ -182,7 +190,7 @@ impl TxnManager {
             return Ok(transaction.id);
         }
 
-        Err(TxnManagerSendError::Timeout)
+        Err(TxnManagerSendError::Timeout(failure_reason))
     }
 
     async fn process_transaction(self: Arc<Self>) -> Result<(), TxnManagerSendError> {
@@ -239,8 +247,10 @@ impl TxnManager {
             let txn_hash = self.clone().resend_transaction(&mut transaction).await;
             match txn_hash {
                 Ok(()) => (),
-                Err(TxnResendError::NonceTooLow | TxnResendError::GasWalletChanged) => continue,
-                Err(TxnResendError::Timeout | TxnResendError::TransactionFailed) => {
+                Err(
+                    TxnManagerSendError::NonceTooLow(_) | TxnManagerSendError::GasWalletChanged(_),
+                ) => continue,
+                Err(_) => {
                     send_dummy = true;
                 }
             };
@@ -265,12 +275,17 @@ impl TxnManager {
             .get_transaction_receipt(txn_hash.parse().unwrap())
             .await;
         if receipt.is_err() {
-            return Err(TxnManagerSendError::NetworkConnectivity);
+            return Err(TxnManagerSendError::NetworkConnectivity(
+                "Failed to get transaction receipt. Error: ".to_string()
+                    + &receipt.err().unwrap().to_string(),
+            ));
         }
 
         let receipt = receipt.unwrap();
         if receipt.is_none() {
-            return Err(TxnManagerSendError::ReceiptNotFound);
+            return Err(TxnManagerSendError::ReceiptNotFound(
+                "Transaction receipt not found.".to_string(),
+            ));
         }
 
         Ok(receipt.unwrap())
@@ -279,7 +294,7 @@ impl TxnManager {
     async fn resend_transaction(
         self: Arc<Self>,
         transaction: &mut Transaction,
-    ) -> Result<(), TxnResendError> {
+    ) -> Result<(), TxnManagerSendError> {
         transaction.status = TxnStatus::Sending;
 
         transaction.estimated_gas = transaction.estimated_gas + self.gas_limit_increment_amount;
@@ -293,13 +308,13 @@ impl TxnManager {
             .with_gas_limit(transaction.estimated_gas)
             .with_gas_price(transaction.gas_price);
 
-        let mut success: TxnResendError = TxnResendError::Timeout;
+        let mut failure_reason = String::new();
 
         while Instant::now() < transaction.timeout {
             let provider = self.clone().create_provider(&transaction, false).await;
             let provider = match provider {
                 Ok(provider) => provider,
-                Err(TxnManagerSendError::GasWalletChanged) => {
+                Err(TxnManagerSendError::GasWalletChanged(err_msg)) => {
                     let self_clone = self.clone();
                     let transaction_clone = transaction.clone();
                     tokio::spawn(async move {
@@ -311,28 +326,31 @@ impl TxnManager {
                             )
                             .await;
                     });
-                    success = TxnResendError::GasWalletChanged;
+                    failure_reason = err_msg;
                     break;
                 }
-                Err(_) => continue,
+                Err(err) => {
+                    failure_reason = err.to_string();
+                    continue;
+                }
             };
 
             let pending_txn = provider.send_transaction(transaction_request.clone()).await;
             let pending_txn = match pending_txn {
                 Ok(pending_txn) => pending_txn,
                 Err(err) => {
-                    let err = parse_send_error(err.to_string());
+                    failure_reason = err.to_string();
+                    let err = parse_send_error(failure_reason.clone());
                     match err {
-                        TxnManagerSendError::NonceTooLow => {
-                            success = TxnResendError::NonceTooLow;
+                        TxnManagerSendError::NonceTooLow(_) => {
                             break;
                         }
-                        TxnManagerSendError::OutOfGas => {
+                        TxnManagerSendError::OutOfGas(_) => {
                             transaction.estimated_gas =
                                 transaction.estimated_gas + self.gas_limit_increment_amount;
                             continue;
                         }
-                        TxnManagerSendError::GasPriceLow => {
+                        TxnManagerSendError::GasPriceLow(_) => {
                             transaction.gas_price = transaction.gas_price
                                 * (100 + self.gas_price_increment_percent)
                                 / 100;
@@ -340,11 +358,12 @@ impl TxnManager {
                         }
                         // Break in case the contract execution is failing for this txn
                         // Or the gas required is way high compared to block gas limit
-                        TxnManagerSendError::GasTooHigh
-                        | TxnManagerSendError::ContractExecution => {
-                            return Err(TxnResendError::TransactionFailed);
+                        TxnManagerSendError::GasTooHigh(_)
+                        | TxnManagerSendError::ContractExecution(_) => {
+                            return Err(err);
                         }
-                        _ => {
+                        err => {
+                            failure_reason = err.to_string();
                             sleep(Duration::from_millis(200)).await;
                             continue;
                         }
@@ -367,7 +386,7 @@ impl TxnManager {
             return Ok(());
         }
 
-        return Err(success);
+        return Err(TxnManagerSendError::Timeout(failure_reason));
     }
 
     async fn send_dummy_transaction(self: Arc<Self>, transaction: &mut Transaction) {
@@ -389,15 +408,15 @@ impl TxnManager {
             let Ok(pending_txn) = pending_txn else {
                 let err = parse_send_error(pending_txn.err().unwrap().to_string());
                 match err {
-                    TxnManagerSendError::NonceTooLow => {
+                    TxnManagerSendError::NonceTooLow(_) => {
                         break;
                     }
-                    TxnManagerSendError::OutOfGas => {
+                    TxnManagerSendError::OutOfGas(_) => {
                         transaction.estimated_gas =
                             transaction.estimated_gas + self.gas_limit_increment_amount;
                         continue;
                     }
-                    TxnManagerSendError::GasPriceLow => {
+                    TxnManagerSendError::GasPriceLow(_) => {
                         transaction.gas_price =
                             transaction.gas_price * (100 + self.gas_price_increment_percent) / 100;
                         continue;
@@ -429,7 +448,9 @@ impl TxnManager {
         if !ignore_gas_wallet_check
             && transaction.gas_wallet != self.gas_wallet.read().await.clone()
         {
-            return Err(TxnManagerSendError::GasWalletChanged);
+            return Err(TxnManagerSendError::GasWalletChanged(
+                "Gas wallet changed".to_string(),
+            ));
         }
         let signer: PrivateKeySigner = transaction.gas_wallet.parse().unwrap();
         let signer = signer.with_chain_id(Some(self.chain_id));
@@ -446,15 +467,17 @@ impl TxnManager {
         transaction: &mut Transaction,
         update_nonce: bool,
     ) -> Result<(), TxnManagerSendError> {
+        let mut failure_reason = String::new();
+
         while Instant::now() < transaction.timeout {
             let mut current_nonce: u64 = 0;
-
             if update_nonce {
                 let gas_wallet = provider.wallet().default_signer().address();
                 let current_nonce_res = provider.get_transaction_count(gas_wallet).await;
                 current_nonce = match current_nonce_res {
                     Ok(current_nonce) => current_nonce,
-                    Err(_) => {
+                    Err(err) => {
+                        failure_reason = err.to_string();
                         sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
                         continue;
                     }
@@ -475,7 +498,7 @@ impl TxnManager {
             return Ok(());
         }
 
-        return Err(TxnManagerSendError::Timeout);
+        return Err(TxnManagerSendError::Timeout(failure_reason));
     }
 
     async fn estimate_gas_limit_and_price(
@@ -485,11 +508,13 @@ impl TxnManager {
         transaction_request: TransactionRequest,
     ) -> Result<(), TxnManagerSendError> {
         let mut gas_price: u128 = 0;
+        let mut failure_reason = String::new();
         while Instant::now() < transaction.timeout {
             let gas_price_res = provider.get_gas_price().await;
             gas_price = match gas_price_res {
                 Ok(gas_price) => gas_price,
-                Err(_) => {
+                Err(err) => {
+                    failure_reason = err.to_string();
                     sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
                     continue;
                 }
@@ -506,11 +531,12 @@ impl TxnManager {
                 Err(err) => {
                     let err = parse_send_error(err.to_string());
                     match err {
-                        TxnManagerSendError::GasTooHigh
-                        | TxnManagerSendError::ContractExecution => {
+                        TxnManagerSendError::GasTooHigh(_)
+                        | TxnManagerSendError::ContractExecution(_) => {
                             return Err(err);
                         }
-                        _ => {
+                        err => {
+                            failure_reason = err.to_string();
                             sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
                             continue;
                         }
@@ -522,7 +548,7 @@ impl TxnManager {
         }
 
         if gas_price == 0 || estimated_gas == 0 {
-            return Err(TxnManagerSendError::Timeout);
+            return Err(TxnManagerSendError::Timeout(failure_reason));
         }
 
         transaction.gas_price = gas_price;
