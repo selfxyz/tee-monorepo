@@ -1,5 +1,7 @@
-import { getBytes, keccak256, Wallet } from "ethers";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { BytesLike, getBytes, keccak256, parseUnits, Signer, Wallet, ZeroAddress } from "ethers";
 import { ethers, upgrades } from "hardhat";
+import { AttestationAutherUpgradeable, AttestationVerifier, Pond, SecretManager, SecretStore, USDCoin } from "../typechain-types";
 
 async function main() {
     //Create Enclave Image object
@@ -110,6 +112,308 @@ async function main() {
     console.log("Role granted");
 }
 
+const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
+    PCR0: ethers.hexlify(ethers.randomBytes(48)),
+    PCR1: ethers.hexlify(ethers.randomBytes(48)),
+    PCR2: ethers.hexlify(ethers.randomBytes(48))
+};
+
+const image2: AttestationAutherUpgradeable.EnclaveImageStruct = {
+    PCR0: ethers.hexlify(ethers.randomBytes(48)),
+    PCR1: ethers.hexlify(ethers.randomBytes(48)),
+    PCR2: ethers.hexlify(ethers.randomBytes(48))
+};
+
+const image3: AttestationAutherUpgradeable.EnclaveImageStruct = {
+    PCR0: ethers.hexlify(ethers.randomBytes(48)),
+    PCR1: ethers.hexlify(ethers.randomBytes(48)),
+    PCR2: ethers.hexlify(ethers.randomBytes(48))
+};
+
+async function markDeadTest() {
+    let signers: Signer[];
+    let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
+    let stakingToken: Pond;
+    let usdcToken: USDCoin;
+    let secretStore: SecretStore;
+    let secretManager: SecretManager;
+
+    signers = await ethers.getSigners();
+    addrs = await Promise.all(signers.map((a) => a.getAddress()));
+    wallets = signers.map((_, idx) => walletForIndex(idx));
+    pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+    const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+    const attestationVerifier = await upgrades.deployProxy(
+        AttestationVerifier,
+        [[image1], [pubkeys[14]], addrs[0]],
+        { kind: "uups" },
+    ) as unknown as AttestationVerifier;
+
+    const Pond = await ethers.getContractFactory("Pond");
+    stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+        kind: "uups",
+    }) as unknown as Pond;
+
+    const USDCoin = await ethers.getContractFactory("USDCoin");
+    usdcToken = await upgrades.deployProxy(
+        USDCoin,
+        [addrs[0]],
+        {
+            kind: "uups",
+        }
+    ) as unknown as USDCoin;
+
+    const SecretStore = await ethers.getContractFactory("SecretStore");
+    secretStore = await upgrades.deployProxy(
+        SecretStore,
+        [addrs[0], [image2, image3]],
+        {
+            kind: "uups",
+            initializer: "initialize",
+            constructorArgs: [
+                attestationVerifier.target,
+                600,
+                stakingToken.target,
+                10,
+                10 ** 2,
+                10 ** 6,
+                1
+            ]
+        },
+    ) as unknown as SecretStore;
+
+    let noOfNodesToSelect = 3,
+        globalMaxStoreSize = 1e6,
+        globalMinStoreDuration = 10,
+        globalMaxStoreDuration = 1e6,
+        acknowledgementTimeout = 120,
+        markAliveTimeout = 500,
+        secretStoreFeeRate = 10,
+        stakingPaymentPool = addrs[2];
+
+    const SecretManager = await ethers.getContractFactory("SecretManager");
+    secretManager = await upgrades.deployProxy(
+        SecretManager,
+        [addrs[0]],
+        {
+            kind: "uups",
+            initializer: "initialize",
+            constructorArgs: [
+                usdcToken.target,
+                noOfNodesToSelect,
+                globalMaxStoreSize,
+                globalMinStoreDuration,
+                globalMaxStoreDuration,
+                acknowledgementTimeout,
+                markAliveTimeout,
+                secretStoreFeeRate,
+                stakingPaymentPool,
+                secretStore.target
+            ]
+        },
+    ) as unknown as SecretManager;
+
+    console.log("SecretManager: ", secretManager.target);
+
+    await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("SECRET_MANAGER_ROLE")), secretManager.target);
+    await usdcToken.mint(addrs[0], parseUnits("100000", 6));
+    await usdcToken.approve(secretManager.target, parseUnits("100000", 6));
+
+    await stakingToken.transfer(addrs[1], 10n ** 21n);
+    await stakingToken.connect(signers[1]).approve(secretStore.target, 10n ** 21n);
+
+    // REGISTER SECRET STORE ENCLAVES
+    const timestamp = await time.latest() * 1000;
+    let signTimestamp = await time.latest();
+    let storageCapacity = 1e9,
+        stakeAmount = parseUnits("10"),	// 10 POND
+        nodesToRegister = 5;
+    for (let index = 0; index < nodesToRegister; index++) {
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[17 + index],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let signedDigest = await createSecretStoreSignature(addrs[1], storageCapacity, signTimestamp,
+            wallets[17 + index]);
+
+        await secretStore.connect(signers[1]).registerSecretStore(
+            attestationSign,
+            attestation,
+            storageCapacity,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+    }
+
+    // checking if the store doesn't exist
+    // for (let index = 0; index < nodesToRegister; index++) {
+    //     const store = await secretStore.secretStorage(wallets[17 + index].address);
+    //     if(store.owner === ZeroAddress)
+    //         console.log("store: ", index, store.owner);
+    // }
+
+
+    // CREATE SECRET
+    let sizeLimit = 1000,
+        endTimestamp = await time.latest() + 800,
+        usdcDeposit = parseUnits("300", 6),
+        secretCount = 3;
+    let secretId = 1;
+    for (let index = 0; index < secretCount; index++) {
+        await secretManager.createSecret(sizeLimit, endTimestamp, usdcDeposit);
+        console.log("created: ", index, (await secretManager.userStorage(secretId + index)).startTimestamp, (await secretManager.getSelectedEnclaves(secretId + index)).at(0)?.selectTimestamp);
+    }
+
+    console.log("Secrets created");
+
+    let storeSecretCount = new Array(nodesToRegister).fill(0);
+    signTimestamp = await time.latest();
+    for (let i = 0; i < secretCount; i++) {
+        console.log("ack :", secretId + i);
+        const selectedStores = await secretManager.getSelectedEnclaves(secretId + i);
+        for (let j = 0; j < 3; j++) {
+            let index = addrs.indexOf(selectedStores[j].enclaveAddress);
+            const wallet = wallets[index];
+            ++storeSecretCount[index - 17];
+
+            let signedDigest = await createAcknowledgeSignature(secretId + i, signTimestamp, wallet);
+            let tx = await secretManager.acknowledgeStore(secretId + i, signTimestamp, signedDigest);
+            let receipt = await tx.wait();
+            // console.log("ackBlock: ", receipt?.blockNumber);
+        }
+    }
+    console.log("Secrets acknowledged");
+
+    for (let index = 0; index < secretCount; index++) {
+        console.log("ackTimestamp: ", secretId + index, (await secretManager.userStorage(secretId + index)).ackTimestamp, (await secretManager.getSelectedEnclaves(secretId + index))[0].replacedAckTimestamp);
+    }
+
+    console.log("storeSecretCount: ", storeSecretCount);
+
+    await time.increase(510);
+    for (let index = 0; index < nodesToRegister; index++) {
+        // if(storeSecretCount[index] > 1) {
+        //     console.log("ackSecIds: ", index, await secretStore.getStoreAckSecretIds(addrs[17 + index]));
+        //     const estimatedGas = await secretManager.markStoreDead.estimateGas(addrs[17 + index]);
+        //     console.log("estimatedGas: ", index, estimatedGas);
+        //     // const txn = await secretManager.markStoreDead(addrs[17 + index]);
+        //     // const receipt = await txn.wait();
+        //     // console.log("Secret Store dead: ", receipt?.gasUsed, (await receipt?.getBlock())?.gasLimit);
+        // }
+        // console.log("ackSecIds: ", index, await secretStore.getStoreAckSecretIds(addrs[17 + index]));
+        const estimatedGas = await secretManager.markStoreDead.estimateGas(addrs[17 + index]);
+        console.log("estimatedGas: ", index, estimatedGas);
+        await secretManager.markStoreDead(addrs[17 + index]);
+    }
+}
+
+type Attestation = {
+    enclavePubKey: string,
+    PCR0: BytesLike,
+    PCR1: BytesLike,
+    PCR2: BytesLike,
+    timestampInMilliseconds: number,
+}
+
+async function createAttestation(
+    enclaveKey: string,
+    image: AttestationVerifier.EnclaveImageStruct,
+    sourceEnclaveKey: Wallet,
+    timestamp: number,
+): Promise<[string, Attestation]> {
+    const domain = {
+        name: 'marlin.oyster.AttestationVerifier',
+        version: '1',
+    };
+
+    const types = {
+        Attestation: [
+            { name: 'enclavePubKey', type: 'bytes' },
+            { name: 'PCR0', type: 'bytes' },
+            { name: 'PCR1', type: 'bytes' },
+            { name: 'PCR2', type: 'bytes' },
+            { name: 'timestampInMilliseconds', type: 'uint256' },
+        ]
+    }
+
+    const sign = await sourceEnclaveKey.signTypedData(domain, types, {
+        enclavePubKey: enclaveKey,
+        PCR0: image.PCR0,
+        PCR1: image.PCR1,
+        PCR2: image.PCR2,
+        timestampInMilliseconds: timestamp,
+    });
+    return [ethers.Signature.from(sign).serialized, {
+        enclavePubKey: enclaveKey,
+        PCR0: image.PCR0,
+        PCR1: image.PCR1,
+        PCR2: image.PCR2,
+        timestampInMilliseconds: timestamp,
+    }];
+}
+
+async function createSecretStoreSignature(
+    owner: string,
+    storageCapacity: number,
+    signTimestamp: number,
+    sourceEnclaveWallet: Wallet
+): Promise<string> {
+    const domain = {
+        name: 'marlin.oyster.SecretStore',
+        version: '1',
+    };
+
+    const types = {
+        Register: [
+            { name: 'owner', type: 'address' },
+            { name: 'storageCapacity', type: 'uint256' },
+            { name: 'signTimestamp', type: 'uint256' }
+        ]
+    };
+
+    const value = {
+        owner,
+        storageCapacity,
+        signTimestamp
+    };
+
+    const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+    return ethers.Signature.from(sign).serialized;
+}
+
+async function createAcknowledgeSignature(
+    secretId: number,
+    signTimestamp: number,
+    sourceEnclaveWallet: Wallet
+): Promise<string> {
+    const domain = {
+        name: 'marlin.oyster.SecretManager',
+        version: '1',
+    };
+
+    const types = {
+        Acknowledge: [
+            { name: 'secretId', type: 'uint256' },
+            { name: 'signTimestamp', type: 'uint256' }
+        ]
+    };
+
+    const value = {
+        secretId,
+        signTimestamp
+    };
+
+    const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+    return ethers.Signature.from(sign).serialized;
+}
+
 function normalize(key: string): string {
     return '0x' + key.substring(4);
 }
@@ -120,7 +424,7 @@ function walletForIndex(idx: number): Wallet {
     return new Wallet(wallet.privateKey);
 }
 
-main()
+markDeadTest()
     .then(() => process.exit(0))
     .catch((error) => {
         console.error(error);
