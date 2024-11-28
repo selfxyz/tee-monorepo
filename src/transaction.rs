@@ -105,7 +105,17 @@ impl TxnManager {
                 .manage_nonce(&provider, &mut transaction, update_nonce)
                 .await;
             if res.is_err() {
-                failure_reason = res.err().unwrap().to_string();
+                let err = res.err().unwrap();
+                match err {
+                    TxnManagerSendError::Timeout(err) => {
+                        if !err.is_empty() {
+                            failure_reason = err;
+                        }
+                    }
+                    _ => {
+                        failure_reason = err.to_string();
+                    }
+                }
                 continue;
             }
 
@@ -124,7 +134,17 @@ impl TxnManager {
                     )
                     .await;
                 if res.is_err() {
-                    failure_reason = res.err().unwrap().to_string();
+                    let err = res.err().unwrap();
+                    match err {
+                        TxnManagerSendError::Timeout(err) => {
+                            if !err.is_empty() {
+                                failure_reason = err;
+                            }
+                        }
+                        _ => {
+                            failure_reason = err.to_string();
+                        }
+                    }
                     continue;
                 }
             }
