@@ -37,7 +37,7 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
         let Ok(secrets_txn) = secrets_txn else {
             eprintln!(
                 "Failed to sign and encode params for secret {} transaction: {:?}\n",
-                secrets_txn_metadata.txn_type.as_str(),
+                secrets_txn_metadata.as_str(),
                 secrets_txn.unwrap_err()
             );
             continue;
@@ -49,7 +49,7 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
         let Some((mut gas_limit, mut gas_price)) = estimate_gas_and_price(
             http_rpc_client,
             &secrets_txn,
-            secrets_txn_metadata.retry_deadline,
+            secrets_txn_metadata.get_retry_deadline(),
         )
         .await
         else {
@@ -59,7 +59,7 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
 
         // Retry loop for sending the transaction to the common chain 'SecretManager' contract
         while secrets_txn_metadata
-            .retry_deadline
+            .get_retry_deadline()
             .duration_since(SystemTime::now())
             .is_ok()
         {
@@ -102,9 +102,8 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
             let Ok(pending_txn) = pending_txn else {
                 let error_string = format!("{:?}", pending_txn.unwrap_err());
                 eprintln!(
-                    "Failed to send the secret {} transaction for secret id {}: {}\n",
-                    secrets_txn_metadata.txn_type.as_str(),
-                    secrets_txn_metadata.secret_id,
+                    "Failed to send the secret {} transaction: {}\n",
+                    secrets_txn_metadata.as_str(),
                     error_string
                 );
 
@@ -134,9 +133,8 @@ pub async fn send_transactions(app_state: Data<AppState>, mut rx: Receiver<Secre
 
             let pending_tx_hash = pending_txn.tx_hash();
             println!(
-                "Secret {} transaction successfully sent for id {} with nonce {} and hash {:?}",
-                secrets_txn_metadata.txn_type.as_str(),
-                secrets_txn_metadata.secret_id,
+                "Secret {} transaction successfully sent with nonce {} and hash {:?}",
+                secrets_txn_metadata.as_str(),
                 current_nonce,
                 pending_tx_hash
             );
@@ -199,7 +197,7 @@ async fn resend_pending_transaction(
             resend_interval,
             pending_txn_data
                 .txn_data
-                .retry_deadline
+                .get_retry_deadline()
                 .duration_since(SystemTime::now())
                 .unwrap_or(Duration::from_secs(0))
                 .as_secs(),
@@ -234,7 +232,7 @@ async fn resend_pending_transaction(
 
         while pending_txn_data
             .txn_data
-            .retry_deadline
+            .get_retry_deadline()
             .duration_since(SystemTime::now())
             .is_ok()
         {

@@ -93,7 +93,7 @@ pub struct AppState {
     pub mark_alive_timeout: u64,
     pub secrets_awaiting_acknowledgement: Mutex<HashMap<U256, u8>>,
     pub secrets_created: Mutex<HashMap<U256, SecretCreatedMetadata>>,
-    pub secrets_stored: Mutex<HashMap<U256, SecretStoredMetadata>>,
+    pub secrets_stored: Mutex<HashMap<U256, SecretMetadata>>,
     pub secrets_txn_sender_channel: Mutex<Option<Sender<SecretsTxnMetadata>>>,
 }
 
@@ -127,34 +127,29 @@ pub struct SecretCreatedMetadata {
     pub acknowledgement_deadline: SystemTime,
 }
 
-#[derive(Debug, Clone)]
-pub struct SecretStoredMetadata {
-    pub secret_metadata: SecretMetadata,
-    pub last_alive_time: SystemTime,
-}
-
 #[derive(Debug, Clone, PartialEq)]
-pub enum SecretsTxnType {
-    Acknowledgement,
-    AcknowledgementTimeout,
-    MarkStoreAlive,
+pub enum SecretsTxnMetadata {
+    Acknowledgement(U256, SystemTime),
+    AcknowledgementTimeout(U256, SystemTime),
+    MarkStoreAlive(SystemTime),
 }
 
-impl SecretsTxnType {
+impl SecretsTxnMetadata {
     pub fn as_str(&self) -> &str {
         match self {
-            SecretsTxnType::Acknowledgement => "acknowledgement",
-            SecretsTxnType::AcknowledgementTimeout => "acknowledgement timeout",
-            SecretsTxnType::MarkStoreAlive => "mark alive",
+            SecretsTxnMetadata::Acknowledgement(_, _) => "acknowledgeStore",
+            SecretsTxnMetadata::AcknowledgementTimeout(_, _) => "acknowledgeStoreFailed",
+            SecretsTxnMetadata::MarkStoreAlive(_) => "markStoreAlive",
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct SecretsTxnMetadata {
-    pub txn_type: SecretsTxnType,
-    pub secret_id: U256,
-    pub retry_deadline: SystemTime,
+    pub fn get_retry_deadline(&self) -> SystemTime {
+        match self {
+            &SecretsTxnMetadata::Acknowledgement(_, deadline) => deadline,
+            &SecretsTxnMetadata::AcknowledgementTimeout(_, deadline) => deadline,
+            &SecretsTxnMetadata::MarkStoreAlive(deadline) => deadline,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -250,16 +245,16 @@ pub fn generate_txn(
     app_state: Data<AppState>,
     secrets_txn_metadata: &SecretsTxnMetadata,
 ) -> Result<TypedTransaction> {
-    let txn_data = match secrets_txn_metadata.txn_type {
-        SecretsTxnType::Acknowledgement => {
-            // Initialize the current sign timestamp and update the last alive time for the secret ID
+    // Get the encoding 'Function' object for the transaction type
+    let function = app_state
+        .secret_manager_contract_abi
+        .function(secrets_txn_metadata.as_str())?;
+
+    // Encode the params into token list based on the txn type
+    let params = match secrets_txn_metadata {
+        &SecretsTxnMetadata::Acknowledgement(secret_id, _) => {
+            // Initialize the current sign timestamp for the transaction
             let sign_timestamp = SystemTime::now();
-            app_state
-                .secrets_stored
-                .lock()
-                .unwrap()
-                .entry(secrets_txn_metadata.secret_id)
-                .and_modify(|secret| secret.last_alive_time = sign_timestamp);
             let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
             // Encode and hash the acknowledgement of storing the secret following EIP712 format
@@ -268,7 +263,7 @@ pub fn generate_txn(
 
             let hash_struct = keccak256(encode(&[
                 Token::FixedBytes(acknowledge_typehash.to_vec()),
-                Token::Uint(secrets_txn_metadata.secret_id),
+                Token::Uint(secret_id),
                 Token::Uint(sign_timestamp.into()),
             ]));
 
@@ -289,44 +284,23 @@ pub fn generate_txn(
                 .context("Failed to sign the acknowledgement message using enclave key")?;
             let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
-            // Get the encoding 'Function' object for acknowledgeStore transaction
-            let acknowledge_store = app_state
-                .secret_manager_contract_abi
-                .function("acknowledgeStore")?;
-            let params = vec![
-                Token::Uint(secrets_txn_metadata.secret_id),
+            vec![
+                Token::Uint(secret_id),
                 Token::Uint(sign_timestamp.into()),
                 Token::Bytes(signature.into()),
-            ];
-
-            acknowledge_store.encode_input(&params)?
+            ]
         }
-        SecretsTxnType::AcknowledgementTimeout => {
-            // Get the encoding 'Function' object for acknowledgeStoreFailed transaction
-            let acknowledge_store_failed = app_state
-                .secret_manager_contract_abi
-                .function("acknowledgeStoreFailed")?;
-            let params = vec![Token::Uint(secrets_txn_metadata.secret_id)];
-
-            acknowledge_store_failed.encode_input(&params)?
-        }
-        SecretsTxnType::MarkStoreAlive => {
-            // Get the current sign timestamp and update the last alive time for the secret ID
+        &SecretsTxnMetadata::AcknowledgementTimeout(secret_id, _) => vec![Token::Uint(secret_id)],
+        &SecretsTxnMetadata::MarkStoreAlive(_) => {
+            // Get the current sign timestamp for signing
             let sign_timestamp = SystemTime::now();
-            app_state
-                .secrets_stored
-                .lock()
-                .unwrap()
-                .entry(secrets_txn_metadata.secret_id)
-                .and_modify(|secret| secret.last_alive_time = sign_timestamp);
             let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
             // Encode and hash the mark store alive message for the secret following EIP712 format
-            let alive_typehash = keccak256("Alive(uint256 secretId,uint256 signTimestamp)");
+            let alive_typehash = keccak256("Alive(uint256 signTimestamp)");
 
             let hash_struct = keccak256(encode(&[
                 Token::FixedBytes(alive_typehash.to_vec()),
-                Token::Uint(secrets_txn_metadata.secret_id),
                 Token::Uint(sign_timestamp.into()),
             ]));
 
@@ -347,19 +321,14 @@ pub fn generate_txn(
                 .context("Failed to sign the alive message using enclave key")?;
             let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
-            // Get the encoding 'Function' object for markStoreAlive transaction
-            let mark_store_alive = app_state
-                .secret_manager_contract_abi
-                .function("markStoreAlive")?;
-            let params = vec![
-                Token::Uint(secrets_txn_metadata.secret_id),
+            vec![
                 Token::Uint(sign_timestamp.into()),
                 Token::Bytes(signature.into()),
-            ];
-
-            mark_store_alive.encode_input(&params)?
+            ]
         }
     };
+
+    let txn_data = function.encode_input(&params)?;
 
     // Return the TransactionRequest object using the encoded data and 'SecretManager' contract address
     Ok(TypedTransaction::Eip1559(Eip1559TransactionRequest {

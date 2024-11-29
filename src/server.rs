@@ -15,8 +15,7 @@ use tokio_retry::Retry;
 use crate::events::events_listener;
 use crate::utils::{
     create_and_populate_file, AppState, CreateSecret, ImmutableConfig, MutableConfig,
-    SecretStoredMetadata, SecretsTxnMetadata, SecretsTxnType, DOMAIN_SEPARATOR,
-    SECRET_STORAGE_CAPACITY,
+    SecretsTxnMetadata, DOMAIN_SEPARATOR, SECRET_STORAGE_CAPACITY,
 };
 
 #[get("/")]
@@ -374,13 +373,11 @@ async fn inject_and_store_secret(
     }
 
     let sign_timestamp = SystemTime::now();
-    app_state.secrets_stored.lock().unwrap().insert(
-        create_secret.secret_id,
-        SecretStoredMetadata {
-            secret_metadata: secret_created.secret_metadata,
-            last_alive_time: sign_timestamp,
-        },
-    );
+    app_state
+        .secrets_stored
+        .lock()
+        .unwrap()
+        .insert(create_secret.secret_id, secret_created.secret_metadata);
     let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // Encode and hash the acknowledgement of storing the secret following EIP712 format
@@ -426,11 +423,10 @@ async fn inject_and_store_secret(
                 .unwrap()
                 .clone()
                 .unwrap()
-                .send(SecretsTxnMetadata {
-                    txn_type: SecretsTxnType::Acknowledgement,
-                    secret_id: create_secret.secret_id,
-                    retry_deadline: secret_created.acknowledgement_deadline,
-                })
+                .send(SecretsTxnMetadata::Acknowledgement(
+                    create_secret.secret_id,
+                    secret_created.acknowledgement_deadline,
+                ))
                 .await
         },
     )

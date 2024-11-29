@@ -16,7 +16,7 @@ use crate::scheduler::secrets_monitor_and_garbage_cleaner;
 use crate::transactions::send_transactions;
 use crate::utils::{
     check_and_delete_file, h256_to_address, AppState, SecretCreatedMetadata, SecretMetadata,
-    SecretsTxnMetadata, SecretsTxnType, ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE,
+    SecretsTxnMetadata, ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE,
 };
 
 // Start listening to events emitted by the 'SecretManager' contract if enclave is registered else listen for Store registered event first
@@ -384,7 +384,7 @@ async fn handle_event_logs(
                         .lock()
                         .unwrap()
                         .entry(secret_id)
-                        .and_modify(|secret| secret.secret_metadata.end_timestamp = end_timestamp);
+                        .and_modify(|secret| secret.end_timestamp = end_timestamp);
                 }
             }
             else => break,
@@ -415,12 +415,10 @@ async fn handle_acknowledgement_timeout(
 
     // Send txn response with acknowledgement timeout counterpart
     if let Err(err) = tx
-        .send(SecretsTxnMetadata {
-            txn_type: SecretsTxnType::AcknowledgementTimeout,
-            secret_id: secret_id,
-            retry_deadline: SystemTime::now()
-                + Duration::from_secs(ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE),
-        })
+        .send(SecretsTxnMetadata::AcknowledgementTimeout(
+            secret_id,
+            SystemTime::now() + Duration::from_secs(ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE),
+        ))
         .await
     {
         eprintln!(
