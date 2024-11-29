@@ -573,7 +573,7 @@ impl ContractsClient {
                 let decoded = common_chain_job_relayed_event_decoded.unwrap();
 
                 let job_id = U256::from_be_slice(topics[1].as_slice());
-                let env = U256::from_be_slice(topics[2].as_slice()).to::<u8>();
+                let env = decoded.env;
                 let job_owner = decoded.jobOwner;
                 let gateway_operator = decoded.gateway;
 
@@ -1421,7 +1421,7 @@ mod common_chain_interaction_tests {
     use serde_json::json;
 
     use crate::test_util::{
-        add_gateway_epoch_state, generate_contracts_client, MockHttpProvider, CHAIN_ID,
+        add_gateway_epoch_state, generate_contracts_client, MockHttpProvider, CHAIN_ID, CODE_HASH,
         GATEWAY_JOBS_CONTRACT_ADDR, RELAY_CONTRACT_ADDR,
     };
 
@@ -1440,12 +1440,7 @@ mod common_chain_interaction_tests {
                         U256::from(1).into(),
                     ],
                     DynSolValue::Tuple(vec![
-                        DynSolValue::FixedBytes(
-                            keccak256(
-                                "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e",
-                            ),
-                            32,
-                        ),
+                        DynSolValue::FixedBytes(*CODE_HASH, 32),
                         DynSolValue::Bytes(
                             serde_json::to_vec(&json!({
                                 "num": 10
@@ -1453,15 +1448,18 @@ mod common_chain_interaction_tests {
                             .unwrap(),
                         ),
                         DynSolValue::Uint(U256::from(2000), 256),
-                        DynSolValue::Uint(U256::from(20), 8),
+                        DynSolValue::Uint(U256::from(20), 256),
                         DynSolValue::Uint(U256::from(100), 256),
                         DynSolValue::Uint(U256::from(100), 256),
                         DynSolValue::Address(PrivateKeySigner::random().address()),
                         DynSolValue::Address(PrivateKeySigner::random().address()),
                         DynSolValue::Uint(U256::from(job_starttime), 256),
+                        DynSolValue::Uint(U256::from(5000), 256),
                     ])
                     .abi_encode()
-                    .into(),
+                    .as_slice()[32..]
+                        .to_vec()
+                        .into(),
                 ),
             },
             ..Default::default()
@@ -1485,7 +1483,9 @@ mod common_chain_interaction_tests {
                         DynSolValue::Uint(U256::from(0), 8),
                     ])
                     .abi_encode()
-                    .into(),
+                    .as_slice()[32..]
+                        .to_vec()
+                        .into(),
                 ),
             },
             ..Default::default()
@@ -1498,9 +1498,7 @@ mod common_chain_interaction_tests {
         Job {
             job_id,
             request_chain_id: CHAIN_ID,
-            tx_hash: keccak256(
-                "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e".to_owned(),
-            ),
+            tx_hash: *CODE_HASH,
             code_input: serde_json::to_vec(&json!({
                 "num": 10
             }))

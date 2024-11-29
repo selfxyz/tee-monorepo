@@ -615,6 +615,7 @@ mod job_subscription_management_tests {
         add_gateway_epoch_state, generate_contracts_client, generate_generic_subscription_job,
         generate_job_subscription_job_params_updated, generate_job_subscription_started_log,
         generate_job_subscription_termination_params_updated, MockHttpProvider, CHAIN_ID,
+        CODE_HASH,
     };
 
     #[test]
@@ -677,12 +678,7 @@ mod job_subscription_management_tests {
                         DynSolValue::Uint(U256::from(100000), 256),
                         DynSolValue::Uint(U256::from(100), 256),
                         DynSolValue::Address(PrivateKeySigner::random().address()),
-                        DynSolValue::FixedBytes(
-                            keccak256(
-                                "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e",
-                            ),
-                            32,
-                        ),
+                        DynSolValue::FixedBytes(*CODE_HASH, 32),
                     ])
                     .abi_encode()
                     .into(),
@@ -1673,8 +1669,7 @@ mod job_subscription_management_tests {
             subscription_job_one.starttime,
         );
         expected_job.gateway_address = Some(contracts_client.enclave_address);
-        expected_job.tx_hash =
-            keccak256("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e");
+        expected_job.tx_hash = *CODE_HASH;
         expected_job.code_input = Bytes::from(
             serde_json::to_vec(&json!({
                 "num": 10

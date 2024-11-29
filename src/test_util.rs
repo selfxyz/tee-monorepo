@@ -5,12 +5,14 @@ use actix_web::{
     App, Error,
 };
 use alloy::dyn_abi::DynSolValue;
-use alloy::primitives::{keccak256, Address, Log as InnerLog, LogData, B256, U256};
+use alloy::hex;
+use alloy::primitives::{keccak256, Address, FixedBytes, Log as InnerLog, LogData, B256, U256};
 use alloy::rpc::types::{Filter, Log};
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::utils::public_key_to_address;
 use anyhow::Result;
+use lazy_static::lazy_static;
 use rand::rngs::OsRng;
 use serde_json::json;
 use std::collections::HashSet;
@@ -62,6 +64,16 @@ const EPOCH: u64 = 1713433800;
 const TIME_INTERVAL: u64 = 20;
 #[cfg(test)]
 const OFFSET_FOR_EPCOH: u64 = 4;
+#[cfg(test)]
+lazy_static! {
+    pub static ref CODE_HASH: FixedBytes<32> = {
+        let bytes = hex::decode("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e")
+            .expect("Invalid hex string");
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        FixedBytes::from(arr)
+    };
+}
 
 #[cfg(test)]
 pub fn new_app(
@@ -239,7 +251,7 @@ impl HttpProviderLogs for MockHttpProvider {
                                 ],
                                 DynSolValue::Tuple(vec![
                                     DynSolValue::Uint(U256::from(100), 256),
-                                    DynSolValue::Uint(U256::from(1), 256),
+                                    DynSolValue::Uint(U256::from(1), 8),
                                     DynSolValue::Address(job.job_owner),
                                     DynSolValue::Address(job.gateway_address.unwrap()),
                                 ])
@@ -331,7 +343,9 @@ pub fn generate_job_subscription_started_log(
                     keccak256(REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT).into(),
                     job_id.into(),
                     U256::from(1).into(),
-                    B256::from_str(SUBSCRIPTION_RELAY_CONTRACT_ADDR).unwrap(),
+                    Address::from_str(SUBSCRIPTION_RELAY_CONTRACT_ADDR)
+                        .unwrap()
+                        .into_word(),
                 ],
                 DynSolValue::Tuple(vec![
                     DynSolValue::Uint(U256::from(10), 256),
@@ -339,12 +353,7 @@ pub fn generate_job_subscription_started_log(
                     DynSolValue::Uint(termination_time, 256),
                     DynSolValue::Uint(U256::from(100), 256),
                     DynSolValue::Address(PrivateKeySigner::random().address()),
-                    DynSolValue::FixedBytes(
-                        keccak256(
-                            "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e",
-                        ),
-                        32,
-                    ),
+                    DynSolValue::FixedBytes(*CODE_HASH, 32),
                     DynSolValue::Bytes(
                         serde_json::to_vec(&json!({
                                 "num": 10
@@ -354,7 +363,9 @@ pub fn generate_job_subscription_started_log(
                     DynSolValue::Uint(starttime, 256),
                 ])
                 .abi_encode()
-                .into(),
+                .as_slice()[32..]
+                    .to_vec()
+                    .into(),
             ),
         },
         ..Default::default()
@@ -369,8 +380,8 @@ pub fn generate_generic_subscription_job(
     let starttime = (SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs())
-        + starttime_delta.unwrap_or(0) as u64;
+        .as_secs() as i64
+        + starttime_delta.unwrap_or(0)) as u64;
 
     let termination_time = starttime + 1000;
 
@@ -381,7 +392,7 @@ pub fn generate_generic_subscription_job(
         interval: 10,
         termination_time,
         user_timeout: U256::from(100),
-        tx_hash: keccak256("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e"),
+        tx_hash: *CODE_HASH,
         code_input: serde_json::to_vec(&json!({
             "num": 10
         }))
@@ -398,6 +409,13 @@ pub fn generate_job_subscription_job_params_updated(
     code_hash: Option<&str>,
     data_num: Option<u64>,
 ) -> Log {
+    let code_hash_bytes;
+    if code_hash.is_none() {
+        code_hash_bytes = *CODE_HASH;
+    } else {
+        code_hash_bytes = keccak256(code_hash.unwrap());
+    }
+
     Log {
         inner: InnerLog {
             address: Address::default(),
@@ -407,12 +425,7 @@ pub fn generate_job_subscription_job_params_updated(
                     U256::from(job_id.unwrap_or(1)).into(),
                 ],
                 DynSolValue::Tuple(vec![
-                    DynSolValue::FixedBytes(
-                        keccak256(code_hash.unwrap_or(
-                            "9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e",
-                        )),
-                        32,
-                    ),
+                    DynSolValue::FixedBytes(code_hash_bytes, 32),
                     DynSolValue::Bytes(
                         serde_json::to_vec(&json!({
                             "num": data_num.unwrap_or(10)
@@ -421,7 +434,9 @@ pub fn generate_job_subscription_job_params_updated(
                     ),
                 ])
                 .abi_encode()
-                .into(),
+                .as_slice()[32..]
+                    .to_vec()
+                    .into(),
             ),
         },
         ..Default::default()
