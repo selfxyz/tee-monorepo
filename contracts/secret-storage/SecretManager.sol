@@ -176,6 +176,7 @@ contract SecretManager is
         uint256 startTimestamp;
         uint256 endTimestamp;
         uint256 ackTimestamp;   // stores the time when the last node sends ack
+        address[] allowedAddresses;
         SelectedEnclave[] selectedEnclaves;
     }
 
@@ -254,6 +255,7 @@ contract SecretManager is
         uint256 _sizeLimit,
         uint256 _endTimestamp,
         uint256 _usdcDeposit,
+        address[] memory _allowedAddresses,
         address _owner
     ) internal {
         if(_sizeLimit == 0 || _sizeLimit > GLOBAL_MAX_STORE_SIZE)
@@ -279,6 +281,7 @@ contract SecretManager is
         userStorage[id].usdcDeposit = _usdcDeposit;
         userStorage[id].startTimestamp = block.timestamp;
         userStorage[id].endTimestamp = _endTimestamp;
+        userStorage[id].allowedAddresses = _allowedAddresses;
 
         uint len = selectedEnclaves.length;
         address[] memory enclaveAddresses = new address[](len);
@@ -722,9 +725,10 @@ contract SecretManager is
     function createSecret(
         uint256 _sizeLimit,
         uint256 _endTimestamp,
-        uint256 _usdcDeposit
+        uint256 _usdcDeposit,
+        address[] memory _allowedAddresses
     ) external {
-        _createSecret(_sizeLimit, _endTimestamp, _usdcDeposit, _msgSender());
+        _createSecret(_sizeLimit, _endTimestamp, _usdcDeposit, _allowedAddresses, _msgSender());
     }
 
     function acknowledgeStore(
@@ -811,6 +815,50 @@ contract SecretManager is
         }
 
         return usdcDeposit;
+    }
+
+    error SecretManagerUserNotAllowed();
+
+    function verifySecret(
+        uint256 _secretId,
+        address _jobOwner
+    ) external view returns (bool, address[] memory) {
+        if(userStorage[_secretId].owner != _jobOwner && !hasSecretAllowedAddress(_secretId, _jobOwner))
+            revert SecretManagerUserNotAllowed();
+
+        uint256 len = userStorage[_secretId].selectedEnclaves.length;
+        address[] memory selectedStores;
+        uint256 index = 0;
+        for ( ; index < len; index++) {
+            if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
+                break;
+
+            selectedStores[index] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+        }
+
+        if(index != len)
+            return (false, new address[](0));
+        
+        return (true, selectedStores);
+    }
+
+    function hasSecretAllowedAddress(
+        uint256 _secretId,
+        address _user
+    ) public view returns (bool) {
+        uint256 len = userStorage[_secretId].allowedAddresses.length;
+        for (uint256 index = 0; index < len; index++) {
+            if(_user == userStorage[_secretId].allowedAddresses[index])
+                return true;
+        }
+        return false;
+    }
+
+    function setSecretAllowedAddresses(
+        uint256 _secretId,
+        address[] memory _allowedAddresses
+    ) external isValidSecretOwner(_secretId) {
+        userStorage[_secretId].allowedAddresses = _allowedAddresses;
     }
 
     //-------------------------------- external functions end ----------------------------------//
