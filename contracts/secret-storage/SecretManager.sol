@@ -170,6 +170,7 @@ contract SecretManager is
     }
 
     struct UserStorage {
+        uint8 env;
         address owner;
         uint256 sizeLimit;
         uint256 usdcDeposit;
@@ -252,6 +253,7 @@ contract SecretManager is
     //-------------------------------- internal functions start ----------------------------------//
 
     function _createSecret(
+        uint8 _env,
         uint256 _sizeLimit,
         uint256 _endTimestamp,
         uint256 _usdcDeposit,
@@ -271,11 +273,12 @@ contract SecretManager is
 
         USDC_TOKEN.safeTransferFrom(_owner, address(this), _usdcDeposit);
 
-        SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectEnclaves(NO_OF_NODES_TO_SELECT, _sizeLimit);
+        SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectStores(_env, NO_OF_NODES_TO_SELECT, _sizeLimit);
         if (selectedEnclaves.length < NO_OF_NODES_TO_SELECT)
             revert SecretManagerUnavailableResources();
 
         uint256 id = ++secretId;
+        userStorage[id].env = _env;
         userStorage[id].owner = _owner;
         userStorage[id].sizeLimit = _sizeLimit;
         userStorage[id].usdcDeposit = _usdcDeposit;
@@ -390,7 +393,7 @@ contract SecretManager is
                     !userStoreData.selectedEnclaves[index].hasAcknowledgedStore &&
                     block.timestamp > userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT
                 ) {
-                    SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
+                    SECRET_STORE.releaseStore(enclaveAddress, userStoreData.sizeLimit);
 
                     reselectedAckFailed = true;
                     bool isArrayLenReduced = _replaceStore(_secretId, enclaveAddress, index, false);
@@ -404,7 +407,7 @@ contract SecretManager is
                 if (!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
                     ackFailed = true;
 
-                SECRET_STORE.releaseEnclave(enclaveAddress, userStoreData.sizeLimit);
+                SECRET_STORE.releaseStore(enclaveAddress, userStoreData.sizeLimit);
             }
             ++index;
         }
@@ -439,7 +442,7 @@ contract SecretManager is
         else {
             // remove the already selected stores from the tree so they are not selected back again as duplicates
             address[] memory removedStores =_deleteSelectedStoresFromTree(_secretId, _enclaveIndex);
-            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectEnclaves(1, userStorage[_secretId].sizeLimit);
+            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectStores(userStorage[_secretId].env, 1, userStorage[_secretId].sizeLimit);
             // add back the removed stores to the tree
             _addbackSelectedStoresToTree(removedStores);
 
@@ -723,12 +726,13 @@ contract SecretManager is
     //------------------------------- external functions start ----------------------------------//
 
     function createSecret(
+        uint8 _env,
         uint256 _sizeLimit,
         uint256 _endTimestamp,
         uint256 _usdcDeposit,
         address[] memory _allowedAddresses
     ) external {
-        _createSecret(_sizeLimit, _endTimestamp, _usdcDeposit, _allowedAddresses, _msgSender());
+        _createSecret(_env, _sizeLimit, _endTimestamp, _usdcDeposit, _allowedAddresses, _msgSender());
     }
 
     function acknowledgeStore(

@@ -53,8 +53,7 @@ contract SecretStore is
         IERC20 _stakingToken,
         uint256 _minStakeAmount,
         uint256 _slashPercentInBips,
-        uint256 _slashMaxBips,
-        uint8 _env
+        uint256 _slashMaxBips
     ) AttestationAutherUpgradeable(attestationVerifier, maxAge) {
         _disableInitializers();
 
@@ -66,7 +65,6 @@ contract SecretStore is
 
         SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
         SLASH_MAX_BIPS = _slashMaxBips;
-        ENV = _env;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -104,7 +102,6 @@ contract SecretStore is
         __TreeMapUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _init_tree(ENV);
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -123,13 +120,12 @@ contract SecretStore is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint8 public immutable ENV;
-
     /// @notice enclave stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
     bytes32 public constant SECRET_MANAGER_ROLE = keccak256("SECRET_MANAGER_ROLE");
+
+    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
     //-------------------------------- SecretStore start --------------------------------//
 
@@ -144,18 +140,24 @@ contract SecretStore is
     }
 
     struct SecretStorage {
+        uint256 jobCapacity;
         uint256 storageCapacity;
+        uint256 activeJobs;
         uint256 storageOccupied;
         uint256 stakeAmount;
         uint256 lastAliveTimestamp;
         uint256 deadTimestamp;
+        uint256 reputation;
         address owner;
+        uint8 env;
         bool draining;
         uint256[] ackSecretIds;
     }
 
     // enclaveAddress => Storage node details
     mapping(address => SecretStorage) public secretStorage;
+
+    uint256 public constant INIT_REPUTATION = 1000;
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -167,7 +169,7 @@ contract SecretStore is
         );
 
     bytes32 private constant REGISTER_TYPEHASH =
-        keccak256("Register(address owner,uint256 storageCapacity,uint256 signTimestamp)");
+        keccak256("Register(address owner,uint256 jobCapacity,uint256 storageCapacity,uint8 env,uint256 signTimestamp)");
 
     bytes32 private constant ACKNOWLEDGE_TYPEHASH =
         keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
@@ -179,7 +181,7 @@ contract SecretStore is
     /// @param enclaveAddress The address of the enclave.
     /// @param owner The owner of the enclave.
     /// @param storageCapacity The maximum storage of the enclave(in bytes).
-    event SecretStoreRegistered(address indexed enclaveAddress, address indexed owner, uint256 storageCapacity);
+    event SecretStoreRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity, uint256 storageCapacity, uint8 env);
 
     /// @notice Emitted when an enclave is deregistered.
     /// @param enclaveAddress The address of the enclave.
@@ -219,6 +221,8 @@ contract SecretStore is
     error SecretStoreEnclaveNotEmpty();
     /// @notice Thrown when the provided enclave owner does not match the stored owner.
     error SecretStoreInvalidEnclaveOwner();
+    /// @notice Thrown when the provided execution environment is not supported globally.
+    error SecretStoreUnsupportedEnv();
 
     //-------------------------------- Admin methods start --------------------------------//
 
@@ -249,12 +253,31 @@ contract SecretStore is
 
     //-------------------------------- Admin methods end ----------------------------------//
 
+    //-------------------------------- Execution Env start --------------------------------//
+
+    modifier isValidEnv(uint8 _env) {
+        if (!isTreeInitialized(_env)) revert SecretStoreUnsupportedEnv();
+        _;
+    }
+
+    function initTree(uint8 _env) external onlyRole(JOBS_ROLE) {
+        _init_tree(_env);
+    }
+
+    function removeTree(uint8 _env) external onlyRole(JOBS_ROLE) {
+        _delete_tree(_env);
+    }
+
+    //-------------------------------- Execution Env end --------------------------------//
+
     //-------------------------------- internal functions start ----------------------------------//
 
     function _registerSecretStore(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
+        uint256 _jobCapacity,
         uint256 _storageCapacity,
+        uint8 _env,
         uint256 _signTimestamp,
         bytes memory _signature,
         uint256 _stakeAmount,
@@ -268,13 +291,13 @@ contract SecretStore is
         _verifyEnclaveKey(_attestationSignature, _attestation);
 
         // signature check
-        _verifySign(enclaveAddress, _owner, _storageCapacity, _signTimestamp, _signature);
+        _verifySign(enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env, _signTimestamp, _signature);
 
-        _register(enclaveAddress, _owner, _storageCapacity);
+        _register(enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env);
 
         // add node to the tree if min stake amount deposited
         if (_stakeAmount >= MIN_STAKE_AMOUNT)
-            _insert_unchecked(ENV, enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(_env, enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
 
         _addStake(enclaveAddress, _stakeAmount);
     }
@@ -282,14 +305,16 @@ contract SecretStore is
     function _verifySign(
         address _enclaveAddress,
         address _owner,
+        uint256 _jobCapacity,
         uint256 _storageCapacity,
+        uint8 _env,
         uint256 _signTimestamp,
         bytes memory _signature
     ) internal view {
         if (block.timestamp > _signTimestamp + ATTESTATION_MAX_AGE)
             revert SecretStoreSignatureTooOld();
 
-        bytes32 hashStruct = keccak256(abi.encode(REGISTER_TYPEHASH, _owner, _storageCapacity, _signTimestamp));
+        bytes32 hashStruct = keccak256(abi.encode(REGISTER_TYPEHASH, _owner, _jobCapacity, _storageCapacity, _env, _signTimestamp));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
@@ -297,15 +322,20 @@ contract SecretStore is
     }
 
     function _register(
-        address _enclaveAddress, 
-        address _owner, 
-        uint256 _storageCapacity
+        address _enclaveAddress,
+        address _owner,
+        uint256 _jobCapacity,
+        uint256 _storageCapacity,
+        uint8 _env
     ) internal {
+        secretStorage[_enclaveAddress].jobCapacity = _jobCapacity;
         secretStorage[_enclaveAddress].storageCapacity = _storageCapacity;
+        secretStorage[_enclaveAddress].env = _env;
         secretStorage[_enclaveAddress].lastAliveTimestamp = block.timestamp;
         secretStorage[_enclaveAddress].owner = _owner;
+        secretStorage[_enclaveAddress].reputation = INIT_REPUTATION;
 
-        emit SecretStoreRegistered(_enclaveAddress, _owner, _storageCapacity);
+        emit SecretStoreRegistered(_enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env);
     }
 
     function _drainSecretStore(address _enclaveAddress) internal {
@@ -314,7 +344,7 @@ contract SecretStore is
         secretStorage[_enclaveAddress].draining = true;
 
         // remove node from the tree
-        _deleteIfPresent(ENV, _enclaveAddress);
+        _deleteIfPresent(secretStorage[_enclaveAddress].env, _enclaveAddress);
 
         emit SecretStoreDrained(_enclaveAddress);
     }
@@ -327,7 +357,7 @@ contract SecretStore is
 
         // insert node in the tree
         if (secretStoreNode.stakeAmount >= MIN_STAKE_AMOUNT && secretStoreNode.storageOccupied < secretStoreNode.storageCapacity) {
-            _insert_unchecked(ENV, _enclaveAddress, uint64(secretStoreNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(secretStoreNode.env, _enclaveAddress, uint64(secretStoreNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
         emit SecretStoreRevived(_enclaveAddress);
@@ -355,7 +385,7 @@ contract SecretStore is
             updatedStake >= MIN_STAKE_AMOUNT
         ) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
-            _upsert(ENV, _enclaveAddress, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
+            _upsert(secretStoreNode.env, _enclaveAddress, uint64(updatedStake / STAKE_ADJUSTMENT_FACTOR));
         }
 
         _addStake(_enclaveAddress, _amount);
@@ -400,15 +430,19 @@ contract SecretStore is
     function registerSecretStore(
         bytes memory _attestationSignature,
         IAttestationVerifier.Attestation memory _attestation,
+        uint256 _jobCapacity,
         uint256 _storageCapacity,
+        uint8 _env,
         uint256 _signTimestamp,
         bytes memory _signature,
         uint256 _stakeAmount
-    ) external {
+    ) external isValidEnv(_env) {
         _registerSecretStore(
             _attestationSignature,
             _attestation,
+            _jobCapacity,
             _storageCapacity,
+            _env,
             _signTimestamp,
             _signature,
             _stakeAmount,
@@ -477,19 +511,151 @@ contract SecretStore is
         _allowOnlyVerified(_signer);
     }
 
+    /**
+     * @notice Gets the owner of a given executor node.
+     * @param _enclaveAddress The address of the executor enclave.
+     * @return The owner address of the executor node.
+     */
+    function getOwner(address _enclaveAddress) external view returns (address) {
+        return secretStorage[_enclaveAddress].owner;
+    }
+
     //-------------------------------- external functions end ----------------------------------//
 
-    //--------------------------------------- SecretStore end -----------------------------------------//
+    //----------------------------------- SecretStore end -----------------------------------------//
 
-    //----------------------------- SecretManagerRole functions start ---------------------------------//
+    //-------------------------------- JobsRole functions start ---------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _selectEnclaves(
+    function _selectExecutors(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) internal returns (address[] memory selectedNodes) {
+        selectedNodes = _selectNodes(_env, _noOfNodesToSelect);
+        _updateExecutorsResource(_env, selectedNodes);
+    }
+
+    function _updateExecutorsResource(
+        uint8 _env,
+        address[] memory _selectedNodes
+    ) internal {
+        for (uint256 index = 0; index < _selectedNodes.length; index++) {
+            address enclaveAddress = _selectedNodes[index];
+            secretStorage[enclaveAddress].activeJobs += 1;
+
+            // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
+            if (secretStorage[enclaveAddress].activeJobs == secretStorage[enclaveAddress].jobCapacity)
+                _deleteIfPresent(_env, enclaveAddress);
+        }
+    }
+
+    function _slashExecutor(address _enclaveAddress, address _recipient) internal returns (uint256) {
+        uint256 totalComp = (secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
+        secretStorage[_enclaveAddress].stakeAmount -= totalComp;
+
+        STAKING_TOKEN.safeTransfer(_recipient, totalComp);
+
+        _releaseExecutor(_enclaveAddress);
+    
+        // TODO: decrease reputation logic
+        secretStorage[_enclaveAddress].reputation -= 10;
+    
+        return totalComp;
+    }
+
+    function _selectNodes(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) internal view returns (address[] memory selectedNodes) {
+        uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
+        selectedNodes = _selectN(_env, randomizer, _noOfNodesToSelect);
+    }
+
+    function _releaseExecutor(address _enclaveAddress) internal {
+        _updateTreeState(_enclaveAddress);
+        secretStorage[_enclaveAddress].activeJobs -= 1;
+    }
+
+    function _updateTreeState(address _enclaveAddress) internal {
+        if (!secretStorage[_enclaveAddress].draining) {
+            uint8 env = secretStorage[_enclaveAddress].env;
+            // node might have been deleted due to max job capacity reached
+            // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
+            if (secretStorage[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
+                _upsert(env, _enclaveAddress, uint64(secretStorage[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+                // remove node from tree if stake falls below min level
+            else _deleteIfPresent(env, _enclaveAddress);
+        }
+    }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start ----------------------------------//
+
+    /**
+     * @notice Selects a number of executor nodes for job assignments.
+     * @dev Executors are selected randomly based on the stake distribution.
+     * @param _env The execution environment supported by the enclave.
+     * @param _noOfNodesToSelect The number of nodes to select.
+     * @return selectedNodes An array of selected node addresses.
+     */
+    function selectExecutors(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) external onlyRole(JOBS_ROLE) isValidEnv(_env) returns (address[] memory selectedNodes) {
+        return _selectExecutors(_env, _noOfNodesToSelect);
+    }
+
+    function updateExecutorsResource(
+        uint8 _env,
+        address[] memory _selectedNodes
+    ) external onlyRole(JOBS_ROLE) isValidEnv(_env) {
+        _updateExecutorsResource(_env, _selectedNodes);
+    }
+
+    /**
+     * @notice Releases an executor node on job response submission, thus reducing its active jobs.
+     * @dev Can only be called by an account with the `JOBS_ROLE`.
+     * @param _enclaveAddress The address of the executor enclave to release.
+     */
+    function releaseExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) {
+        _releaseExecutor(_enclaveAddress);
+    }
+
+    /**
+     * @notice Slashes the stake of an executor node.
+     * @dev Can only be called by an account with the `JOBS_ROLE`. This function
+     *      triggers a slashing penalty on the specified executor node.
+     * @param _enclaveAddress The address of the executor enclave to be slashed.
+     * @return The amount of stake that was slashed from the executor node.
+     */
+    function slashExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) returns (uint256) {
+        return _slashExecutor(_enclaveAddress, _msgSender());
+    }
+
+    function increaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
+        secretStorage[_enclaveAddress].reputation += _value;
+    }
+
+    function decreaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
+        secretStorage[_enclaveAddress].reputation -= _value;
+    }
+
+    //---------------------------------- external functions end ------------------------------------//
+
+    //---------------------------------- JobsRole functions end -------------------------------------//
+
+    //----------------------------- SecretManagerRole functions start --------------------------------//
+
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _selectStores(
+        uint8 _env,
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit
     ) internal returns (SecretManager.SelectedEnclave[] memory) {
-        address[] memory selectedNodes = _selectNodes(_noOfNodesToSelect);
+        address[] memory selectedNodes = _selectNodes(_env, _noOfNodesToSelect);
 
         uint len = selectedNodes.length;
         SecretManager.SelectedEnclave[] memory  selectedEnclaves = new SecretManager.SelectedEnclave[](len);
@@ -504,17 +670,12 @@ contract SecretStore is
 
             // TODO: need to have some buffer space for each enclave
             if (secretStorage[enclaveAddress].storageOccupied >= secretStorage[enclaveAddress].storageCapacity)
-                _deleteIfPresent(ENV, enclaveAddress);
+                _deleteIfPresent(_env, enclaveAddress);
         }
         return selectedEnclaves;
     }
 
-    function _selectNodes(uint256 _noOfNodesToSelect) internal view returns (address[] memory selectedNodes) {
-        uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
-        selectedNodes = _selectN(ENV, randomizer, _noOfNodesToSelect);
-    }
-
-    function _slashEnclave(
+    function _slashStore(
         address _enclaveAddress,
         uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
@@ -536,19 +697,11 @@ contract SecretStore is
         }
     }
 
-    function _releaseEnclave(
+    function _releaseStore(
         address _enclaveAddress,
         uint256 _sizeLimit
     ) internal {
-        if (!secretStorage[_enclaveAddress].draining) {
-            // node might have been deleted due to max job capacity reached
-            // if stakes are greater than minStakes then update the stakes for secretStorage in tree if it already exists else add with latest stake
-            if (secretStorage[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(ENV, _enclaveAddress, uint64(secretStorage[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
-                // remove node from tree if stake falls below min level
-            else _deleteIfPresent(ENV, _enclaveAddress);
-        }
-
+        _updateTreeState(_enclaveAddress);
         secretStorage[_enclaveAddress].storageOccupied -= _sizeLimit;
     }
 
@@ -573,7 +726,7 @@ contract SecretStore is
         uint256 _markAliveTimeout,
         address _recipient
     ) internal {
-        _slashEnclave(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
+        _slashStore(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
         secretStorage[_enclaveAddress].lastAliveTimestamp = _currentCheckTimestamp;
     }
 
@@ -584,10 +737,10 @@ contract SecretStore is
         uint256 _storageOccupied,
         address _recipient
     ) internal {
-        _slashEnclave(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
+        _slashStore(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
         secretStorage[_enclaveAddress].deadTimestamp = _currentCheckTimestamp;
 
-        _releaseEnclave(_enclaveAddress, _storageOccupied);
+        _releaseStore(_enclaveAddress, _storageOccupied);
         delete secretStorage[_enclaveAddress].ackSecretIds;
     }
 
@@ -596,7 +749,7 @@ contract SecretStore is
         uint256 _sizeLimit,
         uint256 _secretId
     ) internal {
-        _releaseEnclave(_enclaveAddress, _sizeLimit);
+        _releaseStore(_enclaveAddress, _sizeLimit);
         _removeStoreSecretId(_enclaveAddress, _secretId);
     }
 
@@ -604,18 +757,19 @@ contract SecretStore is
 
     //-------------------------------- external functions start ----------------------------------//
 
-    function selectEnclaves(
+    function selectStores(
+        uint8 _env,
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit
-    ) external onlyRole(SECRET_MANAGER_ROLE) returns (SecretManager.SelectedEnclave[] memory) {
-        return _selectEnclaves(_noOfNodesToSelect, _sizeLimit);
+    ) external onlyRole(SECRET_MANAGER_ROLE) isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
+        return _selectStores(_env, _noOfNodesToSelect, _sizeLimit);
     }
 
-    function releaseEnclave(
+    function releaseStore(
         address _enclaveAddress,
         uint256 _sizeLimit
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _releaseEnclave(_enclaveAddress, _sizeLimit);
+        _releaseStore(_enclaveAddress, _sizeLimit);
     }
 
     function markAliveUpdate(
@@ -672,16 +826,20 @@ contract SecretStore is
         address[] memory _enclaveAddresses
     ) external onlyRole(SECRET_MANAGER_ROLE) {
         uint256 len = _enclaveAddresses.length;
-        for (uint256 index = 0; index < len; index++)
-            _deleteIfPresent(ENV, _enclaveAddresses[index]);
+        for (uint256 index = 0; index < len; index++) {
+            address enclaveAddress = _enclaveAddresses[index];
+            _deleteIfPresent(secretStorage[enclaveAddress].env, enclaveAddress);
+        }
     }
 
     function addTreeNodes(
         address[] memory _enclaveAddresses
     ) external onlyRole(SECRET_MANAGER_ROLE) {
         uint256 len = _enclaveAddresses.length;
-        for (uint256 index = 0; index < len; index++)
-            _insert_unchecked(ENV, _enclaveAddresses[index], uint64(secretStorage[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+        for (uint256 index = 0; index < len; index++) {
+            address enclaveAddress = _enclaveAddresses[index];
+            _insert_unchecked(secretStorage[enclaveAddress].env, enclaveAddress, uint64(secretStorage[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+        }
     }
 
     function getSecretStoresStake(
@@ -694,7 +852,6 @@ contract SecretStore is
 
         return stakeAmounts;
     }
-
 
     //---------------------------------- external functions end ----------------------------------//
 
