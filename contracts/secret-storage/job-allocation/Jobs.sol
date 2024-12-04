@@ -331,7 +331,7 @@ contract Jobs is
         // 1. Validate secretId (secretId should exist and owner should be msg sender)
         // 2. Check if the secret is acknowledged by all the selected stores
         // 3. Get the no. of selected stores(=L)
-        (bool isValid, address[] memory selectedStores) = SECRET_MANAGER.verifySecret(_secretId, _jobOwner);
+        (bool isValid, address[] memory selectedStores) = SECRET_MANAGER.verifyUserAndGetSelectedStores(_secretId, _jobOwner);
         if(!isValid)
             revert JobsInvalidSecret();
 
@@ -407,7 +407,7 @@ contract Jobs is
         uint256 len = selectedStores.length;
         for (uint256 i = 0; i < len; i++) {
             for (uint256 j = 0; j < len - i - 1; j++) {
-                if (selectedStores[j] < selectedStores[j + 1]) {
+                if (storesStakes[j] < storesStakes[j + 1]) {
                     // Swap elements
                     address temp1 = selectedStores[j];
                     selectedStores[j] = selectedStores[j + 1];
@@ -561,6 +561,7 @@ contract Jobs is
     /**
      * @notice Creates a new job with the specified parameters.
      * @param _env The execution environment supported by the enclave.
+     * @param _secretId The unique id assigned to the stored secret.
      * @param _codehash The transaction hash storing the code in calldata, that needs to be executed.
      * @param _codeInputs The inputs to the job code.
      * @param _deadline The deadline for the job in milliseconds.

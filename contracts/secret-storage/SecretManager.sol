@@ -249,6 +249,7 @@ contract SecretManager is
     error SecretManagerAlreadyTerminated();
     error SecretManagerTerminationPending();
     error SecretManagerAlreadyAcknowledged();
+    error SecretManagerUserNotAllowed();
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -821,9 +822,12 @@ contract SecretManager is
         return usdcDeposit;
     }
 
-    error SecretManagerUserNotAllowed();
-
-    function verifySecret(
+    /**
+     * @notice It verifies if msg.sender is either the secret owner or allowed to use a specific secret.
+     *         Also checks if all the selected stores have acknowledged the secret.
+     *         On successful verification, it returns the list of selected stores for the secret.
+     */
+    function verifyUserAndGetSelectedStores(
         uint256 _secretId,
         address _jobOwner
     ) external view returns (bool, address[] memory) {
