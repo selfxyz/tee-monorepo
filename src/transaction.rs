@@ -17,8 +17,8 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::constants::{
-    GARBAGE_COLLECT_INTERVAL_SEC, GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME,
-    RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL,
+    GARBAGE_COLLECT_INTERVAL_SEC, GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME_MS,
+    RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL_SEC,
 };
 use crate::errors::TxnManagerSendError;
 use crate::models::{Transaction, TxnManager, TxnStatus};
@@ -225,17 +225,17 @@ impl TxnManager {
     async fn process_transaction(self: Arc<Self>) -> Result<(), TxnManagerSendError> {
         loop {
             let Some(mut transaction) = self.transactions_queue.write().await.pop_front() else {
-                sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                 continue;
             };
-            let resend_txn_interval = RESEND_INTERVAL
+            let resend_txn_interval_sec = RESEND_INTERVAL_SEC
                 - min(
-                    RESEND_INTERVAL,
+                    RESEND_INTERVAL_SEC,
                     transaction.last_monitored.elapsed().as_secs(),
                 );
 
             sleep(Duration::from_secs(min(
-                resend_txn_interval,
+                resend_txn_interval_sec,
                 transaction.timeout.elapsed().as_secs(),
             )))
             .await;
@@ -451,7 +451,7 @@ impl TxnManager {
                         continue;
                     }
                     _ => {
-                        sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                        sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                         continue;
                     }
                 }
@@ -507,7 +507,7 @@ impl TxnManager {
                     Ok(current_nonce) => current_nonce,
                     Err(err) => {
                         failure_reason = err.to_string();
-                        sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                        sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                         continue;
                     }
                 };
@@ -544,7 +544,7 @@ impl TxnManager {
                 Ok(gas_price) => gas_price,
                 Err(err) => {
                     failure_reason = err.to_string();
-                    sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                    sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                     continue;
                 }
             };
@@ -566,7 +566,7 @@ impl TxnManager {
                         }
                         err => {
                             failure_reason = err.to_string();
-                            sleep(Duration::from_millis(HTTP_SLEEP_TIME)).await;
+                            sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                             continue;
                         }
                     }
