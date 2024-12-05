@@ -399,7 +399,6 @@ contract Jobs is
 
     function _getTopNStores(
         address[] memory selectedStores,
-        // uint256[] memory storesStakes,
         uint256 noOfStoresToSelect
     ) internal view returns (address[] memory topNStores) {
         uint256[] memory storesStakes = SECRET_STORE.getSecretStoresStake(selectedStores);

@@ -824,8 +824,8 @@ contract SecretManager is
 
     /**
      * @notice It verifies if msg.sender is either the secret owner or allowed to use a specific secret.
-     *         Also checks if all the selected stores have acknowledged the secret.
-     *         On successful verification, it returns the list of selected stores for the secret.
+     *         Also checks if the secret has been acknowledged by the original set of selected stores.
+     *         On successful verification, it returns the list of selected stores that have acknowledged the secret.
      */
     function verifyUserAndGetSelectedStores(
         uint256 _secretId,
@@ -836,17 +836,13 @@ contract SecretManager is
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         address[] memory selectedStores;
-        uint256 index = 0;
-        for ( ; index < len; index++) {
-            if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
-                break;
-
-            selectedStores[index] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+        for (uint256 index = 0; index < len; index++) {
+            if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
+                selectedStores[index] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+            else if(!_isReplacedStore(_secretId, index) && !userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
+                return (false, new address[](0));
         }
 
-        if(index != len)
-            return (false, new address[](0));
-        
         return (true, selectedStores);
     }
 
