@@ -64,6 +64,11 @@ impl TxnManager {
             let _ = txn_manager_clone.process_transaction().await;
         });
 
+        let txn_manager_clone = txn_manager.clone();
+        tokio::spawn(async move {
+            txn_manager_clone.garbage_collect_transactions().await;
+        });
+
         Ok(txn_manager)
     }
 
@@ -575,5 +580,25 @@ impl TxnManager {
         transaction.estimated_gas = estimated_gas;
 
         Ok(())
+    }
+
+    async fn garbage_collect_transactions(self: Arc<Self>) {
+        loop {
+            sleep(Duration::from_secs(600)).await;
+
+            let mut transactions_guard = self.transactions.write().await;
+            let now = Instant::now();
+
+            transactions_guard.retain(|_, transaction| {
+                match transaction.status {
+                    TxnStatus::Confirmed | TxnStatus::Failed => {
+                        // Keep transaction if less than 10 minutes old
+                        now.duration_since(transaction.last_monitored) < Duration::from_secs(600)
+                    }
+                    // Keep all pending and sending transactions
+                    TxnStatus::Pending | TxnStatus::Sending => true,
+                }
+            });
+        }
     }
 }
