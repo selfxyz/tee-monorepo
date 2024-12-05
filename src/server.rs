@@ -3,19 +3,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_web::web::{Data, Json};
 use actix_web::{get, post, HttpResponse, Responder};
+use alloy::dyn_abi::DynSolValue;
+use alloy::hex;
+use alloy::primitives::{keccak256, Address, Bytes, U256};
+use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::signers::Signature;
 use ecies::decrypt;
-use ethers::abi::{encode, encode_packed, Token};
-use ethers::prelude::*;
-use ethers::utils::keccak256;
-use k256::elliptic_curve::generic_array::sequence::Lengthen;
+use multi_block_txns::TxnManager;
 use serde_json::json;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::events::events_listener;
+use crate::transactions::get_latest_block_number;
 use crate::utils::{
     create_and_populate_file, AppState, CreateSecret, ImmutableConfig, MutableConfig,
-    SecretsTxnMetadata, DOMAIN_SEPARATOR, SECRET_STORAGE_CAPACITY,
+    DOMAIN_SEPARATOR, SECRET_ACKNOWLEDGE_STORE_TRANSACTION, SECRET_STORAGE_CAPACITY,
 };
 
 #[get("/")]
@@ -53,7 +57,7 @@ async fn inject_immutable_config(
     }
 
     // Initialize owner address for the enclave
-    *app_state.enclave_owner.lock().unwrap() = H160::from_slice(&owner_address);
+    *app_state.enclave_owner.lock().unwrap() = Address::from_slice(&owner_address);
     *immutable_params_injected_guard = true;
 
     HttpResponse::Ok().body("Immutable params configured!\n")
@@ -66,65 +70,54 @@ async fn inject_mutable_config(
     app_state: Data<AppState>,
 ) -> impl Responder {
     // Decode the gas private key from the payload
-    let bytes32_gas_key = hex::decode(
-        &mutable_config
-            .gas_key_hex
-            .strip_prefix("0x")
-            .unwrap_or(&mutable_config.gas_key_hex),
-    );
-    let Ok(bytes32_gas_key) = bytes32_gas_key else {
+    let mut bytes32_gas_key = [0u8; 32];
+    if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
         return HttpResponse::BadRequest().body(format!(
-            "Invalid gas private key hex string: {:?}\n",
-            bytes32_gas_key.unwrap_err()
+            "Failed to hex decode the gas private key into 32 bytes: {:?}",
+            err
         ));
-    };
-
-    if bytes32_gas_key.len() != 32 {
-        return HttpResponse::BadRequest().body("Gas private key must be 32 bytes long!\n");
     }
 
     // Initialize local wallet with operator's gas key to send signed transactions to the common chain
-    let gas_wallet = LocalWallet::from_bytes(&bytes32_gas_key);
-    let Ok(gas_wallet) = gas_wallet else {
+    let gas_wallet = PrivateKeySigner::from_bytes(&bytes32_gas_key.into());
+    let Ok(_) = gas_wallet else {
         return HttpResponse::BadRequest().body(format!(
             "Invalid gas private key provided: {:?}\n",
             gas_wallet.unwrap_err()
         ));
     };
-    let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
+
+    let mut wallet_guard = app_state.gas_wallet.write().await;
+    if *wallet_guard == mutable_config.gas_key_hex.clone() {
+        return HttpResponse::NotAcceptable().body("The same wallet address already set.");
+    }
+    *wallet_guard = mutable_config.gas_key_hex.clone();
+    drop(wallet_guard);
 
     // Connect the rpc http provider with the operator's gas wallet
-    let http_rpc_client = Provider::<Http>::try_from(&app_state.http_rpc_url);
-    let Ok(http_rpc_client) = http_rpc_client else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to initialize the http rpc server {}: {:?}\n",
-            app_state.http_rpc_url,
-            http_rpc_client.unwrap_err()
-        ));
-    };
-    let http_rpc_client = http_rpc_client.with_signer(gas_wallet);
-
-    // Fetch current nonce for the injected gas address from the rpc
-    let nonce_to_send = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async {
-            http_rpc_client
-                .get_transaction_count(http_rpc_client.address(), None)
-                .await
-        },
+    let http_rpc_txn_manager = TxnManager::new(
+        app_state.http_rpc_url.clone(),
+        app_state.common_chain_id,
+        app_state.gas_wallet.clone(),
+        None,
+        None,
+        None,
     )
     .await;
-    let Ok(nonce_to_send) = nonce_to_send else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to fetch current nonce for the gas address: {:?}\n",
-            nonce_to_send.unwrap_err()
-        ));
-    };
 
     // Initialize HTTP RPC client and nonce for sending the signed transactions
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
-    *app_state.nonce_to_send.lock().unwrap() = nonce_to_send;
-    *app_state.http_rpc_client.lock().unwrap() = Some(http_rpc_client);
+    if *mutable_params_injected_guard == false {
+        let Ok(http_rpc_txn_manager) = http_rpc_txn_manager else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to initialize the http rpc txn manager for url {}: {:?}\n",
+                app_state.http_rpc_url,
+                http_rpc_txn_manager.unwrap_err()
+            ));
+        };
+
+        *app_state.http_rpc_txn_manager.lock().unwrap() = Some(http_rpc_txn_manager);
+    }
     *mutable_params_injected_guard = true;
 
     HttpResponse::Ok().body("Mutable params configured!\n")
@@ -133,13 +126,14 @@ async fn inject_mutable_config(
 #[get("/store-details")]
 // Endpoint exposed to retrieve secret store enclave details
 async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
-    let mut gas_address = H160::zero();
+    let mut gas_address = Address::ZERO;
     if *app_state.mutable_params_injected.lock().unwrap() == true {
         gas_address = app_state
-            .http_rpc_client
-            .lock()
-            .unwrap()
+            .gas_wallet
+            .read()
+            .await
             .clone()
+            .parse::<PrivateKeySigner>()
             .unwrap()
             .address();
     }
@@ -172,37 +166,40 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
         .as_secs();
 
     // Encode and hash the secret storage capacity of enclave following EIP712 format
-    let domain_separator = keccak256(encode(&[
-        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.SecretStore").to_vec()),
-        Token::FixedBytes(keccak256("1").to_vec()),
-    ]));
+    let domain_separator = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(keccak256("EIP712Domain(string name,string version)"), 32),
+            DynSolValue::FixedBytes(keccak256("marlin.oyster.SecretStore"), 32),
+            DynSolValue::FixedBytes(keccak256("1"), 32),
+        ])
+        .abi_encode(),
+    );
     let register_typehash =
         keccak256("Register(address owner,uint256 storageCapacity,uint256 signTimestamp)");
 
-    let hash_struct = keccak256(encode(&[
-        Token::FixedBytes(register_typehash.to_vec()),
-        Token::Address(owner),
-        Token::Uint(storage_capacity.into()),
-        Token::Uint(sign_timestamp.into()),
-    ]));
+    let hash_struct = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(register_typehash, 32),
+            DynSolValue::Address(owner),
+            DynSolValue::Uint(U256::from(storage_capacity), 256),
+            DynSolValue::Uint(U256::from(sign_timestamp), 256),
+        ])
+        .abi_encode(),
+    );
 
-    // Create the digest
-    let digest = encode_packed(&[
-        Token::String("\x19\x01".to_string()),
-        Token::FixedBytes(domain_separator.to_vec()),
-        Token::FixedBytes(hash_struct.to_vec()),
-    ]);
-    let Ok(digest) = digest else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to encode the registration message for signing: {:?}\n",
-            digest.unwrap_err()
-        ));
-    };
-    let digest = keccak256(digest);
+    let digest = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::String("\x19\x01".to_string()),
+            DynSolValue::FixedBytes(domain_separator, 32),
+            DynSolValue::FixedBytes(hash_struct, 32),
+        ])
+        .abi_encode_packed(),
+    );
 
     // Sign the digest using enclave key
-    let sig = app_state.enclave_signer.sign_prehash_recoverable(&digest);
+    let sig = app_state
+        .enclave_signer
+        .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to sign the registration message using enclave key: {:?}\n",
@@ -212,8 +209,7 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
     let signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
     // Get the current block number from the rpc to initiate event listening
-    let http_rpc_client = app_state.http_rpc_client.lock().unwrap().clone().unwrap();
-    let current_block_number = http_rpc_client.get_block_number().await;
+    let current_block_number = get_latest_block_number(&app_state.http_rpc_url).await;
 
     let mut events_listener_active_guard = app_state.events_listener_active.lock().unwrap();
     if *events_listener_active_guard == false {
@@ -288,13 +284,16 @@ async fn inject_and_store_secret(
     };
 
     // Create the digest
-    let data_hash = keccak256(encode(&[
-        Token::Uint(create_secret.secret_id),
-        Token::Bytes(encrypted_secret_bytes.clone()),
-    ]));
+    let data_hash = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::Uint(create_secret.secret_id, 256),
+            DynSolValue::Bytes(encrypted_secret_bytes.clone()),
+        ])
+        .abi_encode(),
+    );
 
     // Recover the signer address from the signature and digest
-    let recovered_address = signature.recover(data_hash);
+    let recovered_address = signature.recover_address_from_prehash(&data_hash);
     let Ok(recovered_address) = recovered_address else {
         return HttpResponse::BadRequest().body(format!(
             "Failed to recover the signer from the signature: {:?}\n",
@@ -342,7 +341,7 @@ async fn inject_and_store_secret(
     };
 
     // Exit if the secret data is not the same size as the limit received from the SecretManager contract
-    if secret_created.secret_metadata.size_limit != decrypted_secret.len().into() {
+    if secret_created.secret_metadata.size_limit != U256::from(decrypted_secret.len()) {
         app_state
             .secrets_created
             .lock()
@@ -383,28 +382,29 @@ async fn inject_and_store_secret(
     // Encode and hash the acknowledgement of storing the secret following EIP712 format
     let acknowledge_typehash = keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
 
-    let hash_struct = keccak256(encode(&[
-        Token::FixedBytes(acknowledge_typehash.to_vec()),
-        Token::Uint(create_secret.secret_id),
-        Token::Uint(sign_timestamp.into()),
-    ]));
+    let hash_struct = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(acknowledge_typehash, 32),
+            DynSolValue::Uint(create_secret.secret_id, 256),
+            DynSolValue::Uint(U256::from(sign_timestamp), 256),
+        ])
+        .abi_encode(),
+    );
 
     // Create the digest
-    let digest = encode_packed(&[
-        Token::String("\x19\x01".to_string()),
-        Token::FixedBytes(DOMAIN_SEPARATOR.to_vec()),
-        Token::FixedBytes(hash_struct.to_vec()),
-    ]);
-    let Ok(digest) = digest else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Secret Stored! \nFailed to encode the acknowledgement message for signing: {:?}\n",
-            digest.unwrap_err()
-        ));
-    };
-    let digest = keccak256(digest);
+    let digest = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::String("\x19\x01".to_string()),
+            DynSolValue::FixedBytes(*DOMAIN_SEPARATOR, 32),
+            DynSolValue::FixedBytes(hash_struct, 32),
+        ])
+        .abi_encode_packed(),
+    );
 
     // Sign the digest using enclave key
-    let sig = app_state.enclave_signer.sign_prehash_recoverable(&digest);
+    let sig = app_state
+        .enclave_signer
+        .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
         return HttpResponse::InternalServerError().body(format!(
             "Secret Stored! \nFailed to sign the acknowledgement message using enclave key: {:?}\n",
@@ -413,24 +413,47 @@ async fn inject_and_store_secret(
     };
     let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
+    let function_selector = &keccak256(SECRET_ACKNOWLEDGE_STORE_TRANSACTION.as_bytes());
+    let mut selector = [0u8; 4];
+    selector.copy_from_slice(&function_selector[..4]);
+
+    let params = DynSolValue::Tuple(vec![
+        DynSolValue::Uint(create_secret.secret_id, 256),
+        DynSolValue::Uint(U256::from(sign_timestamp), 256),
+        DynSolValue::Bytes(signature.clone()),
+    ])
+    .abi_encode();
+
+    let mut txn_data = selector.to_vec();
+    txn_data.extend(params[32..].to_vec());
+
+    let txn_data = Bytes::from(txn_data);
+
     // Send the txn response with the acknowledgement counterpart to the common chain txn sender
-    let _ = Retry::spawn(
+    if let Err(err) = Retry::spawn(
         ExponentialBackoff::from_millis(5).map(jitter).take(3),
         || async {
             app_state
-                .secrets_txn_sender_channel
+                .http_rpc_txn_manager
                 .lock()
                 .unwrap()
                 .clone()
                 .unwrap()
-                .send(SecretsTxnMetadata::Acknowledgement(
-                    create_secret.secret_id,
+                .call_contract_function(
+                    app_state.secret_manager_contract_addr,
+                    txn_data.clone(),
                     secret_created.acknowledgement_deadline,
-                ))
+                )
                 .await
         },
     )
-    .await;
+    .await
+    {
+        eprintln!(
+            "Failed to send acknowledgement transaction for secret ID {}: {:?}",
+            create_secret.secret_id, err
+        );
+    };
 
     HttpResponse::Ok().json(json!({
         "secret_id": create_secret.secret_id,

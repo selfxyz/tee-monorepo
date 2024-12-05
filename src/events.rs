@@ -1,56 +1,57 @@
 use std::pin::pin;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 
 use actix_web::web::Data;
-use ethers::abi::{decode, ParamType};
-use ethers::prelude::*;
-use ethers::utils::keccak256;
+use alloy::primitives::{keccak256, B256, U256};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::rpc::types::{Filter, Log};
+use alloy::sol_types::SolEvent;
 use scopeguard::defer;
 use tokio::select;
-use tokio::sync::mpsc::{channel, Sender};
 use tokio::time::sleep;
-use tokio_stream::Stream;
+use tokio_retry::strategy::{jitter, ExponentialBackoff};
+use tokio_retry::Retry;
+use tokio_stream::{Stream, StreamExt};
 
-use crate::scheduler::secrets_monitor_and_garbage_cleaner;
-use crate::transactions::send_transactions;
-use crate::utils::{
-    check_and_delete_file, h256_to_address, AppState, SecretCreatedMetadata, SecretMetadata,
-    SecretsTxnMetadata, ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE,
-};
+use crate::scheduler::store_alive_monitor;
+use crate::secret_manager::SecretManagerContract;
+use crate::transactions::{get_block_timestamp, get_secret_metadata};
+use crate::utils::*;
 
 // Start listening to events emitted by the 'SecretManager' contract if enclave is registered else listen for Store registered event first
-pub async fn events_listener(app_state: Data<AppState>, starting_block: U64) {
+pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
     defer! {
         *app_state.events_listener_active.lock().unwrap() = false;
     }
     loop {
         // web socket connection
-        let web_socket_client =
-            match Provider::<Ws>::connect_with_reconnects(&app_state.web_socket_url, 0).await {
-                Ok(client) => client,
-                Err(err) => {
-                    eprintln!(
-                        "Failed to connect to the common chain websocket provider: {:?}",
-                        err
-                    );
-                    continue;
-                }
-            };
+        let ws_connect = WsConnect::new(&app_state.web_socket_url);
+        let web_socket_client = match ProviderBuilder::new().on_ws(ws_connect).await {
+            Ok(client) => client,
+            Err(err) => {
+                eprintln!(
+                    "Failed to connect to the common chain websocket provider: {}",
+                    err
+                );
+                sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+        };
 
         if !app_state.enclave_registered.load(Ordering::SeqCst) {
             // Create filter to listen to the 'SecretStoreRegistered' event emitted by the SecretStore contract
             let register_store_filter = Filter::new()
                 .address(app_state.secret_store_contract_addr)
-                .topic0(H256::from(keccak256(
-                    "SecretStoreRegistered(address,address,uint256)",
-                )))
-                .topic1(H256::from(app_state.enclave_address))
-                .topic2(H256::from(*app_state.enclave_owner.lock().unwrap()))
+                .event(SECRET_STORE_REGISTERED_EVENT)
+                .topic1(B256::from(app_state.enclave_address.into_word()))
+                .topic2(B256::from(
+                    *app_state.enclave_owner.lock().unwrap().into_word(),
+                ))
                 .from_block(starting_block);
 
             // Subscribe to the store registered filter through the rpc web socket client
-            let mut register_stream = match web_socket_client
+            let register_subscription = match web_socket_client
                 .subscribe_logs(&register_store_filter)
                 .await
             {
@@ -64,15 +65,16 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: U64) {
                     continue;
                 }
             };
+            let mut register_stream = register_subscription.into_stream();
 
             while let Some(event) = register_stream.next().await {
-                if event.removed.unwrap_or(true) {
+                if event.removed {
                     continue;
                 }
 
                 app_state.enclave_registered.store(true, Ordering::SeqCst);
                 app_state.last_block_seen.store(
-                    event.block_number.unwrap_or(starting_block).as_u64(),
+                    event.block_number.unwrap_or(starting_block),
                     Ordering::SeqCst,
                 );
                 break;
@@ -87,15 +89,9 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: U64) {
         // Create filter to listen to the relevant events emitted by the SecretManager contract
         let secrets_filter = Filter::new()
             .address(app_state.secret_manager_contract_addr)
-            .topic0(vec![
-                keccak256("SecretCreated(uint256,address,uint256,uint256,uint256,address[])"),
-                keccak256("SecretStoreAcknowledgementSuccess(uint256,address)"),
-                keccak256("SecretStoreAcknowledgementFailed(uint256)"),
-                keccak256("SecretEndTimestampUpdated(uint256,uint256)"),
-            ])
             .from_block(app_state.last_block_seen.load(Ordering::SeqCst));
         // Subscribe to the filter through the rpc web socket client
-        let secrets_stream = match web_socket_client.subscribe_logs(&secrets_filter).await {
+        let secrets_subscription = match web_socket_client.subscribe_logs(&secrets_filter).await {
             Ok(stream) => stream,
             Err(err) => {
                 eprintln!(
@@ -105,16 +101,16 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: U64) {
                 continue;
             }
         };
-        let secrets_stream = pin!(secrets_stream);
+        let secrets_stream = pin!(secrets_subscription.into_stream());
 
         // Create filter to listen to 'SecretStoreDeregistered' event emitted by the SecretStore contract
         let store_deregistered_filter = Filter::new()
             .address(app_state.secret_store_contract_addr)
-            .topic0(H256::from(keccak256("SecretStoreDeregistered(address)")))
-            .topic1(H256::from(app_state.enclave_address))
+            .event(SECRET_STORE_DEREGISTERED_EVENT)
+            .topic1(B256::from(app_state.enclave_address.into_word()))
             .from_block(app_state.last_block_seen.load(Ordering::SeqCst));
         // Subscribe to the deregistered filter through the rpc web socket client
-        let store_deregistered_stream = match web_socket_client
+        let store_deregistered_subscription = match web_socket_client
             .subscribe_logs(&store_deregistered_filter)
             .await
         {
@@ -128,32 +124,15 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: U64) {
                 continue;
             }
         };
-        let store_deregistered_stream = pin!(store_deregistered_stream);
-
-        // Create tokio mpsc channel to send transactions to the common chain 'SecretManager' contract coordinated
-        let (tx, rx) = channel::<SecretsTxnMetadata>(100);
-        *app_state.secrets_txn_sender_channel.lock().unwrap() = Some(tx.clone());
-
-        // Spawn task to send transactions to the common chain 'SecretManager' contract
-        let app_state_clone = app_state.clone();
-        tokio::spawn(async move {
-            send_transactions(app_state_clone, rx).await;
-        });
+        let store_deregistered_stream = pin!(store_deregistered_subscription.into_stream());
 
         // Spawn task to submit periodic proofs for secrets stored and remove expired secrets
         let app_state_clone = app_state.clone();
-        let tx_clone = tx.clone();
         tokio::spawn(async move {
-            secrets_monitor_and_garbage_cleaner(app_state_clone, tx_clone).await;
+            store_alive_monitor(app_state_clone).await;
         });
 
-        handle_event_logs(
-            secrets_stream,
-            store_deregistered_stream,
-            app_state.clone(),
-            tx,
-        )
-        .await;
+        handle_event_logs(secrets_stream, store_deregistered_stream, app_state.clone()).await;
 
         if !app_state.enclave_registered.load(Ordering::SeqCst) {
             return;
@@ -166,27 +145,25 @@ async fn handle_event_logs(
     mut secrets_stream: impl Stream<Item = Log> + Unpin,
     mut store_deregistered_stream: impl Stream<Item = Log> + Unpin,
     app_state: Data<AppState>,
-    tx: Sender<SecretsTxnMetadata>,
 ) {
     println!("Started listening to 'SecretManager' events!");
 
     loop {
         select! {
             Some(event) = store_deregistered_stream.next() => {
-                if event.removed.unwrap_or(true) {
+                if event.removed {
                     continue;
                 }
 
                 // Capture the Enclave deregistered event emitted by the 'SecretStore' contract
                 println!("Enclave deregistered from the common chain!");
                 app_state.enclave_registered.store(false, Ordering::SeqCst);
-                *app_state.secrets_txn_sender_channel.lock().unwrap() = None;
 
                 println!("Stopped listening to secret manager events!");
                 return;
             }
             Some(event) = secrets_stream.next() => {
-                if event.removed.unwrap_or(true) {
+                if event.removed {
                     continue;
                 }
 
@@ -194,60 +171,26 @@ async fn handle_event_logs(
                     continue;
                 };
 
-                if current_block.as_u64() < app_state.last_block_seen.load(Ordering::SeqCst) {
+                if current_block < app_state.last_block_seen.load(Ordering::SeqCst) {
                     continue;
                 }
-                app_state.last_block_seen.store(current_block.as_u64(), Ordering::SeqCst);
+                app_state.last_block_seen.store(current_block, Ordering::SeqCst);
 
                 // Capture the Secret created event emitted by the 'SecretManager' contract
-                if event.topics[0]
-                    == keccak256("SecretCreated(uint256,address,uint256,uint256,uint256,address[])")
-                    .into()
+                if event.topic0()
+                    == Some(&keccak256(SECRET_CREATED_EVENT))
                 {
                     // Extract the 'indexed' parameters of the event
-                    let secret_id = event.topics[1].into_uint();
-                    let secret_owner = h256_to_address(event.topics[2]);
+                    let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
+                    let secret_owner = b256_to_address(event.topics()[2]);
 
                     // Decode the event parameters using the ABI information
-                    let event_tokens = decode(
-                        &vec![
-                            ParamType::Uint(256),
-                            ParamType::Uint(256),
-                            ParamType::Uint(256),
-                            ParamType::Array(Box::new(ParamType::Address)),
-                        ],
-                        &event.data.to_vec(),
-                    );
-                    let Ok(event_tokens) = event_tokens else {
+                    let event_decoded = SecretManagerContract::SecretCreated::decode_log(&event.inner, true);
+                    let Ok(event_decoded) = event_decoded else {
                         eprintln!(
-                            "Failed to decode 'SecretCreated' event data for secret id {}: {:?}",
+                            "Failed to decode 'SecretCreated' event data for secret id {}: {}",
                             secret_id,
-                            event_tokens.unwrap_err()
-                        );
-                        continue;
-                    };
-
-                    let Some(size_limit) = event_tokens[0].clone().into_uint() else {
-                        eprintln!(
-                            "Failed to decode sizeLimit token from the 'SecretCreated' event data for secret id {}: {:?}",
-                            secret_id,
-                            event_tokens[0]
-                        );
-                        continue;
-                    };
-                    let Some(end_timestamp) = event_tokens[1].clone().into_uint() else {
-                        eprintln!(
-                            "Failed to decode endTimestamp token from the 'SecretCreated' event data for secret id {}: {:?}",
-                            secret_id,
-                            event_tokens[1]
-                        );
-                        continue;
-                    };
-                    let Some(selected_nodes) = event_tokens[3].clone().into_array() else {
-                        eprintln!(
-                            "Failed to decode selectedEnclaves token from the 'SecretCreated' event data for secret id {}: {:?}",
-                            secret_id,
-                            event_tokens[3]
+                            event_decoded.err().unwrap()
                         );
                         continue;
                     };
@@ -260,36 +203,40 @@ async fn handle_event_logs(
                         .insert(secret_id, 0);
 
                     let app_state_clone = app_state.clone();
-                    let tx_clone = tx.clone();
                     tokio::spawn(async move {
-                        handle_acknowledgement_timeout(secret_id, app_state_clone, tx_clone).await;
+                        handle_acknowledgement_timeout(secret_id, app_state_clone).await;
                     });
 
                     // Check if the enclave has been selected for storing the secret
-                    let is_node_selected = selected_nodes
+                    let is_node_selected = event_decoded.selectedEnclaves.clone()
                         .into_iter()
-                        .map(|token| token.into_address())
-                        .filter(|addr| addr.is_some())
-                        .any(|addr| addr.unwrap() == app_state.enclave_address);
+                        .any(|addr| addr == app_state.enclave_address);
 
                     // If selected, store the metadata of the secret created to allow injection via API
                     if is_node_selected {
+                        let mut start_timestamp = Instant::now();
+                        if let Some(event_block_number) = event.block_number {
+                            if let Ok(event_timestamp) = get_block_timestamp(&app_state.http_rpc_url, event_block_number).await {
+                                start_timestamp = timestamp_to_instant(event_timestamp).unwrap();
+                            }
+                        }
+
                         app_state.secrets_created.lock().unwrap().insert(secret_id, SecretCreatedMetadata {
                             secret_metadata: SecretMetadata {
                                 owner: secret_owner,
-                                size_limit: size_limit,
-                                end_timestamp: end_timestamp,
+                                size_limit: event_decoded.sizeLimit,
+                                end_timestamp: event_decoded.endTimestamp,
                             },
-                            acknowledgement_deadline: SystemTime::now() + Duration::from_secs(app_state.acknowledgement_timeout),
+                            acknowledgement_deadline: start_timestamp + Duration::from_secs(app_state.acknowledgement_timeout),
                         });
                     }
                 }
                 // Capture the SecretStoreAcknowledgementSuccess event emitted by the SecretManager contract
-                else if event.topics[0]
-                    == keccak256("SecretStoreAcknowledgementSuccess(uint256,address)").into()
+                else if event.topic0()
+                    == Some(&keccak256(SECRET_STORE_ACKNOWLEDGEMENT_SUCCESS_EVENT))
                 {
                     // Extract the secret ID from the event
-                    let secret_id = event.topics[1].into_uint();
+                    let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
                     let Some(secret_ack_count) = app_state.secrets_awaiting_acknowledgement.lock().unwrap().get(&secret_id).cloned() else {
                         continue;
                     };
@@ -312,9 +259,11 @@ async fn handle_event_logs(
                     }
                 }
                 // Capture the SecretStoreAcknowledgementFailed event emitted by the SecretManager contract
-                else if event.topics[0] == keccak256("SecretStoreAcknowledgementFailed(uint256)").into() {
+                else if event.topic0() == Some(&keccak256(SECRET_STORE_ACKNOWLEDGEMENT_FAILED_EVENT))
+                    || event.topic0() == Some(&keccak256(SECRET_TERMINATED_EVENT))
+                    || event.topic0() == Some(&keccak256(SECRET_REMOVED_EVENT)) {
                     // Extract the secret ID from the event
-                    let secret_id = event.topics[1].into_uint();
+                    let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
                     // Remove the secret ID from awaiting acknowledgement
                     app_state
                         .secrets_awaiting_acknowledgement
@@ -348,32 +297,48 @@ async fn handle_event_logs(
                         });
                     }
                 }
-                // Capture the SecretEndTimestampUpdated event emitted by the SecretManager contract
-                else if event.topics[0] == keccak256("SecretEndTimestampUpdated(uint256,uint256)").into() {
-                    // Extract the secret ID from the event
-                    let secret_id = event.topics[1].into_uint();
+                else if event.topic0() == Some(&keccak256(SECRET_STORE_REPLACED_EVENT)) {
+                    let new_enclave_address = b256_to_address(event.topics()[3]);
 
-                    // Decode the event parameters using the ABI information
-                    let event_tokens = decode(
-                        &vec![
-                            ParamType::Uint(256),
-                        ],
-                        &event.data.to_vec(),
-                    );
-                    let Ok(event_tokens) = event_tokens else {
-                        eprintln!(
-                            "Failed to decode 'SecretEndTimestampUpdated' event data for secret id {}: {:?}",
-                            secret_id,
-                            event_tokens.unwrap_err()
-                        );
+                    if new_enclave_address != app_state.enclave_address {
+                        continue;
+                    }
+
+                    // Extract the secret ID from the event
+                    let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
+
+                    let secret_metadata = get_secret_metadata(&app_state.http_rpc_url, app_state.secret_manager_contract_addr, secret_id, app_state.acknowledgement_timeout).await;
+                    let Ok(secret_metadata) = secret_metadata else {
+                        eprintln!("Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}", secret_id, secret_metadata.unwrap_err());
                         continue;
                     };
 
-                    let Some(end_timestamp) = event_tokens[0].clone().into_uint() else {
+                    // Mark the current secret as waiting for acknowledgements
+                    app_state
+                        .secrets_awaiting_acknowledgement
+                        .lock()
+                        .unwrap()
+                        .insert(secret_id, 0);
+
+                    let app_state_clone = app_state.clone();
+                    tokio::spawn(async move {
+                        handle_acknowledgement_timeout(secret_id, app_state_clone).await;
+                    });
+
+                    app_state.secrets_created.lock().unwrap().insert(secret_id, secret_metadata);
+                }
+                // Capture the SecretEndTimestampUpdated event emitted by the SecretManager contract
+                else if event.topic0() == Some(&keccak256(SECRET_END_TIMESTAMP_UPDATED_EVENT)) {
+                    // Extract the secret ID from the event
+                    let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
+
+                    // Decode the event parameters using the ABI information
+                    let event_decoded = SecretManagerContract::SecretEndTimestampUpdated::decode_log(&event.inner, true);
+                    let Ok(event_decoded) = event_decoded else {
                         eprintln!(
-                            "Failed to decode endTimestamp token from the 'SecretEndTimestampUpdated' event data for secret id {}: {:?}",
+                            "Failed to decode 'SecretEndTimestampUpdated' event data for secret id {}: {}",
                             secret_id,
-                            event_tokens[0]
+                            event_decoded.err().unwrap()
                         );
                         continue;
                     };
@@ -384,7 +349,7 @@ async fn handle_event_logs(
                         .lock()
                         .unwrap()
                         .entry(secret_id)
-                        .and_modify(|secret| secret.end_timestamp = end_timestamp);
+                        .and_modify(|secret| secret.end_timestamp = event_decoded.endTimestamp);
                 }
             }
             else => break,
@@ -395,11 +360,7 @@ async fn handle_event_logs(
 }
 
 // Start task to handle the acknowledgement timeout for a secret created
-async fn handle_acknowledgement_timeout(
-    secret_id: U256,
-    app_state: Data<AppState>,
-    tx: Sender<SecretsTxnMetadata>,
-) {
+async fn handle_acknowledgement_timeout(secret_id: U256, app_state: Data<AppState>) {
     // Wait for the acknowledgement timeout to get over for the current secret ID
     sleep(Duration::from_secs(app_state.acknowledgement_timeout + 1)).await;
 
@@ -413,19 +374,47 @@ async fn handle_acknowledgement_timeout(
         return;
     }
 
-    // Send txn response with acknowledgement timeout counterpart
-    if let Err(err) = tx
-        .send(SecretsTxnMetadata::AcknowledgementTimeout(
-            secret_id,
-            SystemTime::now() + Duration::from_secs(ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE),
-        ))
-        .await
+    let txn_data = generate_txn(
+        app_state.clone(),
+        &SecretsTxnMetadata::AcknowledgementTimeout(secret_id),
+    );
+    let Ok(txn_data) = txn_data else {
+        eprintln!(
+            "Failed to generate acknowledgement timeout transaction data: {:?}",
+            txn_data.unwrap_err()
+        );
+        return;
+    };
+
+    let http_rpc_txn_manager = app_state
+        .http_rpc_txn_manager
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap();
+
+    // Send the txn response with the acknowledgement counterpart to the common chain txn sender
+    if let Err(err) = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async {
+            http_rpc_txn_manager
+                .clone()
+                .call_contract_function(
+                    app_state.secret_manager_contract_addr,
+                    txn_data.clone(),
+                    Instant::now()
+                        + Duration::from_secs(ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE),
+                )
+                .await
+        },
+    )
+    .await
     {
         eprintln!(
-            "Failed to send acknowledgement timeout response to receiver channel: {:?}",
-            err
+            "Failed to send acknowledgement timeout transaction for secret ID {}: {:?}",
+            secret_id, err
         );
-    }
+    };
 
     // Mark the secret created as removed from awaiting acknowledgement
     app_state

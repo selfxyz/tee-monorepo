@@ -1,13 +1,13 @@
 use std::fs;
 
+use alloy::dyn_abi::DynSolValue;
+use alloy::hex;
+use alloy::primitives::{keccak256, U256};
+use alloy::signers::k256::ecdsa::SigningKey;
+use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use ecies::encrypt;
-use ethers::abi::{encode, Token};
-use ethers::types::U256;
-use ethers::utils::keccak256;
-use k256::ecdsa::SigningKey;
-use k256::elliptic_curve::generic_array::sequence::Lengthen;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -18,7 +18,7 @@ struct Cli {
 
     // Serialized secret data
     #[clap(long, value_parser)]
-    secret_data: String,
+    secret_data_hex: String,
 
     // File location of the enclave public key (used to encrypt the data)
     #[clap(long, value_parser, default_value = "./id.pub")]
@@ -32,14 +32,14 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let secret_data_bytes = cli.secret_data.as_bytes();
+    let secret_data_bytes = hex::decode(cli.secret_data_hex).context("Failed to hex decode the secret data hex string")?;
     println!("Secret data in bytes: {:?}", secret_data_bytes);
 
     let enclave_public_key =
         fs::read(cli.enclave_public_file).context("Failed to read the enclave public key")?;
 
     // Encrypt secret data using the enclave 'secp256k1' public key
-    let encrypted_secret_data_bytes = encrypt(&enclave_public_key, secret_data_bytes);
+    let encrypted_secret_data_bytes = encrypt(&enclave_public_key, secret_data_bytes.as_slice());
     let Ok(encrypted_secret_data_bytes) = encrypted_secret_data_bytes else {
         return Err(anyhow!(
             "Failed to encrypt the secret data using enclave public key: {:?}",
@@ -58,14 +58,16 @@ fn main() -> Result<()> {
     )
     .context("Invalid user signer key")?;
 
-    let data_hash = keccak256(encode(&[
-        Token::Uint(cli.secret_id),
-        Token::Bytes(encrypted_secret_data_bytes.clone()),
-    ]));
+    let token_list = DynSolValue::Tuple(vec![
+        DynSolValue::Uint(cli.secret_id, 256),
+        DynSolValue::Bytes(encrypted_secret_data_bytes.clone()),
+    ]);
+
+    let data_hash = keccak256(token_list.abi_encode());
 
     // Sign the digest using user private key
     let (rs, v) = user_private_key
-        .sign_prehash_recoverable(&data_hash)
+        .sign_prehash_recoverable(&data_hash.to_vec())
         .context("Failed to sign the secret data message using user private key")?;
     let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
