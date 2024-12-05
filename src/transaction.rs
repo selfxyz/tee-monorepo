@@ -17,7 +17,8 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::constants::{
-    GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME, RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL,
+    GARBAGE_COLLECT_INTERVAL_SEC, GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME,
+    RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL,
 };
 use crate::errors::TxnManagerSendError;
 use crate::models::{Transaction, TxnManager, TxnStatus};
@@ -37,6 +38,7 @@ impl TxnManager {
         gas_wallet: Arc<RwLock<String>>,
         gas_price_increment_percent: Option<u128>,
         gas_limit_increment_amount: Option<u64>,
+        garbage_collect_interval_sec: Option<u64>,
     ) -> Result<Arc<Self>, TxnManagerSendError> {
         match verify_rpc_url(&rpc_url) {
             Ok(_) => (),
@@ -57,6 +59,8 @@ impl TxnManager {
                 .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
             gas_limit_increment_amount: gas_limit_increment_amount.unwrap_or(GAS_INCREMENT_AMOUNT),
             transactions_queue: Arc::new(RwLock::new(VecDeque::new())),
+            garbage_collect_interval_sec: garbage_collect_interval_sec
+                .unwrap_or(GARBAGE_COLLECT_INTERVAL_SEC),
         });
 
         let txn_manager_clone = txn_manager.clone();
@@ -584,7 +588,7 @@ impl TxnManager {
 
     async fn garbage_collect_transactions(self: Arc<Self>) {
         loop {
-            sleep(Duration::from_secs(600)).await;
+            sleep(Duration::from_secs(self.garbage_collect_interval_sec)).await;
 
             let mut transactions_guard = self.transactions.write().await;
             let now = Instant::now();

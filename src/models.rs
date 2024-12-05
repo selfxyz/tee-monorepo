@@ -29,6 +29,7 @@ pub struct TxnManager {
     pub(crate) gas_price_increment_percent: u128,
     pub(crate) gas_limit_increment_amount: u64,
     pub(crate) transactions_queue: Arc<RwLock<VecDeque<Transaction>>>,
+    pub(crate) garbage_collect_interval_sec: u64,
 }
 
 #[derive(Clone, Debug)]
