@@ -13,6 +13,7 @@ import "../AttestationAutherUpgradeable.sol";
 import "../serverless-v2/tree/TreeMapUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 import "./SecretManager.sol";
+import "./interfaces/ISecretStoreManager.sol";
 
 /**
  * @title SecretStore Contract
@@ -127,6 +128,8 @@ contract SecretStore is
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
+    ISecretStoreManager public SECRET_STORE_MANAGER;
+
     //-------------------------------- SecretStore start --------------------------------//
 
     modifier isValidSecretStoreOwner(address _enclaveAddress) {
@@ -135,27 +138,22 @@ contract SecretStore is
     }
 
     function _isValidSecretStoreOwner(address _enclaveAddress) internal view {
-        if (secretStorage[_enclaveAddress].owner != _msgSender())
+        if (executors[_enclaveAddress].owner != _msgSender())
             revert SecretStoreInvalidEnclaveOwner();
     }
 
-    struct SecretStorage {
+    struct Executor {
         uint256 jobCapacity;
-        uint256 storageCapacity;
         uint256 activeJobs;
-        uint256 storageOccupied;
         uint256 stakeAmount;
-        uint256 lastAliveTimestamp;
-        uint256 deadTimestamp;
         uint256 reputation;
         address owner;
         uint8 env;
         bool draining;
-        uint256[] ackSecretIds;
     }
 
     // enclaveAddress => Storage node details
-    mapping(address => SecretStorage) public secretStorage;
+    mapping(address => Executor) public executors;
 
     uint256 public constant INIT_REPUTATION = 1000;
 
@@ -170,12 +168,6 @@ contract SecretStore is
 
     bytes32 private constant REGISTER_TYPEHASH =
         keccak256("Register(address owner,uint256 jobCapacity,uint256 storageCapacity,uint8 env,uint256 signTimestamp)");
-
-    bytes32 private constant ACKNOWLEDGE_TYPEHASH =
-        keccak256("Acknowledge(uint256 secretId,uint256 signTimestamp)");
-
-    bytes32 private constant ALIVE_TYPEHASH =
-        keccak256("Alive(uint256 secretId,uint256 signTimestamp)");
 
     /// @notice Emitted when a new enclave is registered.
     /// @param enclaveAddress The address of the enclave.
@@ -223,8 +215,13 @@ contract SecretStore is
     error SecretStoreInvalidEnclaveOwner();
     /// @notice Thrown when the provided execution environment is not supported globally.
     error SecretStoreUnsupportedEnv();
+    error SecretStoreInvalidSecretStoreManager();
 
     //-------------------------------- Admin methods start --------------------------------//
+
+    function setSecretStoreManager(address _secretStoreManagerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        SECRET_STORE_MANAGER = ISecretStoreManager(_secretStoreManagerAddress);
+    }
 
     /**
      * @notice Whitelists an enclave image for use by storage enclaves.
@@ -256,8 +253,13 @@ contract SecretStore is
     //-------------------------------- Execution Env start --------------------------------//
 
     modifier isValidEnv(uint8 _env) {
-        if (!isTreeInitialized(_env)) revert SecretStoreUnsupportedEnv();
+        _isValidEnv(_env);
         _;
+    }
+
+    function _isValidEnv(uint8 _env) internal view {
+        if (!isTreeInitialized(_env)) 
+            revert SecretStoreUnsupportedEnv();
     }
 
     function initTree(uint8 _env) external onlyRole(JOBS_ROLE) {
@@ -284,7 +286,7 @@ contract SecretStore is
         address _owner
     ) internal {
         address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
-        if (secretStorage[enclaveAddress].owner != address(0)) 
+        if (executors[enclaveAddress].owner != address(0)) 
             revert SecretStoreEnclaveAlreadyExists();
 
         // attestation verification
@@ -328,35 +330,35 @@ contract SecretStore is
         uint256 _storageCapacity,
         uint8 _env
     ) internal {
-        secretStorage[_enclaveAddress].jobCapacity = _jobCapacity;
-        secretStorage[_enclaveAddress].storageCapacity = _storageCapacity;
-        secretStorage[_enclaveAddress].env = _env;
-        secretStorage[_enclaveAddress].lastAliveTimestamp = block.timestamp;
-        secretStorage[_enclaveAddress].owner = _owner;
-        secretStorage[_enclaveAddress].reputation = INIT_REPUTATION;
+        executors[_enclaveAddress].jobCapacity = _jobCapacity;
+        executors[_enclaveAddress].env = _env;
+        executors[_enclaveAddress].owner = _owner;
+        executors[_enclaveAddress].reputation = INIT_REPUTATION;
+        SECRET_STORE_MANAGER.register(_enclaveAddress, _storageCapacity);
 
         emit SecretStoreRegistered(_enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env);
     }
 
     function _drainSecretStore(address _enclaveAddress) internal {
-        if (secretStorage[_enclaveAddress].draining) revert SecretStoreEnclaveAlreadyDraining();
+        if (executors[_enclaveAddress].draining) revert SecretStoreEnclaveAlreadyDraining();
 
-        secretStorage[_enclaveAddress].draining = true;
+        executors[_enclaveAddress].draining = true;
 
         // remove node from the tree
-        _deleteIfPresent(secretStorage[_enclaveAddress].env, _enclaveAddress);
+        _deleteIfPresent(executors[_enclaveAddress].env, _enclaveAddress);
 
         emit SecretStoreDrained(_enclaveAddress);
     }
 
     function _reviveSecretStore(address _enclaveAddress) internal {
-        SecretStorage memory secretStoreNode = secretStorage[_enclaveAddress];
+        Executor memory secretStoreNode = executors[_enclaveAddress];
         if (!secretStoreNode.draining) revert SecretStoreEnclaveAlreadyRevived();
 
-        secretStorage[_enclaveAddress].draining = false;
+        executors[_enclaveAddress].draining = false;
 
+        (uint256 storageCapacity, uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
         // insert node in the tree
-        if (secretStoreNode.stakeAmount >= MIN_STAKE_AMOUNT && secretStoreNode.storageOccupied < secretStoreNode.storageCapacity) {
+        if (secretStoreNode.stakeAmount >= MIN_STAKE_AMOUNT && storageOccupied < storageCapacity) {
             _insert_unchecked(secretStoreNode.env, _enclaveAddress, uint64(secretStoreNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
@@ -364,24 +366,26 @@ contract SecretStore is
     }
 
     function _deregisterSecretStore(address _enclaveAddress) internal {
-        if (!secretStorage[_enclaveAddress].draining) revert SecretStoreEnclaveNotDraining();
-        if (secretStorage[_enclaveAddress].storageOccupied != 0) revert SecretStoreEnclaveNotEmpty();
+        if (!executors[_enclaveAddress].draining) revert SecretStoreEnclaveNotDraining();
+        ( , uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
+        if (storageOccupied != 0) revert SecretStoreEnclaveNotEmpty();
 
-        _removeStake(_enclaveAddress, secretStorage[_enclaveAddress].stakeAmount);
+        _removeStake(_enclaveAddress, executors[_enclaveAddress].stakeAmount);
 
         _revokeEnclaveKey(_enclaveAddress);
-        delete secretStorage[_enclaveAddress];
+        delete executors[_enclaveAddress];
 
         emit SecretStoreDeregistered(_enclaveAddress);
     }
 
     function _addSecretStoreStake(uint256 _amount, address _enclaveAddress) internal {
-        SecretStorage memory secretStoreNode = secretStorage[_enclaveAddress];
+        Executor memory secretStoreNode = executors[_enclaveAddress];
         uint256 updatedStake = secretStoreNode.stakeAmount + _amount;
+        (uint256 storageCapacity, uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
 
         if (
             !secretStoreNode.draining &&
-            secretStoreNode.storageOccupied < secretStoreNode.storageCapacity &&
+            storageOccupied < storageCapacity &&
             updatedStake >= MIN_STAKE_AMOUNT
         ) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
@@ -392,24 +396,25 @@ contract SecretStore is
     }
 
     function _removeSecretStoreStake(uint256 _amount, address _enclaveAddress) internal {
-        if (!secretStorage[_enclaveAddress].draining) revert SecretStoreEnclaveNotDraining();
-        if (secretStorage[_enclaveAddress].storageOccupied != 0) revert SecretStoreEnclaveNotEmpty();
+        if (!executors[_enclaveAddress].draining) revert SecretStoreEnclaveNotDraining();
+        ( , uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
+        if (storageOccupied != 0) revert SecretStoreEnclaveNotEmpty();
 
         _removeStake(_enclaveAddress, _amount);
     }
 
     function _addStake(address _enclaveAddress, uint256 _amount) internal {
-        secretStorage[_enclaveAddress].stakeAmount += _amount;
+        executors[_enclaveAddress].stakeAmount += _amount;
         // transfer stake
-        STAKING_TOKEN.safeTransferFrom(secretStorage[_enclaveAddress].owner, address(this), _amount);
+        STAKING_TOKEN.safeTransferFrom(executors[_enclaveAddress].owner, address(this), _amount);
 
         emit SecretStoreStakeAdded(_enclaveAddress, _amount);
     }
 
     function _removeStake(address _enclaveAddress, uint256 _amount) internal {
-        secretStorage[_enclaveAddress].stakeAmount -= _amount;
+        executors[_enclaveAddress].stakeAmount -= _amount;
         // transfer stake
-        STAKING_TOKEN.safeTransfer(secretStorage[_enclaveAddress].owner, _amount);
+        STAKING_TOKEN.safeTransfer(executors[_enclaveAddress].owner, _amount);
 
         emit SecretStoreStakeRemoved(_enclaveAddress, _amount);
     }
@@ -517,7 +522,7 @@ contract SecretStore is
      * @return The owner address of the executor node.
      */
     function getOwner(address _enclaveAddress) external view returns (address) {
-        return secretStorage[_enclaveAddress].owner;
+        return executors[_enclaveAddress].owner;
     }
 
     //-------------------------------- external functions end ----------------------------------//
@@ -536,34 +541,6 @@ contract SecretStore is
         _updateExecutorsResource(_env, selectedNodes);
     }
 
-    function _updateExecutorsResource(
-        uint8 _env,
-        address[] memory _selectedNodes
-    ) internal {
-        for (uint256 index = 0; index < _selectedNodes.length; index++) {
-            address enclaveAddress = _selectedNodes[index];
-            secretStorage[enclaveAddress].activeJobs += 1;
-
-            // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
-            if (secretStorage[enclaveAddress].activeJobs == secretStorage[enclaveAddress].jobCapacity)
-                _deleteIfPresent(_env, enclaveAddress);
-        }
-    }
-
-    function _slashExecutor(address _enclaveAddress, address _recipient) internal returns (uint256) {
-        uint256 totalComp = (secretStorage[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
-        secretStorage[_enclaveAddress].stakeAmount -= totalComp;
-
-        STAKING_TOKEN.safeTransfer(_recipient, totalComp);
-
-        _releaseExecutor(_enclaveAddress);
-    
-        // TODO: decrease reputation logic
-        secretStorage[_enclaveAddress].reputation -= 10;
-    
-        return totalComp;
-    }
-
     function _selectNodes(
         uint8 _env,
         uint256 _noOfNodesToSelect
@@ -572,18 +549,46 @@ contract SecretStore is
         selectedNodes = _selectN(_env, randomizer, _noOfNodesToSelect);
     }
 
+    function _updateExecutorsResource(
+        uint8 _env,
+        address[] memory _selectedNodes
+    ) internal {
+        for (uint256 index = 0; index < _selectedNodes.length; index++) {
+            address enclaveAddress = _selectedNodes[index];
+            executors[enclaveAddress].activeJobs += 1;
+
+            // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
+            if (executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
+                _deleteIfPresent(_env, enclaveAddress);
+        }
+    }
+
     function _releaseExecutor(address _enclaveAddress) internal {
         _updateTreeState(_enclaveAddress);
-        secretStorage[_enclaveAddress].activeJobs -= 1;
+        executors[_enclaveAddress].activeJobs -= 1;
+    }
+
+    function _slashExecutor(address _enclaveAddress, address _recipient) internal returns (uint256) {
+        uint256 totalComp = (executors[_enclaveAddress].stakeAmount * SLASH_PERCENT_IN_BIPS) / SLASH_MAX_BIPS;
+        executors[_enclaveAddress].stakeAmount -= totalComp;
+
+        STAKING_TOKEN.safeTransfer(_recipient, totalComp);
+
+        _releaseExecutor(_enclaveAddress);
+    
+        // TODO: decrease reputation logic
+        executors[_enclaveAddress].reputation -= 10;
+    
+        return totalComp;
     }
 
     function _updateTreeState(address _enclaveAddress) internal {
-        if (!secretStorage[_enclaveAddress].draining) {
-            uint8 env = secretStorage[_enclaveAddress].env;
+        if (!executors[_enclaveAddress].draining) {
+            uint8 env = executors[_enclaveAddress].env;
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
-            if (secretStorage[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(env, _enclaveAddress, uint64(secretStorage[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            if (executors[_enclaveAddress].stakeAmount >= MIN_STAKE_AMOUNT)
+                _upsert(env, _enclaveAddress, uint64(executors[_enclaveAddress].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
                 // remove node from tree if stake falls below min level
             else _deleteIfPresent(env, _enclaveAddress);
         }
@@ -634,12 +639,23 @@ contract SecretStore is
         return _slashExecutor(_enclaveAddress, _msgSender());
     }
 
+    function updateTreeState(address _enclaveAddress) external {
+        _updateTreeState(_enclaveAddress);
+    }
+
+    function selectNodes(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) external view isValidEnv(_env) returns (address[] memory selectedNodes) {
+        return _selectNodes(_env, _noOfNodesToSelect);
+    }
+
     function increaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
-        secretStorage[_enclaveAddress].reputation += _value;
+        executors[_enclaveAddress].reputation += _value;
     }
 
     function decreaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
-        secretStorage[_enclaveAddress].reputation -= _value;
+        executors[_enclaveAddress].reputation -= _value;
     }
 
     //---------------------------------- external functions end ------------------------------------//
@@ -648,178 +664,17 @@ contract SecretStore is
 
     //----------------------------- SecretManagerRole functions start --------------------------------//
 
-    //-------------------------------- internal functions start ----------------------------------//
-
-    function _selectStores(
-        uint8 _env,
-        uint256 _noOfNodesToSelect,
-        uint256 _sizeLimit
-    ) internal returns (SecretManager.SelectedEnclave[] memory) {
-        address[] memory selectedNodes = _selectNodes(_env, _noOfNodesToSelect);
-
-        uint len = selectedNodes.length;
-        SecretManager.SelectedEnclave[] memory  selectedEnclaves = new SecretManager.SelectedEnclave[](len);
-        for (uint256 index = 0; index < len; index++) {
-            address enclaveAddress = selectedNodes[index];
-            secretStorage[enclaveAddress].storageOccupied += _sizeLimit;
-
-            SecretManager.SelectedEnclave memory selectedEnclave;
-            selectedEnclave.enclaveAddress = enclaveAddress;
-            selectedEnclave.selectTimestamp = block.timestamp;
-            selectedEnclaves[index] = selectedEnclave;
-
-            // TODO: need to have some buffer space for each enclave
-            if (secretStorage[enclaveAddress].storageOccupied >= secretStorage[enclaveAddress].storageCapacity)
-                _deleteIfPresent(_env, enclaveAddress);
-        }
-        return selectedEnclaves;
-    }
-
-    function _slashStore(
-        address _enclaveAddress,
-        uint256 _currentCheckTimestamp,
-        uint256 _markAliveTimeout,
-        address _recipient
-    ) internal {
-        uint256 lastAliveTimestamp = secretStorage[_enclaveAddress].lastAliveTimestamp;
-        uint256 deadTimestamp = secretStorage[_enclaveAddress].deadTimestamp;
-        uint256 lastCheckTimestamp = (lastAliveTimestamp > deadTimestamp) ? lastAliveTimestamp : deadTimestamp;
-        uint256 missedEpochsCount = (_currentCheckTimestamp - lastCheckTimestamp) / _markAliveTimeout;
-
-        if(missedEpochsCount > 0) {
-            uint256 stakeAmount = secretStorage[_enclaveAddress].stakeAmount;
-            // compounding slashing formula: remainingStakeAmount = stakeAmount * (1 - (r/100)) ^ n
-            uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** missedEpochsCount) / (SLASH_MAX_BIPS ** missedEpochsCount);
-            uint256 slashAmount = stakeAmount - remainingStakeAmount;
-            secretStorage[_enclaveAddress].stakeAmount = remainingStakeAmount;
-
-            STAKING_TOKEN.safeTransfer(_recipient, slashAmount);
-        }
-    }
-
-    function _releaseStore(
-        address _enclaveAddress,
-        uint256 _sizeLimit
-    ) internal {
-        _updateTreeState(_enclaveAddress);
-        secretStorage[_enclaveAddress].storageOccupied -= _sizeLimit;
-    }
-
-    function _removeStoreSecretId(
-        address _enclaveAddress,
-        uint256 _secretId
-    ) internal {
-        uint256 len = secretStorage[_enclaveAddress].ackSecretIds.length;
-        for (uint256 index = 0; index < len; index++) {
-            if(secretStorage[_enclaveAddress].ackSecretIds[index] == _secretId) {
-                if(index != len - 1)
-                    secretStorage[_enclaveAddress].ackSecretIds[index] = secretStorage[_enclaveAddress].ackSecretIds[len - 1];
-                secretStorage[_enclaveAddress].ackSecretIds.pop();
-                break;
-            }
-        }
-    }
-
-    function _markAliveUpdate(
-        address _enclaveAddress,
-        uint256 _currentCheckTimestamp,
-        uint256 _markAliveTimeout,
-        address _recipient
-    ) internal {
-        _slashStore(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
-        secretStorage[_enclaveAddress].lastAliveTimestamp = _currentCheckTimestamp;
-    }
-
-    function _markDeadUpdate(
-        address _enclaveAddress,
-        uint256 _currentCheckTimestamp,
-        uint256 _markAliveTimeout,
-        uint256 _storageOccupied,
-        address _recipient
-    ) internal {
-        _slashStore(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
-        secretStorage[_enclaveAddress].deadTimestamp = _currentCheckTimestamp;
-
-        _releaseStore(_enclaveAddress, _storageOccupied);
-        delete secretStorage[_enclaveAddress].ackSecretIds;
-    }
-
-    function _secretTerminationUpdate(
-        address _enclaveAddress,
-        uint256 _sizeLimit,
-        uint256 _secretId
-    ) internal {
-        _releaseStore(_enclaveAddress, _sizeLimit);
-        _removeStoreSecretId(_enclaveAddress, _secretId);
-    }
-
-    //-------------------------------- internal functions end ----------------------------------//
-
     //-------------------------------- external functions start ----------------------------------//
 
-    function selectStores(
-        uint8 _env,
-        uint256 _noOfNodesToSelect,
-        uint256 _sizeLimit
-    ) external onlyRole(SECRET_MANAGER_ROLE) isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
-        return _selectStores(_env, _noOfNodesToSelect, _sizeLimit);
-    }
-
-    function releaseStore(
-        address _enclaveAddress,
-        uint256 _sizeLimit
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _releaseStore(_enclaveAddress, _sizeLimit);
-    }
-
-    function markAliveUpdate(
-        address _enclaveAddress,
-        uint256 _currentCheckTimestamp,
-        uint256 _markAliveTimeout,
-        address _recipient
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _markAliveUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
-    }
-
-    function markDeadUpdate(
-        address _enclaveAddress,
-        uint256 _currentCheckTimestamp,
-        uint256 _markAliveTimeout,
-        uint256 _storageOccupied,
-        address _recipient
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _markDeadUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _storageOccupied, _recipient);
-    }
-
-    function secretTerminationUpdate(
-        address _enclaveAddress,
-        uint256 _sizeLimit,
-        uint256 _secretId
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _secretTerminationUpdate(_enclaveAddress, _sizeLimit, _secretId);
-    }
-
     function getSecretStoreOwner(address _enclaveAddress) external view returns (address) {
-        return secretStorage[_enclaveAddress].owner;
+        return executors[_enclaveAddress].owner;
     }
 
-    function getSecretStoreLastAliveTimestamp(address _enclaveAddress) external view returns (uint256) {
-        return secretStorage[_enclaveAddress].lastAliveTimestamp;
-    }
-
-    function getSecretStoreDeadTimestamp(address _enclaveAddress) external view returns (uint256) {
-        return secretStorage[_enclaveAddress].deadTimestamp;
-    }
-
-    function getStoreAckSecretIds(address _enclaveAddress) external view returns (uint256[] memory) {
-        return secretStorage[_enclaveAddress].ackSecretIds;
-    }
-
-    function addAckSecretIdToStore(
-        address _enclaveAddress,
-        uint256 _ackSecretId
+    function deleteIfPresent(
+        uint8 _env,
+        address _enclaveAddress
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        secretStorage[_enclaveAddress].ackSecretIds.push(_ackSecretId);
+        _deleteIfPresent(_env, _enclaveAddress);
     }
 
     function deleteTreeNodes(
@@ -828,7 +683,7 @@ contract SecretStore is
         uint256 len = _enclaveAddresses.length;
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = _enclaveAddresses[index];
-            _deleteIfPresent(secretStorage[enclaveAddress].env, enclaveAddress);
+            _deleteIfPresent(executors[enclaveAddress].env, enclaveAddress);
         }
     }
 
@@ -838,7 +693,7 @@ contract SecretStore is
         uint256 len = _enclaveAddresses.length;
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = _enclaveAddresses[index];
-            _insert_unchecked(secretStorage[enclaveAddress].env, enclaveAddress, uint64(secretStorage[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(executors[enclaveAddress].env, enclaveAddress, uint64(executors[_enclaveAddresses[index]].stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
     }
 
@@ -848,7 +703,7 @@ contract SecretStore is
         uint256[] memory stakeAmounts;
         uint256 len = _enclaveAddresses.length;
         for (uint256 index = 0; index < len; index++)
-            stakeAmounts[index] = secretStorage[_enclaveAddresses[index]].stakeAmount;
+            stakeAmounts[index] = executors[_enclaveAddresses[index]].stakeAmount;
 
         return stakeAmounts;
     }
@@ -856,4 +711,22 @@ contract SecretStore is
     //---------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- SecretManagerRole functions end --------------------------------//
+
+    function slashStore(
+        address _enclaveAddress,
+        uint256 _missedEpochsCount,
+        address _recipient
+    ) external {
+        if(_msgSender() != address(SECRET_STORE_MANAGER))
+            revert SecretStoreInvalidSecretStoreManager();
+
+        uint256 stakeAmount = executors[_enclaveAddress].stakeAmount;
+        // compounding slashing formula: remainingStakeAmount = stakeAmount * (1 - (r/100)) ^ n
+        uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** _missedEpochsCount) / (SLASH_MAX_BIPS ** _missedEpochsCount);
+        uint256 slashAmount = stakeAmount - remainingStakeAmount;
+        executors[_enclaveAddress].stakeAmount = remainingStakeAmount;
+
+        STAKING_TOKEN.safeTransfer(_recipient, slashAmount);
+    }
+
 }
