@@ -83,6 +83,12 @@ contract SecretStoreManager is
 
     //-------------------------------- SecretStore start --------------------------------//
 
+    modifier onlySecretStore() {
+        if(_msgSender() != address(SECRET_STORE))
+            revert SecretStoreManagerInvalidSecretStore();
+        _;
+    }
+
     struct SecretStorage {
         uint256 storageCapacity;
         uint256 storageOccupied;
@@ -106,9 +112,6 @@ contract SecretStoreManager is
         address _enclaveAddress,
         uint256 _storageCapacity
     ) internal {
-        if(_msgSender() != address(SECRET_STORE))
-            revert SecretStoreManagerInvalidSecretStore();
-
         secretStorage[_enclaveAddress].storageCapacity = _storageCapacity;
         secretStorage[_enclaveAddress].lastAliveTimestamp = block.timestamp;
     }
@@ -155,10 +158,10 @@ contract SecretStoreManager is
 
     function _releaseStore(
         address _enclaveAddress,
-        uint256 _sizeLimit
+        uint256 _secretSize
     ) internal {
         SECRET_STORE.updateTreeState(_enclaveAddress);
-        secretStorage[_enclaveAddress].storageOccupied -= _sizeLimit;
+        secretStorage[_enclaveAddress].storageOccupied -= _secretSize;
     }
 
     function _removeStoreSecretId(
@@ -202,10 +205,10 @@ contract SecretStoreManager is
 
     function _secretTerminationUpdate(
         address _enclaveAddress,
-        uint256 _sizeLimit,
+        uint256 _secretSize,
         uint256 _secretId
     ) internal {
-        _releaseStore(_enclaveAddress, _sizeLimit);
+        _releaseStore(_enclaveAddress, _secretSize);
         _removeStoreSecretId(_enclaveAddress, _secretId);
     }
 
@@ -216,7 +219,7 @@ contract SecretStoreManager is
     function register(
         address _enclaveAddress,
         uint256 _storageCapacity
-    ) external {
+    ) external onlySecretStore {
         _register(_enclaveAddress, _storageCapacity);
     }
 
@@ -230,9 +233,9 @@ contract SecretStoreManager is
 
     function releaseStore(
         address _enclaveAddress,
-        uint256 _sizeLimit
+        uint256 _secretSize
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _releaseStore(_enclaveAddress, _sizeLimit);
+        _releaseStore(_enclaveAddress, _secretSize);
     }
 
     function markAliveUpdate(
@@ -256,10 +259,10 @@ contract SecretStoreManager is
 
     function secretTerminationUpdate(
         address _enclaveAddress,
-        uint256 _sizeLimit,
+        uint256 _secretSize,
         uint256 _secretId
     ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _secretTerminationUpdate(_enclaveAddress, _sizeLimit, _secretId);
+        _secretTerminationUpdate(_enclaveAddress, _secretSize, _secretId);
     }
 
     function getSecretStoreLastAliveTimestamp(address _enclaveAddress) external view returns (uint256) {

@@ -132,6 +132,12 @@ contract SecretStore is
 
     //-------------------------------- SecretStore start --------------------------------//
 
+    modifier onlySecretStoreManager() {
+        if(_msgSender() != address(SECRET_STORE_MANAGER))
+            revert SecretStoreInvalidSecretStoreManager();
+        _;
+    }
+
     modifier isValidSecretStoreOwner(address _enclaveAddress) {
         _isValidSecretStoreOwner(_enclaveAddress);
         _;
@@ -358,7 +364,11 @@ contract SecretStore is
 
         (uint256 storageCapacity, uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
         // insert node in the tree
-        if (secretStoreNode.stakeAmount >= MIN_STAKE_AMOUNT && storageOccupied < storageCapacity) {
+        if (
+            secretStoreNode.stakeAmount >= MIN_STAKE_AMOUNT &&
+            secretStoreNode.activeJobs < secretStoreNode.jobCapacity &&
+            storageOccupied < storageCapacity
+        ) {
             _insert_unchecked(secretStoreNode.env, _enclaveAddress, uint64(secretStoreNode.stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
 
@@ -366,11 +376,13 @@ contract SecretStore is
     }
 
     function _deregisterSecretStore(address _enclaveAddress) internal {
-        if (!executors[_enclaveAddress].draining) revert SecretStoreEnclaveNotDraining();
+        Executor memory secretStoreNode = executors[_enclaveAddress];
+        if (!secretStoreNode.draining) revert SecretStoreEnclaveNotDraining();
         ( , uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
-        if (storageOccupied != 0) revert SecretStoreEnclaveNotEmpty();
+        if (secretStoreNode.activeJobs != 0 || storageOccupied != 0) 
+            revert SecretStoreEnclaveNotEmpty();
 
-        _removeStake(_enclaveAddress, executors[_enclaveAddress].stakeAmount);
+        _removeStake(_enclaveAddress, secretStoreNode.stakeAmount);
 
         _revokeEnclaveKey(_enclaveAddress);
         delete executors[_enclaveAddress];
@@ -385,6 +397,7 @@ contract SecretStore is
 
         if (
             !secretStoreNode.draining &&
+            secretStoreNode.activeJobs < secretStoreNode.jobCapacity &&
             storageOccupied < storageCapacity &&
             updatedStake >= MIN_STAKE_AMOUNT
         ) {
@@ -398,7 +411,8 @@ contract SecretStore is
     function _removeSecretStoreStake(uint256 _amount, address _enclaveAddress) internal {
         if (!executors[_enclaveAddress].draining) revert SecretStoreEnclaveNotDraining();
         ( , uint256 storageOccupied) = SECRET_STORE_MANAGER.getSecretStoreStorageData(_enclaveAddress);
-        if (storageOccupied != 0) revert SecretStoreEnclaveNotEmpty();
+        if (executors[_enclaveAddress].activeJobs != 0 || storageOccupied != 0) 
+            revert SecretStoreEnclaveNotEmpty();
 
         _removeStake(_enclaveAddress, _amount);
     }
@@ -712,14 +726,15 @@ contract SecretStore is
 
     //-------------------------------- SecretManagerRole functions end --------------------------------//
 
-    function slashStore(
+    //------------------------------ SecretStoreManagerRole functions start --------------------------------//
+
+    //---------------------------------- internal functions start ----------------------------------//
+
+    function _slashStore(
         address _enclaveAddress,
         uint256 _missedEpochsCount,
         address _recipient
-    ) external {
-        if(_msgSender() != address(SECRET_STORE_MANAGER))
-            revert SecretStoreInvalidSecretStoreManager();
-
+    ) internal {
         uint256 stakeAmount = executors[_enclaveAddress].stakeAmount;
         // compounding slashing formula: remainingStakeAmount = stakeAmount * (1 - (r/100)) ^ n
         uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** _missedEpochsCount) / (SLASH_MAX_BIPS ** _missedEpochsCount);
@@ -728,5 +743,21 @@ contract SecretStore is
 
         STAKING_TOKEN.safeTransfer(_recipient, slashAmount);
     }
+
+    //---------------------------------- internal functions end ----------------------------------//
+
+    //---------------------------------- external functions start ----------------------------------//
+
+    function slashStore(
+        address _enclaveAddress,
+        uint256 _missedEpochsCount,
+        address _recipient
+    ) external onlySecretStoreManager {
+        _slashStore(_enclaveAddress, _missedEpochsCount, _recipient);
+    }
+
+    //---------------------------------- external functions end ----------------------------------//
+
+    //------------------------------ SecretStoreManagerRole functions end --------------------------------//
 
 }

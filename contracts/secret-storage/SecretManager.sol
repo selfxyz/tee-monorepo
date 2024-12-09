@@ -331,7 +331,7 @@ contract SecretManager is
         // Add secretId to the ackSecretIds list only when the secret has been acknowledged by the first set of selected stores
         if(_isReplacedStore(_secretId, enclaveIndex)) {
             userStorage[_secretId].selectedEnclaves[enclaveIndex].replacedAckTimestamp = _signTimestamp;
-            SECRET_STORE_MANAGER.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[enclaveIndex].enclaveAddress, _secretId);
+            SECRET_STORE_MANAGER.addAckSecretIdToStore(enclaveAddress, _secretId);
         }
         else if(_checkIfSecretAcknowledged(_secretId)) {
             userStorage[_secretId].ackTimestamp = _signTimestamp;
@@ -834,7 +834,7 @@ contract SecretManager is
     function verifyUserAndGetSelectedStores(
         uint256 _secretId,
         address _jobOwner
-    ) external view returns (bool, address[] memory) {
+    ) external view returns (address[] memory) {
         if(userStorage[_secretId].owner != _jobOwner && !hasSecretAllowedAddress(_secretId, _jobOwner))
             revert SecretManagerUserNotAllowed();
 
@@ -843,11 +843,11 @@ contract SecretManager is
         for (uint256 index = 0; index < len; index++) {
             if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
                 selectedStores[index] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
-            else if(!_isReplacedStore(_secretId, index) && !userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
-                return (false, new address[](0));
+            else if(!_isReplacedStore(_secretId, index))
+                revert SecretManagerUnacknowledged();
         }
 
-        return (true, selectedStores);
+        return selectedStores;
     }
 
     function hasSecretAllowedAddress(

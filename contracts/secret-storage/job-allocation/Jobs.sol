@@ -319,8 +319,6 @@ contract Jobs is
 
     //-------------------------------- internal functions start --------------------------------//
 
-    error JobsInvalidSecret();
-
     function _createJob(
         uint8 _env,
         uint256 _secretId,
@@ -333,9 +331,7 @@ contract Jobs is
         // 1. Validate secretId (secretId should exist and owner should be msg sender)
         // 2. Check if the secret is acknowledged by all the selected stores
         // 3. Get the no. of selected stores(=L)
-        (bool isValid, address[] memory selectedStores) = SECRET_MANAGER.verifyUserAndGetSelectedStores(_secretId, _jobOwner);
-        if(!isValid)
-            revert JobsInvalidSecret();
+        address[] memory selectedStores = SECRET_MANAGER.verifyUserAndGetSelectedStores(_secretId, _jobOwner);
 
         // 4. if L >= N, then select N stores as executors(stake based selection)
         // 5. if 1 < L < N, then select all the L stores and other (N-L) via selection algo
@@ -354,9 +350,12 @@ contract Jobs is
         address[] memory selectedStores
     ) internal returns (address[] memory) {
         // sort the stakeAmounts list, and get the top N elements
-        address[] memory topNStores = _getTopNStores(selectedStores, NO_OF_NODES_TO_SELECT);
+        address[] memory topNStores;
+        if(selectedStores.length > 0) {
+            topNStores = _getTopNStores(selectedStores, NO_OF_NODES_TO_SELECT);
+            SECRET_STORE.updateExecutorsResource(_env, topNStores);
+        }
         uint256 storesCount = topNStores.length;
-        SECRET_STORE.updateExecutorsResource(_env, topNStores);
 
         uint256 noOfExecutorsToSelect = NO_OF_NODES_TO_SELECT > storesCount ? NO_OF_NODES_TO_SELECT - storesCount : 0;
         address[] memory selectedNodes;
