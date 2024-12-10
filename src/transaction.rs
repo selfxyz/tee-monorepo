@@ -17,11 +17,11 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::constants::{
-    GARBAGE_COLLECT_INTERVAL_SEC, GAS_INCREMENT_AMOUNT, HTTP_SLEEP_TIME_MS,
-    RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL_SEC,
+    GARBAGE_COLLECT_INTERVAL_SEC, GARBAGE_REMOVAL_DURATION_SEC, GAS_INCREMENT_AMOUNT,
+    HTTP_SLEEP_TIME_MS, RESEND_GAS_PRICE_INCREMENT_PERCENT, RESEND_INTERVAL_SEC,
 };
 use crate::errors::TxnManagerSendError;
-use crate::models::{Transaction, TxnManager, TxnStatus};
+use crate::models::{Transaction, TxnStatus};
 use crate::utils::{parse_send_error, verify_rpc_url};
 
 type HttpProvider = FillProvider<
@@ -31,7 +31,67 @@ type HttpProvider = FillProvider<
     Ethereum,
 >;
 
+/// A transaction manager that handles the submission and monitoring of Ethereum transactions.
+///
+/// The `TxnManager` provides functionality to:
+/// - Submit transactions to the Ethereum network
+/// - Monitor transaction status
+/// - Automatically retry failed transactions with adjusted gas prices
+/// - Handle nonce management
+/// - Perform garbage collection of old transactions
+///
+/// # Example
+/// ```
+/// use std::sync::{Arc, RwLock};
+/// use std::time::{Duration, Instant};
+/// use alloy::signers::local::PrivateKeySigner;
+/// use crate::TxnManager;
+///
+/// let private_key_signer = PrivateKeySigner::from_hex("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+/// let txn_manager = TxnManager::new(
+///     "https://ethereum.rpc.url".to_string(),
+///     421614, // chain_id
+///     Arc::new(RwLock::new(private_key_signer)),
+///     None, // default gas price increment
+///     None, // default gas limit increment
+///     None, // default garbage collection interval
+///     None, // default garbage removal duration
+/// ).await.unwrap();
+///
+/// let txn_id = txn_manager.call_contract_function(
+///     contract_address,
+///     transaction_data,
+///     Instant::now() + Duration::from_secs(60),
+/// ).await.unwrap();
+/// ```
+#[derive(Debug)]
+pub struct TxnManager {
+    pub rpc_url: String,
+    pub chain_id: u64,
+    pub private_signer: Arc<RwLock<PrivateKeySigner>>,
+    pub(crate) nonce_to_send: Arc<RwLock<u64>>,
+    pub(crate) transactions: Arc<RwLock<HashMap<String, Transaction>>>,
+    pub(crate) gas_price_increment_percent: u128,
+    pub(crate) gas_limit_increment_amount: u64,
+    pub(crate) transaction_ids_queue: Arc<RwLock<VecDeque<String>>>,
+    pub(crate) garbage_collect_interval_sec: u64,
+    pub(crate) garbage_removal_duration_sec: u64,
+}
+
 impl TxnManager {
+    /// Creates a new transaction manager instance.
+    ///
+    /// # Arguments
+    /// * `rpc_url` - The Ethereum RPC endpoint URL
+    /// * `chain_id` - The chain ID of the target network
+    /// * `private_signer` - The private key signer for transaction signing
+    /// * `gas_price_increment_percent` - Optional percentage to increase gas price on retries
+    /// * `gas_limit_increment_amount` - Optional amount to increase gas limit on retries
+    /// * `garbage_collect_interval_sec` - Optional interval for garbage collection in seconds
+    /// * `garbage_removal_duration_sec` - Optional duration for garbage removal in seconds
+    ///
+    /// # Returns
+    /// * `Result<Arc<Self>, TxnManagerSendError>` - The transaction manager instance or an error
     pub async fn new(
         rpc_url: String,
         chain_id: u64,
@@ -39,6 +99,7 @@ impl TxnManager {
         gas_price_increment_percent: Option<u128>,
         gas_limit_increment_amount: Option<u64>,
         garbage_collect_interval_sec: Option<u64>,
+        garbage_removal_duration_sec: Option<u64>,
     ) -> Result<Arc<Self>, TxnManagerSendError> {
         match verify_rpc_url(&rpc_url) {
             Ok(_) => (),
@@ -57,6 +118,8 @@ impl TxnManager {
             transaction_ids_queue: Arc::new(RwLock::new(VecDeque::new())),
             garbage_collect_interval_sec: garbage_collect_interval_sec
                 .unwrap_or(GARBAGE_COLLECT_INTERVAL_SEC),
+            garbage_removal_duration_sec: garbage_removal_duration_sec
+                .unwrap_or(GARBAGE_REMOVAL_DURATION_SEC),
         });
 
         let txn_manager_clone = txn_manager.clone();
@@ -72,6 +135,23 @@ impl TxnManager {
         Ok(txn_manager)
     }
 
+    /// Calls a contract function by submitting a transaction to the network.
+    ///
+    /// This method handles the entire lifecycle of a transaction, including:
+    /// - Nonce management
+    /// - Gas estimation
+    /// - Transaction submission
+    /// - Automatic retries with increased gas price/limit if needed
+    ///
+    /// Nonce is fixed for a specific transaction unless the private signer is changed within the timeout.
+    ///
+    /// # Arguments
+    /// * `contract_address` - The address of the contract to call
+    /// * `transaction_data` - The encoded function call data
+    /// * `timeout` - The deadline for the transaction to be processed
+    ///
+    /// # Returns
+    /// * `Result<String, TxnManagerSendError>` - Transaction ID if successful, error otherwise
     pub async fn call_contract_function(
         self: Arc<Self>,
         contract_address: Address,
@@ -218,6 +298,29 @@ impl TxnManager {
         Err(TxnManagerSendError::Timeout(failure_reason))
     }
 
+    /// Retrieves the current status of a transaction.
+    ///
+    /// # Arguments
+    /// * `txn_hash` - The transaction hash to query
+    ///
+    /// # Returns
+    /// * `Option<TxnStatus>` - The current status of the transaction, if found
+    pub async fn get_transaction_status(self: Arc<Self>, txn_hash: String) -> Option<TxnStatus> {
+        let transactions = self.transactions.read().unwrap().clone();
+        transactions.get(&txn_hash).map(|txn| txn.status.clone())
+    }
+
+    /// Processes pending transactions and monitors their status.
+    ///
+    /// A transaction is monitored every RESEND_INTERVAL_SEC since last monitored time.
+    /// If the transaction is not confirmed within the timeout, it is resended.
+    /// If timeout occurs, the transaction is marked as failed and
+    /// a dummy transaction is sent to fill the nonce gap.
+    ///
+    /// This is an internal method that runs in a separate task to:
+    /// - Monitor pending transactions
+    /// - Retry failed transactions
+    /// - Update transaction status
     async fn process_transaction(self: Arc<Self>) -> Result<(), TxnManagerSendError> {
         loop {
             let Some(transaction_id) = self.transaction_ids_queue.write().unwrap().pop_front()
@@ -294,11 +397,14 @@ impl TxnManager {
         }
     }
 
-    pub async fn get_transaction_status(self: Arc<Self>, txn_hash: String) -> Option<TxnStatus> {
-        let transactions = self.transactions.read().unwrap().clone();
-        transactions.get(&txn_hash).map(|txn| txn.status.clone())
-    }
-
+    /// Retrieves a transaction receipt from the network.
+    ///
+    /// # Arguments
+    /// * `provider` - The HTTP provider instance
+    /// * `txn_hash` - The transaction hash to query
+    ///
+    /// # Returns
+    /// * `Result<TransactionReceipt, TxnManagerSendError>` - The transaction receipt or an error
     async fn get_transaction_receipt(
         self: Arc<Self>,
         provider: HttpProvider,
@@ -324,6 +430,13 @@ impl TxnManager {
         Ok(receipt.unwrap())
     }
 
+    /// Attempts to resend a transaction with increased gas parameters.
+    ///
+    /// # Arguments:
+    /// * `transaction` - The transaction to resend
+    ///
+    /// This method is called when a transaction is stuck or failed due to gas
+    /// or rpc/network related issues.
     async fn resend_transaction(
         self: Arc<Self>,
         transaction: &mut Transaction,
@@ -423,6 +536,12 @@ impl TxnManager {
         return Err(TxnManagerSendError::Timeout(failure_reason));
     }
 
+    /// Sends a dummy transaction to handle nonce gaps.
+    ///
+    /// # Arguments:
+    /// * `transaction` - The transaction to send
+    ///
+    /// This method is used to fill nonce gaps when a transaction permanently fails.
     async fn send_dummy_transaction(self: Arc<Self>, transaction: &mut Transaction) {
         loop {
             let dummy_txn = TransactionRequest::default()
@@ -475,6 +594,18 @@ impl TxnManager {
         }
     }
 
+    /// Creates a new HTTP provider instance for interacting with the network.
+    ///
+    /// # Arguments:
+    /// * `transaction` - The transaction to create a provider for
+    /// * `ignore_private_signer_check` - Whether to ignore the private signer check
+    ///
+    /// # Returns:
+    /// * `Result<HttpProvider, TxnManagerSendError>` - The provider instance or an error
+    ///
+    /// This method is used to create a provider for a transaction.
+    /// If ignore_private_signer_check is false, the private signer of the transaction
+    /// must match the private signer of the TxnManager.
     async fn create_provider(
         self: Arc<Self>,
         transaction: &Transaction,
@@ -496,6 +627,19 @@ impl TxnManager {
             .on_http(Url::parse(&self.rpc_url).unwrap()))
     }
 
+    /// Manages transaction nonces to ensure proper transaction ordering.
+    ///
+    /// # Arguments:
+    /// * `provider` - The HTTP provider instance
+    /// * `transaction` - The transaction to manage nonce for
+    /// * `update_nonce` - Whether to update the nonce
+    ///
+    /// # Returns:
+    /// * `Result<(), TxnManagerSendError>` - The result of the nonce management
+    ///
+    /// This method is used to manage the nonce for a transaction.
+    /// If update_nonce is true, the nonce is updated to the current nonce of the provider.
+    /// If update_nonce is false, the nonce is not updated.
     async fn manage_nonce(
         self: Arc<Self>,
         provider: &HttpProvider,
@@ -536,6 +680,17 @@ impl TxnManager {
         return Err(TxnManagerSendError::Timeout(failure_reason));
     }
 
+    /// Estimates gas limit and price for a transaction.
+    ///
+    /// # Arguments:
+    /// * `provider` - The HTTP provider instance
+    /// * `transaction` - The transaction to estimate gas limit and price for
+    /// * `transaction_request` - The transaction request to estimate gas limit and price for
+    ///
+    /// # Returns:
+    /// * `Result<(), TxnManagerSendError>` - The result of the gas limit and price estimation
+    ///
+    /// This method is used to estimate the gas limit and price for a transaction.
     async fn estimate_gas_limit_and_price(
         self: Arc<Self>,
         provider: &HttpProvider,
@@ -592,6 +747,9 @@ impl TxnManager {
         Ok(())
     }
 
+    /// Performs periodic cleanup of old transactions from memory.
+    ///
+    /// This method is used to clean up old transactions from memory.
     async fn garbage_collect_transactions(self: Arc<Self>) {
         loop {
             sleep(Duration::from_secs(self.garbage_collect_interval_sec)).await;
@@ -600,14 +758,9 @@ impl TxnManager {
             let now = Instant::now();
 
             transactions_guard.retain(|_, transaction| {
-                match transaction.status {
-                    TxnStatus::Confirmed | TxnStatus::Failed => {
-                        // Keep transaction if less than 10 minutes old
-                        now.duration_since(transaction.last_monitored) < Duration::from_secs(600)
-                    }
-                    // Keep all pending and sending transactions
-                    TxnStatus::Pending | TxnStatus::Sending => true,
-                }
+                // Keep transaction if less than 10 minutes old
+                now.duration_since(transaction.last_monitored)
+                    < Duration::from_secs(self.garbage_removal_duration_sec)
             });
         }
     }
