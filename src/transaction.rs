@@ -22,7 +22,7 @@ use crate::constants::{
 };
 use crate::errors::TxnManagerSendError;
 use crate::models::{Transaction, TxnManager, TxnStatus};
-use crate::utils::{parse_send_error, verify_gas_wallet, verify_rpc_url};
+use crate::utils::{parse_send_error, verify_rpc_url};
 
 type HttpProvider = FillProvider<
     JoinFill<Identity, WalletFiller<EthereumWallet>>,
@@ -35,7 +35,7 @@ impl TxnManager {
     pub async fn new(
         rpc_url: String,
         chain_id: u64,
-        gas_wallet: Arc<RwLock<String>>,
+        private_signer: Arc<RwLock<PrivateKeySigner>>,
         gas_price_increment_percent: Option<u128>,
         gas_limit_increment_amount: Option<u64>,
         garbage_collect_interval_sec: Option<u64>,
@@ -44,21 +44,17 @@ impl TxnManager {
             Ok(_) => (),
             Err(e) => return Err(e),
         }
-        match verify_gas_wallet(&gas_wallet).await {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        }
 
         let txn_manager = Arc::new(Self {
             rpc_url,
             chain_id,
-            gas_wallet,
+            private_signer,
             nonce_to_send: Arc::new(RwLock::new(0)),
             transactions: Arc::new(RwLock::new(HashMap::new())),
             gas_price_increment_percent: gas_price_increment_percent
                 .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
             gas_limit_increment_amount: gas_limit_increment_amount.unwrap_or(GAS_INCREMENT_AMOUNT),
-            transactions_queue: Arc::new(RwLock::new(VecDeque::new())),
+            transaction_ids_queue: Arc::new(RwLock::new(VecDeque::new())),
             garbage_collect_interval_sec: garbage_collect_interval_sec
                 .unwrap_or(GARBAGE_COLLECT_INTERVAL_SEC),
         });
@@ -79,7 +75,7 @@ impl TxnManager {
     pub async fn call_contract_function(
         self: Arc<Self>,
         contract_address: Address,
-        data: Bytes,
+        transaction_data: Bytes,
         timeout: Instant,
     ) -> Result<String, TxnManagerSendError> {
         let mut update_nonce = false;
@@ -87,9 +83,9 @@ impl TxnManager {
         let mut transaction = Transaction {
             id: uuid::Uuid::new_v4().to_string(),
             contract_address,
-            data: data.clone(),
+            transaction_data: transaction_data.clone(),
             timeout,
-            gas_wallet: self.gas_wallet.read().await.clone(),
+            private_signer: self.private_signer.read().await.clone(),
             nonce: None,
             txn_hash: None,
             status: TxnStatus::Sending,
@@ -130,7 +126,7 @@ impl TxnManager {
 
             let transaction_request = TransactionRequest::default()
                 .with_to(transaction.contract_address)
-                .with_input(transaction.data.clone())
+                .with_input(transaction.transaction_data.clone())
                 .with_nonce(transaction.nonce.unwrap());
 
             if transaction.gas_price == 0 || transaction.estimated_gas == 0 {
@@ -211,10 +207,10 @@ impl TxnManager {
                 .await
                 .insert(transaction.id.clone(), transaction.clone());
 
-            self.transactions_queue
+            self.transaction_ids_queue
                 .write()
                 .await
-                .push_back(transaction.clone());
+                .push_back(transaction.id.clone());
 
             return Ok(transaction.id);
         }
@@ -224,19 +220,29 @@ impl TxnManager {
 
     async fn process_transaction(self: Arc<Self>) -> Result<(), TxnManagerSendError> {
         loop {
-            let Some(mut transaction) = self.transactions_queue.write().await.pop_front() else {
+            let Some(transaction_id) = self.transaction_ids_queue.write().await.pop_front() else {
                 sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                 continue;
             };
+
+            let mut transaction = {
+                let transactions = self.transactions.read().await;
+                transactions.get(&transaction_id).unwrap().clone()
+            };
+
+            // Calculate the time to wait before resending the transaction
+            // It should be monitored every RESEND_INTERVAL_SEC
             let resend_txn_interval_sec = RESEND_INTERVAL_SEC
                 - min(
                     RESEND_INTERVAL_SEC,
                     transaction.last_monitored.elapsed().as_secs(),
                 );
 
+            // Sleep for the time to wait before resending the transaction
+            // Should not wait longer than the timeout
             sleep(Duration::from_secs(min(
                 resend_txn_interval_sec,
-                transaction.timeout.elapsed().as_secs(),
+                transaction.timeout.duration_since(Instant::now()).as_secs(),
             )))
             .await;
 
@@ -267,26 +273,23 @@ impl TxnManager {
                 transaction.last_monitored = Instant::now();
 
                 let mut transactions_guard = self.transactions.write().await;
-                transactions_guard.insert(transaction.id.clone(), transaction.clone());
+                transactions_guard.insert(transaction.id.clone(), transaction);
                 continue;
             }
 
-            let mut send_dummy = false;
-
-            let txn_hash = self.clone().resend_transaction(&mut transaction).await;
-            match txn_hash {
-                Ok(()) => (),
+            let resend_res = self.clone().resend_transaction(&mut transaction).await;
+            match resend_res {
+                Ok(()) => continue,
                 Err(
                     TxnManagerSendError::NonceTooLow(_) | TxnManagerSendError::GasWalletChanged(_),
                 ) => continue,
-                Err(_) => {
-                    send_dummy = true;
-                }
+                Err(_) => {}
             };
 
-            if send_dummy {
-                self.clone().send_dummy_transaction(&mut transaction).await;
-            }
+            self.clone().send_dummy_transaction(&mut transaction).await;
+
+            let mut transactions_guard = self.transactions.write().await;
+            transactions_guard.insert(transaction.id.clone(), transaction);
         }
     }
 
@@ -332,7 +335,7 @@ impl TxnManager {
 
         let transaction_request = TransactionRequest::default()
             .with_to(transaction.contract_address)
-            .with_input(transaction.data.clone())
+            .with_input(transaction.transaction_data.clone())
             .with_nonce(transaction.nonce.unwrap())
             .with_gas_limit(transaction.estimated_gas)
             .with_gas_price(transaction.gas_price);
@@ -350,7 +353,7 @@ impl TxnManager {
                         let _ = self_clone
                             .call_contract_function(
                                 transaction_clone.contract_address,
-                                transaction_clone.data,
+                                transaction_clone.transaction_data,
                                 transaction_clone.timeout,
                             )
                             .await;
@@ -407,10 +410,11 @@ impl TxnManager {
 
             let mut transactions_guard = self.transactions.write().await;
 
-            transactions_guard.remove(&transaction.id.clone());
             transaction.txn_hash = Some(txn_hash.clone());
-
             transactions_guard.insert(transaction.id.clone(), transaction.clone());
+
+            let mut transactions_queue_guard = self.transaction_ids_queue.write().await;
+            transactions_queue_guard.push_front(transaction.id.clone());
 
             return Ok(());
         }
@@ -421,10 +425,10 @@ impl TxnManager {
     async fn send_dummy_transaction(self: Arc<Self>, transaction: &mut Transaction) {
         loop {
             let dummy_txn = TransactionRequest::default()
-                .with_to(self.gas_wallet.read().await.parse().unwrap())
+                .with_to(self.private_signer.read().await.address())
                 .with_value(U256::ZERO)
                 .with_nonce(transaction.nonce.unwrap())
-                .with_gas_limit(transaction.estimated_gas)
+                .with_gas_limit(21000)
                 .with_gas_price(transaction.gas_price);
 
             let provider = self
@@ -440,11 +444,6 @@ impl TxnManager {
                     TxnManagerSendError::NonceTooLow(_) => {
                         break;
                     }
-                    TxnManagerSendError::OutOfGas(_) => {
-                        transaction.estimated_gas =
-                            transaction.estimated_gas + self.gas_limit_increment_amount;
-                        continue;
-                    }
                     TxnManagerSendError::GasPriceLow(_) => {
                         transaction.gas_price =
                             transaction.gas_price * (100 + self.gas_price_increment_percent) / 100;
@@ -457,7 +456,13 @@ impl TxnManager {
                 }
             };
 
-            let tx_hash = pending_txn.watch().await.unwrap();
+            let tx_hash = pending_txn.watch().await;
+
+            if tx_hash.is_err() {
+                continue;
+            }
+
+            let tx_hash = tx_hash.unwrap();
             transaction.txn_hash = Some(tx_hash.to_string());
             transaction.status = TxnStatus::Failed;
             transaction.last_monitored = Instant::now();
@@ -472,16 +477,16 @@ impl TxnManager {
     async fn create_provider(
         self: Arc<Self>,
         transaction: &Transaction,
-        ignore_gas_wallet_check: bool,
+        ignore_private_signer_check: bool,
     ) -> Result<HttpProvider, TxnManagerSendError> {
-        if !ignore_gas_wallet_check
-            && transaction.gas_wallet != self.gas_wallet.read().await.clone()
+        if !ignore_private_signer_check
+            && transaction.private_signer != self.private_signer.read().await.clone()
         {
             return Err(TxnManagerSendError::GasWalletChanged(
                 "Gas wallet changed".to_string(),
             ));
         }
-        let signer: PrivateKeySigner = transaction.gas_wallet.parse().unwrap();
+        let signer: PrivateKeySigner = transaction.private_signer.clone();
         let signer = signer.with_chain_id(Some(self.chain_id));
         let signer_wallet = EthereumWallet::from(signer);
 
@@ -501,8 +506,8 @@ impl TxnManager {
         while Instant::now() < transaction.timeout {
             let mut current_nonce: u64 = 0;
             if update_nonce {
-                let gas_wallet = provider.wallet().default_signer().address();
-                let current_nonce_res = provider.get_transaction_count(gas_wallet).await;
+                let private_signer = provider.wallet().default_signer().address();
+                let current_nonce_res = provider.get_transaction_count(private_signer).await;
                 current_nonce = match current_nonce_res {
                     Ok(current_nonce) => current_nonce,
                     Err(err) => {

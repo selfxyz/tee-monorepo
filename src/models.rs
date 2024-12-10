@@ -1,4 +1,5 @@
 use alloy::primitives::{Address, Bytes};
+use alloy::signers::local::PrivateKeySigner;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
@@ -8,9 +9,9 @@ use tokio::sync::RwLock;
 pub(crate) struct Transaction {
     pub id: String,
     pub contract_address: Address,
-    pub data: Bytes,
+    pub transaction_data: Bytes,
     pub timeout: Instant,
-    pub gas_wallet: String,
+    pub private_signer: PrivateKeySigner,
     pub nonce: Option<u64>,
     pub(crate) gas_price: u128,
     pub(crate) estimated_gas: u64,
@@ -23,12 +24,12 @@ pub(crate) struct Transaction {
 pub struct TxnManager {
     pub rpc_url: String,
     pub chain_id: u64,
-    pub gas_wallet: Arc<RwLock<String>>,
+    pub private_signer: Arc<RwLock<PrivateKeySigner>>,
     pub(crate) nonce_to_send: Arc<RwLock<u64>>,
     pub(crate) transactions: Arc<RwLock<HashMap<String, Transaction>>>,
     pub(crate) gas_price_increment_percent: u128,
     pub(crate) gas_limit_increment_amount: u64,
-    pub(crate) transactions_queue: Arc<RwLock<VecDeque<Transaction>>>,
+    pub(crate) transaction_ids_queue: Arc<RwLock<VecDeque<String>>>,
     pub(crate) garbage_collect_interval_sec: u64,
 }
 

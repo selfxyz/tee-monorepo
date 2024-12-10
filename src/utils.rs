@@ -1,7 +1,3 @@
-use alloy::signers::local::PrivateKeySigner;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
 use reqwest::Url;
 
 use crate::errors::TxnManagerSendError;
@@ -52,22 +48,4 @@ pub(crate) fn verify_rpc_url(rpc_url: &str) -> Result<(), TxnManagerSendError> {
         )));
     }
     Ok(())
-}
-
-pub(crate) async fn verify_gas_wallet(
-    gas_wallet: &Arc<RwLock<String>>,
-) -> Result<(), TxnManagerSendError> {
-    let gas_wallet_str = gas_wallet.read().await;
-    if gas_wallet_str.is_empty() {
-        return Err(TxnManagerSendError::InvalidGasWallet(
-            "Empty Gas Wallet Provided".to_string(),
-        ));
-    }
-    match gas_wallet_str.parse::<PrivateKeySigner>() {
-        Ok(_) => Ok(()),
-        Err(_) => Err(TxnManagerSendError::InvalidGasWallet(format!(
-            "Failed to parse gas wallet. Invalid Gas Wallet Provided: {:?}",
-            gas_wallet_str
-        ))),
-    }
 }
