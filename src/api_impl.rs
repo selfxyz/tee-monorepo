@@ -267,7 +267,6 @@ async fn export_signed_registration_message(
     // iterate over all chain ids and get their registration signatures
     for &chain_id in &chain_ids {
         // get request chain rpc url
-
         let gateways_contract = Arc::new(GatewaysContract::new(
             app_state.gateways_contract_addr,
             common_chain_http_provider.clone(),
@@ -321,8 +320,14 @@ async fn export_signed_registration_message(
             None,
             None,
         )
-        .await
-        .unwrap();
+        .await;
+
+        let Ok(request_chain_txn_manager) = request_chain_txn_manager else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to create txn manager for request chain {}",
+                chain_id
+            ));
+        };
 
         request_chain_data.insert(
             chain_id,
@@ -376,8 +381,14 @@ async fn export_signed_registration_message(
             None,
             None,
         )
-        .await
-        .unwrap();
+        .await;
+
+        let Ok(common_chain_txn_manager) = common_chain_txn_manager else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to create txn manager for common chain {}",
+                app_state.common_chain_id
+            ));
+        };
 
         let contracts_client = Arc::new(ContractsClient {
             enclave_owner,
