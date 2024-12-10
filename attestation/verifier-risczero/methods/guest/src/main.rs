@@ -332,6 +332,11 @@ fn main() {
     let (user_data_size, user_data) = if attestation[offset + 10] == 0xf6 {
         // empty
         (0, [].as_slice())
+    } else if attestation[offset + 10] >= 0x40 && attestation[offset + 10] <= 0x57 {
+        // length is part of type byte
+        let size = attestation[offset + 10] - 0x40;
+
+        (size, &attestation[offset + 11..offset + 11 + size as usize])
     } else if attestation[offset + 10] == 0x58 {
         // one byte length follows
         let size = attestation[offset + 11] as u16;
