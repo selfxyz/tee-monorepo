@@ -9,7 +9,7 @@ name = "basic_transaction"
 path = "examples/basic_transaction.rs"
 
 [dependencies]
-alloy = { version = "0.4.2", features = ["full"] }
+alloy = { version = "0.6.2", features = ["full"] }
 anyhow = "1.0.89"
 hex = "0.4.3"
 reqwest = "0.12.8"
