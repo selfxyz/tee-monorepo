@@ -4,4 +4,4 @@ pub(crate) mod models;
 pub(crate) mod transaction;
 pub(crate) mod utils;
 
-pub use models::TxnManager;
+pub use models::{TxnManager, TxnStatus};

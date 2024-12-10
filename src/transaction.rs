@@ -10,8 +10,8 @@ use reqwest::{Client, Url};
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
@@ -85,7 +85,7 @@ impl TxnManager {
             contract_address,
             transaction_data: transaction_data.clone(),
             timeout,
-            private_signer: self.private_signer.read().await.clone(),
+            private_signer: self.private_signer.read().unwrap().clone(),
             nonce: None,
             txn_hash: None,
             status: TxnStatus::Sending,
@@ -204,12 +204,12 @@ impl TxnManager {
 
             self.transactions
                 .write()
-                .await
+                .unwrap()
                 .insert(transaction.id.clone(), transaction.clone());
 
             self.transaction_ids_queue
                 .write()
-                .await
+                .unwrap()
                 .push_back(transaction.id.clone());
 
             return Ok(transaction.id);
@@ -220,13 +220,14 @@ impl TxnManager {
 
     async fn process_transaction(self: Arc<Self>) -> Result<(), TxnManagerSendError> {
         loop {
-            let Some(transaction_id) = self.transaction_ids_queue.write().await.pop_front() else {
+            let Some(transaction_id) = self.transaction_ids_queue.write().unwrap().pop_front()
+            else {
                 sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                 continue;
             };
 
             let mut transaction = {
-                let transactions = self.transactions.read().await;
+                let transactions = self.transactions.read().unwrap();
                 transactions.get(&transaction_id).unwrap().clone()
             };
 
@@ -272,7 +273,7 @@ impl TxnManager {
                 transaction.status = TxnStatus::Confirmed;
                 transaction.last_monitored = Instant::now();
 
-                let mut transactions_guard = self.transactions.write().await;
+                let mut transactions_guard = self.transactions.write().unwrap();
                 transactions_guard.insert(transaction.id.clone(), transaction);
                 continue;
             }
@@ -288,13 +289,13 @@ impl TxnManager {
 
             self.clone().send_dummy_transaction(&mut transaction).await;
 
-            let mut transactions_guard = self.transactions.write().await;
+            let mut transactions_guard = self.transactions.write().unwrap();
             transactions_guard.insert(transaction.id.clone(), transaction);
         }
     }
 
     pub async fn get_transaction_status(self: Arc<Self>, txn_hash: String) -> Option<TxnStatus> {
-        let transactions = self.transactions.read().await.clone();
+        let transactions = self.transactions.read().unwrap().clone();
         transactions.get(&txn_hash).map(|txn| txn.status.clone())
     }
 
@@ -408,12 +409,12 @@ impl TxnManager {
             transaction.status = TxnStatus::Pending;
             transaction.last_monitored = Instant::now();
 
-            let mut transactions_guard = self.transactions.write().await;
+            let mut transactions_guard = self.transactions.write().unwrap();
 
             transaction.txn_hash = Some(txn_hash.clone());
             transactions_guard.insert(transaction.id.clone(), transaction.clone());
 
-            let mut transactions_queue_guard = self.transaction_ids_queue.write().await;
+            let mut transactions_queue_guard = self.transaction_ids_queue.write().unwrap();
             transactions_queue_guard.push_front(transaction.id.clone());
 
             return Ok(());
@@ -425,7 +426,7 @@ impl TxnManager {
     async fn send_dummy_transaction(self: Arc<Self>, transaction: &mut Transaction) {
         loop {
             let dummy_txn = TransactionRequest::default()
-                .with_to(self.private_signer.read().await.address())
+                .with_to(self.private_signer.read().unwrap().address())
                 .with_value(U256::ZERO)
                 .with_nonce(transaction.nonce.unwrap())
                 .with_gas_limit(21000)
@@ -467,7 +468,7 @@ impl TxnManager {
             transaction.status = TxnStatus::Failed;
             transaction.last_monitored = Instant::now();
 
-            let mut transactions_guard = self.transactions.write().await;
+            let mut transactions_guard = self.transactions.write().unwrap();
             transactions_guard.insert(transaction.id.clone(), transaction.clone());
 
             break;
@@ -480,7 +481,7 @@ impl TxnManager {
         ignore_private_signer_check: bool,
     ) -> Result<HttpProvider, TxnManagerSendError> {
         if !ignore_private_signer_check
-            && transaction.private_signer != self.private_signer.read().await.clone()
+            && transaction.private_signer != self.private_signer.read().unwrap().clone()
         {
             return Err(TxnManagerSendError::GasWalletChanged(
                 "Gas wallet changed".to_string(),
@@ -522,7 +523,7 @@ impl TxnManager {
                 }
             }
 
-            let mut nonce_to_send_guard = self.nonce_to_send.write().await;
+            let mut nonce_to_send_guard = self.nonce_to_send.write().unwrap();
             if current_nonce > *nonce_to_send_guard {
                 *nonce_to_send_guard = current_nonce;
             }
@@ -595,7 +596,7 @@ impl TxnManager {
         loop {
             sleep(Duration::from_secs(self.garbage_collect_interval_sec)).await;
 
-            let mut transactions_guard = self.transactions.write().await;
+            let mut transactions_guard = self.transactions.write().unwrap();
             let now = Instant::now();
 
             transactions_guard.retain(|_, transaction| {

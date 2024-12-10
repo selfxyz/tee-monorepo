@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["arnav-deep <arnavd4@gmail.com>"]
 edition = "2021"
 
+[[example]]
+name = "basic_transaction"
+path = "examples/basic_transaction.rs"
+
 [dependencies]
 alloy = { version = "0.4.2", features = ["full"] }
 anyhow = "1.0.89"

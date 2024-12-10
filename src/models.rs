@@ -2,8 +2,8 @@ use alloy::primitives::{Address, Bytes};
 use alloy::signers::local::PrivateKeySigner;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::Instant;
-use tokio::sync::RwLock;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Transaction {
@@ -33,7 +33,7 @@ pub struct TxnManager {
     pub(crate) garbage_collect_interval_sec: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TxnStatus {
     Sending,
     Pending,
