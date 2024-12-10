@@ -14,8 +14,9 @@ mod test_util;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use alloy::signers::k256::ecdsa::SigningKey;
+use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::utils::public_key_to_address;
 use anyhow::Context;
 use clap::Parser;
@@ -23,9 +24,8 @@ use env_logger::Env;
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::fs;
-use tokio::sync::RwLock as TokioRwLock;
 
 use crate::api_impl::{
     export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
@@ -68,7 +68,9 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let app_data = Data::new(AppState {
         enclave_signer_key,
         enclave_address,
-        wallet: Arc::new(TokioRwLock::new(String::new())),
+        wallet: Arc::new(RwLock::new(
+            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap(),
+        )),
         common_chain_id: config.common_chain_id,
         common_chain_http_url: config.common_chain_http_url,
         common_chain_ws_url: config.common_chain_ws_url,
@@ -85,6 +87,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         registration_events_listener_active: Mutex::new(false),
         contracts_client: Mutex::new(None),
     });
+
     // Start a http server
     let server = HttpServer::new(move || {
         App::new()

@@ -2,7 +2,7 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, post, HttpResponse, Responder};
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex;
-use alloy::primitives::{keccak256, Address, U256};
+use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::local::PrivateKeySigner;
@@ -12,9 +12,7 @@ use multi_block_txns::TxnManager;
 use serde_json::json;
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::Ordering;
-use std::sync::RwLock;
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::contract_abi::GatewaysContract;
@@ -71,21 +69,21 @@ async fn inject_mutable_config(
         ));
     }
 
-    // Initialize local wallet with operator's gas key to send signed transactions to the common chain and request chains
-    let gas_wallet = PrivateKeySigner::from_bytes(&bytes32_gas_key.into());
-    let Ok(_) = gas_wallet else {
+    let private_key_signer = mutable_config.gas_key_hex.parse::<PrivateKeySigner>();
+
+    let Ok(private_key_signer) = private_key_signer else {
         return HttpResponse::BadRequest().body(format!(
-            "Invalid gas private key provided: {:?}",
-            gas_wallet.unwrap_err()
+            "Failed to parse the gas private key into a private key signer: {:?}",
+            private_key_signer.unwrap_err()
         ));
     };
 
-    let mut wallet_guard = app_state.wallet.write().await;
-    if *wallet_guard == mutable_config.gas_key_hex.clone() {
+    let mut wallet_guard = app_state.wallet.write().unwrap();
+    if *wallet_guard == private_key_signer {
         return HttpResponse::NotAcceptable().body("The same wallet address already set.");
     }
 
-    *wallet_guard = mutable_config.gas_key_hex.clone();
+    *wallet_guard = private_key_signer;
 
     app_state
         .mutable_params_injected
@@ -143,7 +141,7 @@ async fn export_signed_registration_message(
     }
 
     // if wallet is not configured, return error
-    if app_state.wallet.read().await.is_empty() {
+    if *app_state.wallet.read().unwrap() == PrivateKeySigner::from_bytes(&B256::ZERO).unwrap() {
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
@@ -320,6 +318,8 @@ async fn export_signed_registration_message(
             app_state.wallet.clone(),
             None,
             None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -371,6 +371,8 @@ async fn export_signed_registration_message(
             app_state.common_chain_http_url.clone(),
             app_state.common_chain_id,
             app_state.wallet.clone(),
+            None,
+            None,
             None,
             None,
         )
@@ -434,13 +436,7 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
         return HttpResponse::BadRequest().body("Mutable params not configured yet!");
     }
 
-    let wallet: PrivateKeySigner = app_state
-        .wallet
-        .read()
-        .await
-        .clone()
-        .parse::<PrivateKeySigner>()
-        .unwrap();
+    let wallet: PrivateKeySigner = app_state.wallet.read().unwrap().clone();
 
     let response = GatewayDetailsResponse {
         enclave_public_key: "0x".to_string()
@@ -599,7 +595,10 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.read().await, String::new());
+        assert_eq!(
+            *app_state.wallet.read().unwrap(),
+            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap()
+        );
 
         // Inject invalid private(signing) key
         let req = actix_web::test::TestRequest::post()
@@ -619,7 +618,10 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.read().await, String::new());
+        assert_eq!(
+            *app_state.wallet.read().unwrap(),
+            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap()
+        );
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
         let req = actix_web::test::TestRequest::post()
@@ -638,7 +640,10 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.read().await, String::new());
+        assert_eq!(
+            *app_state.wallet.read().unwrap(),
+            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap()
+        );
 
         // Inject a valid private key for gas wallet
         let req = actix_web::test::TestRequest::post()
@@ -657,7 +662,10 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY.to_string());
+        assert_eq!(
+            *app_state.wallet.read().unwrap(),
+            GAS_WALLET_KEY.parse::<PrivateKeySigner>().unwrap()
+        );
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(app_state.contracts_client.lock().unwrap().is_none());
         assert!(!*app_state
@@ -691,12 +699,10 @@ mod api_impl_tests {
             .unwrap()
             .common_chain_txn_manager
             .clone()
-            .gas_wallet
+            .private_signer
             .read()
-            .await
-            .clone()
-            .parse::<PrivateKeySigner>()
             .unwrap()
+            .clone()
             .address();
         assert_eq!(
             gas_wallet_address,
@@ -720,7 +726,10 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY.to_string());
+        assert_eq!(
+            *app_state.wallet.read().unwrap(),
+            GAS_WALLET_KEY.parse::<PrivateKeySigner>().unwrap()
+        );
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -729,12 +738,10 @@ mod api_impl_tests {
             .unwrap()
             .common_chain_txn_manager
             .clone()
-            .gas_wallet
+            .private_signer
             .read()
-            .await
-            .clone()
-            .parse::<PrivateKeySigner>()
             .unwrap()
+            .clone()
             .address();
         assert_eq!(
             gas_wallet_address,
@@ -762,7 +769,10 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.read().await, GAS_WALLET_KEY_2.to_string());
+        assert_eq!(
+            *app_state.wallet.read().unwrap(),
+            GAS_WALLET_KEY_2.parse::<PrivateKeySigner>().unwrap()
+        );
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -771,12 +781,10 @@ mod api_impl_tests {
             .unwrap()
             .common_chain_txn_manager
             .clone()
-            .gas_wallet
+            .private_signer
             .read()
-            .await
-            .clone()
-            .parse::<PrivateKeySigner>()
             .unwrap()
+            .clone()
             .address();
         assert_eq!(
             gas_wallet_address,
@@ -1245,14 +1253,7 @@ mod api_impl_tests {
         assert!(response.is_ok());
 
         let response = response.unwrap();
-        let gas_address = app_state
-            .wallet
-            .read()
-            .await
-            .clone()
-            .parse::<PrivateKeySigner>()
-            .unwrap()
-            .address();
+        let gas_address = app_state.wallet.read().unwrap().clone().address();
         let expected_response = GatewayDetailsResponse {
             enclave_public_key: "0x".to_string()
                 + &hex::encode(

@@ -1,16 +1,17 @@
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::signers::k256::ecdsa::SigningKey;
+use alloy::signers::local::PrivateKeySigner;
 use multi_block_txns::TxnManager;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
-use tokio::sync::RwLock as TokioRwLock;
+
 #[derive(Debug)]
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
-    pub wallet: Arc<TokioRwLock<String>>,
+    pub wallet: Arc<RwLock<PrivateKeySigner>>,
     pub common_chain_id: u64,
     pub common_chain_http_url: String,
     pub common_chain_ws_url: String,

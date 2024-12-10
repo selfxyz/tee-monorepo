@@ -21,7 +21,6 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::RwLock as TokioRwLock;
 
 use crate::api_impl::{
     export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
@@ -100,12 +99,16 @@ pub fn new_app(
 pub async fn generate_app_state() -> Data<AppState> {
     // Initialize random 'secp256k1' signing key for the enclave
 
+    use std::sync::RwLock;
+
     let signer_key = SigningKey::random(&mut OsRng);
 
     Data::new(AppState {
         enclave_signer_key: signer_key.clone(),
         enclave_address: public_key_to_address(&signer_key.verifying_key()),
-        wallet: Arc::new(TokioRwLock::new(String::new())),
+        wallet: Arc::new(RwLock::new(
+            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap(),
+        )),
         common_chain_id: CHAIN_ID,
         common_chain_http_url: HTTP_RPC_URL.to_owned(),
         common_chain_ws_url: WS_URL.to_owned(),
