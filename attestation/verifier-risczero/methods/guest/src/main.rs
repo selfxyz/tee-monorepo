@@ -314,7 +314,7 @@ fn main() {
     offset = offset + 11;
 
     // commit public key
-    let pubkey_len = if attestation[offset] >= 0x40 && attestaion[offset] <= 0x57 {
+    let pubkey_len = if attestation[offset] >= 0x40 && attestation[offset] <= 0x57 {
         // length is part of type byte
         let len = attestation[offset] - 0x40;
 
@@ -322,7 +322,7 @@ fn main() {
         offset += 1;
 
         // return len
-        len
+        len as usize
     } else {
         // only allow one byte length
         assert_eq!(attestation[offset], 0x58);
@@ -354,7 +354,7 @@ fn main() {
         (0, [].as_slice())
     } else if attestation[offset + 10] >= 0x40 && attestation[offset + 10] <= 0x57 {
         // length is part of type byte
-        let size = attestation[offset + 10] - 0x40;
+        let size = (attestation[offset + 10] - 0x40) as u16;
 
         (size, &attestation[offset + 11..offset + 11 + size as usize])
     } else if attestation[offset + 10] == 0x58 {
