@@ -301,13 +301,13 @@ impl TxnManager {
     /// Retrieves the current status of a transaction.
     ///
     /// # Arguments
-    /// * `txn_hash` - The transaction hash to query
+    /// * `txn_id` - The transaction id to query
     ///
     /// # Returns
     /// * `Option<TxnStatus>` - The current status of the transaction, if found
-    pub async fn get_transaction_status(self: &Arc<Self>, txn_hash: String) -> Option<TxnStatus> {
+    pub async fn get_transaction_status(self: &Arc<Self>, txn_id: String) -> Option<TxnStatus> {
         let transactions = self.transactions.read().unwrap().clone();
-        transactions.get(&txn_hash).map(|txn| txn.status.clone())
+        transactions.get(&txn_id).map(|txn| txn.status.clone())
     }
 
     /// Processes pending transactions and monitors their status.
