@@ -199,7 +199,7 @@ impl TxnManager {
         let mut failure_reason = String::new();
 
         while Instant::now() < transaction.timeout {
-            let provider = match self.clone()._create_provider(&transaction, false) {
+            let provider = match self._create_provider(&transaction, false) {
                 Ok(provider) => provider,
                 Err(err) => {
                     failure_reason = err.to_string();
@@ -208,7 +208,6 @@ impl TxnManager {
             };
 
             let res = self
-                .clone()
                 ._manage_nonce(&provider, &mut transaction, update_nonce)
                 .await;
             if res.is_err() {
@@ -233,7 +232,6 @@ impl TxnManager {
 
             if transaction.gas_price == 0 || transaction.estimated_gas == 0 {
                 let res = self
-                    .clone()
                     ._estimate_gas_limit_and_price(
                         &provider,
                         &mut transaction,
@@ -372,7 +370,7 @@ impl TxnManager {
             )))
             .await;
 
-            let provider = self.clone()._create_provider(&transaction, true).unwrap();
+            let provider = self._create_provider(&transaction, true).unwrap();
 
             let txn_hash = transaction.txn_hash.clone().unwrap();
 
@@ -383,8 +381,7 @@ impl TxnManager {
                     .map(jitter)
                     .take(10),
                 || async {
-                    self.clone()
-                        ._get_transaction_receipt(provider.clone(), txn_hash.clone())
+                    self._get_transaction_receipt(provider.clone(), txn_hash.clone())
                         .await
                 },
             )
@@ -399,7 +396,7 @@ impl TxnManager {
                 continue;
             }
 
-            let resend_res = self.clone()._resend_transaction(&mut transaction).await;
+            let resend_res = self._resend_transaction(&mut transaction).await;
             match resend_res {
                 Ok(()) => continue,
                 Err(
@@ -408,7 +405,7 @@ impl TxnManager {
                 Err(_) => {}
             };
 
-            self.clone()._send_dummy_transaction(&mut transaction).await;
+            self._send_dummy_transaction(&mut transaction).await;
 
             let mut transactions_guard = self.transactions.write().unwrap();
             transactions_guard.insert(transaction.id.clone(), transaction);
@@ -481,7 +478,7 @@ impl TxnManager {
         let mut failure_reason = String::new();
 
         while Instant::now() < transaction.timeout {
-            let provider = self.clone()._create_provider(&transaction, false);
+            let provider = self._create_provider(&transaction, false);
             let provider = match provider {
                 Ok(provider) => provider,
                 Err(TxnManagerSendError::GasWalletChanged(err_msg)) => {
@@ -595,7 +592,7 @@ impl TxnManager {
                 .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
                 .with_gas_price(transaction.gas_price);
 
-            let provider = self.clone()._create_provider(&transaction, true);
+            let provider = self._create_provider(&transaction, true);
             let provider = match provider {
                 Ok(provider) => provider,
                 Err(_) => {
