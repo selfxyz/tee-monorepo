@@ -30,6 +30,8 @@ async fn main() {
     .await
     .unwrap();
 
+    txn_manager.run().await;
+
     let contract_address: Address = "0x53cb6487dd9766170824d4a66df5a0240b7f5f0b"
         .parse()
         .unwrap();
