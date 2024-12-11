@@ -126,22 +126,16 @@ impl TxnManager {
     pub async fn run(self: &Arc<Self>) {
         let txn_manager_clone = self.clone();
         tokio::spawn(async move {
-            let _ = txn_manager_clone.process_transaction().await;
+            let _ = txn_manager_clone._process_transaction().await;
         });
 
         let txn_manager_clone = self.clone();
         tokio::spawn(async move {
-            txn_manager_clone.garbage_collect_transactions().await;
+            txn_manager_clone._garbage_collect_transactions().await;
         });
     }
 
-    /// Calls a contract function by submitting a transaction to the network.
-    ///
-    /// This method handles the entire lifecycle of a transaction, including:
-    /// - Nonce management
-    /// - Gas estimation
-    /// - Transaction submission
-    /// - Automatic retries with increased gas price/limit if needed
+    /// Calls a contract function by creating a Transaction object and calling it.
     ///
     /// Nonce is fixed for a specific transaction unless the private signer is changed within the timeout.
     ///
@@ -158,8 +152,6 @@ impl TxnManager {
         transaction_data: Bytes,
         timeout: Instant,
     ) -> Result<String, TxnManagerSendError> {
-        let mut update_nonce = false;
-
         let mut transaction = Transaction {
             id: uuid::Uuid::new_v4().to_string(),
             contract_address,
@@ -174,10 +166,38 @@ impl TxnManager {
             last_monitored: Instant::now(),
         };
 
+        self._send_transaction(&mut transaction, false).await
+    }
+
+    /// Sends a transaction to the network.
+    ///
+    /// This method handles the entire lifecycle of a transaction, including:
+    /// - Nonce management
+    /// - Gas estimation
+    /// - Transaction submission
+    /// - Automatic retries with increased gas price/limit if needed
+    ///
+    /// # Arguments
+    /// * `transaction` - The transaction to send
+    /// * `is_internal_call` - Whether the transaction is an internal call
+    ///
+    /// # Returns
+    /// * `Result<String, TxnManagerSendError>` - Transaction ID if successful, error otherwise
+    async fn _send_transaction(
+        self: &Arc<Self>,
+        mut transaction: &mut Transaction,
+        is_internal_call: bool,
+    ) -> Result<String, TxnManagerSendError> {
+        if is_internal_call {
+            transaction.private_signer = self.private_signer.read().unwrap().clone();
+            transaction.status = TxnStatus::Sending;
+        }
+
+        let mut update_nonce = false;
         let mut failure_reason = String::new();
 
-        while Instant::now() < timeout {
-            let provider = match self.clone().create_provider(&transaction, false) {
+        while Instant::now() < transaction.timeout {
+            let provider = match self.clone()._create_provider(&transaction, false) {
                 Ok(provider) => provider,
                 Err(err) => {
                     failure_reason = err.to_string();
@@ -187,7 +207,7 @@ impl TxnManager {
 
             let res = self
                 .clone()
-                .manage_nonce(&provider, &mut transaction, update_nonce)
+                ._manage_nonce(&provider, &mut transaction, update_nonce)
                 .await;
             if res.is_err() {
                 let err = res.err().unwrap();
@@ -212,7 +232,7 @@ impl TxnManager {
             if transaction.gas_price == 0 || transaction.estimated_gas == 0 {
                 let res = self
                     .clone()
-                    .estimate_gas_limit_and_price(
+                    ._estimate_gas_limit_and_price(
                         &provider,
                         &mut transaction,
                         transaction_request.clone(),
@@ -292,7 +312,7 @@ impl TxnManager {
                 .unwrap()
                 .push_back(transaction.id.clone());
 
-            return Ok(transaction.id);
+            return Ok(transaction.id.clone());
         }
 
         Err(TxnManagerSendError::Timeout(failure_reason))
@@ -321,7 +341,7 @@ impl TxnManager {
     /// - Monitor pending transactions
     /// - Retry failed transactions
     /// - Update transaction status
-    async fn process_transaction(self: &Arc<Self>) -> Result<(), TxnManagerSendError> {
+    async fn _process_transaction(self: &Arc<Self>) -> Result<(), TxnManagerSendError> {
         loop {
             let Some(transaction_id) = self.transaction_ids_queue.write().unwrap().pop_front()
             else {
@@ -350,7 +370,7 @@ impl TxnManager {
             )))
             .await;
 
-            let provider = self.clone().create_provider(&transaction, true).unwrap();
+            let provider = self.clone()._create_provider(&transaction, true).unwrap();
 
             let txn_hash = transaction.txn_hash.clone().unwrap();
 
@@ -362,7 +382,7 @@ impl TxnManager {
                     .take(10),
                 || async {
                     self.clone()
-                        .get_transaction_receipt(provider.clone(), txn_hash.clone())
+                        ._get_transaction_receipt(provider.clone(), txn_hash.clone())
                         .await
                 },
             )
@@ -377,7 +397,7 @@ impl TxnManager {
                 continue;
             }
 
-            let resend_res = self.clone().resend_transaction(&mut transaction).await;
+            let resend_res = self.clone()._resend_transaction(&mut transaction).await;
             match resend_res {
                 Ok(()) => continue,
                 Err(
@@ -386,7 +406,7 @@ impl TxnManager {
                 Err(_) => {}
             };
 
-            self.clone().send_dummy_transaction(&mut transaction).await;
+            self.clone()._send_dummy_transaction(&mut transaction).await;
 
             let mut transactions_guard = self.transactions.write().unwrap();
             transactions_guard.insert(transaction.id.clone(), transaction);
@@ -394,6 +414,8 @@ impl TxnManager {
     }
 
     /// Retrieves a transaction receipt from the network.
+    /// Returns the receipt if it is found.
+    /// If not found, it return the error.
     ///
     /// # Arguments
     /// * `provider` - The HTTP provider instance
@@ -401,7 +423,11 @@ impl TxnManager {
     ///
     /// # Returns
     /// * `Result<TransactionReceipt, TxnManagerSendError>` - The transaction receipt or an error
-    async fn get_transaction_receipt(
+    ///
+    /// # Errors
+    /// * `TxnManagerSendError::NetworkConnectivity` - If the provider call fails
+    /// * `TxnManagerSendError::ReceiptNotFound` - If the transaction receipt is not found
+    async fn _get_transaction_receipt(
         self: &Arc<Self>,
         provider: HttpProvider,
         txn_hash: String,
@@ -433,7 +459,7 @@ impl TxnManager {
     ///
     /// This method is called when a transaction is stuck or failed due to gas
     /// or rpc/network related issues.
-    async fn resend_transaction(
+    async fn _resend_transaction(
         self: &Arc<Self>,
         transaction: &mut Transaction,
     ) -> Result<(), TxnManagerSendError> {
@@ -453,19 +479,15 @@ impl TxnManager {
         let mut failure_reason = String::new();
 
         while Instant::now() < transaction.timeout {
-            let provider = self.clone().create_provider(&transaction, false);
+            let provider = self.clone()._create_provider(&transaction, false);
             let provider = match provider {
                 Ok(provider) => provider,
                 Err(TxnManagerSendError::GasWalletChanged(err_msg)) => {
                     let self_clone = self.clone();
-                    let transaction_clone = transaction.clone();
+                    let mut transaction_clone = transaction.clone();
                     tokio::spawn(async move {
                         let _ = self_clone
-                            .call_contract_function(
-                                transaction_clone.contract_address,
-                                transaction_clone.transaction_data,
-                                transaction_clone.timeout,
-                            )
+                            ._send_transaction(&mut transaction_clone, true)
                             .await;
                     });
                     failure_reason = err_msg;
@@ -485,7 +507,31 @@ impl TxnManager {
                     let err = parse_send_error(failure_reason.clone());
                     match err {
                         TxnManagerSendError::NonceTooLow(_) => {
-                            break;
+                            let txn_receipt = self
+                                ._get_transaction_receipt(
+                                    provider,
+                                    transaction.txn_hash.clone().unwrap(),
+                                )
+                                .await;
+
+                            match txn_receipt {
+                                Ok(_) => {
+                                    break;
+                                }
+                                Err(TxnManagerSendError::ReceiptNotFound(_)) => {
+                                    let self_clone = self.clone();
+                                    let mut transaction_clone = transaction.clone();
+                                    tokio::spawn(async move {
+                                        let _ = self_clone
+                                            ._send_transaction(&mut transaction_clone, true)
+                                            .await;
+                                    });
+                                    break;
+                                }
+                                Err(_) => {
+                                    continue;
+                                }
+                            }
                         }
                         TxnManagerSendError::OutOfGas(_) => {
                             transaction.estimated_gas =
@@ -538,7 +584,7 @@ impl TxnManager {
     /// * `transaction` - The transaction to send
     ///
     /// This method is used to fill nonce gaps when a transaction permanently fails.
-    async fn send_dummy_transaction(self: &Arc<Self>, transaction: &mut Transaction) {
+    async fn _send_dummy_transaction(self: &Arc<Self>, transaction: &mut Transaction) {
         loop {
             let dummy_txn = TransactionRequest::default()
                 .with_to(self.private_signer.read().unwrap().address())
@@ -547,7 +593,7 @@ impl TxnManager {
                 .with_gas_limit(21000)
                 .with_gas_price(transaction.gas_price);
 
-            let provider = self.clone().create_provider(&transaction, true).unwrap();
+            let provider = self.clone()._create_provider(&transaction, true).unwrap();
 
             let pending_txn = provider.send_transaction(dummy_txn).await;
             let Ok(pending_txn) = pending_txn else {
@@ -598,7 +644,7 @@ impl TxnManager {
     /// This method is used to create a provider for a transaction.
     /// If ignore_private_signer_check is false, the private signer of the transaction
     /// must match the private signer of the TxnManager.
-    fn create_provider(
+    fn _create_provider(
         self: &Arc<Self>,
         transaction: &Transaction,
         ignore_private_signer_check: bool,
@@ -632,7 +678,7 @@ impl TxnManager {
     /// This method is used to manage the nonce for a transaction.
     /// If update_nonce is true, the nonce is updated to the current nonce of the provider.
     /// If update_nonce is false, the nonce is not updated.
-    async fn manage_nonce(
+    async fn _manage_nonce(
         self: &Arc<Self>,
         provider: &HttpProvider,
         transaction: &mut Transaction,
@@ -683,7 +729,7 @@ impl TxnManager {
     /// * `Result<(), TxnManagerSendError>` - The result of the gas limit and price estimation
     ///
     /// This method is used to estimate the gas limit and price for a transaction.
-    async fn estimate_gas_limit_and_price(
+    async fn _estimate_gas_limit_and_price(
         self: &Arc<Self>,
         provider: &HttpProvider,
         transaction: &mut Transaction,
@@ -742,7 +788,7 @@ impl TxnManager {
     /// Performs periodic cleanup of old transactions from memory.
     ///
     /// This method is used to clean up old transactions from memory.
-    async fn garbage_collect_transactions(self: &Arc<Self>) {
+    async fn _garbage_collect_transactions(self: &Arc<Self>) {
         loop {
             sleep(Duration::from_secs(self.garbage_collect_interval_sec)).await;
 
