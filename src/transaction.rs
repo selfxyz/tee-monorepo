@@ -590,7 +590,7 @@ impl TxnManager {
                 .with_to(self.private_signer.read().unwrap().address())
                 .with_value(U256::ZERO)
                 .with_nonce(transaction.nonce.unwrap())
-                .with_gas_limit(21000)
+                .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
                 .with_gas_price(transaction.gas_price);
 
             let provider = self.clone()._create_provider(&transaction, true).unwrap();
