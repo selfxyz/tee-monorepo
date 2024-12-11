@@ -595,7 +595,13 @@ impl TxnManager {
                 .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
                 .with_gas_price(transaction.gas_price);
 
-            let provider = self.clone()._create_provider(&transaction, true).unwrap();
+            let provider = self.clone()._create_provider(&transaction, true);
+            let provider = match provider {
+                Ok(provider) => provider,
+                Err(_) => {
+                    continue;
+                }
+            };
 
             let pending_txn = provider.send_transaction(dummy_txn).await;
             let Ok(pending_txn) = pending_txn else {
