@@ -32,7 +32,8 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let secret_data_bytes = hex::decode(cli.secret_data_hex).context("Failed to hex decode the secret data hex string")?;
+    let secret_data_bytes = hex::decode(cli.secret_data_hex)
+        .context("Failed to hex decode the secret data hex string")?;
     println!("Secret data in bytes: {:?}", secret_data_bytes);
 
     let enclave_public_key =

@@ -5,7 +5,7 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, post, HttpResponse, Responder};
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex;
-use alloy::primitives::{keccak256, Address, Bytes, U256};
+use alloy::primitives::{keccak256, Address, U256};
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::Signature;
@@ -19,7 +19,7 @@ use crate::events::events_listener;
 use crate::transactions::get_latest_block_number;
 use crate::utils::{
     create_and_populate_file, AppState, CreateSecret, ImmutableConfig, MutableConfig,
-    DOMAIN_SEPARATOR, SECRET_ACKNOWLEDGE_STORE_TRANSACTION, SECRET_STORAGE_CAPACITY,
+    DOMAIN_SEPARATOR, SECRET_STORAGE_CAPACITY,
 };
 
 #[get("/")]
@@ -413,21 +413,15 @@ async fn inject_and_store_secret(
     };
     let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
-    let function_selector = &keccak256(SECRET_ACKNOWLEDGE_STORE_TRANSACTION.as_bytes());
-    let mut selector = [0u8; 4];
-    selector.copy_from_slice(&function_selector[..4]);
-
-    let params = DynSolValue::Tuple(vec![
-        DynSolValue::Uint(create_secret.secret_id, 256),
-        DynSolValue::Uint(U256::from(sign_timestamp), 256),
-        DynSolValue::Bytes(signature.clone()),
-    ])
-    .abi_encode();
-
-    let mut txn_data = selector.to_vec();
-    txn_data.extend(params[32..].to_vec());
-
-    let txn_data = Bytes::from(txn_data);
+    let txn_data = app_state
+        .secret_manager_contract_instance
+        .acknowledgeStore(
+            create_secret.secret_id,
+            U256::from(sign_timestamp),
+            signature.clone().into(),
+        )
+        .calldata()
+        .to_owned();
 
     // Send the txn response with the acknowledgement counterpart to the common chain txn sender
     if let Err(err) = Retry::spawn(

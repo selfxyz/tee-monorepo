@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::U256;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::BlockTransactionsKind;
 use alloy::transports::http::reqwest::Url;
 use anyhow::{anyhow, Context, Result};
 
-use crate::secret_manager::SecretManagerContract;
-use crate::utils::{timestamp_to_instant, SecretCreatedMetadata, SecretMetadata};
+use crate::utils::{timestamp_to_instant, SecretCreatedMetadata, SecretManagerAbi, SecretMetadata};
 
 pub async fn get_latest_block_number(http_rpc_url: &String) -> Result<u64> {
     let http_rpc_client = ProviderBuilder::new().on_http(Url::parse(http_rpc_url)?);
@@ -36,15 +35,11 @@ pub async fn get_block_timestamp(http_rpc_url: &String, block_number: u64) -> Re
 }
 
 pub async fn get_secret_metadata(
-    http_rpc_url: &String,
-    contract_addr: Address,
+    secret_manager_contract: &SecretManagerAbi,
     secret_id: U256,
     acknowledgement_deadline: u64,
 ) -> Result<SecretCreatedMetadata> {
-    let http_rpc_client = ProviderBuilder::new()
-        .on_http(Url::parse(http_rpc_url).context("Failed to parse the RPC URL")?);
-    let contract = SecretManagerContract::new(contract_addr, http_rpc_client);
-    let user_storage = contract
+    let user_storage = secret_manager_contract
         .userStorage(secret_id)
         .call()
         .await

@@ -12,10 +12,13 @@ use std::sync::Arc;
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
 use alloy::primitives::Address;
+use alloy::providers::ProviderBuilder;
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
+use alloy::transports::http::reqwest::Url;
 use anyhow::{Context, Result};
 use clap::Parser;
+use secret_manager::SecretManagerContract;
 use tokio::fs;
 
 use server::*;
@@ -59,6 +62,11 @@ async fn main() -> Result<()> {
     let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());
     println!("Enclave address {:?}", enclave_address);
 
+    let http_rpc_client = ProviderBuilder::new()
+        .on_http(Url::parse(&config.http_rpc_url).context("Failed to parse the RPC URL")?);
+    let secret_manager_contract =
+        SecretManagerContract::new(config.secret_manager_contract_addr, http_rpc_client);
+
     // Initialize App data that will be shared across multiple threads and tasks
     let app_data = Data::new(AppState {
         secret_store_path: config.secret_store_path,
@@ -67,6 +75,7 @@ async fn main() -> Result<()> {
         web_socket_url: config.web_socket_url,
         secret_store_contract_addr: config.secret_store_contract_addr,
         secret_manager_contract_addr: config.secret_manager_contract_addr,
+        secret_manager_contract_instance: secret_manager_contract,
         num_selected_stores: config.num_selected_stores,
         enclave_address: enclave_address,
         enclave_signer: enclave_signer_key,

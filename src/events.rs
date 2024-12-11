@@ -14,7 +14,7 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::scheduler::store_alive_monitor;
+use crate::scheduler::{garbage_cleaner, store_alive_monitor};
 use crate::secret_manager::SecretManagerContract;
 use crate::transactions::{get_block_timestamp, get_secret_metadata};
 use crate::utils::*;
@@ -130,6 +130,12 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
         let app_state_clone = app_state.clone();
         tokio::spawn(async move {
             store_alive_monitor(app_state_clone).await;
+        });
+
+        // Spawn task to remove expired secrets periodically
+        let app_state_clone = app_state.clone();
+        tokio::spawn(async move {
+            garbage_cleaner(app_state_clone).await;
         });
 
         handle_event_logs(secrets_stream, store_deregistered_stream, app_state.clone()).await;
@@ -307,7 +313,7 @@ async fn handle_event_logs(
                     // Extract the secret ID from the event
                     let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
 
-                    let secret_metadata = get_secret_metadata(&app_state.http_rpc_url, app_state.secret_manager_contract_addr, secret_id, app_state.acknowledgement_timeout).await;
+                    let secret_metadata = get_secret_metadata(&app_state.secret_manager_contract_instance, secret_id, app_state.acknowledgement_timeout).await;
                     let Ok(secret_metadata) = secret_metadata else {
                         eprintln!("Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}", secret_id, secret_metadata.unwrap_err());
                         continue;
@@ -374,17 +380,11 @@ async fn handle_acknowledgement_timeout(secret_id: U256, app_state: Data<AppStat
         return;
     }
 
-    let txn_data = generate_txn(
-        app_state.clone(),
-        &SecretsTxnMetadata::AcknowledgementTimeout(secret_id),
-    );
-    let Ok(txn_data) = txn_data else {
-        eprintln!(
-            "Failed to generate acknowledgement timeout transaction data: {:?}",
-            txn_data.unwrap_err()
-        );
-        return;
-    };
+    let txn_data = app_state
+        .secret_manager_contract_instance
+        .acknowledgeStoreFailed(secret_id)
+        .calldata()
+        .to_owned();
 
     let http_rpc_txn_manager = app_state
         .http_rpc_txn_manager
