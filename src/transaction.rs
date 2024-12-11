@@ -58,6 +58,8 @@ type HttpProvider = FillProvider<
 ///     None, // default garbage removal duration
 /// ).await.unwrap();
 ///
+/// txn_manager.run().await;
+///
 /// let txn_id = txn_manager.call_contract_function(
 ///     contract_address,
 ///     transaction_data,
