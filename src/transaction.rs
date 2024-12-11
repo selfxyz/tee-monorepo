@@ -526,7 +526,7 @@ impl TxnManager {
                                             ._send_transaction(&mut transaction_clone, true)
                                             .await;
                                     });
-                                    break;
+                                    return Err(err);
                                 }
                                 Err(_) => {
                                     continue;
