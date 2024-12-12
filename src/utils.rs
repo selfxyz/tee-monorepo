@@ -3,35 +3,41 @@ use reqwest::Url;
 use crate::errors::TxnManagerSendError;
 
 pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
-    let error = error.to_lowercase();
-    if error.contains("nonce too low") {
+    let error_lowercase = error.to_lowercase();
+    if error_lowercase.contains("nonce too low") {
         return TxnManagerSendError::NonceTooLow(error);
     }
 
-    if error.contains("nonce too high") || error.contains("too many pending transactions") {
+    if error_lowercase.contains("nonce too high")
+        || error_lowercase.contains("too many pending transactions")
+    {
         return TxnManagerSendError::NonceTooHigh(error);
     }
 
-    if error.contains("out of gas")
-        || (error.contains("transaction requires at least") && error.contains("gas but got"))
+    if error_lowercase.contains("out of gas")
+        || (error_lowercase.contains("transaction requires at least")
+            && error_lowercase.contains("gas but got"))
     {
         return TxnManagerSendError::OutOfGas(error);
     }
 
-    if error.contains("gas limit too high") || error.contains("transaction exceeds block gas limit")
+    if error_lowercase.contains("gas limit too high")
+        || error_lowercase.contains("transaction exceeds block gas limit")
     {
         return TxnManagerSendError::GasTooHigh(error);
     }
 
-    if error.contains("gas price too low") || error.contains("transaction underpriced") {
+    if error_lowercase.contains("gas price too low")
+        || error_lowercase.contains("transaction underpriced")
+    {
         return TxnManagerSendError::GasPriceLow(error);
     }
 
-    if error.contains("connection") || error.contains("network") {
+    if error_lowercase.contains("connection") || error_lowercase.contains("network") {
         return TxnManagerSendError::NetworkConnectivity(error);
     }
 
-    if error.contains("reverted") || error.contains("failed") {
+    if error_lowercase.contains("reverted") || error_lowercase.contains("failed") {
         return TxnManagerSendError::ContractExecution(error);
     }
 
@@ -39,8 +45,13 @@ pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
 }
 
 pub(crate) fn verify_rpc_url(rpc_url: &str) -> Result<(), TxnManagerSendError> {
-    let url =
-        Url::parse(rpc_url).map_err(|err| TxnManagerSendError::InvalidRpcUrl(err.to_string()))?;
+    let url = Url::parse(rpc_url);
+    if url.is_err() {
+        return Err(TxnManagerSendError::InvalidRpcUrl(
+            url.err().unwrap().to_string(),
+        ));
+    }
+    let url = url.unwrap();
     if url.scheme() != "http" && url.scheme() != "https" {
         return Err(TxnManagerSendError::InvalidRpcUrl(format!(
             "Invalid RPC URL: {:?}. URL must start with http or https",
