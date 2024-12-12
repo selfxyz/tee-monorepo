@@ -201,6 +201,11 @@ impl TxnManager {
         while Instant::now() < transaction.timeout {
             let provider = match self._create_provider(&transaction, false) {
                 Ok(provider) => provider,
+                Err(TxnManagerSendError::GasWalletChanged(err_msg)) => {
+                    failure_reason = err_msg;
+                    transaction.private_signer = self.private_signer.read().unwrap().clone();
+                    continue;
+                }
                 Err(err) => {
                     failure_reason = err.to_string();
                     continue;
@@ -227,6 +232,7 @@ impl TxnManager {
 
             let transaction_request = TransactionRequest::default()
                 .with_to(transaction.contract_address)
+                .with_from(transaction.private_signer.address())
                 .with_input(transaction.transaction_data.clone())
                 .with_nonce(transaction.nonce.unwrap());
 
@@ -592,9 +598,12 @@ impl TxnManager {
                 .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
                 .with_gas_price(transaction.gas_price);
 
-            let provider = self._create_provider(&transaction, true);
+            let provider = self._create_provider(&transaction, false);
             let provider = match provider {
                 Ok(provider) => provider,
+                Err(TxnManagerSendError::GasWalletChanged(_)) => {
+                    break;
+                }
                 Err(_) => {
                     continue;
                 }
