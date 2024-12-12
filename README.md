@@ -23,5 +23,5 @@ An example for a basic transaction can be found in `examples/basic_transaction.r
 Run it using -
 
 ```
-cargo run --example basic_transaction
+cargo run --example basic_transaction -- --private-key <insert your SepoliaEth Test Wallet Private Key>
 ```
