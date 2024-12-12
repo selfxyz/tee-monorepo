@@ -94,6 +94,9 @@ impl TxnManager {
     ///
     /// # Returns
     /// * `Result<Arc<Self>, TxnManagerSendError>` - The transaction manager instance or an error
+    ///
+    /// # Errors
+    /// * `TxnManagerSendError::InvalidRpcUrl` - If the RPC URL is invalid.
     pub async fn new(
         rpc_url: String,
         chain_id: u64,
@@ -190,6 +193,13 @@ impl TxnManager {
     ///
     /// # Returns
     /// * `Result<String, TxnManagerSendError>` - Transaction ID if successful, error otherwise
+    ///
+    /// # Errors
+    /// * `TxnManagerSendError::GasWalletChanged` - If the gas wallet is changed
+    /// * `TxnManagerSendError::Timeout` - If the transaction is not confirmed within the timeout
+    ///                                    along with the failure reason
+    /// * `TxnManagerSendError::GasTooHigh` - If the gas limit is too high
+    /// * `TxnManagerSendError::ContractExecution` - If the contract execution fails
     async fn _send_transaction(
         self: &Arc<Self>,
         mut transaction: &mut Transaction,
@@ -198,6 +208,12 @@ impl TxnManager {
         if is_internal_call {
             transaction.private_signer = self.private_signer.read().unwrap().clone();
             transaction.status = TxnStatus::Sending;
+            transaction.last_monitored = Instant::now();
+
+            self.transactions
+                .write()
+                .unwrap()
+                .insert(transaction.id.clone(), transaction.clone());
         }
 
         let mut update_nonce = false;
@@ -206,9 +222,9 @@ impl TxnManager {
         while Instant::now() < transaction.timeout {
             let provider = match self._create_provider(&transaction, false) {
                 Ok(provider) => provider,
-                Err(TxnManagerSendError::GasWalletChanged(err_msg)) => {
-                    failure_reason = err_msg;
+                Err(TxnManagerSendError::GasWalletChanged(_)) => {
                     transaction.private_signer = self.private_signer.read().unwrap().clone();
+                    transaction.last_monitored = Instant::now();
                     continue;
                 }
                 Err(err) => {
@@ -299,6 +315,7 @@ impl TxnManager {
                         | TxnManagerSendError::ContractExecution(_) => {
                             if is_internal_call {
                                 transaction.status = TxnStatus::Failed;
+                                transaction.last_monitored = Instant::now();
                                 self.transactions
                                     .write()
                                     .unwrap()
@@ -335,6 +352,7 @@ impl TxnManager {
 
         if is_internal_call {
             transaction.status = TxnStatus::Failed;
+            transaction.last_monitored = Instant::now();
             self.transactions
                 .write()
                 .unwrap()
@@ -349,7 +367,7 @@ impl TxnManager {
     /// * `txn_id` - The transaction id to query
     ///
     /// # Returns
-    /// * `Option<TxnStatus>` - The current status of the transaction, if found
+    /// * `Option<TxnStatus>` - The current status of the transaction, if found, else None
     pub async fn get_transaction_status(self: &Arc<Self>, txn_id: String) -> Option<TxnStatus> {
         let transactions = self.transactions.read().unwrap().clone();
         transactions.get(&txn_id).map(|txn| txn.status.clone())
@@ -366,7 +384,7 @@ impl TxnManager {
     /// - Monitor pending transactions
     /// - Retry failed transactions
     /// - Update transaction status
-    async fn _process_transaction(self: &Arc<Self>) -> Result<(), TxnManagerSendError> {
+    async fn _process_transaction(self: &Arc<Self>) {
         loop {
             let Some(transaction_id) = self.transaction_ids_queue.write().unwrap().pop_front()
             else {
@@ -431,9 +449,6 @@ impl TxnManager {
             };
 
             self._send_dummy_transaction(&mut transaction).await;
-
-            let mut transactions_guard = self.transactions.write().unwrap();
-            transactions_guard.insert(transaction.id.clone(), transaction);
         }
     }
 
@@ -483,6 +498,17 @@ impl TxnManager {
     ///
     /// This method is called when a transaction is stuck or failed due to gas
     /// or rpc/network related issues.
+    ///
+    /// # Returns
+    /// * `Result<(), TxnManagerSendError>` - An empty result
+    ///
+    /// # Errors
+    /// * `TxnManagerSendError::Timeout` - If the transaction is not confirmed within the timeout
+    ///                                    along with the failure reason
+    /// * `TxnManagerSendError::GasWalletChanged` - If the gas wallet is changed
+    /// * `TxnManagerSendError::ReceiptNotFound` - If the transaction receipt is not found
+    /// * `TxnManagerSendError::GasTooHigh` - If the gas limit is too high
+    /// * `TxnManagerSendError::ContractExecution` - If the contract execution fails
     async fn _resend_transaction(
         self: &Arc<Self>,
         transaction: &mut Transaction,
@@ -514,8 +540,7 @@ impl TxnManager {
                             ._send_transaction(&mut transaction_clone, true)
                             .await;
                     });
-                    failure_reason = err_msg;
-                    break;
+                    return Err(TxnManagerSendError::GasWalletChanged(err_msg));
                 }
                 Err(err) => {
                     failure_reason = err.to_string();
@@ -540,7 +565,7 @@ impl TxnManager {
 
                             match txn_receipt {
                                 Ok(_) => {
-                                    break;
+                                    return Ok(());
                                 }
                                 Err(TxnManagerSendError::ReceiptNotFound(_)) => {
                                     let self_clone = self.clone();
