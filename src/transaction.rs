@@ -125,6 +125,11 @@ impl TxnManager {
         }))
     }
 
+    /// Runs the transaction manager.
+    ///
+    /// This method starts two separate tasks:
+    /// - One for processing transactions from the queue
+    /// - One for garbage collecting old transactions
     pub async fn run(self: &Arc<Self>) {
         let txn_manager_clone = self.clone();
         tokio::spawn(async move {
