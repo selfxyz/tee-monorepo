@@ -4,16 +4,16 @@ use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Transaction {
-    pub id: String,
-    pub contract_address: Address,
-    pub transaction_data: Bytes,
-    pub timeout: Instant,
-    pub private_signer: PrivateKeySigner,
-    pub nonce: Option<u64>,
+    pub(crate) id: String,
+    pub(crate) contract_address: Address,
+    pub(crate) transaction_data: Bytes,
+    pub(crate) timeout: Instant,
+    pub(crate) private_signer: PrivateKeySigner,
+    pub(crate) nonce: Option<u64>,
     pub(crate) gas_price: u128,
     pub(crate) estimated_gas: u64,
-    pub txn_hash: Option<String>,
-    pub status: TxnStatus,
+    pub(crate) txn_hash: Option<String>,
+    pub(crate) status: TxnStatus,
     pub(crate) last_monitored: Instant,
 }
 
