@@ -292,6 +292,13 @@ impl TxnManager {
                         // Or the gas required is way high compared to block gas limit
                         TxnManagerSendError::GasTooHigh(_)
                         | TxnManagerSendError::ContractExecution(_) => {
+                            if is_internal_call {
+                                transaction.status = TxnStatus::Failed;
+                                self.transactions
+                                    .write()
+                                    .unwrap()
+                                    .insert(transaction.id.clone(), transaction.clone());
+                            }
                             return Err(txn_manager_err);
                         }
                         _ => {
@@ -321,6 +328,13 @@ impl TxnManager {
             return Ok(transaction.id.clone());
         }
 
+        if is_internal_call {
+            transaction.status = TxnStatus::Failed;
+            self.transactions
+                .write()
+                .unwrap()
+                .insert(transaction.id.clone(), transaction.clone());
+        }
         Err(TxnManagerSendError::Timeout(failure_reason))
     }
 
