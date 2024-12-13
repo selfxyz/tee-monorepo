@@ -1,13 +1,12 @@
 mod config;
+mod constants;
 mod events;
+mod model;
 mod scheduler;
-mod secret_manager;
 mod server;
-mod transactions;
 mod utils;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
@@ -18,12 +17,11 @@ use alloy::signers::utils::public_key_to_address;
 use alloy::transports::http::reqwest::Url;
 use anyhow::{Context, Result};
 use clap::Parser;
-use secret_manager::SecretManagerContract;
 use tokio::fs;
 
+use model::{AppState, ConfigManager, SecretManagerContract};
 use server::*;
-use tokio::sync::RwLock;
-use utils::{verify_rpc_url, AppState, ConfigManager};
+use utils::verify_rpc_url;
 
 // SECRET STORE CONFIGURATION PARAMETERS
 #[derive(Parser, Debug)]
@@ -82,7 +80,7 @@ async fn main() -> Result<()> {
         immutable_params_injected: false.into(),
         mutable_params_injected: false.into(),
         enclave_owner: Address::ZERO.into(),
-        gas_wallet: Arc::new(RwLock::new(String::new())),
+        gas_private_key: None.into(),
         http_rpc_txn_manager: None.into(),
         enclave_registered: false.into(),
         events_listener_active: false.into(),

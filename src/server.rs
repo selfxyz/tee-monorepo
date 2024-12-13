@@ -1,4 +1,5 @@
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_web::web::{Data, Json};
@@ -12,15 +13,11 @@ use alloy::signers::Signature;
 use ecies::decrypt;
 use multi_block_txns::TxnManager;
 use serde_json::json;
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::Retry;
 
+use crate::constants::{DOMAIN_SEPARATOR, SECRET_STORAGE_CAPACITY_BYTES};
 use crate::events::events_listener;
-use crate::transactions::get_latest_block_number;
-use crate::utils::{
-    create_and_populate_file, AppState, CreateSecret, ImmutableConfig, MutableConfig,
-    DOMAIN_SEPARATOR, SECRET_STORAGE_CAPACITY,
-};
+use crate::model::{AppState, CreateSecret, ImmutableConfig, MutableConfig};
+use crate::utils::{create_and_populate_file, get_latest_block_number};
 
 #[get("/")]
 async fn index() -> impl Responder {
@@ -79,26 +76,32 @@ async fn inject_mutable_config(
     }
 
     // Initialize local wallet with operator's gas key to send signed transactions to the common chain
-    let gas_wallet = PrivateKeySigner::from_bytes(&bytes32_gas_key.into());
-    let Ok(_) = gas_wallet else {
+    let gas_private_key = PrivateKeySigner::from_bytes(&bytes32_gas_key.into());
+    let Ok(gas_private_key) = gas_private_key else {
         return HttpResponse::BadRequest().body(format!(
             "Invalid gas private key provided: {:?}\n",
-            gas_wallet.unwrap_err()
+            gas_private_key.unwrap_err()
         ));
     };
 
-    let mut wallet_guard = app_state.gas_wallet.write().await;
-    if *wallet_guard == mutable_config.gas_key_hex.clone() {
-        return HttpResponse::NotAcceptable().body("The same wallet address already set.");
+    if (*app_state.gas_private_key.read().unwrap()).is_none() {
+        *app_state.gas_private_key.write().unwrap() = Some(Arc::new(RwLock::new(gas_private_key)));
+    } else {
+        let gas_private_key_guard = app_state.gas_private_key.write().unwrap();
+        if *gas_private_key_guard.clone().unwrap().read().unwrap() == gas_private_key {
+            return HttpResponse::NotAcceptable().body("The same wallet address already set.");
+        }
+
+        *gas_private_key_guard.clone().unwrap().write().unwrap() = gas_private_key;
+        drop(gas_private_key_guard);
     }
-    *wallet_guard = mutable_config.gas_key_hex.clone();
-    drop(wallet_guard);
 
     // Connect the rpc http provider with the operator's gas wallet
     let http_rpc_txn_manager = TxnManager::new(
         app_state.http_rpc_url.clone(),
         app_state.common_chain_id,
-        app_state.gas_wallet.clone(),
+        app_state.gas_private_key.read().unwrap().clone().unwrap(),
+        None,
         None,
         None,
         None,
@@ -129,11 +132,12 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     let mut gas_address = Address::ZERO;
     if *app_state.mutable_params_injected.lock().unwrap() == true {
         gas_address = app_state
-            .gas_wallet
+            .gas_private_key
             .read()
-            .await
+            .unwrap()
             .clone()
-            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .read()
             .unwrap()
             .address();
     }
@@ -158,7 +162,7 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
     }
 
     // Initialize the storage capacity of the enclave store
-    let storage_capacity = SECRET_STORAGE_CAPACITY;
+    let storage_capacity = SECRET_STORAGE_CAPACITY_BYTES;
     let owner = app_state.enclave_owner.lock().unwrap().clone();
     let sign_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -424,24 +428,18 @@ async fn inject_and_store_secret(
         .to_owned();
 
     // Send the txn response with the acknowledgement counterpart to the common chain txn sender
-    if let Err(err) = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async {
-            app_state
-                .http_rpc_txn_manager
-                .lock()
-                .unwrap()
-                .clone()
-                .unwrap()
-                .call_contract_function(
-                    app_state.secret_manager_contract_addr,
-                    txn_data.clone(),
-                    secret_created.acknowledgement_deadline,
-                )
-                .await
-        },
-    )
-    .await
+    if let Err(err) = app_state
+        .http_rpc_txn_manager
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .call_contract_function(
+            app_state.secret_manager_contract_addr,
+            txn_data.clone(),
+            secret_created.acknowledgement_deadline,
+        )
+        .await
     {
         eprintln!(
             "Failed to send acknowledgement transaction for secret ID {}: {:?}",

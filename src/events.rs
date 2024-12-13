@@ -10,13 +10,11 @@ use alloy::sol_types::SolEvent;
 use scopeguard::defer;
 use tokio::select;
 use tokio::time::sleep;
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::Retry;
 use tokio_stream::{Stream, StreamExt};
 
+use crate::constants::*;
+use crate::model::{AppState, SecretCreatedMetadata, SecretManagerContract, SecretMetadata};
 use crate::scheduler::{garbage_cleaner, store_alive_monitor};
-use crate::secret_manager::SecretManagerContract;
-use crate::transactions::{get_block_timestamp, get_secret_metadata};
 use crate::utils::*;
 
 // Start listening to events emitted by the 'SecretManager' contract if enclave is registered else listen for Store registered event first
@@ -89,6 +87,15 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
         // Create filter to listen to the relevant events emitted by the SecretManager contract
         let secrets_filter = Filter::new()
             .address(app_state.secret_manager_contract_addr)
+            .events(vec![
+                SECRET_CREATED_EVENT.as_bytes(),
+                SECRET_STORE_ACKNOWLEDGEMENT_SUCCESS_EVENT.as_bytes(),
+                SECRET_STORE_ACKNOWLEDGEMENT_FAILED_EVENT.as_bytes(),
+                SECRET_STORE_REPLACED_EVENT.as_bytes(),
+                SECRET_END_TIMESTAMP_UPDATED_EVENT.as_bytes(),
+                SECRET_TERMINATED_EVENT.as_bytes(),
+                SECRET_REMOVED_EVENT.as_bytes(),
+            ])
             .from_block(app_state.last_block_seen.load(Ordering::SeqCst));
         // Subscribe to the filter through the rpc web socket client
         let secrets_subscription = match web_socket_client.subscribe_logs(&secrets_filter).await {
@@ -304,20 +311,8 @@ async fn handle_event_logs(
                     }
                 }
                 else if event.topic0() == Some(&keccak256(SECRET_STORE_REPLACED_EVENT)) {
-                    let new_enclave_address = b256_to_address(event.topics()[3]);
-
-                    if new_enclave_address != app_state.enclave_address {
-                        continue;
-                    }
-
                     // Extract the secret ID from the event
                     let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
-
-                    let secret_metadata = get_secret_metadata(&app_state.secret_manager_contract_instance, secret_id, app_state.acknowledgement_timeout).await;
-                    let Ok(secret_metadata) = secret_metadata else {
-                        eprintln!("Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}", secret_id, secret_metadata.unwrap_err());
-                        continue;
-                    };
 
                     // Mark the current secret as waiting for acknowledgements
                     app_state
@@ -330,6 +325,17 @@ async fn handle_event_logs(
                     tokio::spawn(async move {
                         handle_acknowledgement_timeout(secret_id, app_state_clone).await;
                     });
+
+                    let new_enclave_address = b256_to_address(event.topics()[3]);
+                    if new_enclave_address != app_state.enclave_address {
+                        continue;
+                    }
+
+                    let secret_metadata = get_secret_metadata(&app_state.secret_manager_contract_instance, secret_id, app_state.acknowledgement_timeout).await;
+                    let Ok(secret_metadata) = secret_metadata else {
+                        eprintln!("Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}", secret_id, secret_metadata.unwrap_err());
+                        continue;
+                    };
 
                     app_state.secrets_created.lock().unwrap().insert(secret_id, secret_metadata);
                 }
@@ -394,21 +400,13 @@ async fn handle_acknowledgement_timeout(secret_id: U256, app_state: Data<AppStat
         .unwrap();
 
     // Send the txn response with the acknowledgement counterpart to the common chain txn sender
-    if let Err(err) = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async {
-            http_rpc_txn_manager
-                .clone()
-                .call_contract_function(
-                    app_state.secret_manager_contract_addr,
-                    txn_data.clone(),
-                    Instant::now()
-                        + Duration::from_secs(ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE),
-                )
-                .await
-        },
-    )
-    .await
+    if let Err(err) = http_rpc_txn_manager
+        .call_contract_function(
+            app_state.secret_manager_contract_addr,
+            txn_data.clone(),
+            Instant::now() + Duration::from_secs(ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE_SECS),
+        )
+        .await
     {
         eprintln!(
             "Failed to send acknowledgement timeout transaction for secret ID {}: {:?}",
