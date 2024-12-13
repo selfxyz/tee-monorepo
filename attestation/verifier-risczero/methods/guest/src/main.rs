@@ -30,7 +30,7 @@ fn main() {
     println!("Done!");
 }
 
-fn verify(attestation: &[u8], commit_slice: fn(&[u8])) {
+fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
     // assert initial fields
     assert_eq!(
         attestation[0..8],
