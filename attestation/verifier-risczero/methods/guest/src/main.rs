@@ -25,6 +25,12 @@ fn main() {
         attestation
     );
 
+    verify(&attestation, env::commit_slice);
+
+    println!("Done!");
+}
+
+fn verify(attestation: &[u8], commit_slice: fn(&[u8])) {
     // assert initial fields
     assert_eq!(
         attestation[0..8],
@@ -70,7 +76,7 @@ fn main() {
     // commit the timestamp value
     assert_eq!(attestation[offset + 24], 0x1b); // unsigned int, size 8
     println!("Timestamp: {:?}", &attestation[offset + 25..offset + 33]);
-    env::commit_slice(&attestation[offset + 25..offset + 33]);
+    commit_slice(&attestation[offset + 25..offset + 33]);
 
     // extract timestamp for expiry checks, convert from milliseconds to seconds
     let timestamp =
@@ -92,17 +98,17 @@ fn main() {
         ]
     );
     println!("PCR0: {:?}", &attestation[offset + 3..offset + 51]);
-    env::commit_slice(&attestation[offset + 3..offset + 51]);
+    commit_slice(&attestation[offset + 3..offset + 51]);
 
     offset += 51;
     assert_eq!(attestation[offset..offset + 3], [0x01, 0x58, 0x30]);
     println!("PCR1: {:?}", &attestation[offset + 3..offset + 51]);
-    env::commit_slice(&attestation[offset + 3..offset + 51]);
+    commit_slice(&attestation[offset + 3..offset + 51]);
 
     offset += 51;
     assert_eq!(attestation[offset..offset + 3], [0x02, 0x58, 0x30]);
     println!("PCR2: {:?}", &attestation[offset + 3..offset + 51]);
-    env::commit_slice(&attestation[offset + 3..offset + 51]);
+    commit_slice(&attestation[offset + 3..offset + 51]);
 
     // skip rest of the pcrs, 3 to 15
     offset += 51;
@@ -208,7 +214,7 @@ fn main() {
         // assert that the pubkey size is 97 in case it changes later
         assert_eq!(pubkey.len(), 97);
         assert_eq!(pubkey[0], 0x04);
-        env::commit_slice(&pubkey[1..]);
+        commit_slice(&pubkey[1..]);
 
         // start of next cert that is to be verified
         offset = offset + 3 + size;
@@ -339,8 +345,8 @@ fn main() {
         "Public key: {pubkey_len} bytes: {:?}",
         &attestation[offset..offset + pubkey_len]
     );
-    env::commit_slice(&[pubkey_len as u8]);
-    env::commit_slice(&attestation[offset..offset + pubkey_len]);
+    commit_slice(&[pubkey_len as u8]);
+    commit_slice(&attestation[offset..offset + pubkey_len]);
 
     offset = offset + pubkey_len;
 
@@ -373,8 +379,8 @@ fn main() {
     };
     println!("User data: {} bytes: {:?}", user_data_size, user_data);
     // commit 2 byte length, then data
-    env::commit_slice(&user_data_size.to_be_bytes());
-    env::commit_slice(user_data);
+    commit_slice(&user_data_size.to_be_bytes());
+    commit_slice(user_data);
 
     // prepare COSE verification hash
     let mut hasher = sha2::Sha384::new();
@@ -415,6 +421,4 @@ fn main() {
     let signature = Signature::from_scalars(r, s).unwrap();
 
     verifying_key.verify_prehash(&hash, &signature).unwrap();
-
-    println!("Done!");
 }
