@@ -9,8 +9,7 @@ use alloy::transports::http::Http;
 use reqwest::{Client, Url};
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
@@ -72,6 +71,7 @@ pub struct TxnManager {
     pub chain_id: u64,
     pub private_signer: Arc<RwLock<PrivateKeySigner>>,
     pub(crate) nonce_to_send: Arc<RwLock<u64>>,
+    pub(crate) nonce_to_send_private_signer: Arc<Mutex<PrivateKeySigner>>,
     pub(crate) transactions: Arc<RwLock<HashMap<String, Transaction>>>,
     pub(crate) gas_price_increment_percent: u128,
     pub(crate) gas_limit_increment_amount: u64,
@@ -114,8 +114,11 @@ impl TxnManager {
         Ok(Arc::new(Self {
             rpc_url,
             chain_id,
-            private_signer,
+            private_signer: private_signer.clone(),
             nonce_to_send: Arc::new(RwLock::new(0)),
+            nonce_to_send_private_signer: Arc::new(Mutex::new(
+                private_signer.read().unwrap().clone(),
+            )),
             transactions: Arc::new(RwLock::new(HashMap::new())),
             gas_price_increment_percent: gas_price_increment_percent
                 .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
@@ -209,7 +212,6 @@ impl TxnManager {
         let mut failure_reason = String::new();
 
         if is_internal_call {
-            transaction.private_signer = self.private_signer.read().unwrap().clone();
             transaction.status = TxnStatus::Sending;
             transaction.last_monitored = Instant::now();
 
@@ -217,8 +219,6 @@ impl TxnManager {
                 .write()
                 .unwrap()
                 .insert(transaction.id.clone(), transaction.clone());
-
-            update_nonce = true;
         }
 
         while Instant::now() < transaction.timeout {
@@ -253,6 +253,8 @@ impl TxnManager {
                 }
                 continue;
             }
+
+            update_nonce = false;
 
             let transaction_request = TransactionRequest::default()
                 .with_to(transaction.contract_address)
@@ -299,14 +301,17 @@ impl TxnManager {
                             update_nonce = true;
                             continue;
                         }
+                        TxnManagerSendError::NonceTooHigh(_) => {
+                            update_nonce = true;
+                            sleep(Duration::from_millis(200)).await;
+                            continue;
+                        }
                         TxnManagerSendError::OutOfGas(_) => {
-                            update_nonce = false;
                             transaction.estimated_gas =
                                 transaction.estimated_gas + self.gas_limit_increment_amount;
                             continue;
                         }
                         TxnManagerSendError::GasPriceLow(_) => {
-                            update_nonce = false;
                             transaction.gas_price = transaction.gas_price
                                 * (100 + self.gas_price_increment_percent)
                                 / 100;
@@ -327,7 +332,6 @@ impl TxnManager {
                             return Err(txn_manager_err);
                         }
                         _ => {
-                            update_nonce = false;
                             sleep(Duration::from_millis(200)).await;
                             continue;
                         }
@@ -767,9 +771,22 @@ impl TxnManager {
             }
 
             let mut nonce_to_send_guard = self.nonce_to_send.write().unwrap();
-            if current_nonce > *nonce_to_send_guard {
+
+            // If the private signer of the nonce to send is different from the transaction private signer,
+            // update the nonce to send.
+            if self.nonce_to_send_private_signer.lock().unwrap().address()
+                != transaction.private_signer.address()
+            {
+                *self.nonce_to_send_private_signer.lock().unwrap() =
+                    transaction.private_signer.clone();
                 *nonce_to_send_guard = current_nonce;
             }
+            // If the private signer of the nonce to send is the same as the transaction private signer,
+            // update the nonce to send if the current nonce is greater than the nonce to send.
+            else if current_nonce > *nonce_to_send_guard {
+                *nonce_to_send_guard = current_nonce;
+            }
+
             transaction.nonce = Some(*nonce_to_send_guard);
             *nonce_to_send_guard += 1;
 
