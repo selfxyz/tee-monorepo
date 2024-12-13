@@ -422,3 +422,24 @@ fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
 
     verifying_key.verify_prehash(&hash, &signature).unwrap();
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use crate::verify;
+
+    // NOTE: Seems a bit convoluted, idk if it can be simplified
+    fn create_committer() -> (Rc<RefCell<Vec<u8>>>, impl Fn(&[u8])) {
+        let env = Rc::new(RefCell::new(vec![]));
+
+        let env_clone = env.clone();
+
+        let commit_slice = move |slice: &[u8]| {
+            env_clone.borrow_mut().extend_from_slice(slice);
+        };
+
+        (env, commit_slice)
+    }
+}
