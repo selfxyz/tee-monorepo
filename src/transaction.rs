@@ -455,7 +455,7 @@ impl TxnManager {
                 Err(_) => {}
             };
 
-            self._send_dummy_transaction(&mut transaction).await;
+            self._send_dummy_transaction(transaction).await;
         }
     }
 
@@ -640,7 +640,7 @@ impl TxnManager {
     /// * `transaction` - The transaction to send
     ///
     /// This method is used to fill nonce gaps when a transaction permanently fails.
-    async fn _send_dummy_transaction(self: &Arc<Self>, transaction: &mut Transaction) {
+    async fn _send_dummy_transaction(self: &Arc<Self>, mut transaction: Transaction) {
         loop {
             let dummy_txn = TransactionRequest::default()
                 .with_to(transaction.private_signer.address())
