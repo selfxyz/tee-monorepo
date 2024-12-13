@@ -430,6 +430,8 @@ mod tests {
 
     use crate::verify;
 
+    // TODO: add more extensive tests
+
     // NOTE: Seems a bit convoluted, idk if it can be simplified
     fn create_committer() -> (Rc<RefCell<Vec<u8>>>, impl Fn(&[u8])) {
         let env = Rc::new(RefCell::new(vec![]));
@@ -454,5 +456,18 @@ mod tests {
         verify(&attestation, committer);
 
         assert_eq!("00000193bef3f3b0189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a65d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd166c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aafc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff440e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb0000", hex::encode(journal.borrow_mut().as_slice()));
+    }
+
+    #[test]
+    fn test_custom() {
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/custom.bin")
+                .unwrap();
+
+        let (journal, committer) = create_committer();
+
+        verify(&attestation, committer);
+
+        assert_eq!("00000193bf444e300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202026c79411ebaae7489a4e8355545c0346784b31df5d08cb1f7c0097836a82f67240f2a7201862880a1d09a0bb326637188fbbafab47a10abe3630fcf8c18d35d96532184985e582c0dce3dace8441f37b9cc9211dff935baae69e4872cc349441004123456780003abcdef", hex::encode(journal.borrow_mut().as_slice()));
     }
 }
