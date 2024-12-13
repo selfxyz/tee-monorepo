@@ -205,6 +205,9 @@ impl TxnManager {
         mut transaction: &mut Transaction,
         is_internal_call: bool,
     ) -> Result<String, TxnManagerSendError> {
+        let mut update_nonce = false;
+        let mut failure_reason = String::new();
+
         if is_internal_call {
             transaction.private_signer = self.private_signer.read().unwrap().clone();
             transaction.status = TxnStatus::Sending;
@@ -214,10 +217,9 @@ impl TxnManager {
                 .write()
                 .unwrap()
                 .insert(transaction.id.clone(), transaction.clone());
-        }
 
-        let mut update_nonce = false;
-        let mut failure_reason = String::new();
+            update_nonce = true;
+        }
 
         while Instant::now() < transaction.timeout {
             let provider = match self._create_provider(&transaction, false) {
@@ -225,6 +227,7 @@ impl TxnManager {
                 Err(TxnManagerSendError::GasWalletChanged(_)) => {
                     transaction.private_signer = self.private_signer.read().unwrap().clone();
                     transaction.last_monitored = Instant::now();
+                    update_nonce = true;
                     continue;
                 }
                 Err(err) => {
@@ -636,7 +639,7 @@ impl TxnManager {
     async fn _send_dummy_transaction(self: &Arc<Self>, transaction: &mut Transaction) {
         loop {
             let dummy_txn = TransactionRequest::default()
-                .with_to(self.private_signer.read().unwrap().address())
+                .with_to(transaction.private_signer.address())
                 .with_value(U256::ZERO)
                 .with_nonce(transaction.nonce.unwrap())
                 .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
