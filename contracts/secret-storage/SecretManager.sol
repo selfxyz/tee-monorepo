@@ -9,8 +9,9 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "./TeeManager.sol";
+import "./Executors.sol";
 import "./SecretStore.sol";
-import "./SecretStoreManager.sol";
 
 /**
  * @title SecretManager Contract
@@ -50,7 +51,9 @@ contract SecretManager is
         uint256 _markAliveTimeout,
         uint256 _secretStoreFeeRate,
         address _stakingPaymentPool,
-        address _secretStoreAddress
+        TeeManager _teeManager,
+        Executors _executors,
+        SecretStore _secretStore
     ) {
         _disableInitializers();
 
@@ -63,11 +66,14 @@ contract SecretManager is
         GLOBAL_MAX_STORE_SIZE = _globalMaxStoreSize;
         GLOBAL_MIN_STORE_DURATION = _globalMinStoreDuration;
         GLOBAL_MAX_STORE_DURATION = _globalMaxStoreDuration;
+        // TODO: endTimestamp should be greater than acknowledge timeout
         ACKNOWLEDGEMENT_TIMEOUT = _acknowledgementTimeout;
         MARK_ALIVE_TIMEOUT = _markAliveTimeout;
         SECRET_STORE_FEE_RATE = _secretStoreFeeRate;
         STAKING_PAYMENT_POOL = _stakingPaymentPool;
-        SECRET_STORE = SecretStore(_secretStoreAddress);
+        TEE_MANAGER = _teeManager;
+        EXECUTORS = _executors;
+        SECRET_STORE = _secretStore;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -135,10 +141,13 @@ contract SecretManager is
     address public immutable STAKING_PAYMENT_POOL;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    SecretStore public immutable SECRET_STORE;
+    TeeManager public immutable TEE_MANAGER;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    SecretStoreManager public immutable SECRET_STORE_MANAGER;
+    Executors public immutable EXECUTORS;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    SecretStore public immutable SECRET_STORE;
 
     //------------------------------------ SecretManager start -----------------------------------//
 
@@ -245,7 +254,6 @@ contract SecretManager is
     error SecretManagerAcknowledgementTimeOver();
     error SecretManagerAcknowledgementTimeoutPending(address enclaveAddress);
     error SecretManagerAcknowledgedAlready();
-    error SecretManagerMarkAliveTimeoutOver();
     error SecretManagerUnacknowledged();
     error SecretManagerEnclaveNotFound();
     error SecretManagerStoreIsAlive();
@@ -254,6 +262,7 @@ contract SecretManager is
     error SecretManagerTerminationPending();
     error SecretManagerAlreadyAcknowledged();
     error SecretManagerUserNotAllowed();
+    error SecretManagerInvalidSecret();
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -268,17 +277,15 @@ contract SecretManager is
         if(_sizeLimit == 0 || _sizeLimit > GLOBAL_MAX_STORE_SIZE)
             revert SecretManagerInvalidSizeLimit();
 
-        // TODO: endTimestamp should be greater than acknowledge timeout
         if ((_endTimestamp < block.timestamp + GLOBAL_MIN_STORE_DURATION) || (_endTimestamp > block.timestamp + GLOBAL_MAX_STORE_DURATION)) 
             revert SecretManagerInvalidEndTimestamp();
 
-        // TODO: how to calculate usdcDeposit
         uint256 minUsdcDeposit = (_endTimestamp - block.timestamp) * _sizeLimit * SECRET_STORE_FEE_RATE * NO_OF_NODES_TO_SELECT;
         _checkUsdcDeposit(_usdcDeposit, minUsdcDeposit);
 
         USDC_TOKEN.safeTransferFrom(_owner, address(this), _usdcDeposit);
 
-        SelectedEnclave[] memory selectedEnclaves = SECRET_STORE_MANAGER.selectStores(_env, NO_OF_NODES_TO_SELECT, _sizeLimit);
+        SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectStores(_env, NO_OF_NODES_TO_SELECT, _sizeLimit);
         if (selectedEnclaves.length < NO_OF_NODES_TO_SELECT)
             revert SecretManagerUnavailableResources();
 
@@ -331,13 +338,13 @@ contract SecretManager is
         // Add secretId to the ackSecretIds list only when the secret has been acknowledged by the first set of selected stores
         if(_isReplacedStore(_secretId, enclaveIndex)) {
             userStorage[_secretId].selectedEnclaves[enclaveIndex].replacedAckTimestamp = _signTimestamp;
-            SECRET_STORE_MANAGER.addAckSecretIdToStore(enclaveAddress, _secretId);
+            SECRET_STORE.addAckSecretIdToStore(enclaveAddress, _secretId);
         }
         else if(_checkIfSecretAcknowledged(_secretId)) {
             userStorage[_secretId].ackTimestamp = _signTimestamp;
             uint256 len = userStorage[_secretId].selectedEnclaves.length;
             for (uint256 index = 0; index < len; index++) {
-                SECRET_STORE_MANAGER.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, _secretId);
+                SECRET_STORE.addAckSecretIdToStore(userStorage[_secretId].selectedEnclaves[index].enclaveAddress, _secretId);
             }
         }
 
@@ -348,7 +355,7 @@ contract SecretManager is
         uint256 _secretId,
         uint256 _enclaveIndex
     ) internal view returns (bool) {
-        return userStorage[secretId].startTimestamp != userStorage[_secretId].selectedEnclaves[_enclaveIndex].selectTimestamp;
+        return userStorage[_secretId].startTimestamp != userStorage[_secretId].selectedEnclaves[_enclaveIndex].selectTimestamp;
     }
 
     function _verifyAcknowledgementSign(
@@ -362,11 +369,11 @@ contract SecretManager is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
-        SECRET_STORE.allowOnlyVerified(signer);
+        TEE_MANAGER.allowOnlyVerified(signer);
     }
 
     function _checkSignValidity(uint256 _signTimestamp) internal view {
-        if (block.timestamp > _signTimestamp + SECRET_STORE.ATTESTATION_MAX_AGE())
+        if (block.timestamp > _signTimestamp + TEE_MANAGER.ATTESTATION_MAX_AGE())
             revert SecretManagerSignatureTooOld();
     }
 
@@ -393,12 +400,11 @@ contract SecretManager is
 
             // case for replaced stores(after mark dead txn)
             if (_isReplacedStore(_secretId, index)) {
-                // TODO: should revert ack fail txn after the endTimestamp has surpassed
                 if (
                     !userStoreData.selectedEnclaves[index].hasAcknowledgedStore &&
                     block.timestamp > userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT
                 ) {
-                    SECRET_STORE_MANAGER.releaseStore(enclaveAddress, userStoreData.sizeLimit);
+                    SECRET_STORE.releaseStore(enclaveAddress, userStoreData.sizeLimit);
 
                     reselectedAckFailed = true;
                     bool isArrayLenReduced = _replaceStore(_secretId, enclaveAddress, index, false);
@@ -412,7 +418,7 @@ contract SecretManager is
                 if (!userStoreData.selectedEnclaves[index].hasAcknowledgedStore)
                     ackFailed = true;
 
-                SECRET_STORE_MANAGER.releaseStore(enclaveAddress, userStoreData.sizeLimit);
+                SECRET_STORE.releaseStore(enclaveAddress, userStoreData.sizeLimit);
             }
             ++index;
         }
@@ -445,11 +451,13 @@ contract SecretManager is
         }
         // case for when a newly selected enclave will replace the dead enclave
         else {
-            // remove the already selected stores from the tree so they are not selected back again as duplicates
-            address[] memory removedStores =_deleteSelectedStoresFromTree(_secretId, _enclaveIndex);
-            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE_MANAGER.selectStores(userStorage[_secretId].env, 1, userStorage[_secretId].sizeLimit);
-            // add back the removed stores to the tree
-            _addbackSelectedStoresToTree(removedStores);
+            address[] memory selectedStores = _getSelectedStoresFromTree(_secretId, _enclaveIndex);
+            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectStoresExceptSelected(
+                userStorage[_secretId].env,
+                1,
+                userStorage[_secretId].sizeLimit,
+                selectedStores
+            );
 
             // case for when a new enclave can't be selected as they all are already occupied to their max storage capacity
             if (selectedEnclaves.length == 0) {
@@ -475,10 +483,10 @@ contract SecretManager is
         }
     }
 
-    function _deleteSelectedStoresFromTree(
+    function _getSelectedStoresFromTree(
         uint256 _secretId,
         uint256 _enclaveIndex
-    ) internal returns (address[] memory) {
+    ) internal view returns (address[] memory) {
         uint256 key;
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         address[] memory stores = new address[](len - 1);
@@ -486,14 +494,7 @@ contract SecretManager is
             if(index != _enclaveIndex)
                 stores[key++] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
         }
-        SECRET_STORE.deleteTreeNodes(stores);
         return stores;
-    }
-
-    function _addbackSelectedStoresToTree(
-        address[] memory _stores
-    ) internal {
-        SECRET_STORE.addTreeNodes(_stores);
     }
 
     function _markStoreAlive(
@@ -501,15 +502,14 @@ contract SecretManager is
         bytes memory _signature
     ) internal {
         address enclaveAddress = _verifyStoreAliveSign(_signTimestamp, _signature);
-        if(_signTimestamp <= SECRET_STORE_MANAGER.getSecretStoreDeadTimestamp(enclaveAddress))
+        if(_signTimestamp <= SECRET_STORE.getSecretStoreDeadTimestamp(enclaveAddress))
             revert SecretManagerSignatureTooOld();
 
-        address owner = SECRET_STORE.getSecretStoreOwner(enclaveAddress);
-        uint256 lastAliveTimestamp = SECRET_STORE_MANAGER.getSecretStoreLastAliveTimestamp(enclaveAddress);
-        // TODO: slash the store for missed epochs - ((_signTimestamp - lastAliveTimestamp) / MARK_ALIVE_TIMESTAMP)
-        SECRET_STORE_MANAGER.markAliveUpdate(enclaveAddress, _signTimestamp, MARK_ALIVE_TIMEOUT, STAKING_PAYMENT_POOL);
+        address owner = TEE_MANAGER.getTeeNodeOwner(enclaveAddress);
+        uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
+        SECRET_STORE.markAliveUpdate(enclaveAddress, _signTimestamp, MARK_ALIVE_TIMEOUT, STAKING_PAYMENT_POOL);
 
-        uint256[] memory storeAckSecretIds = SECRET_STORE_MANAGER.getStoreAckSecretIds(enclaveAddress);
+        uint256[] memory storeAckSecretIds = SECRET_STORE.getStoreAckSecretIds(enclaveAddress);
         uint256 len = storeAckSecretIds.length;
         uint256 storageTimeUsage;
         for (uint256 index = 0; index < len; index++) {
@@ -528,7 +528,7 @@ contract SecretManager is
 
             // secret terminated
             if(_signTimestamp > endTimestamp) {
-                SECRET_STORE_MANAGER.secretTerminationUpdate(enclaveAddress, sizeLimit, secId);
+                SECRET_STORE.secretTerminationUpdate(enclaveAddress, sizeLimit, secId);
 
                 _updateUsdcDepositPostPayment(secId, enclaveAddress, enclaveIndex);
 
@@ -559,18 +559,18 @@ contract SecretManager is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         signer = digest.recover(_signature);
 
-        SECRET_STORE.allowOnlyVerified(signer);
+        TEE_MANAGER.allowOnlyVerified(signer);
     }
 
     // TODO: reward the sender
     function _markStoreDead(
         address _enclaveAddress
     ) internal {
-        uint256 lastAliveTimestamp = SECRET_STORE_MANAGER.getSecretStoreLastAliveTimestamp(_enclaveAddress);
+        uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
         if(block.timestamp <= lastAliveTimestamp + MARK_ALIVE_TIMEOUT)
             revert SecretManagerStoreIsAlive();
 
-        uint256[] memory storeAckSecretIds = SECRET_STORE_MANAGER.getStoreAckSecretIds(_enclaveAddress);
+        uint256[] memory storeAckSecretIds = SECRET_STORE.getStoreAckSecretIds(_enclaveAddress);
         uint256 len = storeAckSecretIds.length;
         uint256 occupiedStorage;
         for (uint256 index = 0; index < len; index++) {
@@ -579,7 +579,7 @@ contract SecretManager is
             _markEnclaveDead(secId, _enclaveAddress);
         }
 
-        SECRET_STORE_MANAGER.markDeadUpdate(_enclaveAddress, block.timestamp, MARK_ALIVE_TIMEOUT, occupiedStorage, STAKING_PAYMENT_POOL);
+        SECRET_STORE.markDeadUpdate(_enclaveAddress, block.timestamp, MARK_ALIVE_TIMEOUT, occupiedStorage, STAKING_PAYMENT_POOL);
     }
 
     function _markEnclaveDead(
@@ -610,7 +610,7 @@ contract SecretManager is
         address _enclaveAddress,
         uint256 _enclaveIndex
     ) internal {
-        uint256 latestAliveTimestamp = SECRET_STORE_MANAGER.getSecretStoreLastAliveTimestamp(_enclaveAddress);
+        uint256 latestAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
         uint256 endTimestamp = userStorage[_secretId].endTimestamp;
         if(latestAliveTimestamp < endTimestamp)
             endTimestamp = latestAliveTimestamp;
@@ -711,6 +711,8 @@ contract SecretManager is
     function _removeSecret(
         uint256 _secretId
     ) internal {
+        if(userStorage[_secretId].owner == address(0))
+            revert SecretManagerInvalidSecret();
         if(block.timestamp <= userStorage[_secretId].endTimestamp + MARK_ALIVE_TIMEOUT)
             revert SecretManagerTerminationPending();
 
@@ -719,7 +721,7 @@ contract SecretManager is
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
             _updateUsdcDepositPostPayment(_secretId, enclaveAddress, index);
 
-            SECRET_STORE_MANAGER.secretTerminationUpdate(enclaveAddress, userStorage[_secretId].sizeLimit, _secretId);
+            SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[_secretId].sizeLimit, _secretId);
         }
         _refundExcessDepositAndRemoveSecret(_secretId);
 
@@ -801,7 +803,7 @@ contract SecretManager is
             if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
                 continue;
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
-            uint256 lastAliveTimestamp = SECRET_STORE_MANAGER.getSecretStoreLastAliveTimestamp(enclaveAddress);
+            uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
             uint256 endTimestamp = userStorage[_secretId].endTimestamp;
             if(lastAliveTimestamp < endTimestamp)
                 endTimestamp = lastAliveTimestamp;
@@ -828,7 +830,7 @@ contract SecretManager is
 
     /**
      * @notice It verifies if msg.sender is either the secret owner or allowed to use a specific secret.
-     *         Also checks if the secret has been acknowledged by the original set of selected stores.
+     *         Also checks if the secret has been acknowledged by the original set of selected stores, and can take more jobs.
      *         On successful verification, it returns the list of selected stores that have acknowledged the secret.
      */
     function verifyUserAndGetSelectedStores(
@@ -840,9 +842,11 @@ contract SecretManager is
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         address[] memory selectedStores;
+        uint8 env = userStorage[_secretId].env;
         for (uint256 index = 0; index < len; index++) {
-            if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
-                selectedStores[index] = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+            address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+            if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore && EXECUTORS.isNodePresentInTree(env, enclaveAddress))
+                selectedStores[index] = enclaveAddress;
             else if(!_isReplacedStore(_secretId, index))
                 revert SecretManagerUnacknowledged();
         }

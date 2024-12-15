@@ -1,0 +1,464 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "../serverless-v2/tree/TreeMapUpgradeable.sol";
+import "./TeeManager.sol";
+
+/**
+ * @title Executors Contract
+ * @notice Manages the registration, staking, and job assignment of execution nodes.
+ * @dev This contract is upgradeable and uses the UUPS (Universal Upgradeable Proxy Standard) pattern.
+ */
+contract Executors is
+    Initializable, // initializer
+    ContextUpgradeable, // _msgSender, _msgData
+    ERC165Upgradeable, // supportsInterface
+    AccessControlUpgradeable,
+    UUPSUpgradeable, // public upgrade
+    TreeMapUpgradeable
+{
+    /// @notice Thrown when the provided TeeManager address is zero.
+    error ExecutorsZeroAddressTeeManager();
+
+    /**
+     * @dev Initializes the logic contract without any admins, safeguarding against takeover.
+     * @param _teeManager The TeeManager contract.
+     */
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor(
+        TeeManager _teeManager
+    ) {
+        _disableInitializers();
+
+        if (address(_teeManager) == address(0)) revert ExecutorsZeroAddressTeeManager();
+
+        TEE_MANAGER = _teeManager;
+    }
+
+    //-------------------------------- Overrides start --------------------------------//
+
+    /// @inheritdoc ERC165Upgradeable
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(ERC165Upgradeable, AccessControlUpgradeable) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
+    /// @inheritdoc UUPSUpgradeable
+    function _authorizeUpgrade(address /*account*/) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    //-------------------------------- Overrides end --------------------------------//
+
+    //-------------------------------- Initializer start --------------------------------//
+
+    /// @notice Thrown when the provided admin address is zero.
+    error ExecutorsZeroAddressAdmin();
+
+    /**
+     * @dev Initializes the contract with the given admin.
+     * @param _admin The address of the admin.
+     */
+    function initialize(address _admin) public initializer {
+        if (_admin == address(0)) revert ExecutorsZeroAddressAdmin();
+
+        __Context_init_unchained();
+        __ERC165_init_unchained();
+        __AccessControl_init_unchained();
+        __UUPSUpgradeable_init_unchained();
+        __TreeMapUpgradeable_init_unchained();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+    }
+
+    //-------------------------------- Initializer end --------------------------------//
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    TeeManager public immutable TEE_MANAGER;
+
+    /// @notice enclave stake amount will be divided by 10^18 before adding to the tree
+    uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
+
+    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
+
+    //-------------------------------- Executors start --------------------------------//
+
+    modifier onlyTeeManager() {
+        _onlyTeeManager();
+        _;
+    }
+
+    function _onlyTeeManager() internal view {
+        if (_msgSender() != address(TEE_MANAGER))
+            revert ExecutorsNotTeeManager();
+    }
+
+    struct Executor {
+        uint256 jobCapacity;
+        uint256 activeJobs;
+    }
+
+    // enclaveAddress => executor node details
+    mapping(address => Executor) public executors;
+
+    error ExecutorsGlobalEnvAlreadySupported();
+    error ExecutorsGlobalEnvAlreadyUnsupported();
+    /// @notice Thrown when attempting to deregister or remove stake from an enclave that has pending jobs.
+    error ExecutorsEnclaveNotEmpty();
+    /// @notice Thrown when the provided enclave owner does not match the stored owner.
+    error ExecutorsNotTeeManager();
+    /// @notice Thrown when the provided execution environment is not supported globally.
+    error ExecutorsUnsupportedEnv();
+    error ExecutorsUnavailableResources();
+
+    modifier isValidEnv(uint8 _env) {
+        _isValidEnv(_env);
+        _;
+    }
+
+    function _isValidEnv(uint8 _env) internal view {
+        if (!isTreeInitialized(_env)) 
+            revert ExecutorsUnsupportedEnv();
+    }
+
+    //----------------------------- TeeManagerRole functions start --------------------------------//
+
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _registerExecutor(
+        address _enclaveAddress,
+        uint256 _jobCapacity,
+        uint8 _env,
+        uint256 _stakeAmount,
+        uint256 _minStakeAmount
+    ) internal {
+        executors[_enclaveAddress].jobCapacity = _jobCapacity;
+
+        if (_stakeAmount >= _minStakeAmount)
+            _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+    }
+
+    function _drainExecutor(
+        address _enclaveAddress,
+        uint8 _env
+    ) internal {
+        // remove node from the tree
+        _deleteIfPresent(_env, _enclaveAddress);
+    }
+
+    function _reviveExecutor(
+        address _enclaveAddress,
+        uint8 _env,
+        uint256 _stakeAmount
+    ) internal {
+        // insert node in the tree
+        if (executors[_enclaveAddress].activeJobs < executors[_enclaveAddress].jobCapacity) {
+            _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+        }
+    }
+
+    function _deregisterExecutor(address _enclaveAddress) internal {
+        if (executors[_enclaveAddress].activeJobs != 0) 
+            revert ExecutorsEnclaveNotEmpty();
+
+        delete executors[_enclaveAddress];
+    }
+
+    function _addExecutorStake(
+        address _enclaveAddress,
+        uint8 _env,
+        uint256 _stake
+    ) internal {
+        if (executors[_enclaveAddress].activeJobs < executors[_enclaveAddress].jobCapacity) {
+            // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
+            _upsert(_env, _enclaveAddress, uint64(_stake / STAKE_ADJUSTMENT_FACTOR));
+        }
+    }
+
+    function _removeExecutorStake(address _enclaveAddress) internal view {
+        if (executors[_enclaveAddress].activeJobs != 0) 
+            revert ExecutorsEnclaveNotEmpty();
+    }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start ----------------------------------//
+
+    function registerExecutor(
+        address _enclaveAddress,
+        uint256 _jobCapacity,
+        uint8 _env,
+        uint256 _stakeAmount,
+        uint256 _minStakeAmount
+    ) external isValidEnv(_env) onlyTeeManager {
+        _registerExecutor(
+            _enclaveAddress,
+            _jobCapacity,
+            _env,
+            _stakeAmount,
+            _minStakeAmount
+        );
+    }
+
+    /**
+     * @notice Deregisters an enclave node.
+     * @param _enclaveAddress The address of the enclave to deregister.
+     * @dev Caller must be the owner of the enclave node.
+     */
+    function deregisterExecutor(address _enclaveAddress) external onlyTeeManager {
+        _deregisterExecutor(_enclaveAddress);
+    }
+
+    /**
+     * @notice Drains an enclave node, making it inactive for new secret stores.
+     * @param _enclaveAddress The address of the enclave to drain.
+     * @dev Caller must be the owner of the enclave node.
+     */
+    function drainExecutor(
+        address _enclaveAddress,
+        uint8 _env
+    ) external onlyTeeManager {
+        _drainExecutor(_enclaveAddress, _env);
+    }
+
+    /**
+     * @notice Revives a previously drained enclave node.
+     * @param _enclaveAddress The address of the enclave to revive.
+     * @dev Caller must be the owner of the enclave node.
+     */
+    function reviveExecutor(
+        address _enclaveAddress,
+        uint8 _env,
+        uint256 _stakeAmount
+    ) external onlyTeeManager {
+        _reviveExecutor(_enclaveAddress, _env, _stakeAmount);
+    }
+
+    /**
+     * @notice Adds stake to an enclave node.
+     * @param _enclaveAddress The address of the enclave to add stake to.
+     * @param _stake The amount of stake.
+     * @dev Caller must be the owner of the enclave node.
+     */
+    function addExecutorStake(
+        address _enclaveAddress,
+        uint8 _env,
+        uint256 _stake
+    ) external onlyTeeManager {
+        _addExecutorStake(_enclaveAddress, _env, _stake);
+    }
+
+    /**
+     * @notice Removes stake from an enclave node.
+     * @param _enclaveAddress The address of the enclave to remove stake from.
+     * @dev Caller must be the owner of the enclave node.
+     */
+    function removeExecutorStake(
+        address _enclaveAddress
+    ) external view onlyTeeManager {
+        _removeExecutorStake(_enclaveAddress);
+    }
+
+    //-------------------------------- external functions end ----------------------------------//
+
+    //------------------------------ TeeManagerRole functions end --------------------------------//
+
+    //-------------------------------- JobsRole functions start ---------------------------------//
+
+    //-------------------------------- internal functions start ----------------------------------//
+
+    function _selectExecutionNodes(
+        uint8 _env,
+        address[] memory selectedStores,
+        uint256 _noOfNodesToSelect
+    ) internal returns (address[] memory) {
+        // sort the stakeAmounts list, and get the top N elements
+        address[] memory topNStores;
+        if(selectedStores.length > 0) {
+            // TODO: while selecting the top N stores, need to check if the stores exists in the executors tree
+            topNStores = _getTopNStores(selectedStores, _noOfNodesToSelect);
+            _updateExecutorsResource(_env, topNStores);
+        }
+        uint256 storesCount = topNStores.length;
+
+        uint256 noOfExecutorsToSelect = _noOfNodesToSelect > storesCount ? _noOfNodesToSelect - storesCount : 0;
+        address[] memory selectedNodes;
+        if(noOfExecutorsToSelect > 0) {
+            selectedNodes = new address[](_noOfNodesToSelect);
+            for (uint256 i = 0; i < storesCount; i++) {
+                selectedNodes[i] = topNStores[i];
+            }
+
+            // remove the already selected stores from the tree so they are not selected back again as duplicates
+            _deleteTreeNodes(_env, selectedStores);
+            address[] memory selectedExecutors = _selectExecutors(_env, noOfExecutorsToSelect);
+            // add back the removed stores to the tree
+            _addTreeNodes(_env, selectedStores);
+
+            // if reqd executors aren't available, then revert
+            if (selectedExecutors.length < noOfExecutorsToSelect)
+                revert ExecutorsUnavailableResources();
+
+            for (uint256 i = 0; i < noOfExecutorsToSelect; i++)
+                selectedNodes[storesCount + i] = selectedExecutors[i];
+        }
+
+        return noOfExecutorsToSelect > 0 ? selectedNodes : topNStores;
+    }
+
+    function _selectExecutors(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) internal returns (address[] memory selectedNodes) {
+        selectedNodes = _selectNodes(_env, _noOfNodesToSelect);
+        _updateExecutorsResource(_env, selectedNodes);
+    }
+
+    function _selectNodes(
+        uint8 _env,
+        uint256 _noOfNodesToSelect
+    ) internal view returns (address[] memory selectedNodes) {
+        uint256 randomizer = uint256(keccak256(abi.encode(blockhash(block.number - 1), block.timestamp)));
+        selectedNodes = _selectN(_env, randomizer, _noOfNodesToSelect);
+    }
+
+    function _getTopNStores(
+        address[] memory selectedStores,
+        uint256 noOfStoresToSelect
+    ) internal view returns (address[] memory topNStores) {
+        uint256[] memory storesStakes = TEE_MANAGER.getTeeNodesStake(selectedStores);
+        // Sorting the array in descending order using bubble sort
+        uint256 len = selectedStores.length;
+        for (uint256 i = 0; i < len; i++) {
+            for (uint256 j = 0; j < len - i - 1; j++) {
+                if (storesStakes[j] < storesStakes[j + 1]) {
+                    // Swap elements
+                    address temp1 = selectedStores[j];
+                    selectedStores[j] = selectedStores[j + 1];
+                    selectedStores[j + 1] = temp1;
+
+                    uint256 temp2 = storesStakes[j];
+                    storesStakes[j] = storesStakes[j + 1];
+                    storesStakes[j + 1] = temp2;
+                }
+            }
+        }
+
+        if(len > noOfStoresToSelect)
+            len = noOfStoresToSelect;
+
+        // Create a new array to hold the top N values
+        topNStores = new address[](len);
+        for (uint256 i = 0; i < len; i++)
+            topNStores[i] = selectedStores[i];
+    }
+
+    function _deleteTreeNodes(
+        uint8 _env,
+        address[] memory _enclaveAddresses
+    ) internal {
+        uint256 len = _enclaveAddresses.length;
+        for (uint256 index = 0; index < len; index++) {
+            _deleteIfPresent(_env, _enclaveAddresses[index]);
+        }
+    }
+
+    function _addTreeNodes(
+        uint8 _env,
+        address[] memory _enclaveAddresses
+    ) internal {
+        uint256[] memory stakeAmounts = TEE_MANAGER.getTeeNodesStake(_enclaveAddresses);
+        uint256 len = _enclaveAddresses.length;
+        for (uint256 index = 0; index < len; index++) {
+            _insert_unchecked(_env, _enclaveAddresses[index], uint64(stakeAmounts[index] / STAKE_ADJUSTMENT_FACTOR));
+        }
+    }
+
+    function _updateExecutorsResource(
+        uint8 _env,
+        address[] memory _selectedNodes
+    ) internal {
+        for (uint256 index = 0; index < _selectedNodes.length; index++) {
+            address enclaveAddress = _selectedNodes[index];
+            executors[enclaveAddress].activeJobs += 1;
+
+            // if jobCapacity reached then delete from the tree so as to not consider this node in new jobs allocation
+            if (executors[enclaveAddress].activeJobs == executors[enclaveAddress].jobCapacity)
+                _deleteIfPresent(_env, enclaveAddress);
+        }
+    }
+
+    function _releaseExecutor(
+        address _enclaveAddress
+    ) internal {
+        _updateTreeState(_enclaveAddress);
+        executors[_enclaveAddress].activeJobs -= 1;
+    }
+
+    function _updateTreeState(
+        address _enclaveAddress
+    ) internal {
+        (uint256 stakeAmount, , , uint8 env, bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
+        if (!draining) {
+            // node might have been deleted due to max job capacity reached
+            // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
+            if (stakeAmount >= TEE_MANAGER.MIN_STAKE_AMOUNT())
+                _upsert(env, _enclaveAddress, uint64(stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+                // remove node from tree if stake falls below min level
+            else _deleteIfPresent(env, _enclaveAddress);
+        }
+    }
+
+    //-------------------------------- internal functions end ----------------------------------//
+
+    //-------------------------------- external functions start ----------------------------------//
+
+    function initTree(uint8 _env) external onlyRole(JOBS_ROLE) {
+        if (isTreeInitialized(_env)) 
+            revert ExecutorsGlobalEnvAlreadySupported();
+
+        _init_tree(_env);
+    }
+
+    function removeTree(uint8 _env) external onlyRole(JOBS_ROLE) {
+        if (!isTreeInitialized(_env)) 
+            revert ExecutorsGlobalEnvAlreadyUnsupported();
+
+        _delete_tree(_env);
+    }
+
+    /**
+     * @notice Selects a number of executor nodes for job assignments.
+     * @dev Executors are selected randomly based on the stake distribution.
+     * @param _env The execution environment supported by the enclave.
+     * @param _noOfNodesToSelect The number of nodes to select.
+     * @return selectedNodes An array of selected node addresses.
+     */
+    function selectExecutionNodes(
+        uint8 _env,
+        address[] memory selectedStores,
+        uint256 _noOfNodesToSelect
+    ) external onlyRole(JOBS_ROLE) isValidEnv(_env) returns (address[] memory) {
+        return _selectExecutionNodes(_env, selectedStores, _noOfNodesToSelect);
+    }
+
+    /**
+     * @notice Releases an executor node on job response submission, thus reducing its active jobs.
+     * @dev Can only be called by an account with the `JOBS_ROLE`.
+     * @param _enclaveAddress The address of the executor enclave to release.
+     */
+    function releaseExecutor(
+        address _enclaveAddress
+    ) external onlyRole(JOBS_ROLE) {
+        _releaseExecutor(_enclaveAddress);
+    }
+
+    //---------------------------------- external functions end ------------------------------------//
+
+    //---------------------------------- JobsRole functions end -------------------------------------//
+
+}

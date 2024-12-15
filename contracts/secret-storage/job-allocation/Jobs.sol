@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../SecretStore.sol";
 import "../SecretManager.sol";
+import "../TeeManager.sol";
+import "../Executors.sol";
 
 /**
  * @title Jobs Contract
@@ -40,8 +42,6 @@ contract Jobs is
      * @param _noOfNodesToSelect The number of executor nodes to select for a job.
      * @param _stakingPaymentPoolAddress The address of the staking payment pool.
      * @param _usdcPaymentPoolAddress The address of the USDC payment pool.
-     * @param _secretStore The SecretStore contract responsible for selecting executors.
-     * @param _secretManager The SecretManager contract to get the selected stores for a secret.
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(
@@ -51,9 +51,7 @@ contract Jobs is
         uint256 _executionBufferTime,
         uint256 _noOfNodesToSelect,
         address _stakingPaymentPoolAddress,
-        address _usdcPaymentPoolAddress,
-        SecretStore _secretStore,
-        SecretManager _secretManager
+        address _usdcPaymentPoolAddress
     ) {
         _disableInitializers();
 
@@ -69,9 +67,6 @@ contract Jobs is
 
         STAKING_PAYMENT_POOL = _stakingPaymentPoolAddress;
         USDC_PAYMENT_POOL = _usdcPaymentPoolAddress;
-
-        SECRET_STORE = _secretStore;
-        SECRET_MANAGER = _secretManager;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -132,11 +127,13 @@ contract Jobs is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     address public immutable USDC_PAYMENT_POOL;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    SecretStore public immutable SECRET_STORE;
+    TeeManager public TEE_MANAGER;
 
-    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    SecretManager public immutable SECRET_MANAGER;
+    Executors public EXECUTORS;
+
+    SecretStore public SECRET_STORE;
+
+    SecretManager public SECRET_MANAGER;
 
     //-------------------------------- Execution Env start --------------------------------//
 
@@ -171,21 +168,19 @@ contract Jobs is
     //------------------------------ internal functions start ------------------------------//
 
     function _addGlobalEnv(uint8 _env, uint256 _executionFeePerMs, uint256 _stakingRewardPerMs) internal {
-        if (SECRET_STORE.isTreeInitialized(_env)) revert JobsGlobalEnvAlreadySupported();
-
         executionEnv[_env] = ExecutionEnv({
             executionFeePerMs: _executionFeePerMs,
             stakingRewardPerMs: _stakingRewardPerMs
         });
+        EXECUTORS.initTree(_env);
         SECRET_STORE.initTree(_env);
 
         emit GlobalEnvAdded(_env, _executionFeePerMs, _stakingRewardPerMs);
     }
 
     function _removeGlobalEnv(uint8 _env) internal {
-        if (!SECRET_STORE.isTreeInitialized(_env)) revert JobsGlobalEnvAlreadyUnsupported();
-
         delete executionEnv[_env];
+        EXECUTORS.removeTree(_env);
         SECRET_STORE.removeTree(_env);
 
         emit GlobalEnvRemoved(_env);
@@ -194,6 +189,22 @@ contract Jobs is
     //------------------------------ internal functions end --------------------------------//
 
     //------------------------------ external functions start ------------------------------//
+
+    function setTeeManager(address _teeManagerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        TEE_MANAGER = TeeManager(_teeManagerAddress);
+    }
+
+    function setExecutors(address _executorsAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        EXECUTORS = Executors(_executorsAddress);
+    }
+
+    function setSecretStore(address _secretStoreAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        SECRET_STORE = SecretStore(_secretStoreAddress);
+    }
+
+    function setSecretManager(address _secretManagerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        SECRET_MANAGER = SecretManager(_secretManagerAddress);
+    }
 
     /**
      * @notice Adds global support for a new execution environment.
@@ -325,7 +336,7 @@ contract Jobs is
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _deadline, // in milliseconds
-        // TODO: need to add real job owner
+        // TODO: need to add real job owner(when the gatewayJobs calls this function, then need to delegate to it)
         address _jobOwner
     ) internal returns (uint256 jobId) {
         // 1. Validate secretId (secretId should exist and owner should be msg sender)
@@ -337,44 +348,12 @@ contract Jobs is
         // 5. if 1 < L < N, then select all the L stores and other (N-L) via selection algo
         // 6. if L = 0, then select via selection algo
         // 7. While selecting among the stores, update their activeJobs count
-        address[] memory selectedNodes = _selectNodes(_env, selectedStores);
+        address[] memory selectedNodes = EXECUTORS.selectExecutionNodes(_env, selectedStores, NO_OF_NODES_TO_SELECT);
 
         // deposit escrow amount(USDC)
         USDC_TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * getJobExecutionFeePerMs(_env));
 
         jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, _env, selectedNodes);
-    }
-
-    function _selectNodes(
-        uint8 _env,
-        address[] memory selectedStores
-    ) internal returns (address[] memory) {
-        // sort the stakeAmounts list, and get the top N elements
-        address[] memory topNStores;
-        if(selectedStores.length > 0) {
-            topNStores = _getTopNStores(selectedStores, NO_OF_NODES_TO_SELECT);
-            SECRET_STORE.updateExecutorsResource(_env, topNStores);
-        }
-        uint256 storesCount = topNStores.length;
-
-        uint256 noOfExecutorsToSelect = NO_OF_NODES_TO_SELECT > storesCount ? NO_OF_NODES_TO_SELECT - storesCount : 0;
-        address[] memory selectedNodes;
-        if(noOfExecutorsToSelect > 0) {
-            selectedNodes = new address[](NO_OF_NODES_TO_SELECT);
-            for (uint256 i = 0; i < storesCount; i++) {
-                selectedNodes[i] = topNStores[i];
-            }
-
-            address[] memory selectedExecutors = SECRET_STORE.selectExecutors(_env, noOfExecutorsToSelect);
-            // if reqd executors aren't available, then revert
-            if (selectedExecutors.length < noOfExecutorsToSelect)
-                revert JobsUnavailableResources();
-
-            for (uint256 i = 0; i < noOfExecutorsToSelect; i++)
-                selectedNodes[storesCount + i] = selectedExecutors[i];
-        }
-
-        return noOfExecutorsToSelect > 0 ? selectedNodes : topNStores;
     }
 
 
@@ -398,37 +377,6 @@ contract Jobs is
         emit JobCreated(jobId, _env, _jobOwner, _codehash, _codeInputs, _deadline, _selectedNodes);
     }
 
-    function _getTopNStores(
-        address[] memory selectedStores,
-        uint256 noOfStoresToSelect
-    ) internal view returns (address[] memory topNStores) {
-        uint256[] memory storesStakes = SECRET_STORE.getSecretStoresStake(selectedStores);
-        // Sorting the array in descending order using bubble sort
-        uint256 len = selectedStores.length;
-        for (uint256 i = 0; i < len; i++) {
-            for (uint256 j = 0; j < len - i - 1; j++) {
-                if (storesStakes[j] < storesStakes[j + 1]) {
-                    // Swap elements
-                    address temp1 = selectedStores[j];
-                    selectedStores[j] = selectedStores[j + 1];
-                    selectedStores[j + 1] = temp1;
-
-                    uint256 temp2 = storesStakes[j];
-                    storesStakes[j] = storesStakes[j + 1];
-                    storesStakes[j + 1] = temp2;
-                }
-            }
-        }
-
-        if(len > noOfStoresToSelect)
-            len = noOfStoresToSelect;
-
-        // Create a new array to hold the top N values
-        topNStores = new address[](len);
-        for (uint256 i = 0; i < len; i++)
-            topNStores[i] = selectedStores[i];
-    }
-
     function _submitOutput(
         bytes memory _signature,
         uint256 _jobId,
@@ -448,7 +396,7 @@ contract Jobs is
         if (!_isJobExecutor(_jobId, enclaveAddress)) revert JobsNotSelectedExecutor();
         if (jobs[_jobId].hasExecutedJob[enclaveAddress]) revert JobsExecutorAlreadySubmittedOutput();
 
-        SECRET_STORE.releaseExecutor(enclaveAddress);
+        EXECUTORS.releaseExecutor(enclaveAddress);
         jobs[_jobId].hasExecutedJob[enclaveAddress] = true;
 
         uint8 outputCount = ++jobs[_jobId].outputCount;
@@ -492,12 +440,12 @@ contract Jobs is
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
         address signer = digest.recover(_signature);
 
-        SECRET_STORE.allowOnlyVerified(signer);
+        TEE_MANAGER.allowOnlyVerified(signer);
         return signer;
     }
 
     function _transferRewardPayout(uint256 _jobId, uint256 _outputCount, address _enclaveAddress) internal {
-        address owner = SECRET_STORE.getOwner(_enclaveAddress);
+        address owner = TEE_MANAGER.getTeeNodeOwner(_enclaveAddress);
         uint256 executionTime = jobs[_jobId].executionTime;
         address jobOwner = jobs[_jobId].jobOwner;
         uint256 deadline = jobs[_jobId].deadline;
@@ -515,21 +463,21 @@ contract Jobs is
             USDC_TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (executionFeePerMs + stakingRewardPerMs));
 
             // TODO: increase reputation logic
-            SECRET_STORE.increaseReputation(_enclaveAddress, 10);
+            TEE_MANAGER.increaseReputation(_enclaveAddress, 10);
         }
         // for second output
         else if (_outputCount == 2) {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, executorsFee / 3);
             // TODO: decrease reputation logic
-            SECRET_STORE.decreaseReputation(_enclaveAddress, 5);
+            TEE_MANAGER.decreaseReputation(_enclaveAddress, 5);
         }
         // for 3rd output
         else {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, executorsFee - ((executorsFee * 4) / 9) - (executorsFee / 3));
             // TODO: decrease reputation logic
-            SECRET_STORE.decreaseReputation(_enclaveAddress, 5);
+            TEE_MANAGER.decreaseReputation(_enclaveAddress, 5);
             // cleanup job data after 3rd output submitted
             _cleanJobData(_jobId);
         }
@@ -641,7 +589,8 @@ contract Jobs is
             address enclaveAddress = jobs[_jobId].selectedExecutors[index];
 
             if (!jobs[_jobId].hasExecutedJob[enclaveAddress]) {
-                slashAmount += SECRET_STORE.slashExecutor(enclaveAddress);
+                slashAmount += TEE_MANAGER.slashExecutor(enclaveAddress);
+                EXECUTORS.releaseExecutor(enclaveAddress);
                 emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
             delete jobs[_jobId].hasExecutedJob[enclaveAddress];
