@@ -1,11 +1,8 @@
 use alloy::dyn_abi::DynSolValue;
 use alloy::primitives::{keccak256, Address, Bytes, U256};
-use alloy::signers::local::PrivateKeySigner;
 use clap::Parser;
 use multi_block_txns::{TxnManager, TxnStatus};
 use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
@@ -20,12 +17,7 @@ struct Cli {
 async fn main() {
     let rpc_url = "https://sepolia-rollup.arbitrum.io/rpc/";
     let chain_id = 421614;
-    let private_signer = Arc::new(RwLock::new(
-        Cli::parse()
-            .private_key
-            .parse::<PrivateKeySigner>()
-            .unwrap(),
-    ));
+    let private_signer = Cli::parse().private_key;
 
     let txn_manager = TxnManager::new(
         rpc_url.to_string(),

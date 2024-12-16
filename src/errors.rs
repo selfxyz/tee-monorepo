@@ -28,4 +28,6 @@ pub enum TxnManagerSendError {
     ReceiptNotFound(String),
     #[error("Gas wallet changed. Error: {0}")]
     GasWalletChanged(String),
+    #[error("Invalid private signer. Error: {0}")]
+    InvalidPrivateSigner(String),
 }

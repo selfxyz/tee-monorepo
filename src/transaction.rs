@@ -9,7 +9,7 @@ use alloy::transports::http::Http;
 use reqwest::{Client, Url};
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
@@ -21,7 +21,7 @@ use crate::constants::{
 };
 use crate::errors::TxnManagerSendError;
 use crate::models::{Transaction, TxnStatus};
-use crate::utils::{parse_send_error, verify_rpc_url};
+use crate::utils::{parse_send_error, verify_private_signer, verify_rpc_url};
 
 type HttpProvider = FillProvider<
     JoinFill<Identity, WalletFiller<EthereumWallet>>,
@@ -46,11 +46,11 @@ type HttpProvider = FillProvider<
 /// use alloy::signers::local::PrivateKeySigner;
 /// use crate::TxnManager;
 ///
-/// let private_key_signer = PrivateKeySigner::from_hex("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+/// let private_key_signer = String::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
 /// let txn_manager = TxnManager::new(
 ///     "https://ethereum.rpc.url".to_string(),
 ///     421614, // chain_id
-///     Arc::new(RwLock::new(private_key_signer)),
+///     private_key_signer,
 ///     None, // default gas price increment
 ///     None, // default gas limit increment
 ///     None, // default garbage collection interval
@@ -69,9 +69,9 @@ type HttpProvider = FillProvider<
 pub struct TxnManager {
     pub rpc_url: String,
     pub chain_id: u64,
-    pub private_signer: Arc<RwLock<PrivateKeySigner>>,
+    pub(crate) private_signer: Arc<RwLock<PrivateKeySigner>>,
     pub(crate) nonce_to_send: Arc<RwLock<u64>>,
-    pub(crate) nonce_to_send_private_signer: Arc<Mutex<PrivateKeySigner>>,
+    pub(crate) nonce_to_send_private_signer: Arc<RwLock<PrivateKeySigner>>,
     pub(crate) transactions: Arc<RwLock<HashMap<String, Transaction>>>,
     pub(crate) gas_price_increment_percent: u128,
     pub(crate) gas_limit_increment_amount: u64,
@@ -97,10 +97,11 @@ impl TxnManager {
     ///
     /// # Errors
     /// * `TxnManagerSendError::InvalidRpcUrl` - If the RPC URL is invalid.
+    /// * `TxnManagerSendError::InvalidPrivateSigner` - If the private signer is invalid.
     pub async fn new(
         rpc_url: String,
         chain_id: u64,
-        private_signer: Arc<RwLock<PrivateKeySigner>>,
+        private_signer: String,
         gas_price_increment_percent: Option<u128>,
         gas_limit_increment_amount: Option<u64>,
         garbage_collect_interval_sec: Option<u64>,
@@ -110,15 +111,21 @@ impl TxnManager {
             Ok(_) => (),
             Err(e) => return Err(e),
         }
+        match verify_private_signer(private_signer.clone()) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+
+        let private_signer = Arc::new(RwLock::new(
+            private_signer.parse::<PrivateKeySigner>().unwrap(),
+        ));
 
         Ok(Arc::new(Self {
             rpc_url,
             chain_id,
             private_signer: private_signer.clone(),
             nonce_to_send: Arc::new(RwLock::new(0)),
-            nonce_to_send_private_signer: Arc::new(Mutex::new(
-                private_signer.read().unwrap().clone(),
-            )),
+            nonce_to_send_private_signer: private_signer,
             transactions: Arc::new(RwLock::new(HashMap::new())),
             gas_price_increment_percent: gas_price_increment_percent
                 .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
@@ -180,6 +187,46 @@ impl TxnManager {
         };
 
         self._send_transaction(&mut transaction, false).await
+    }
+
+    /// Updates the private signer for the transaction manager.
+    ///
+    /// # Arguments
+    /// * `private_signer` - The new private signer to use
+    ///
+    /// # Returns
+    /// * `Result<(), TxnManagerSendError>` - Ok if successful, error otherwise
+    ///
+    /// # Errors
+    /// * `TxnManagerSendError::InvalidPrivateSigner` - If the private signer is invalid
+    pub async fn update_private_signer(
+        self: &Arc<Self>,
+        private_signer: String,
+    ) -> Result<(), TxnManagerSendError> {
+        match verify_private_signer(private_signer.clone()) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+
+        let private_signer = private_signer.parse::<PrivateKeySigner>().unwrap();
+
+        let mut nonce_to_send_guard = self.nonce_to_send.write().unwrap();
+        let mut private_signer_guard = self.private_signer.write().unwrap();
+        let mut nonce_to_send_private_signer_guard =
+            self.nonce_to_send_private_signer.write().unwrap();
+
+        *nonce_to_send_guard = 0;
+        *private_signer_guard = private_signer.clone();
+        *nonce_to_send_private_signer_guard = private_signer;
+        Ok(())
+    }
+
+    /// Retrieves the current private signer for the transaction manager.
+    ///
+    /// # Returns
+    /// * `PrivateKeySigner` - The current private signer
+    pub async fn get_private_signer(self: &Arc<Self>) -> PrivateKeySigner {
+        self.private_signer.read().unwrap().clone()
     }
 
     /// Sends a transaction to the network.
@@ -740,6 +787,9 @@ impl TxnManager {
     /// # Returns:
     /// * `Result<(), TxnManagerSendError>` - The result of the nonce management
     ///
+    /// # Errors
+    /// * `TxnManagerSendError::Timeout` - If the nonce is not updated within the timeout
+    ///
     /// This method is used to manage the nonce for a transaction.
     /// If update_nonce is true, the nonce is updated to the current nonce of the provider.
     /// If update_nonce is false, the nonce is not updated.
@@ -771,14 +821,15 @@ impl TxnManager {
             }
 
             let mut nonce_to_send_guard = self.nonce_to_send.write().unwrap();
+            let mut nonce_to_send_private_signer_guard =
+                self.nonce_to_send_private_signer.write().unwrap();
 
-            // If the private signer of the nonce to send is different from the transaction private signer,
+            // If the private signer of the nonce to send is different from the provider's private signer,
             // update the nonce to send.
-            if self.nonce_to_send_private_signer.lock().unwrap().address()
-                != transaction.private_signer.address()
+            if nonce_to_send_private_signer_guard.address()
+                != provider.wallet().default_signer().address()
             {
-                *self.nonce_to_send_private_signer.lock().unwrap() =
-                    transaction.private_signer.clone();
+                *nonce_to_send_private_signer_guard = transaction.private_signer.clone();
                 *nonce_to_send_guard = current_nonce;
             }
             // If the private signer of the nonce to send is the same as the transaction private signer,
