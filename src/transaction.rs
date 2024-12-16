@@ -1,7 +1,7 @@
 use alloy::network::{Ethereum, EthereumWallet, TransactionBuilder};
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::fillers::{FillProvider, JoinFill, WalletFiller};
-use alloy::providers::{Identity, Provider, ProviderBuilder, RootProvider, WalletProvider};
+use alloy::providers::{Identity, Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::Signer;
