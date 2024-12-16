@@ -205,6 +205,29 @@ impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
     }
 }
 
+// to let callers pass in None with empty type
+impl ScallopAuthStore for () {
+    fn contains(&self, _key: &[u8; 32]) -> bool {
+        unimplemented!()
+    }
+
+    fn get(&self, _key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])> {
+        unimplemented!()
+    }
+
+    fn set(&mut self, _key: [u8; 32], _pcrs: ([u8; 48], [u8; 48], [u8; 48])) {
+        unimplemented!()
+    }
+
+    fn verify(
+        &mut self,
+        _attestation: &[u8],
+        _key: &[u8; 32],
+    ) -> Option<([u8; 48], [u8; 48], [u8; 48])> {
+        unimplemented!()
+    }
+}
+
 pub trait ScallopAuther {
     fn new_auth(&mut self) -> impl std::future::Future<Output = Box<[u8]>>;
 }
@@ -212,6 +235,15 @@ pub trait ScallopAuther {
 impl<T: ScallopAuther> ScallopAuther for &mut T {
     async fn new_auth(&mut self) -> Box<[u8]> {
         (**self).new_auth().await
+    }
+}
+
+// to let callers pass in None with empty type
+impl ScallopAuther for () {
+    // was not able to implement in the impl Future form
+    // requires higher MSRV
+    async fn new_auth(&mut self) -> Box<[u8]> {
+        unimplemented!();
     }
 }
 
