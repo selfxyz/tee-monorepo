@@ -1,5 +1,4 @@
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_web::web::{Data, Json};
@@ -77,40 +76,27 @@ async fn inject_mutable_config(
 
     // Initialize local wallet with operator's gas key to send signed transactions to the common chain
     let gas_private_key = PrivateKeySigner::from_bytes(&bytes32_gas_key.into());
-    let Ok(gas_private_key) = gas_private_key else {
+    let Ok(_) = gas_private_key else {
         return HttpResponse::BadRequest().body(format!(
             "Invalid gas private key provided: {:?}\n",
             gas_private_key.unwrap_err()
         ));
     };
 
-    if (*app_state.gas_private_key.read().unwrap()).is_none() {
-        *app_state.gas_private_key.write().unwrap() = Some(Arc::new(RwLock::new(gas_private_key)));
-    } else {
-        let gas_private_key_guard = app_state.gas_private_key.write().unwrap();
-        if *gas_private_key_guard.clone().unwrap().read().unwrap() == gas_private_key {
-            return HttpResponse::NotAcceptable().body("The same wallet address already set.");
-        }
-
-        *gas_private_key_guard.clone().unwrap().write().unwrap() = gas_private_key;
-        drop(gas_private_key_guard);
-    }
-
-    // Connect the rpc http provider with the operator's gas wallet
-    let http_rpc_txn_manager = TxnManager::new(
-        app_state.http_rpc_url.clone(),
-        app_state.common_chain_id,
-        app_state.gas_private_key.read().unwrap().clone().unwrap(),
-        None,
-        None,
-        None,
-        None,
-    )
-    .await;
-
     // Initialize HTTP RPC client and nonce for sending the signed transactions
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
     if *mutable_params_injected_guard == false {
+        // Connect the rpc http provider with the operator's gas wallet
+        let http_rpc_txn_manager = TxnManager::new(
+            app_state.http_rpc_url.clone(),
+            app_state.common_chain_id,
+            mutable_config.gas_key_hex,
+            None,
+            None,
+            None,
+            None,
+        );
+
         let Ok(http_rpc_txn_manager) = http_rpc_txn_manager else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to initialize the http rpc txn manager for url {}: {:?}\n",
@@ -120,8 +106,32 @@ async fn inject_mutable_config(
         };
 
         *app_state.http_rpc_txn_manager.lock().unwrap() = Some(http_rpc_txn_manager);
+        *mutable_params_injected_guard = true;
+        drop(mutable_params_injected_guard);
+
+        app_state
+            .http_rpc_txn_manager
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap()
+            .run()
+            .await;
+    } else {
+        if let Err(err) = app_state
+            .http_rpc_txn_manager
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap()
+            .update_private_signer(mutable_config.gas_key_hex)
+        {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to update the signer for the http rpc txn manager: {:?}\n",
+                err
+            ));
+        }
     }
-    *mutable_params_injected_guard = true;
 
     HttpResponse::Ok().body("Mutable params configured!\n")
 }
@@ -132,13 +142,12 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     let mut gas_address = Address::ZERO;
     if *app_state.mutable_params_injected.lock().unwrap() == true {
         gas_address = app_state
-            .gas_private_key
-            .read()
+            .http_rpc_txn_manager
+            .lock()
             .unwrap()
             .clone()
             .unwrap()
-            .read()
-            .unwrap()
+            .get_private_signer()
             .address();
     }
 

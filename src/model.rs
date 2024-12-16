@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use alloy::primitives::{Address, U256};
 use alloy::providers::RootProvider;
 use alloy::signers::k256::ecdsa::SigningKey;
-use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use alloy::transports::http::{Client, Http};
 use multi_block_txns::TxnManager;
@@ -58,7 +57,6 @@ pub struct AppState {
     pub immutable_params_injected: Mutex<bool>,
     pub mutable_params_injected: Mutex<bool>,
     pub enclave_owner: Mutex<Address>,
-    pub gas_private_key: RwLock<Option<Arc<RwLock<PrivateKeySigner>>>>,
     pub http_rpc_txn_manager: Mutex<Option<Arc<TxnManager>>>,
     pub enclave_registered: AtomicBool,
     pub events_listener_active: Mutex<bool>,

@@ -80,7 +80,6 @@ async fn main() -> Result<()> {
         immutable_params_injected: false.into(),
         mutable_params_injected: false.into(),
         enclave_owner: Address::ZERO.into(),
-        gas_private_key: None.into(),
         http_rpc_txn_manager: None.into(),
         enclave_registered: false.into(),
         events_listener_active: false.into(),
