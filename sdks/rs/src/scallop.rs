@@ -163,6 +163,8 @@ pub enum ScallopError {
     NoiseError(#[from] snow::Error),
     #[error("protocol error")]
     ProtocolError(String),
+    #[error("auth error")]
+    AuthError(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -229,20 +231,23 @@ impl ScallopAuthStore for () {
 }
 
 pub trait ScallopAuther {
-    fn new_auth(&mut self) -> impl std::future::Future<Output = Box<[u8]>>;
+    type Error: std::fmt::Debug;
+    fn new_auth(&mut self) -> impl std::future::Future<Output = Result<Box<[u8]>, Self::Error>>;
 }
 
 impl<T: ScallopAuther> ScallopAuther for &mut T {
-    async fn new_auth(&mut self) -> Box<[u8]> {
+    type Error = T::Error;
+    async fn new_auth(&mut self) -> Result<Box<[u8]>, T::Error> {
         (**self).new_auth().await
     }
 }
 
 // to let callers pass in None with empty type
 impl ScallopAuther for () {
+    type Error = ();
     // was not able to implement in the impl Future form
     // requires higher MSRV
-    async fn new_auth(&mut self) -> Box<[u8]> {
+    async fn new_auth(&mut self) -> Result<Box<[u8]>, ()> {
         unimplemented!();
     }
 }
@@ -448,7 +453,11 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 
     if should_send_auth {
         // safe to unwrap since it has been checked above
-        let payload = auther.unwrap().new_auth().await;
+        let payload = auther
+            .unwrap()
+            .new_auth()
+            .await
+            .map_err(|e| ScallopError::AuthError(format!("{e:?}")))?;
         // check if payload is not too big
         if payload.len() > 60000 {
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
@@ -686,7 +695,11 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 
     if should_send_auth {
         // safe to unwrap since it has been checked above
-        let payload = auther.unwrap().new_auth().await;
+        let payload = auther
+            .unwrap()
+            .new_auth()
+            .await
+            .map_err(|e| ScallopError::AuthError(format!("{e:?}")))?;
         // check if payload is not too big
         if payload.len() > 60000 {
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
