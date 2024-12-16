@@ -101,7 +101,7 @@ impl TxnManager {
     pub fn new(
         rpc_url: String,
         chain_id: u64,
-        private_signer: String,
+        private_signer_hex: String,
         gas_price_increment_percent: Option<u128>,
         gas_limit_increment_amount: Option<u64>,
         garbage_collect_interval_sec: Option<u64>,
@@ -111,21 +111,25 @@ impl TxnManager {
             Ok(_) => (),
             Err(e) => return Err(e),
         }
-        match verify_private_signer(private_signer.clone()) {
+        match verify_private_signer(private_signer_hex.clone()) {
             Ok(_) => (),
             Err(e) => return Err(e),
         }
 
         let private_signer = Arc::new(RwLock::new(
-            private_signer.parse::<PrivateKeySigner>().unwrap(),
+            private_signer_hex.parse::<PrivateKeySigner>().unwrap(),
+        ));
+
+        let nonce_to_send_private_signer = Arc::new(RwLock::new(
+            private_signer_hex.parse::<PrivateKeySigner>().unwrap(),
         ));
 
         Ok(Arc::new(Self {
             rpc_url,
             chain_id,
-            private_signer: private_signer.clone(),
+            private_signer: private_signer,
             nonce_to_send: Arc::new(RwLock::new(0)),
-            nonce_to_send_private_signer: private_signer,
+            nonce_to_send_private_signer: nonce_to_send_private_signer,
             transactions: Arc::new(RwLock::new(HashMap::new())),
             gas_price_increment_percent: gas_price_increment_percent
                 .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
@@ -298,6 +302,7 @@ impl TxnManager {
                         failure_reason = err.to_string();
                     }
                 }
+                sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
                 continue;
             }
 
@@ -346,6 +351,7 @@ impl TxnManager {
                     match txn_manager_err {
                         TxnManagerSendError::NonceTooLow(_) => {
                             update_nonce = true;
+                            sleep(Duration::from_millis(200)).await;
                             continue;
                         }
                         TxnManagerSendError::NonceTooHigh(_) => {
