@@ -25,6 +25,12 @@ fn main() {
         attestation
     );
 
+    verify(&attestation, env::commit_slice);
+
+    println!("Done!");
+}
+
+fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
     // assert initial fields
     assert_eq!(
         attestation[0..8],
@@ -70,7 +76,7 @@ fn main() {
     // commit the timestamp value
     assert_eq!(attestation[offset + 24], 0x1b); // unsigned int, size 8
     println!("Timestamp: {:?}", &attestation[offset + 25..offset + 33]);
-    env::commit_slice(&attestation[offset + 25..offset + 33]);
+    commit_slice(&attestation[offset + 25..offset + 33]);
 
     // extract timestamp for expiry checks, convert from milliseconds to seconds
     let timestamp =
@@ -92,17 +98,17 @@ fn main() {
         ]
     );
     println!("PCR0: {:?}", &attestation[offset + 3..offset + 51]);
-    env::commit_slice(&attestation[offset + 3..offset + 51]);
+    commit_slice(&attestation[offset + 3..offset + 51]);
 
     offset += 51;
     assert_eq!(attestation[offset..offset + 3], [0x01, 0x58, 0x30]);
     println!("PCR1: {:?}", &attestation[offset + 3..offset + 51]);
-    env::commit_slice(&attestation[offset + 3..offset + 51]);
+    commit_slice(&attestation[offset + 3..offset + 51]);
 
     offset += 51;
     assert_eq!(attestation[offset..offset + 3], [0x02, 0x58, 0x30]);
     println!("PCR2: {:?}", &attestation[offset + 3..offset + 51]);
-    env::commit_slice(&attestation[offset + 3..offset + 51]);
+    commit_slice(&attestation[offset + 3..offset + 51]);
 
     // skip rest of the pcrs, 3 to 15
     offset += 51;
@@ -208,7 +214,7 @@ fn main() {
         // assert that the pubkey size is 97 in case it changes later
         assert_eq!(pubkey.len(), 97);
         assert_eq!(pubkey[0], 0x04);
-        env::commit_slice(&pubkey[1..]);
+        commit_slice(&pubkey[1..]);
 
         // start of next cert that is to be verified
         offset = offset + 3 + size;
@@ -310,19 +316,39 @@ fn main() {
     // assert public_key key
     assert_eq!(attestation[offset], 0x6a); // text of size 10
     assert_eq!(&attestation[offset + 1..offset + 11], b"public_key");
-    // commit public key, expected length of 64 since it is a secp256k1 key
-    assert_eq!(attestation[offset + 11], 0x58); // bytes where one byte length follows
 
-    // get public key length
-    let pubkey_len = attestation[offset + 12] as usize;
+    offset = offset + 11;
+
+    // commit public key
+    let pubkey_len = if attestation[offset] >= 0x40 && attestation[offset] <= 0x57 {
+        // length is part of type byte
+        let len = attestation[offset] - 0x40;
+
+        // set offset to start of pubkey
+        offset += 1;
+
+        // return len
+        len as usize
+    } else {
+        // only allow one byte length
+        assert_eq!(attestation[offset], 0x58);
+        let len = attestation[offset + 1] as usize;
+
+        // set offset to start of pubkey
+        offset += 2;
+
+        // return len
+        len
+    };
+
     println!(
         "Public key: {pubkey_len} bytes: {:?}",
-        &attestation[offset + 13..offset + 13 + pubkey_len]
+        &attestation[offset..offset + pubkey_len]
     );
-    env::commit_slice(&[attestation[offset + 12]]);
-    env::commit_slice(&attestation[offset + 13..offset + 13 + pubkey_len]);
+    commit_slice(&[pubkey_len as u8]);
+    commit_slice(&attestation[offset..offset + pubkey_len]);
 
-    offset = offset + 13 + pubkey_len;
+    offset = offset + pubkey_len;
 
     // assert user_data key
     assert_eq!(attestation[offset], 0x69); // text of size 9
@@ -332,6 +358,11 @@ fn main() {
     let (user_data_size, user_data) = if attestation[offset + 10] == 0xf6 {
         // empty
         (0, [].as_slice())
+    } else if attestation[offset + 10] >= 0x40 && attestation[offset + 10] <= 0x57 {
+        // length is part of type byte
+        let size = (attestation[offset + 10] - 0x40) as u16;
+
+        (size, &attestation[offset + 11..offset + 11 + size as usize])
     } else if attestation[offset + 10] == 0x58 {
         // one byte length follows
         let size = attestation[offset + 11] as u16;
@@ -348,8 +379,8 @@ fn main() {
     };
     println!("User data: {} bytes: {:?}", user_data_size, user_data);
     // commit 2 byte length, then data
-    env::commit_slice(&user_data_size.to_be_bytes());
-    env::commit_slice(user_data);
+    commit_slice(&user_data_size.to_be_bytes());
+    commit_slice(user_data);
 
     // prepare COSE verification hash
     let mut hasher = sha2::Sha384::new();
@@ -390,6 +421,106 @@ fn main() {
     let signature = Signature::from_scalars(r, s).unwrap();
 
     verifying_key.verify_prehash(&hash, &signature).unwrap();
+}
 
-    println!("Done!");
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use crate::verify;
+
+    // TODO: add more extensive tests
+
+    // NOTE: Seems a bit convoluted, idk if it can be simplified
+    fn create_committer() -> (Rc<RefCell<Vec<u8>>>, impl Fn(&[u8])) {
+        let env = Rc::new(RefCell::new(vec![]));
+
+        let env_clone = env.clone();
+
+        let commit_slice = move |slice: &[u8]| {
+            env_clone.borrow_mut().extend_from_slice(slice);
+        };
+
+        (env, commit_slice)
+    }
+
+    #[test]
+    fn test_aws() {
+        // generated using `curl <ip>:<port>/attestation/raw` on the attestation server of a
+        // real Nitro enclave
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/aws.bin")
+                .unwrap();
+
+        let (journal, committer) = create_committer();
+
+        verify(&attestation, committer);
+
+        let expected_journal = [
+            // timestamp
+            "00000193bef3f3b0",
+            // PCR0
+            "189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6",
+            // PCR1
+            "5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16",
+            // PCR2
+            "6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa",
+            // root pubkey
+            "fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b17607",
+            "0ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4",
+            // pubkey len
+            "40",
+            // pubkey
+            "e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd3",
+            "6d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb",
+            // userdata len
+            "0000"
+        ].join("");
+
+        assert_eq!(
+            expected_journal,
+            hex::encode(journal.borrow_mut().as_slice())
+        );
+    }
+
+    #[test]
+    fn test_custom() {
+        // generated using `curl <ip>:<port>/attestation/raw?public_key=12345678&user_data=abcdef`
+        // on a custom mock attestation server running locally
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/custom.bin")
+                .unwrap();
+
+        let (journal, committer) = create_committer();
+
+        verify(&attestation, committer);
+
+        let expected_journal = [
+            // timestamp
+            "00000193bf444e30",
+            // PCR0
+            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            // PCR1
+            "010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101",
+            // PCR2
+            "020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202",
+            // root pubkey
+            "6c79411ebaae7489a4e8355545c0346784b31df5d08cb1f7c0097836a82f67240f2a7201862880a1d09a0bb326637188",
+            "fbbafab47a10abe3630fcf8c18d35d96532184985e582c0dce3dace8441f37b9cc9211dff935baae69e4872cc3494410",
+            // pubkey len
+            "04",
+            // pubkey
+            "12345678",
+            // userdata len
+            "0003",
+            // userdata
+            "abcdef"
+        ].join("");
+
+        assert_eq!(
+            expected_journal,
+            hex::encode(journal.borrow_mut().as_slice())
+        );
+    }
 }
