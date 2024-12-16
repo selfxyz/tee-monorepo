@@ -69,7 +69,7 @@ async fn main() {
     loop {
         sleep(Duration::from_secs(1)).await;
 
-        let status = txn_manager.clone().get_transaction_status(res.clone());
+        let status = txn_manager.get_transaction_status(res.clone());
         println!("Status: {:#?}", status);
 
         if status.unwrap() == TxnStatus::Confirmed {
