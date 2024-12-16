@@ -111,18 +111,15 @@ impl TxnManager {
             Ok(_) => (),
             Err(e) => return Err(e),
         }
-        match verify_private_signer(private_signer_hex.clone()) {
-            Ok(_) => (),
+
+        let parsed_private_signer = match verify_private_signer(private_signer_hex.clone()) {
+            Ok(private_signer) => private_signer,
             Err(e) => return Err(e),
-        }
+        };
 
-        let private_signer = Arc::new(RwLock::new(
-            private_signer_hex.parse::<PrivateKeySigner>().unwrap(),
-        ));
+        let private_signer = Arc::new(RwLock::new(parsed_private_signer.clone()));
 
-        let nonce_to_send_private_signer = Arc::new(RwLock::new(
-            private_signer_hex.parse::<PrivateKeySigner>().unwrap(),
-        ));
+        let nonce_to_send_private_signer = Arc::new(RwLock::new(parsed_private_signer));
 
         Ok(Arc::new(Self {
             rpc_url,
@@ -207,12 +204,10 @@ impl TxnManager {
         self: &Arc<Self>,
         private_signer: String,
     ) -> Result<(), TxnManagerSendError> {
-        match verify_private_signer(private_signer.clone()) {
-            Ok(_) => (),
+        let private_signer = match verify_private_signer(private_signer.clone()) {
+            Ok(private_signer) => private_signer,
             Err(e) => return Err(e),
-        }
-
-        let private_signer = private_signer.parse::<PrivateKeySigner>().unwrap();
+        };
 
         let mut nonce_to_send_guard = self.nonce_to_send.write().unwrap();
         let mut private_signer_guard = self.private_signer.write().unwrap();

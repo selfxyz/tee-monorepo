@@ -62,12 +62,14 @@ pub(crate) fn verify_rpc_url(rpc_url: &str) -> Result<(), TxnManagerSendError> {
     Ok(())
 }
 
-pub(crate) fn verify_private_signer(private_signer: String) -> Result<(), TxnManagerSendError> {
+pub(crate) fn verify_private_signer(
+    private_signer: String,
+) -> Result<PrivateKeySigner, TxnManagerSendError> {
     let private_signer = private_signer.parse::<PrivateKeySigner>();
     if private_signer.is_err() {
         return Err(TxnManagerSendError::InvalidPrivateSigner(
             private_signer.err().unwrap().to_string(),
         ));
     }
-    Ok(())
+    Ok(private_signer.unwrap())
 }
