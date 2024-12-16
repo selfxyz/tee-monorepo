@@ -803,7 +803,7 @@ impl TxnManager {
         while Instant::now() < transaction.timeout {
             let mut current_nonce: u64 = 0;
             if update_nonce {
-                let private_signer = provider.wallet().default_signer().address();
+                let private_signer = transaction.private_signer.address();
                 let current_nonce_res = provider.get_transaction_count(private_signer).await;
                 current_nonce = match current_nonce_res {
                     Ok(current_nonce) => current_nonce,
@@ -823,8 +823,7 @@ impl TxnManager {
 
             // If the private signer of the nonce to send is different from the provider's private signer,
             // update the nonce to send.
-            if nonce_to_send_private_signer_guard.address()
-                != provider.wallet().default_signer().address()
+            if nonce_to_send_private_signer_guard.address() != transaction.private_signer.address()
             {
                 *nonce_to_send_private_signer_guard = transaction.private_signer.clone();
                 *nonce_to_send_guard = current_nonce;
