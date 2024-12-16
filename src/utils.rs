@@ -42,7 +42,7 @@ pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
         return TxnManagerSendError::ContractExecution(error);
     }
 
-    return TxnManagerSendError::OtherRetryable(error);
+    TxnManagerSendError::OtherRetryable(error)
 }
 
 pub(crate) fn verify_rpc_url(rpc_url: &str) -> Result<(), TxnManagerSendError> {

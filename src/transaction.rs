@@ -354,8 +354,7 @@ impl TxnManager {
                             continue;
                         }
                         TxnManagerSendError::OutOfGas(_) => {
-                            transaction.estimated_gas =
-                                transaction.estimated_gas + self.gas_limit_increment_amount;
+                            transaction.estimated_gas += self.gas_limit_increment_amount;
                             continue;
                         }
                         TxnManagerSendError::GasPriceLow(_) => {
@@ -569,7 +568,7 @@ impl TxnManager {
     ) -> Result<(), TxnManagerSendError> {
         transaction.status = TxnStatus::Sending;
 
-        transaction.estimated_gas = transaction.estimated_gas + self.gas_limit_increment_amount;
+        transaction.estimated_gas += self.gas_limit_increment_amount;
         transaction.gas_price =
             transaction.gas_price * (100 + self.gas_price_increment_percent) / 100;
 
@@ -637,8 +636,7 @@ impl TxnManager {
                             }
                         }
                         TxnManagerSendError::OutOfGas(_) => {
-                            transaction.estimated_gas =
-                                transaction.estimated_gas + self.gas_limit_increment_amount;
+                            transaction.estimated_gas += self.gas_limit_increment_amount;
                             continue;
                         }
                         TxnManagerSendError::GasPriceLow(_) => {
@@ -678,7 +676,7 @@ impl TxnManager {
             return Ok(());
         }
 
-        return Err(TxnManagerSendError::Timeout(failure_reason));
+        Err(TxnManagerSendError::Timeout(failure_reason))
     }
 
     /// Sends a dummy transaction to handle nonce gaps.
@@ -814,10 +812,8 @@ impl TxnManager {
                         continue;
                     }
                 };
-            } else {
-                if transaction.nonce.is_some() {
-                    return Ok(());
-                }
+            } else if transaction.nonce.is_some() {
+                return Ok(());
             }
 
             let mut nonce_to_send_guard = self.nonce_to_send.write().unwrap();
@@ -844,7 +840,7 @@ impl TxnManager {
             return Ok(());
         }
 
-        return Err(TxnManagerSendError::Timeout(failure_reason));
+        Err(TxnManagerSendError::Timeout(failure_reason))
     }
 
     /// Estimates gas limit and price for a transaction.
