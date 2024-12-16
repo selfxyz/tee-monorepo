@@ -457,7 +457,7 @@ mod tests {
 
         verify(&attestation, committer);
 
-        assert_eq!([
+        let expected_journal = [
             // timestamp
             "00000193bef3f3b0",
             // PCR0
@@ -476,7 +476,12 @@ mod tests {
             "6d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb",
             // userdata len
             "0000"
-        ].join(""), hex::encode(journal.borrow_mut().as_slice()));
+        ].join("");
+
+        assert_eq!(
+            expected_journal,
+            hex::encode(journal.borrow_mut().as_slice())
+        );
     }
 
     #[test]
@@ -491,7 +496,7 @@ mod tests {
 
         verify(&attestation, committer);
 
-        assert_eq!([
+        let expected_journal = [
             // timestamp
             "00000193bf444e30",
             // PCR0
@@ -511,6 +516,11 @@ mod tests {
             "0003",
             // userdata
             "abcdef"
-        ].join(""), hex::encode(journal.borrow_mut().as_slice()));
+        ].join("");
+
+        assert_eq!(
+            expected_journal,
+            hex::encode(journal.borrow_mut().as_slice())
+        );
     }
 }
