@@ -56,8 +56,9 @@ impl ScallopAuthStore for AuthStore {
 struct Auther {}
 
 impl ScallopAuther for Auther {
-    async fn new_auth(&mut self) -> Box<[u8]> {
-        b"good auth".to_owned().into()
+    type Error = ();
+    async fn new_auth(&mut self) -> Result<Box<[u8]>, ()> {
+        Ok(b"good auth".to_owned().into())
     }
 }
 
