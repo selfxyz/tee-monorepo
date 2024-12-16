@@ -98,7 +98,7 @@ impl TxnManager {
     /// # Errors
     /// * `TxnManagerSendError::InvalidRpcUrl` - If the RPC URL is invalid.
     /// * `TxnManagerSendError::InvalidPrivateSigner` - If the private signer is invalid.
-    pub async fn new(
+    pub fn new(
         rpc_url: String,
         chain_id: u64,
         private_signer: String,
@@ -199,7 +199,7 @@ impl TxnManager {
     ///
     /// # Errors
     /// * `TxnManagerSendError::InvalidPrivateSigner` - If the private signer is invalid
-    pub async fn update_private_signer(
+    pub fn update_private_signer(
         self: &Arc<Self>,
         private_signer: String,
     ) -> Result<(), TxnManagerSendError> {
@@ -225,7 +225,7 @@ impl TxnManager {
     ///
     /// # Returns
     /// * `PrivateKeySigner` - The current private signer
-    pub async fn get_private_signer(self: &Arc<Self>) -> PrivateKeySigner {
+    pub fn get_private_signer(self: &Arc<Self>) -> PrivateKeySigner {
         self.private_signer.read().unwrap().clone()
     }
 
@@ -422,7 +422,7 @@ impl TxnManager {
     ///
     /// # Returns
     /// * `Option<TxnStatus>` - The current status of the transaction, if found, else None
-    pub async fn get_transaction_status(self: &Arc<Self>, txn_id: String) -> Option<TxnStatus> {
+    pub fn get_transaction_status(self: &Arc<Self>, txn_id: String) -> Option<TxnStatus> {
         let transactions = self.transactions.read().unwrap().clone();
         transactions.get(&txn_id).map(|txn| txn.status.clone())
     }
