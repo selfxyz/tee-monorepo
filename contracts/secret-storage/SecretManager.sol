@@ -451,8 +451,8 @@ contract SecretManager is
         }
         // case for when a newly selected enclave will replace the dead enclave
         else {
-            address[] memory selectedStores = _getSelectedStoresFromTree(_secretId, _enclaveIndex);
-            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectStoresExceptSelected(
+            address[] memory selectedStores = _getSelectedStoresExceptReplaced(_secretId, _enclaveIndex);
+            SelectedEnclave[] memory selectedEnclaves = SECRET_STORE.selectNonAssignedSecretStore(
                 userStorage[_secretId].env,
                 1,
                 userStorage[_secretId].sizeLimit,
@@ -483,7 +483,7 @@ contract SecretManager is
         }
     }
 
-    function _getSelectedStoresFromTree(
+    function _getSelectedStoresExceptReplaced(
         uint256 _secretId,
         uint256 _enclaveIndex
     ) internal view returns (address[] memory) {

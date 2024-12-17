@@ -307,8 +307,8 @@ contract TeeManager is
         teeNodes[_enclaveAddress].owner = _owner;
         teeNodes[_enclaveAddress].reputation = INIT_REPUTATION;
 
-        EXECUTORS.registerExecutor(_enclaveAddress, _jobCapacity, _env, _stakeAmount, MIN_STAKE_AMOUNT);
-        SECRET_STORE.registerSecretStore(_enclaveAddress, _storageCapacity, _env, _stakeAmount, MIN_STAKE_AMOUNT);
+        EXECUTORS.registerExecutor(_enclaveAddress, _jobCapacity, _env, _stakeAmount);
+        SECRET_STORE.registerSecretStore(_enclaveAddress, _storageCapacity, _env, _stakeAmount);
 
         emit TeeManagerRegistered(_enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env);
     }
@@ -331,12 +331,10 @@ contract TeeManager is
 
         teeNodes[_enclaveAddress].draining = false;
 
-        // insert node in the tree
+        // revive TEE in executors and secret store if minimum stakes are left
         if (teeNode.stakeAmount >= MIN_STAKE_AMOUNT) {
-            uint8 env = teeNodes[_enclaveAddress].env;
-            uint256 stakeAmount = teeNodes[_enclaveAddress].stakeAmount;
-            EXECUTORS.reviveExecutor(_enclaveAddress, env, stakeAmount);
-            SECRET_STORE.reviveSecretStore(_enclaveAddress, env, stakeAmount);
+            EXECUTORS.reviveExecutor(_enclaveAddress, teeNode.env, teeNode.stakeAmount);
+            SECRET_STORE.reviveSecretStore(_enclaveAddress, teeNode.env, teeNode.stakeAmount);
         }
 
         emit TeeManagerRevived(_enclaveAddress);
@@ -358,17 +356,16 @@ contract TeeManager is
     }
 
     function _addTeeNodeStake(uint256 _amount, address _enclaveAddress) internal {
-        TeeNode memory secretStoreNode = teeNodes[_enclaveAddress];
-        uint256 updatedStake = secretStoreNode.stakeAmount + _amount;
+        TeeNode memory teeNode = teeNodes[_enclaveAddress];
+        uint256 updatedStake = teeNode.stakeAmount + _amount;
 
         if (
-            !secretStoreNode.draining &&
+            !teeNode.draining &&
             updatedStake >= MIN_STAKE_AMOUNT
         ) {
-            // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
-            uint8 env = teeNodes[_enclaveAddress].env;
-            EXECUTORS.addExecutorStake(_enclaveAddress, env, updatedStake);
-            SECRET_STORE.addSecretStoreStake(_enclaveAddress, env, updatedStake);
+            // if updated stake is greater than the min stake, then add stake in executors and secret store
+            EXECUTORS.addExecutorStake(_enclaveAddress, teeNode.env, updatedStake);
+            SECRET_STORE.addSecretStoreStake(_enclaveAddress, teeNode.env, updatedStake);
         }
 
         _addStake(_enclaveAddress, _amount);

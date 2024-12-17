@@ -77,6 +77,8 @@ contract SecretStore is
         __TreeMapUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+
+        MIN_STAKE_AMOUNT = TEE_MANAGER.MIN_STAKE_AMOUNT();
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -91,6 +93,7 @@ contract SecretStore is
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
+    uint256 public MIN_STAKE_AMOUNT;
 
     //-------------------------------- SecretStore start --------------------------------//
 
@@ -160,14 +163,13 @@ contract SecretStore is
         address _enclaveAddress,
         uint256 _storageCapacity,
         uint8 _env,
-        uint256 _stakeAmount,
-        uint256 _minStakeAmount
+        uint256 _stakeAmount
     ) internal {
         secretStores[_enclaveAddress].storageCapacity = _storageCapacity;
         secretStores[_enclaveAddress].lastAliveTimestamp = block.timestamp;
 
         // add node to the tree if min stake amount deposited
-        if (_stakeAmount >= _minStakeAmount)
+        if (_stakeAmount >= MIN_STAKE_AMOUNT)
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
     }
 
@@ -184,6 +186,7 @@ contract SecretStore is
         uint8 _env,
         uint256 _stakeAmount
     ) internal {
+        // TODO: need to check buffer capacity
         // insert node in the tree
         if (secretStores[_enclaveAddress].storageOccupied < secretStores[_enclaveAddress].storageCapacity) {
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
@@ -221,15 +224,13 @@ contract SecretStore is
         address _enclaveAddress,
         uint256 _storageCapacity,
         uint8 _env,
-        uint256 _stakeAmount,
-        uint256 _minStakeAmount
+        uint256 _stakeAmount
     ) external isValidEnv(_env) onlyTeeManager {
         _registerSecretStore(
             _enclaveAddress,
             _storageCapacity,
             _env,
-            _stakeAmount,
-            _minStakeAmount
+            _stakeAmount
         );
     }
 
@@ -295,11 +296,11 @@ contract SecretStore is
 
     //------------------------------- TeeManagerRole functions end --------------------------------------//
 
-    //------------------------------ SecretManagerRole functions end ----------------------------------//
+    //----------------------------- SecretManagerRole functions start --------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
-    function _selectStoresExceptSelected(
+    function _selectNonAssignedSecretStore(
         uint8 _env,
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit,
@@ -413,7 +414,7 @@ contract SecretStore is
         if (!draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for secretStores in tree if it already exists else add with latest stake
-            if (stakeAmount >= TEE_MANAGER.MIN_STAKE_AMOUNT())
+            if (stakeAmount >= MIN_STAKE_AMOUNT)
                 _upsert(env, _enclaveAddress, uint64(stakeAmount / STAKE_ADJUSTMENT_FACTOR));
                 // remove node from tree if stake falls below min level
             else _deleteIfPresent(env, _enclaveAddress);
@@ -458,13 +459,13 @@ contract SecretStore is
 
     //-------------------------------- external functions start ----------------------------------//
 
-    function selectStoresExceptSelected(
+    function selectNonAssignedSecretStore(
         uint8 _env,
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit,
         address[] memory _selectedStoresToIgnore
     ) external onlyRole(SECRET_MANAGER_ROLE) returns (SecretManager.SelectedEnclave[] memory) {
-        return _selectStoresExceptSelected(_env, _noOfNodesToSelect, _sizeLimit, _selectedStoresToIgnore);
+        return _selectNonAssignedSecretStore(_env, _noOfNodesToSelect, _sizeLimit, _selectedStoresToIgnore);
     }
 
     function selectStores(

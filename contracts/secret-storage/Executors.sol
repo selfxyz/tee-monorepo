@@ -73,6 +73,8 @@ contract Executors is
         __TreeMapUpgradeable_init_unchained();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+
+        MIN_STAKE_AMOUNT = TEE_MANAGER.MIN_STAKE_AMOUNT();
     }
 
     //-------------------------------- Initializer end --------------------------------//
@@ -84,6 +86,8 @@ contract Executors is
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
+
+    uint256 public MIN_STAKE_AMOUNT;
 
     //-------------------------------- Executors start --------------------------------//
 
@@ -133,12 +137,11 @@ contract Executors is
         address _enclaveAddress,
         uint256 _jobCapacity,
         uint8 _env,
-        uint256 _stakeAmount,
-        uint256 _minStakeAmount
+        uint256 _stakeAmount
     ) internal {
         executors[_enclaveAddress].jobCapacity = _jobCapacity;
 
-        if (_stakeAmount >= _minStakeAmount)
+        if (_stakeAmount >= MIN_STAKE_AMOUNT)
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
     }
 
@@ -192,15 +195,13 @@ contract Executors is
         address _enclaveAddress,
         uint256 _jobCapacity,
         uint8 _env,
-        uint256 _stakeAmount,
-        uint256 _minStakeAmount
+        uint256 _stakeAmount
     ) external isValidEnv(_env) onlyTeeManager {
         _registerExecutor(
             _enclaveAddress,
             _jobCapacity,
             _env,
-            _stakeAmount,
-            _minStakeAmount
+            _stakeAmount
         );
     }
 
@@ -279,7 +280,6 @@ contract Executors is
         // sort the stakeAmounts list, and get the top N elements
         address[] memory topNStores;
         if(selectedStores.length > 0) {
-            // TODO: while selecting the top N stores, need to check if the stores exists in the executors tree
             topNStores = _getTopNStores(selectedStores, _noOfNodesToSelect);
             _updateExecutorsResource(_env, topNStores);
         }
@@ -406,7 +406,7 @@ contract Executors is
         if (!draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
-            if (stakeAmount >= TEE_MANAGER.MIN_STAKE_AMOUNT())
+            if (stakeAmount >= MIN_STAKE_AMOUNT)
                 _upsert(env, _enclaveAddress, uint64(stakeAmount / STAKE_ADJUSTMENT_FACTOR));
                 // remove node from tree if stake falls below min level
             else _deleteIfPresent(env, _enclaveAddress);
