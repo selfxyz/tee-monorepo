@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use aws_nitro_enclaves_cose::{crypto::Openssl, CoseSign1};
-use chrono::Utc;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::Uri;
@@ -11,14 +10,13 @@ use openssl::asn1::Asn1Time;
 use openssl::x509::{X509VerifyResult, X509};
 use serde_cbor::{self, value, value::Value};
 
-// TODO: the public API just seems like a giant mess
-// should normalize into a common denominator and build
-// customizations from there
+// TODO: update other programs depending on the sdk
 
 #[derive(Debug)]
 pub struct AttestationDecoded {
-    pub pcrs: [[u8; 48]; 3],
     pub timestamp: usize,
+    pub pcrs: [[u8; 48]; 3],
+    pub root_public_key: Vec<u8>,
     pub public_key: Vec<u8>,
 }
 
@@ -34,57 +32,72 @@ pub enum AttestationError {
     HttpBodyError(#[from] hyper::Error),
 }
 
-fn get_all_certs(cert: X509, cabundle: Vec<Value>) -> Result<Vec<X509>, AttestationError> {
-    let mut all_certs = vec![cert];
-    for cert in cabundle {
-        let cert = (match cert {
-            Value::Bytes(b) => Ok(b),
-            _ => Err(AttestationError::ParseFailed("cert decode".into())),
-        })?;
-        let cert = X509::from_der(&cert)
-            .map_err(|e| AttestationError::ParseFailed(format!("der: {e}")))?;
-        all_certs.push(cert);
-    }
-    Ok(all_certs)
+#[derive(Debug, Default)]
+pub struct AttestationExpectations {
+    pub timestamp: Option<usize>,
+    // (max age, current timestamp)
+    pub age: Option<(usize, usize)>,
+    pub pcrs: Option<[[u8; 48]; 3]>,
+    pub root_public_key: Option<Vec<u8>>,
 }
 
-fn verify_cert_chain(
-    cert: X509,
-    cabundle: Vec<Value>,
-    root_cert_pem: Vec<u8>,
-) -> Result<(), AttestationError> {
-    let certs = get_all_certs(cert, cabundle)?;
+pub fn verify(
+    attestation_doc: Vec<u8>,
+    expectations: AttestationExpectations,
+) -> Result<AttestationDecoded, AttestationError> {
+    let mut result = AttestationDecoded {
+        pcrs: [[0; 48]; 3],
+        timestamp: 0,
+        root_public_key: Vec::new(),
+        public_key: Vec::new(),
+    };
 
-    for i in 0..(certs.len() - 1) {
-        let pubkey = certs[i + 1]
-            .public_key()
-            .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?;
-        if !certs[i]
-            .verify(&pubkey)
-            .map_err(|e| AttestationError::ParseFailed(format!("signature: {e}")))?
-        {
-            return Err(AttestationError::VerifyFailed("signature".into()));
-        }
-        if certs[i + 1].issued(&certs[i]) != X509VerifyResult::OK {
-            return Err(AttestationError::VerifyFailed("issuer or subject".into()));
-        }
-        let current_time =
-            Asn1Time::days_from_now(0).map_err(|e| AttestationError::ParseFailed(e.to_string()))?;
-        if certs[i].not_after() < current_time || certs[i].not_before() > current_time {
-            return Err(AttestationError::VerifyFailed("timestamp".into()));
+    // parse attestation doc
+    let (cosesign1, mut attestation_doc) = parse_attestation_doc(&attestation_doc)?;
+
+    // parse timestamp
+    result.timestamp = parse_timestamp(&mut attestation_doc)?;
+
+    // check expected timestamp if exists
+    if let Some(expected_ts) = expectations.timestamp {
+        if result.timestamp != expected_ts {
+            return Err(AttestationError::VerifyFailed("timestamp mismatch".into()));
         }
     }
 
-    let root_cert = X509::from_pem(&root_cert_pem)
-        .map_err(|e| AttestationError::ParseFailed(format!("pem: {e}")))?;
-    if &root_cert
-        != certs
-            .last()
-            .ok_or(AttestationError::ParseFailed("root".into()))?
-    {
-        return Err(AttestationError::VerifyFailed("root".into()));
+    // check age if exists
+    if let Some((max_age, current_ts)) = expectations.age {
+        if result.timestamp <= current_ts && current_ts - result.timestamp > max_age {
+            return Err(AttestationError::VerifyFailed("too old".into()));
+        }
     }
-    Ok(())
+
+    // parse pcrs
+    result.pcrs = parse_pcrs(&mut attestation_doc)?;
+
+    // check pcrs if exists
+    if let Some(pcrs) = expectations.pcrs {
+        if result.pcrs != pcrs {
+            return Err(AttestationError::VerifyFailed("pcrs mismatch".into()));
+        }
+    }
+
+    // verify signature and cert chain
+    result.root_public_key = verify_root_of_trust(&mut attestation_doc, &cosesign1)?;
+
+    // check root public key if exists
+    if let Some(root_public_key) = expectations.root_public_key {
+        if result.root_public_key != root_public_key {
+            return Err(AttestationError::VerifyFailed(
+                "root public key mismatch".into(),
+            ));
+        }
+    }
+
+    // return the enclave key
+    result.public_key = parse_enclave_key(&mut attestation_doc)?;
+
+    Ok(result)
 }
 
 fn parse_attestation_doc(
@@ -101,6 +114,27 @@ fn parse_attestation_doc(
         .map_err(|e| AttestationError::ParseFailed(format!("doc: {e}")))?;
 
     Ok((cosesign1, attestation_doc))
+}
+
+fn parse_timestamp(
+    attestation_doc: &mut BTreeMap<Value, Value>,
+) -> Result<usize, AttestationError> {
+    let timestamp = attestation_doc
+        .remove(&"timestamp".to_owned().into())
+        .ok_or(AttestationError::ParseFailed(
+            "timestamp not found in attestation doc".to_owned(),
+        ))?;
+    let timestamp = (match timestamp {
+        Value::Integer(b) => Ok(b),
+        _ => Err(AttestationError::ParseFailed(
+            "timestamp decode failure".to_owned(),
+        )),
+    })?;
+    let timestamp = timestamp
+        .try_into()
+        .map_err(|e| AttestationError::ParseFailed(format!("timestamp: {e}")))?;
+
+    Ok(timestamp)
 }
 
 fn parse_pcrs(
@@ -132,11 +166,10 @@ fn parse_pcrs(
     Ok(result)
 }
 
-fn verify_signature_and_cert_chain(
+fn verify_root_of_trust(
     attestation_doc: &mut BTreeMap<Value, Value>,
     cosesign1: &CoseSign1,
-    root_cert_pem: Vec<u8>,
-) -> Result<(), AttestationError> {
+) -> Result<Vec<u8>, AttestationError> {
     // verify attestation doc signature
     let enclave_certificate = attestation_doc
         .remove(&"certificate".to_owned().into())
@@ -176,30 +209,57 @@ fn verify_signature_and_cert_chain(
     })?;
     cabundle.reverse();
 
-    verify_cert_chain(enclave_certificate, cabundle, root_cert_pem)?;
+    let root_public_key = verify_cert_chain(enclave_certificate, cabundle)?;
 
-    Ok(())
+    Ok(root_public_key)
 }
 
-fn parse_timestamp(
-    attestation_doc: &mut BTreeMap<Value, Value>,
-) -> Result<usize, AttestationError> {
-    let timestamp = attestation_doc
-        .remove(&"timestamp".to_owned().into())
-        .ok_or(AttestationError::ParseFailed(
-            "timestamp not found in attestation doc".to_owned(),
-        ))?;
-    let timestamp = (match timestamp {
-        Value::Integer(b) => Ok(b),
-        _ => Err(AttestationError::ParseFailed(
-            "timestamp decode failure".to_owned(),
-        )),
-    })?;
-    let timestamp = timestamp
-        .try_into()
-        .map_err(|e| AttestationError::ParseFailed(format!("timestamp: {e}")))?;
+fn verify_cert_chain(cert: X509, cabundle: Vec<Value>) -> Result<Vec<u8>, AttestationError> {
+    let certs = get_all_certs(cert, cabundle)?;
 
-    Ok(timestamp)
+    for i in 0..(certs.len() - 1) {
+        let pubkey = certs[i + 1]
+            .public_key()
+            .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?;
+        if !certs[i]
+            .verify(&pubkey)
+            .map_err(|e| AttestationError::ParseFailed(format!("signature: {e}")))?
+        {
+            return Err(AttestationError::VerifyFailed("signature".into()));
+        }
+        if certs[i + 1].issued(&certs[i]) != X509VerifyResult::OK {
+            return Err(AttestationError::VerifyFailed("issuer or subject".into()));
+        }
+        let current_time =
+            Asn1Time::days_from_now(0).map_err(|e| AttestationError::ParseFailed(e.to_string()))?;
+        if certs[i].not_after() < current_time || certs[i].not_before() > current_time {
+            return Err(AttestationError::VerifyFailed("timestamp".into()));
+        }
+    }
+
+    let root_cert = certs
+        .last()
+        .ok_or(AttestationError::ParseFailed("root".into()))?;
+
+    Ok(root_cert
+        .public_key()
+        .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?
+        .raw_public_key()
+        .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?)
+}
+
+fn get_all_certs(cert: X509, cabundle: Vec<Value>) -> Result<Vec<X509>, AttestationError> {
+    let mut all_certs = vec![cert];
+    for cert in cabundle {
+        let cert = (match cert {
+            Value::Bytes(b) => Ok(b),
+            _ => Err(AttestationError::ParseFailed("cert decode".into())),
+        })?;
+        let cert = X509::from_der(&cert)
+            .map_err(|e| AttestationError::ParseFailed(format!("der: {e}")))?;
+        all_certs.push(cert);
+    }
+    Ok(all_certs)
 }
 
 fn parse_enclave_key(
@@ -220,161 +280,10 @@ fn parse_enclave_key(
     Ok(public_key)
 }
 
-pub fn verify(
-    attestation_doc_cbor: Vec<u8>,
-    pcrs: [[u8; 48]; 3],
-    max_age: usize,
-) -> Result<Vec<u8>, AttestationError> {
-    // verify attestation and decode fields
-    let decoded_data = verify_and_decode_attestation(attestation_doc_cbor)?;
-
-    for i in 0..3 {
-        if decoded_data.pcrs[i] != pcrs[i] {
-            return Err(AttestationError::VerifyFailed(format!("pcr{i}")));
-        }
-    }
-
-    // verify age
-    let now = Utc::now().timestamp_millis();
-    if (now as usize) - max_age > decoded_data.timestamp {
-        return Err(AttestationError::VerifyFailed("too old".into()));
-    }
-
-    Ok(decoded_data.public_key)
-}
-
-pub fn verify_custom_root(
-    attestation_doc_cbor: Vec<u8>,
-    pcrs: [[u8; 48]; 3],
-    max_age: usize,
-    root_cert_pem: Vec<u8>,
-) -> Result<Vec<u8>, AttestationError> {
-    // verify attestation and decode fields
-    let decoded_data = verify_and_decode_attestation_custom_root(attestation_doc_cbor, root_cert_pem)?;
-
-    for i in 0..3 {
-        if decoded_data.pcrs[i] != pcrs[i] {
-            return Err(AttestationError::VerifyFailed(format!("pcr{i}")));
-        }
-    }
-
-    // verify age
-    let now = Utc::now().timestamp_millis();
-    if (now as usize) - max_age > decoded_data.timestamp {
-        return Err(AttestationError::VerifyFailed("too old".into()));
-    }
-
-    Ok(decoded_data.public_key)
-}
-
-pub fn verify_with_timestamp(
-    attestation_doc_cbor: Vec<u8>,
-    pcrs: [[u8; 48]; 3],
-    timestamp: usize,
-) -> Result<Vec<u8>, AttestationError> {
-    // verify attestation and decode fields
-    let decoded_data = verify_and_decode_attestation(attestation_doc_cbor)?;
-
-    for i in 0..3 {
-        if decoded_data.pcrs[i] != pcrs[i] {
-            return Err(AttestationError::VerifyFailed(format!("pcr{i}")));
-        }
-    }
-
-    // verify timestamp
-    if timestamp != decoded_data.timestamp {
-        return Err(AttestationError::VerifyFailed(
-            "timestamp does not match".into(),
-        ));
-    }
-
-    Ok(decoded_data.public_key)
-}
-
-pub async fn get_attestation_doc(endpoint: Uri) -> Result<Vec<u8>, AttestationError> {
+pub async fn get(endpoint: Uri) -> Result<Vec<u8>, AttestationError> {
     let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
     let res = client.get(endpoint).await?;
     let body = res.collect().await?.to_bytes();
 
     Ok(body.to_vec())
-}
-
-pub fn decode_attestation(
-    attestation_doc: Vec<u8>,
-) -> Result<AttestationDecoded, AttestationError> {
-    let mut result = AttestationDecoded {
-        pcrs: [[0; 48]; 3],
-        timestamp: 0,
-        public_key: Vec::new(),
-    };
-
-    // parse attestation doc
-    let (_, mut attestation_doc) = parse_attestation_doc(&attestation_doc)?;
-
-    // parse pcrs
-    result.pcrs = parse_pcrs(&mut attestation_doc)?;
-
-    // parse timestamp
-    result.timestamp = parse_timestamp(&mut attestation_doc)?;
-
-    // parse the enclave key
-    result.public_key = parse_enclave_key(&mut attestation_doc)?;
-
-    Ok(result)
-}
-
-pub fn verify_and_decode_attestation(
-    attestation_doc: Vec<u8>,
-) -> Result<AttestationDecoded, AttestationError> {
-    let mut result = AttestationDecoded {
-        pcrs: [[0; 48]; 3],
-        timestamp: 0,
-        public_key: Vec::new(),
-    };
-
-    // parse attestation doc
-    let (cosesign1, mut attestation_doc) = parse_attestation_doc(&attestation_doc)?;
-
-    // parse pcrs
-    result.pcrs = parse_pcrs(&mut attestation_doc)?;
-
-    // verify signature and cert chain
-    let root_cert = include_bytes!("./aws.cert").to_vec();
-    verify_signature_and_cert_chain(&mut attestation_doc, &cosesign1, root_cert)?;
-
-    // parse timestamp
-    result.timestamp = parse_timestamp(&mut attestation_doc)?;
-
-    // return the enclave key
-    result.public_key = parse_enclave_key(&mut attestation_doc)?;
-
-    Ok(result)
-}
-
-pub fn verify_and_decode_attestation_custom_root(
-    attestation_doc: Vec<u8>,
-    root_cert_pem: Vec<u8>,
-) -> Result<AttestationDecoded, AttestationError> {
-    let mut result = AttestationDecoded {
-        pcrs: [[0; 48]; 3],
-        timestamp: 0,
-        public_key: Vec::new(),
-    };
-
-    // parse attestation doc
-    let (cosesign1, mut attestation_doc) = parse_attestation_doc(&attestation_doc)?;
-
-    // parse pcrs
-    result.pcrs = parse_pcrs(&mut attestation_doc)?;
-
-    // verify signature and cert chain
-    verify_signature_and_cert_chain(&mut attestation_doc, &cosesign1, root_cert_pem)?;
-
-    // parse timestamp
-    result.timestamp = parse_timestamp(&mut attestation_doc)?;
-
-    // return the enclave key
-    result.public_key = parse_enclave_key(&mut attestation_doc)?;
-
-    Ok(result)
 }
