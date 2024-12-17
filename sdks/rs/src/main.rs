@@ -1,8 +1,6 @@
 use clap::Parser;
 use oyster::attestation::{get, verify, AttestationExpectations};
 use std::error::Error;
-use std::fs::File;
-use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
