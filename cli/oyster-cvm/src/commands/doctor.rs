@@ -4,9 +4,26 @@ use log::{error, info};
 use std::process::Command;
 
 pub fn run_doctor() -> Result<()> {
-    check_dependency(Dependency::Docker)?;
-    check_dependency(Dependency::Nix)?;
-    Ok(())
+    let mut has_error = false;
+    let mut error_msg = String::new();
+
+    // Check Docker
+    if let Err(e) = check_dependency(Dependency::Docker) {
+        has_error = true;
+        error_msg.push_str(&format!("{}\n", e));
+    }
+
+    // Check Nix
+    if let Err(e) = check_dependency(Dependency::Nix) {
+        has_error = true;
+        error_msg.push_str(&format!("{}\n", e));
+    }
+
+    if has_error {
+        Err(anyhow::anyhow!(error_msg.trim().to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 fn check_dependency(dep: Dependency) -> Result<()> {
