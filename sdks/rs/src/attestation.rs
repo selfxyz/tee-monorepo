@@ -11,6 +11,10 @@ use openssl::asn1::Asn1Time;
 use openssl::x509::{X509VerifyResult, X509};
 use serde_cbor::{self, value, value::Value};
 
+// TODO: the public API just seems like a giant mess
+// should normalize into a common denominator and build
+// customizations from there
+
 #[derive(Debug)]
 pub struct AttestationDecoded {
     pub pcrs: [[u8; 48]; 3],
@@ -131,6 +135,7 @@ fn parse_pcrs(
 fn verify_signature_and_cert_chain(
     attestation_doc: &mut BTreeMap<Value, Value>,
     cosesign1: &CoseSign1,
+    root_cert_pem: Vec<u8>,
 ) -> Result<(), AttestationError> {
     // verify attestation doc signature
     let enclave_certificate = attestation_doc
@@ -171,7 +176,6 @@ fn verify_signature_and_cert_chain(
     })?;
     cabundle.reverse();
 
-    let root_cert_pem = include_bytes!("./aws.cert").to_vec();
     verify_cert_chain(enclave_certificate, cabundle, root_cert_pem)?;
 
     Ok(())
@@ -223,6 +227,30 @@ pub fn verify(
 ) -> Result<Vec<u8>, AttestationError> {
     // verify attestation and decode fields
     let decoded_data = verify_and_decode_attestation(attestation_doc_cbor)?;
+
+    for i in 0..3 {
+        if decoded_data.pcrs[i] != pcrs[i] {
+            return Err(AttestationError::VerifyFailed(format!("pcr{i}")));
+        }
+    }
+
+    // verify age
+    let now = Utc::now().timestamp_millis();
+    if (now as usize) - max_age > decoded_data.timestamp {
+        return Err(AttestationError::VerifyFailed("too old".into()));
+    }
+
+    Ok(decoded_data.public_key)
+}
+
+pub fn verify_custom_root(
+    attestation_doc_cbor: Vec<u8>,
+    pcrs: [[u8; 48]; 3],
+    max_age: usize,
+    root_cert_pem: Vec<u8>,
+) -> Result<Vec<u8>, AttestationError> {
+    // verify attestation and decode fields
+    let decoded_data = verify_and_decode_attestation_custom_root(attestation_doc_cbor, root_cert_pem)?;
 
     for i in 0..3 {
         if decoded_data.pcrs[i] != pcrs[i] {
@@ -311,7 +339,36 @@ pub fn verify_and_decode_attestation(
     result.pcrs = parse_pcrs(&mut attestation_doc)?;
 
     // verify signature and cert chain
-    verify_signature_and_cert_chain(&mut attestation_doc, &cosesign1)?;
+    let root_cert = include_bytes!("./aws.cert").to_vec();
+    verify_signature_and_cert_chain(&mut attestation_doc, &cosesign1, root_cert)?;
+
+    // parse timestamp
+    result.timestamp = parse_timestamp(&mut attestation_doc)?;
+
+    // return the enclave key
+    result.public_key = parse_enclave_key(&mut attestation_doc)?;
+
+    Ok(result)
+}
+
+pub fn verify_and_decode_attestation_custom_root(
+    attestation_doc: Vec<u8>,
+    root_cert_pem: Vec<u8>,
+) -> Result<AttestationDecoded, AttestationError> {
+    let mut result = AttestationDecoded {
+        pcrs: [[0; 48]; 3],
+        timestamp: 0,
+        public_key: Vec::new(),
+    };
+
+    // parse attestation doc
+    let (cosesign1, mut attestation_doc) = parse_attestation_doc(&attestation_doc)?;
+
+    // parse pcrs
+    result.pcrs = parse_pcrs(&mut attestation_doc)?;
+
+    // verify signature and cert chain
+    verify_signature_and_cert_chain(&mut attestation_doc, &cosesign1, root_cert_pem)?;
 
     // parse timestamp
     result.timestamp = parse_timestamp(&mut attestation_doc)?;
