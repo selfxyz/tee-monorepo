@@ -183,16 +183,16 @@ fn verify_root_of_trust(
         )),
     })?;
     let enclave_certificate = X509::from_der(&enclave_certificate)
-        .map_err(|e| AttestationError::ParseFailed(format!("der: {e}")))?;
+        .map_err(|e| AttestationError::ParseFailed(format!("leaf der: {e}")))?;
     let pub_key = enclave_certificate
         .public_key()
-        .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?;
+        .map_err(|e| AttestationError::ParseFailed(format!("leaf pubkey: {e}")))?;
     let verify_result = cosesign1
         .verify_signature::<Openssl>(&pub_key)
-        .map_err(|e| AttestationError::ParseFailed(format!("signature: {e}")))?;
+        .map_err(|e| AttestationError::ParseFailed(format!("leaf signature: {e}")))?;
 
     if !verify_result {
-        return Err(AttestationError::VerifyFailed("signature".into()));
+        return Err(AttestationError::VerifyFailed("leaf signature".into()));
     }
 
     // verify certificate chain
@@ -220,20 +220,22 @@ fn verify_cert_chain(cert: X509, cabundle: Vec<Value>) -> Result<Vec<u8>, Attest
     for i in 0..(certs.len() - 1) {
         let pubkey = certs[i + 1]
             .public_key()
-            .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?;
+            .map_err(|e| AttestationError::ParseFailed(format!("pubkey {i}: {e}")))?;
         if !certs[i]
             .verify(&pubkey)
-            .map_err(|e| AttestationError::ParseFailed(format!("signature: {e}")))?
+            .map_err(|e| AttestationError::ParseFailed(format!("signature {i}: {e}")))?
         {
-            return Err(AttestationError::VerifyFailed("signature".into()));
+            return Err(AttestationError::VerifyFailed("signature {i}".into()));
         }
         if certs[i + 1].issued(&certs[i]) != X509VerifyResult::OK {
-            return Err(AttestationError::VerifyFailed("issuer or subject".into()));
+            return Err(AttestationError::VerifyFailed(
+                "issuer or subject {i}".into(),
+            ));
         }
         let current_time =
             Asn1Time::days_from_now(0).map_err(|e| AttestationError::ParseFailed(e.to_string()))?;
         if certs[i].not_after() < current_time || certs[i].not_before() > current_time {
-            return Err(AttestationError::VerifyFailed("timestamp".into()));
+            return Err(AttestationError::VerifyFailed("timestamp {i}".into()));
         }
     }
 
@@ -243,9 +245,9 @@ fn verify_cert_chain(cert: X509, cabundle: Vec<Value>) -> Result<Vec<u8>, Attest
 
     Ok(root_cert
         .public_key()
-        .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?
+        .map_err(|e| AttestationError::ParseFailed(format!("root pubkey: {e}")))?
         .raw_public_key()
-        .map_err(|e| AttestationError::ParseFailed(format!("pubkey: {e}")))?)
+        .map_err(|e| AttestationError::ParseFailed(format!("root raw pubkey: {e}")))?)
 }
 
 fn get_all_certs(cert: X509, cabundle: Vec<Value>) -> Result<Vec<X509>, AttestationError> {
