@@ -82,14 +82,16 @@ pub async fn process_historic_job_subscriptions(
 ) {
     info!("Processing Historic Job Subscriptions on Request Chains");
 
+    let request_chain_data_hashmap = contracts_client.request_chain_data.read().unwrap().clone();
+
     for request_chain_id in contracts_client.request_chain_ids.clone() {
         let contracts_client_clone = contracts_client.clone();
         let req_chain_tx_clone = req_chain_tx.clone();
 
         let job_sub_tx_clone = job_sub_tx.clone();
+        let request_chain_data_hashmap_clone = request_chain_data_hashmap.clone();
         tokio::spawn(async move {
-            let request_chain_data = contracts_client_clone
-                .request_chain_data
+            let request_chain_data = request_chain_data_hashmap_clone
                 .get(&request_chain_id)
                 .unwrap();
             let http_provider = HttpProvider::new(request_chain_data.http_rpc_url.clone());
@@ -1571,7 +1573,9 @@ mod job_subscription_management_tests {
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-2)).await;
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-3)).await;
         add_gateway_epoch_state(contracts_client.clone(), None, None, Some(-4)).await;
-        let request_chain_data = contracts_client.request_chain_data.get(&CHAIN_ID).unwrap();
+        let request_chain_data_hashmap =
+            contracts_client.request_chain_data.read().unwrap().clone();
+        let request_chain_data = request_chain_data_hashmap.get(&CHAIN_ID).unwrap();
         let (req_chain_tx, _com_chain_rx) = tokio::sync::mpsc::channel::<Job>(100);
         let (job_sub_tx, mut job_sub_rx) =
             tokio::sync::mpsc::channel::<JobSubscriptionChannelType>(100);

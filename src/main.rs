@@ -14,9 +14,8 @@ mod test_util;
 
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
-use alloy::primitives::{Address, B256};
+use alloy::primitives::Address;
 use alloy::signers::k256::ecdsa::SigningKey;
-use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::utils::public_key_to_address;
 use anyhow::Context;
 use clap::Parser;
@@ -68,9 +67,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let app_data = Data::new(AppState {
         enclave_signer_key,
         enclave_address,
-        wallet: Arc::new(RwLock::new(
-            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap(),
-        )),
+        wallet: Arc::new(RwLock::new(String::new())),
         common_chain_id: config.common_chain_id,
         common_chain_http_url: config.common_chain_http_url,
         common_chain_ws_url: config.common_chain_ws_url,

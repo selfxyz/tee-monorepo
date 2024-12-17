@@ -117,7 +117,7 @@ impl ContractsClient {
         });
 
         // listen to all the request chains for the GatewayRegistered event
-        for request_chain_data in self.request_chain_data.values().cloned() {
+        for request_chain_data in self.request_chain_data.read().unwrap().values().cloned() {
             let request_chain_registered_filter = Filter::new()
                 .address(request_chain_data.relay_address)
                 .select(request_chain_data.request_chain_start_block_number..)
@@ -192,6 +192,8 @@ impl ContractsClient {
         let mut common_chain_registered = false;
         let mut req_chain_ids_not_registered: HashSet<u64> = self
             .request_chain_data
+            .read()
+            .unwrap()
             .keys()
             .cloned()
             .collect::<HashSet<u64>>();
@@ -303,12 +305,19 @@ impl ContractsClient {
             let req_chain_tx_clone = req_chain_tx.clone();
             let job_subscription_tx_clone = job_subscription_tx.clone();
 
-            // Spawn a new task for each Request Chain Contract
+            let request_chain_data = self
+                .request_chain_data
+                .read()
+                .unwrap()
+                .get(&chain_id)
+                .unwrap()
+                .clone();
+
             tokio::spawn(async move {
-                _ = self_clone
+                let _ = self_clone
                     .handle_single_request_chain_events(
                         req_chain_tx_clone,
-                        chain_id,
+                        request_chain_data,
                         job_subscription_tx_clone,
                     )
                     .await;
@@ -321,14 +330,12 @@ impl ContractsClient {
     async fn handle_single_request_chain_events(
         self: &Arc<Self>,
         req_chain_tx: Sender<Job>,
-        chain_id: u64,
+        request_chain_data: RequestChainData,
         job_subscription_tx: Sender<JobSubscriptionChannelType>,
     ) {
         loop {
             let req_chain_ws_client = match ProviderBuilder::new()
-                .on_ws(WsConnect::new(
-                    &self.request_chain_data[&chain_id].ws_rpc_url,
-                ))
+                .on_ws(WsConnect::new(request_chain_data.ws_rpc_url.clone()))
                 .await
             {
                 Ok(req_chain_ws_client) => req_chain_ws_client,
@@ -342,7 +349,7 @@ impl ContractsClient {
             };
 
             let mut stream = self
-                .req_chain_jobs(&req_chain_ws_client, &self.request_chain_data[&chain_id])
+                .req_chain_jobs(&req_chain_ws_client, &request_chain_data)
                 .await
                 .unwrap();
             while let Some(log) = stream.next().await {
@@ -355,14 +362,14 @@ impl ContractsClient {
                     let job_id = U256::from_be_slice(topics[1].as_slice());
                     info!(
                         "Request Chain ID: {:?}, JobPlace jobID: {:?}",
-                        chain_id, job_id
+                        request_chain_data.chain_id, job_id
                     );
 
                     let self_clone = Arc::clone(&self);
                     let req_chain_tx_clone = req_chain_tx.clone();
                     tokio::spawn(async move {
                         let job = self_clone
-                            .get_job_from_job_relay_event(log, 1u8, chain_id)
+                            .get_job_from_job_relay_event(log, 1u8, request_chain_data.chain_id)
                             .await;
                         if job.is_ok() {
                             self_clone
@@ -374,7 +381,7 @@ impl ContractsClient {
                     let job_id = U256::from_be_slice(topics[1].as_slice());
                     info!(
                         "Request Chain ID: {:?}, JobCancelled jobID: {:?}",
-                        chain_id, job_id
+                        request_chain_data.chain_id, job_id
                     );
 
                     let self_clone = Arc::clone(&self);
@@ -385,7 +392,7 @@ impl ContractsClient {
                     let subscription_id: U256 = U256::from_be_slice(topics[1].as_slice());
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionStarted jobID: {:?}",
-                        chain_id, subscription_id
+                        request_chain_data.chain_id, subscription_id
                     );
 
                     let self_clone = Arc::clone(&self);
@@ -396,7 +403,7 @@ impl ContractsClient {
                         let res = add_subscription_job(
                             &self_clone,
                             log,
-                            chain_id,
+                            request_chain_data.chain_id,
                             req_chain_tx_clone,
                             false,
                         );
@@ -417,7 +424,7 @@ impl ContractsClient {
                     let job_id = U256::from_be_slice(topics[1].as_slice());
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionJobParamsUpdated jobID: {:?}",
-                        chain_id, job_id
+                        request_chain_data.chain_id, job_id
                     );
 
                     let self_clone = Arc::clone(&self);
@@ -431,7 +438,7 @@ impl ContractsClient {
                     let job_id = U256::from_be_slice(topics[1].as_slice());
                     info!(
                         "Request Chain ID: {:?}, JobSubscriptionTerminationParamsUpdated jobID: {:?}",
-                        chain_id, job_id
+                        request_chain_data.chain_id, job_id
                     );
 
                     let self_clone = Arc::clone(&self);
@@ -439,7 +446,10 @@ impl ContractsClient {
                         let _ = update_subscription_job_termination_params(&self_clone, log);
                     });
                 } else {
-                    error!("Request Chain ID: {:?}, Unknown event: {:?}", chain_id, log);
+                    error!(
+                        "Request Chain ID: {:?}, Unknown event: {:?}",
+                        request_chain_data.chain_id, log
+                    );
                 }
             }
         }
@@ -1198,7 +1208,10 @@ impl ContractsClient {
 
         let response_job_id = response_job.job_id;
 
-        let req_chain_data = &self.request_chain_data[&response_job.request_chain_id];
+        let req_chain_data_hashmap = self.request_chain_data.read().unwrap().clone();
+        let req_chain_data = req_chain_data_hashmap
+            .get(&response_job.request_chain_id)
+            .unwrap();
 
         let (signature, sign_timestamp) = sign_job_response_request(
             &self.enclave_signer_key,

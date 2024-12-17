@@ -12,7 +12,7 @@ use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::utils::public_key_to_address;
 use anyhow::Result;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
 use serde_json::json;
 use std::collections::HashSet;
@@ -64,15 +64,13 @@ const TIME_INTERVAL: u64 = 20;
 #[cfg(test)]
 const OFFSET_FOR_EPCOH: u64 = 4;
 #[cfg(test)]
-lazy_static! {
-    pub static ref CODE_HASH: FixedBytes<32> = {
-        let bytes = hex::decode("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e")
-            .expect("Invalid hex string");
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&bytes);
-        FixedBytes::from(arr)
-    };
-}
+pub const CODE_HASH: Lazy<FixedBytes<32>> = Lazy::new(|| {
+    let bytes = hex::decode("9468bb6a8e85ed11e292c8cac0c1539df691c8d8ec62e7dbfa9f1bd7f504e46e")
+        .expect("Invalid hex string");
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+    FixedBytes::from(arr)
+});
 
 #[cfg(test)]
 pub fn new_app(
@@ -106,9 +104,7 @@ pub async fn generate_app_state() -> Data<AppState> {
     Data::new(AppState {
         enclave_signer_key: signer_key.clone(),
         enclave_address: public_key_to_address(&signer_key.verifying_key()),
-        wallet: Arc::new(RwLock::new(
-            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap(),
-        )),
+        wallet: Arc::new(RwLock::new(String::new())),
         common_chain_id: CHAIN_ID,
         common_chain_http_url: HTTP_RPC_URL.to_owned(),
         common_chain_ws_url: WS_URL.to_owned(),

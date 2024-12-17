@@ -2,7 +2,7 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, post, HttpResponse, Responder};
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex;
-use alloy::primitives::{keccak256, Address, B256, U256};
+use alloy::primitives::{keccak256, Address, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::local::PrivateKeySigner;
@@ -71,7 +71,7 @@ async fn inject_mutable_config(
 
     let private_key_signer = mutable_config.gas_key_hex.parse::<PrivateKeySigner>();
 
-    let Ok(private_key_signer) = private_key_signer else {
+    let Ok(_) = private_key_signer else {
         return HttpResponse::BadRequest().body(format!(
             "Failed to parse the gas private key into a private key signer: {:?}",
             private_key_signer.unwrap_err()
@@ -79,15 +79,58 @@ async fn inject_mutable_config(
     };
 
     let mut wallet_guard = app_state.wallet.write().unwrap();
-    if *wallet_guard == private_key_signer {
+    if *wallet_guard == mutable_config.gas_key_hex {
         return HttpResponse::NotAcceptable().body("The same wallet address already set.");
     }
 
-    *wallet_guard = private_key_signer;
+    let registration_events_listener_active_guard = app_state
+        .registration_events_listener_active
+        .lock()
+        .unwrap();
+
+    let contracts_client_guard = app_state.contracts_client.lock().unwrap();
+
+    *wallet_guard = mutable_config.gas_key_hex.clone();
+
+    if contracts_client_guard.is_some() {
+        let res = contracts_client_guard
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .update_private_signer(mutable_config.gas_key_hex.clone());
+        if let Err(e) = res {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to update the private signer for the common chain txn manager: {}",
+                e
+            ));
+        }
+
+        let mut request_chain_data_hashmap = contracts_client_guard
+            .as_ref()
+            .unwrap()
+            .request_chain_data
+            .write()
+            .unwrap();
+        for request_chain_data in request_chain_data_hashmap.values_mut() {
+            let res = request_chain_data
+                .request_chain_txn_manager
+                .update_private_signer(mutable_config.gas_key_hex.clone());
+            if let Err(e) = res {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Failed to update the private signer for the request chain txn manager: {}",
+                    e
+                ));
+            }
+        }
+
+        drop(request_chain_data_hashmap);
+    }
 
     app_state
         .mutable_params_injected
         .store(true, Ordering::SeqCst);
+
+    drop(registration_events_listener_active_guard);
 
     info!("Mutable params configured!");
 
@@ -141,7 +184,7 @@ async fn export_signed_registration_message(
     }
 
     // if wallet is not configured, return error
-    if *app_state.wallet.read().unwrap() == PrivateKeySigner::from_bytes(&B256::ZERO).unwrap() {
+    if app_state.wallet.read().unwrap().is_empty() {
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
@@ -264,6 +307,8 @@ async fn export_signed_registration_message(
 
     let mut request_chain_data: HashMap<u64, RequestChainData> = HashMap::new();
 
+    let gas_wallet_hex = app_state.wallet.read().unwrap();
+
     // iterate over all chain ids and get their registration signatures
     for &chain_id in &chain_ids {
         // get request chain rpc url
@@ -314,13 +359,12 @@ async fn export_signed_registration_message(
         let request_chain_txn_manager = TxnManager::new(
             request_chain_info.httpRpcUrl.to_string(),
             chain_id,
-            app_state.wallet.clone(),
+            gas_wallet_hex.clone(),
             None,
             None,
             None,
             None,
-        )
-        .await;
+        );
 
         let Ok(request_chain_txn_manager) = request_chain_txn_manager else {
             return HttpResponse::InternalServerError().body(format!(
@@ -372,16 +416,19 @@ async fn export_signed_registration_message(
         let subscription_job_instance_heap = Arc::new(RwLock::new(BinaryHeap::new()));
         let subscription_jobs = Arc::new(RwLock::new(HashMap::new()));
 
+        if *gas_wallet_hex != *app_state.wallet.read().unwrap() {
+            return HttpResponse::BadRequest().body("Gas wallet updated!");
+        }
+
         let common_chain_txn_manager = TxnManager::new(
             app_state.common_chain_http_url.clone(),
             app_state.common_chain_id,
-            app_state.wallet.clone(),
+            app_state.wallet.read().unwrap().clone(),
             None,
             None,
             None,
             None,
-        )
-        .await;
+        );
 
         let Ok(common_chain_txn_manager) = common_chain_txn_manager else {
             return HttpResponse::InternalServerError().body(format!(
@@ -399,7 +446,7 @@ async fn export_signed_registration_message(
             common_chain_txn_manager,
             gateways_contract_address: app_state.gateways_contract_addr,
             gateway_jobs_contract_address: app_state.gateway_jobs_contract_addr,
-            request_chain_data,
+            request_chain_data: Arc::new(RwLock::new(request_chain_data)),
             gateway_epoch_state,
             request_chain_ids: chain_ids.clone(),
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
@@ -447,7 +494,12 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
         return HttpResponse::BadRequest().body("Mutable params not configured yet!");
     }
 
-    let wallet: PrivateKeySigner = app_state.wallet.read().unwrap().clone();
+    let wallet: PrivateKeySigner = app_state
+        .wallet
+        .read()
+        .unwrap()
+        .parse::<PrivateKeySigner>()
+        .unwrap();
 
     let response = GatewayDetailsResponse {
         enclave_public_key: "0x".to_string()
@@ -606,10 +658,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.read().unwrap(),
-            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap()
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject invalid private(signing) key
         let req = actix_web::test::TestRequest::post()
@@ -629,10 +678,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.read().unwrap(),
-            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap()
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
         let req = actix_web::test::TestRequest::post()
@@ -647,14 +693,11 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid gas private key provided: signature::Error { source: None }"
+            "Failed to parse the gas private key into a private key signer: EcdsaError(signature::Error { source: None })"
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.read().unwrap(),
-            PrivateKeySigner::from_bytes(&B256::ZERO).unwrap()
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject a valid private key for gas wallet
         let req = actix_web::test::TestRequest::post()
@@ -673,10 +716,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.read().unwrap(),
-            GAS_WALLET_KEY.parse::<PrivateKeySigner>().unwrap()
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(app_state.contracts_client.lock().unwrap().is_none());
         assert!(!*app_state
@@ -710,10 +750,7 @@ mod api_impl_tests {
             .unwrap()
             .common_chain_txn_manager
             .clone()
-            .private_signer
-            .read()
-            .unwrap()
-            .clone()
+            .get_private_signer()
             .address();
         assert_eq!(
             gas_wallet_address,
@@ -737,10 +774,7 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.read().unwrap(),
-            GAS_WALLET_KEY.parse::<PrivateKeySigner>().unwrap()
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -749,10 +783,7 @@ mod api_impl_tests {
             .unwrap()
             .common_chain_txn_manager
             .clone()
-            .private_signer
-            .read()
-            .unwrap()
-            .clone()
+            .get_private_signer()
             .address();
         assert_eq!(
             gas_wallet_address,
@@ -780,10 +811,7 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.read().unwrap(),
-            GAS_WALLET_KEY_2.parse::<PrivateKeySigner>().unwrap()
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY_2);
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -792,10 +820,7 @@ mod api_impl_tests {
             .unwrap()
             .common_chain_txn_manager
             .clone()
-            .private_signer
-            .read()
-            .unwrap()
-            .clone()
+            .get_private_signer()
             .address();
         assert_eq!(
             gas_wallet_address,
@@ -1264,7 +1289,14 @@ mod api_impl_tests {
         assert!(response.is_ok());
 
         let response = response.unwrap();
-        let gas_address = app_state.wallet.read().unwrap().clone().address();
+        let gas_address = app_state
+            .wallet
+            .read()
+            .unwrap()
+            .clone()
+            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .address();
         let expected_response = GatewayDetailsResponse {
             enclave_public_key: "0x".to_string()
                 + &hex::encode(

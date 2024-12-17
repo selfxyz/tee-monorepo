@@ -1,6 +1,5 @@
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::signers::k256::ecdsa::SigningKey;
-use alloy::signers::local::PrivateKeySigner;
 use multi_block_txns::TxnManager;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -11,7 +10,7 @@ use std::sync::{Arc, Mutex, RwLock};
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
-    pub wallet: Arc<RwLock<PrivateKeySigner>>,
+    pub wallet: Arc<RwLock<String>>,
     pub common_chain_id: u64,
     pub common_chain_http_url: String,
     pub common_chain_ws_url: String,
@@ -107,7 +106,7 @@ pub struct ContractsClient {
     pub gateways_contract_address: Address,
     pub gateway_jobs_contract_address: Address,
     pub common_chain_txn_manager: Arc<TxnManager>,
-    pub request_chain_data: HashMap<u64, RequestChainData>,
+    pub request_chain_data: Arc<RwLock<HashMap<u64, RequestChainData>>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
     pub request_chain_ids: HashSet<u64>,
     pub active_jobs: Arc<RwLock<HashMap<U256, Job>>>,
