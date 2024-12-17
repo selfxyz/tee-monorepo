@@ -13,8 +13,8 @@ A CLI tool to build and deploy your apps to the oyster marketplace. Using just y
 From source:
 
 ```bash
-git clone https://github.com/yourorg/enclave-image-builder.git
-cd enclave-image-builder
+git clone https://github.com/marlinprotocol/oyster-monorepo.git
+cd cli/oyster-cvm
 cargo build --release
 ```
 
@@ -41,8 +41,13 @@ Builds an enclave image.
 ## Example
 
 ```bash
-enclave-image-builder doctor
-enclave-image-builder build-image \
+./oyster-cvm doctor
+
+# Sample output:
+[INFO ] Docker is installed ✓
+[INFO ] Nix is installed ✓
+
+./oyster-cvm build-image \
   --platform amd64 \
   --docker-compose ./docker-compose.yml \
   --docker-images ./image1.tar ./image2.tar \

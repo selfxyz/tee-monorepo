@@ -23,7 +23,7 @@ pub fn build_enclave_image(
         docker_images_list
     );
 
-    let status = Command::new("nix")
+    let cmd_output = Command::new("nix")
         .args([
             "build",
             "--impure",
@@ -33,13 +33,14 @@ pub fn build_enclave_image(
             "--out-link",
             output,
         ])
-        .status()
+        .output()
         .context("Failed to execute Nix build command")?;
 
-    if status.success() {
+    if cmd_output.status.success() {
         info!("Build successful: {}", output);
         Ok(())
     } else {
-        Err(anyhow::anyhow!("Build failed"))
+        let error_msg = String::from_utf8_lossy(&cmd_output.stderr);
+        Err(anyhow::anyhow!("Build failed: {}", error_msg))
     }
 }
