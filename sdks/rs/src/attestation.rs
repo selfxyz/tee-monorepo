@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::collections::BTreeMap;
 
 use aws_nitro_enclaves_cose::{crypto::Openssl, CoseSign1};
@@ -7,6 +8,8 @@ use hyper::Uri;
 use hyper_util::client::legacy::{Client, Error};
 use hyper_util::rt::TokioExecutor;
 use openssl::asn1::Asn1Time;
+use openssl::bn::BigNumContext;
+use openssl::ec::{EcKey, PointConversionForm};
 use openssl::x509::{X509VerifyResult, X509};
 use serde_cbor::{self, value, value::Value};
 
@@ -243,11 +246,27 @@ fn verify_cert_chain(cert: X509, cabundle: Vec<Value>) -> Result<Vec<u8>, Attest
         .last()
         .ok_or(AttestationError::ParseFailed("root".into()))?;
 
-    Ok(root_cert
+    let root_public_key_der = root_cert
         .public_key()
         .map_err(|e| AttestationError::ParseFailed(format!("root pubkey: {e}")))?
-        .raw_public_key()
-        .map_err(|e| AttestationError::ParseFailed(format!("root raw pubkey: {e}")))?)
+        .public_key_to_der()
+        .map_err(|e| AttestationError::ParseFailed(format!("root pubkey der: {e}")))?;
+
+    let root_public_key = EcKey::public_key_from_der(&root_public_key_der)
+        .map_err(|e| AttestationError::ParseFailed(format!("root pubkey der: {e}")))?;
+
+    let root_public_key_sec1 = root_public_key
+        .public_key()
+        .to_bytes(
+            root_public_key.group(),
+            PointConversionForm::UNCOMPRESSED,
+            BigNumContext::new()
+                .map_err(|e| AttestationError::ParseFailed(format!("bignum context: {e}")))?
+                .borrow_mut(),
+        )
+        .map_err(|e| AttestationError::ParseFailed(format!("sec1: {e}")))?;
+
+    Ok(root_public_key_sec1[1..].to_vec())
 }
 
 fn get_all_certs(cert: X509, cabundle: Vec<Value>) -> Result<Vec<X509>, AttestationError> {
