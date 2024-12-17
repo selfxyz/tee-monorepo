@@ -845,8 +845,10 @@ contract SecretManager is
         uint8 env = userStorage[_secretId].env;
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
-            if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore && EXECUTORS.isNodePresentInTree(env, enclaveAddress))
-                selectedStores[index] = enclaveAddress;
+            if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore) {
+                if(EXECUTORS.isNodePresentInTree(env, enclaveAddress))
+                    selectedStores[index] = enclaveAddress;
+            }
             else if(!_isReplacedStore(_secretId, index))
                 revert SecretManagerUnacknowledged();
         }

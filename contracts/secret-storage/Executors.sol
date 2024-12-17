@@ -378,7 +378,9 @@ contract Executors is
         uint256[] memory stakeAmounts = TEE_MANAGER.getTeeNodesStake(_enclaveAddresses);
         uint256 len = _enclaveAddresses.length;
         for (uint256 index = 0; index < len; index++) {
-            _insert_unchecked(_env, _enclaveAddresses[index], uint64(stakeAmounts[index] / STAKE_ADJUSTMENT_FACTOR));
+            address enclaveAddress = _enclaveAddresses[index];
+            if (executors[enclaveAddress].activeJobs < executors[enclaveAddress].jobCapacity)
+                _insert_unchecked(_env, enclaveAddress, uint64(stakeAmounts[index] / STAKE_ADJUSTMENT_FACTOR));
         }
     }
 
