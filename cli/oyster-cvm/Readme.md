@@ -52,4 +52,7 @@ Builds an enclave image.
   --docker-compose ./docker-compose.yml \
   --docker-images ./image1.tar ./image2.tar \
   --output ./result
+
+# Generates a folder "result" with files
+# image.eif  log.txt  pcr.json
 ```
