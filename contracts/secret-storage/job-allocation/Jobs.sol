@@ -463,21 +463,21 @@ contract Jobs is
             USDC_TOKEN.safeTransfer(jobOwner, (deadline - executionTime) * (executionFeePerMs + stakingRewardPerMs));
 
             // TODO: increase reputation logic
-            TEE_MANAGER.increaseReputation(_enclaveAddress, 10);
+            EXECUTORS.increaseReputation(_enclaveAddress, 10);
         }
         // for second output
         else if (_outputCount == 2) {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, executorsFee / 3);
             // TODO: decrease reputation logic
-            TEE_MANAGER.decreaseReputation(_enclaveAddress, 5);
+            EXECUTORS.decreaseReputation(_enclaveAddress, 5);
         }
         // for 3rd output
         else {
             // transfer payout to executor
             USDC_TOKEN.safeTransfer(owner, executorsFee - ((executorsFee * 4) / 9) - (executorsFee / 3));
             // TODO: decrease reputation logic
-            TEE_MANAGER.decreaseReputation(_enclaveAddress, 5);
+            EXECUTORS.decreaseReputation(_enclaveAddress, 5);
             // cleanup job data after 3rd output submitted
             _cleanJobData(_jobId);
         }
@@ -589,8 +589,7 @@ contract Jobs is
             address enclaveAddress = jobs[_jobId].selectedExecutors[index];
 
             if (!jobs[_jobId].hasExecutedJob[enclaveAddress]) {
-                slashAmount += TEE_MANAGER.slashExecutor(enclaveAddress);
-                EXECUTORS.releaseExecutor(enclaveAddress);
+                slashAmount += EXECUTORS.slashExecutor(enclaveAddress);
                 emit SlashedOnExecutionTimeout(_jobId, enclaveAddress);
             }
             delete jobs[_jobId].hasExecutedJob[enclaveAddress];

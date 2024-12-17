@@ -378,7 +378,8 @@ contract SecretStore is
         uint256 lastAliveTimestamp = secretStores[_enclaveAddress].lastAliveTimestamp;
         uint256 deadTimestamp = secretStores[_enclaveAddress].deadTimestamp;
         uint256 lastCheckTimestamp = (lastAliveTimestamp > deadTimestamp) ? lastAliveTimestamp : deadTimestamp;
-        uint256 missedEpochsCount = (_currentCheckTimestamp - lastCheckTimestamp) / _markAliveTimeout;
+        uint256 missedEpochsCount = ((_currentCheckTimestamp - lastAliveTimestamp) / _markAliveTimeout ) - 
+            ((lastCheckTimestamp - lastAliveTimestamp) / _markAliveTimeout);
 
         if(missedEpochsCount > 0)
             TEE_MANAGER.slashStore(_enclaveAddress, missedEpochsCount, _recipient);
@@ -410,7 +411,7 @@ contract SecretStore is
     function _updateTreeState(
         address _enclaveAddress
     ) internal {
-        (uint256 stakeAmount, , , uint8 env, bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
+        (uint256 stakeAmount, , uint8 env, bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
         if (!draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for secretStores in tree if it already exists else add with latest stake

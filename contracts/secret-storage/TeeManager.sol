@@ -118,13 +118,17 @@ contract TeeManager is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
 
-    bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
-
     Executors public EXECUTORS;
 
     SecretStore public SECRET_STORE;
 
     //-------------------------------- TeeManager start ----------------------------------//
+
+    modifier onlyExecutors() {
+        if(_msgSender() != address(EXECUTORS))
+            revert TeeManagerInvalidExecutors();
+        _;
+    }
 
     modifier onlySecretStore() {
         if(_msgSender() != address(SECRET_STORE))
@@ -144,7 +148,6 @@ contract TeeManager is
 
     struct TeeNode {
         uint256 stakeAmount;
-        uint256 reputation;
         address owner;
         uint8 env;
         bool draining;
@@ -152,8 +155,6 @@ contract TeeManager is
 
     // enclaveAddress => TEE node details
     mapping(address => TeeNode) public teeNodes;
-
-    uint256 public constant INIT_REPUTATION = 1000;
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -209,6 +210,7 @@ contract TeeManager is
     error TeeManagerEnclaveNotDraining();
     /// @notice Thrown when the provided enclave owner does not match the stored owner.
     error TeeManagerInvalidEnclaveOwner();
+    error TeeManagerInvalidExecutors();
     error TeeManagerInvalidSecretStoreManager();
 
     //-------------------------------- Admin methods start --------------------------------//
@@ -305,7 +307,6 @@ contract TeeManager is
     ) internal {
         teeNodes[_enclaveAddress].env = _env;
         teeNodes[_enclaveAddress].owner = _owner;
-        teeNodes[_enclaveAddress].reputation = INIT_REPUTATION;
 
         EXECUTORS.registerExecutor(_enclaveAddress, _jobCapacity, _env, _stakeAmount);
         SECRET_STORE.registerSecretStore(_enclaveAddress, _storageCapacity, _env, _stakeAmount);
@@ -517,7 +518,7 @@ contract TeeManager is
 
     //-------------------------------- TeeManager functions start ----------------------------------//
 
-    //-------------------------------- JobsRole functions start ---------------------------------//
+    //------------------------------ ExecutorsRole functions start ---------------------------------//
 
     //-------------------------------- internal functions start ----------------------------------//
 
@@ -527,9 +528,6 @@ contract TeeManager is
 
         STAKING_TOKEN.safeTransfer(_recipient, totalComp);
     
-        // TODO: decrease reputation logic
-        teeNodes[_enclaveAddress].reputation -= 10;
-    
         return totalComp;
     }
 
@@ -537,28 +535,13 @@ contract TeeManager is
 
     //-------------------------------- external functions start ----------------------------------//
 
-    /**
-     * @notice Slashes the stake of an executor node.
-     * @dev Can only be called by an account with the `JOBS_ROLE`. This function
-     *      triggers a slashing penalty on the specified executor node.
-     * @param _enclaveAddress The address of the executor enclave to be slashed.
-     * @return The amount of stake that was slashed from the executor node.
-     */
-    function slashExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) returns (uint256) {
-        return _slashExecutor(_enclaveAddress, _msgSender());
-    }
-
-    function increaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
-        teeNodes[_enclaveAddress].reputation += _value;
-    }
-
-    function decreaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
-        teeNodes[_enclaveAddress].reputation -= _value;
+    function slashExecutor(address _enclaveAddress, address _recipient) external onlyExecutors returns (uint256) {
+        return _slashExecutor(_enclaveAddress, _recipient);
     }
 
     //---------------------------------- external functions end ------------------------------------//
 
-    //---------------------------------- JobsRole functions end -------------------------------------//
+    //-------------------------------- ExecutorsRole functions end -------------------------------------//
 
     //------------------------------ SecretStoreRole functions start --------------------------------//
 

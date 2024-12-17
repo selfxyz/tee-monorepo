@@ -87,6 +87,8 @@ contract Executors is
 
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
+    uint256 public constant INIT_REPUTATION = 1000;
+
     uint256 public MIN_STAKE_AMOUNT;
 
     //-------------------------------- Executors start --------------------------------//
@@ -104,6 +106,7 @@ contract Executors is
     struct Executor {
         uint256 jobCapacity;
         uint256 activeJobs;
+        uint256 reputation;
     }
 
     // enclaveAddress => executor node details
@@ -140,6 +143,7 @@ contract Executors is
         uint256 _stakeAmount
     ) internal {
         executors[_enclaveAddress].jobCapacity = _jobCapacity;
+        executors[_enclaveAddress].reputation = INIT_REPUTATION;
 
         if (_stakeAmount >= MIN_STAKE_AMOUNT)
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
@@ -399,10 +403,20 @@ contract Executors is
         executors[_enclaveAddress].activeJobs -= 1;
     }
 
+    function _slashExecutor(address _enclaveAddress, address _recipient) internal returns (uint256) {    
+        uint256 slashedAmount = TEE_MANAGER.slashExecutor(_enclaveAddress, _recipient);
+
+        _releaseExecutor(_enclaveAddress);
+
+        // TODO: decrease reputation logic
+        executors[_enclaveAddress].reputation -= 10;
+        return slashedAmount;
+    }
+
     function _updateTreeState(
         address _enclaveAddress
     ) internal {
-        (uint256 stakeAmount, , , uint8 env, bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
+        (uint256 stakeAmount, , uint8 env, bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
         if (!draining) {
             // node might have been deleted due to max job capacity reached
             // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
@@ -455,6 +469,25 @@ contract Executors is
         address _enclaveAddress
     ) external onlyRole(JOBS_ROLE) {
         _releaseExecutor(_enclaveAddress);
+    }
+
+    /**
+     * @notice Slashes the stake of an executor node.
+     * @dev Can only be called by an account with the `JOBS_ROLE`. This function
+     *      triggers a slashing penalty on the specified executor node.
+     * @param _enclaveAddress The address of the executor enclave to be slashed.
+     * @return The amount of stake that was slashed from the executor node.
+     */
+    function slashExecutor(address _enclaveAddress) external onlyRole(JOBS_ROLE) returns (uint256) {
+        return _slashExecutor(_enclaveAddress, _msgSender());
+    }
+
+    function increaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
+        executors[_enclaveAddress].reputation += _value;
+    }
+
+    function decreaseReputation(address _enclaveAddress, uint256 _value) external onlyRole(JOBS_ROLE) {
+        executors[_enclaveAddress].reputation -= _value;
     }
 
     //---------------------------------- external functions end ------------------------------------//
