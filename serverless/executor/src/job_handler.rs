@@ -232,7 +232,7 @@ async fn execute_job(
             error_code: 5,
             total_time: execution_timer_start.elapsed().as_millis().into(),
             ..Default::default()
-        })
+        });
     }
 
     Some(JobOutput {
