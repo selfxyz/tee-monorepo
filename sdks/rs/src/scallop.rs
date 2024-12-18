@@ -174,58 +174,49 @@ enum ReadMode {
     Read,
 }
 
+pub type Key = [u8; 32];
+pub type Pcrs = [[u8; 48]; 3];
+
 pub trait ScallopAuthStore {
-    fn contains(&self, key: &[u8; 32]) -> bool;
-    fn get(&self, key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])>;
-    fn set(&mut self, key: [u8; 32], pcrs: ([u8; 48], [u8; 48], [u8; 48]));
-    fn verify(
-        &mut self,
-        attestation: &[u8],
-        key: &[u8; 32],
-    ) -> Option<([u8; 48], [u8; 48], [u8; 48])>;
+    fn contains(&self, key: &Key) -> bool;
+    fn get(&self, key: &Key) -> Option<&Pcrs>;
+    fn set(&mut self, key: Key, pcrs: Pcrs);
+    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<Pcrs>;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
-    fn contains(&self, key: &[u8; 32]) -> bool {
+    fn contains(&self, key: &Key) -> bool {
         (**self).contains(key)
     }
 
-    fn get(&self, key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])> {
+    fn get(&self, key: &Key) -> Option<&Pcrs> {
         (**self).get(key)
     }
 
-    fn set(&mut self, key: [u8; 32], pcrs: ([u8; 48], [u8; 48], [u8; 48])) {
+    fn set(&mut self, key: Key, pcrs: Pcrs) {
         (**self).set(key, pcrs)
     }
 
-    fn verify(
-        &mut self,
-        attestation: &[u8],
-        key: &[u8; 32],
-    ) -> Option<([u8; 48], [u8; 48], [u8; 48])> {
+    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<Pcrs> {
         (**self).verify(attestation, key)
     }
 }
 
 // to let callers pass in None with empty type
 impl ScallopAuthStore for () {
-    fn contains(&self, _key: &[u8; 32]) -> bool {
+    fn contains(&self, _key: &Key) -> bool {
         unimplemented!()
     }
 
-    fn get(&self, _key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])> {
+    fn get(&self, _key: &Key) -> Option<&Pcrs> {
         unimplemented!()
     }
 
-    fn set(&mut self, _key: [u8; 32], _pcrs: ([u8; 48], [u8; 48], [u8; 48])) {
+    fn set(&mut self, _key: Key, _pcrs: Pcrs) {
         unimplemented!()
     }
 
-    fn verify(
-        &mut self,
-        _attestation: &[u8],
-        _key: &[u8; 32],
-    ) -> Option<([u8; 48], [u8; 48], [u8; 48])> {
+    fn verify(&mut self, _attestation: &[u8], _key: &Key) -> Option<Pcrs> {
         unimplemented!()
     }
 }
