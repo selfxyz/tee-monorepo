@@ -1,6 +1,6 @@
 use clap::Parser;
 use libsodium_sys::{
-    crypto_sign_PUBLICKEYBYTES, crypto_sign_SECRETKEYBYTES, crypto_sign_keypair, sodium_init,
+    crypto_box_PUBLICKEYBYTES, crypto_box_SECRETKEYBYTES, crypto_box_keypair, sodium_init,
     sodium_memzero,
 };
 use std::error::Error;
@@ -24,14 +24,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("private key: {}, public key: {}", cli.secret, cli.public);
 
-    let mut secret = [0u8; crypto_sign_SECRETKEYBYTES as usize];
-    let mut public = [0u8; crypto_sign_PUBLICKEYBYTES as usize];
+    let mut secret = [0u8; crypto_box_SECRETKEYBYTES as usize];
+    let mut public = [0u8; crypto_box_PUBLICKEYBYTES as usize];
 
     if unsafe { sodium_init() } < 0 {
         return Err("failed to init libsodium".into());
     }
 
-    if unsafe { crypto_sign_keypair(public.as_mut_ptr(), secret.as_mut_ptr()) } != 0 {
+    if unsafe { crypto_box_keypair(public.as_mut_ptr(), secret.as_mut_ptr()) } != 0 {
         return Err("failed to generate keypair".into());
     }
 
@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         sodium_memzero(
             secret.as_mut_ptr().cast(),
-            crypto_sign_SECRETKEYBYTES as usize,
+            crypto_box_SECRETKEYBYTES as usize,
         );
     }
 
