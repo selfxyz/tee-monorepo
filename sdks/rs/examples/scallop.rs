@@ -13,29 +13,25 @@ pub use oyster::scallop::*;
 
 #[derive(Default)]
 struct AuthStore {
-    store: HashMap<[u8; 32], ([u8; 48], [u8; 48], [u8; 48])>,
+    store: HashMap<Key, Pcrs>,
 }
 
 impl ScallopAuthStore for AuthStore {
-    fn contains(&self, key: &[u8; 32]) -> bool {
+    fn contains(&self, key: &Key) -> bool {
         self.store.contains_key(key)
     }
 
-    fn get(&self, key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])> {
+    fn get(&self, key: &Key) -> Option<&Pcrs> {
         self.store.get(key)
     }
 
-    fn set(&mut self, key: [u8; 32], pcrs: ([u8; 48], [u8; 48], [u8; 48])) {
+    fn set(&mut self, key: Key, pcrs: Pcrs) {
         self.store.insert(key, pcrs);
     }
 
-    fn verify(
-        &mut self,
-        attestation: &[u8],
-        _key: &[u8; 32],
-    ) -> Option<([u8; 48], [u8; 48], [u8; 48])> {
+    fn verify(&mut self, attestation: &[u8], _key: &Key) -> Option<Pcrs> {
         if attestation == b"good auth" {
-            Some(([1u8; 48], [2u8; 48], [3u8; 48]))
+            Some([[1u8; 48], [2u8; 48], [3u8; 48]])
         } else {
             None
         }
@@ -51,7 +47,7 @@ impl ScallopAuther for Auther {
     }
 }
 
-async fn server_task(key: [u8; 32]) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn server_task(key: Key) -> Result<(), Box<dyn Error + Send + Sync>> {
     let server = TcpListener::bind("127.0.0.1:21000").await?;
     let mut auth_store = AuthStore::default();
     let mut auther = Auther {};
@@ -84,7 +80,7 @@ async fn server_task(key: [u8; 32]) -> Result<(), Box<dyn Error + Send + Sync>> 
     }
 }
 
-async fn client_task(key: [u8; 32]) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn client_task(key: Key) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut auth_store = AuthStore::default();
     let mut auther = Auther {};
 
