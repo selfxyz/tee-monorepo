@@ -3,9 +3,9 @@
 # Keygen
 
 Generate keypairs for use in other applications. The repository contains generators for the following cryptosystems:
-- ed25519
-- secp256k1
-- x25519
+- ed25519 (https://en.wikipedia.org/wiki/EdDSA)
+- secp256k1 (https://en.bitcoin.it/wiki/Secp256k1)
+- x25519 (https://en.wikipedia.org/wiki/Curve25519)
 
 ## Build
 
