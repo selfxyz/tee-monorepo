@@ -16,7 +16,7 @@ name = "cgroups-retriever"
 path = "src/cgroups_retriever.rs"
 
 [dependencies]
-actix-web = "4"
+actix-web = "4.9.0"
 anyhow = "1.0.75"
 clap = { version = "4.4.7", features = ["derive"] }
 config = "0.14.0"
@@ -39,3 +39,5 @@ tokio-stream = "0.1"
 [profile.release]
 strip = true
 lto = true
+panic = "abort"
+codegen-units = 1
