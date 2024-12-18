@@ -20,20 +20,32 @@ Oyster Serverless Executor is a cutting-edge, high-performance serverless comput
 
 <b> Build the executor binary </b>
 
-Default build target is `x86_64-unknown-linux-musl`. Can be changed in the `.cargo/config.toml` file or in the build command itself. Add the required build target first like:
-```
-rustup target add x86_64-unknown-linux-musl
-```
 Build the binary executable:
 ```
 cargo build --release
 ```
 OR (for custom targets)
 ```
+rustup target add x86_64-unknown-linux-musl
 cargo build --release --target x86_64-unknown-linux-musl
 ```
 
-<!-- Add instruction for nix reproducible builds -->
+### Reproducible builds
+
+Reproducible builds can be done using Nix. The monorepo provides a Nix flake which includes this project and can be used to trigger builds:
+
+```bash
+nix build -v .#<flavor>.serverless.executor.<output>
+```
+
+Supported flavors:
+- `gnu`
+- `musl`
+
+Supported outputs:
+- `default`, same as `compressed`
+- `uncompressed`
+- `compressed`, using `upx`
 
 ## Usage
 
