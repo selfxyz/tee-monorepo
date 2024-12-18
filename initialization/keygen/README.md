@@ -5,6 +5,7 @@
 Generate keypairs for use in other applications. The repository contains generators for the following cryptosystems:
 - ed25519
 - secp256k1
+- x25519
 
 ## Build
 
@@ -93,6 +94,37 @@ $ xxd secp256k1.pub
 00000010: af91 771b efeb bf9a 1813 bc49 3687 d79d  ..w........I6...
 00000020: bef9 f73a 8239 5593 3618 6d6d bf01 2cb4  ...:.9U.6.mm..,.
 00000030: 7161 50c5 801a 24fe 9bd3 83a4 ca79 655d  qaP...$......ye]
+```
+
+## x25519
+
+### Usage
+
+```bash
+$ ./target/release/keygen-x25519 --help
+Usage: keygen-x25519 --secret <SECRET> --public <PUBLIC>
+
+Options:
+  -s, --secret <SECRET>  path to private key file
+  -p, --public <PUBLIC>  path to public key file
+  -h, --help             Print help
+  -V, --version          Print version
+```
+
+### Example
+
+keygen-x25519 generates a x25519 key pair and stores it in the file paths provided. The secret key and public key are stored as bytes, with a size of 32 and 32 respectively.
+
+```bash
+$ ./target/release/keygen-x25519 --secret x25519.sec --public x25519.pub
+private key: x25519.sec, public key: x25519.pub
+Generation successful!
+$ xxd x25519.sec
+00000000: bb14 d80d e0c8 bcd5 db75 432e eaf8 79ab  .........uC...y.
+00000010: da07 9a3d 435c e2bf cf5a a529 9265 d6a0  ...=C\...Z.).e..
+$ xxd x25519.pub
+00000000: c794 718a 3671 b319 3bcd 98c5 2b72 b426  ..q.6q..;...+r.&
+00000010: 39e8 052b bfb1 62e2 ef0d 5a57 74cd 9469  9..+..b...ZWt..i
 ```
 
 ## License
