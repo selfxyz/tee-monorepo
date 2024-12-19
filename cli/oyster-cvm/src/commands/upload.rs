@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use log::info;
+use tracing::info;
 use reqwest::Client;
 use serde_json::Value;
 use std::{env, fs, time::Duration};
