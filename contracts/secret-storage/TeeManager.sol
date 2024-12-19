@@ -34,6 +34,8 @@ contract TeeManager is
     error TeeManagerZeroAddressStakingToken();
     /// @notice Thrown when the provided minimum stake amount is zero.
     error TeeManagerZeroMinStakeAmount();
+    /// @notice Thrown when the provided slash parameters are invalid.
+    error TeeManagerInvalidSlashParams();
 
     /**
      * @dev Initializes the logic contract without any admins, safeguarding against takeover.
@@ -62,6 +64,8 @@ contract TeeManager is
         STAKING_TOKEN = _stakingToken;
         MIN_STAKE_AMOUNT = _minStakeAmount;
 
+        if(_slashPercentInBips > _slashMaxBips || _slashMaxBips > 1e6)
+            revert TeeManagerInvalidSlashParams();
         SLASH_PERCENT_IN_BIPS = _slashPercentInBips;
         SLASH_MAX_BIPS = _slashMaxBips;
     }
@@ -554,7 +558,19 @@ contract TeeManager is
     ) internal {
         uint256 stakeAmount = teeNodes[_enclaveAddress].stakeAmount;
         // compounding slashing formula: remainingStakeAmount = stakeAmount * (1 - (r/100)) ^ n
-        uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** _missedEpochsCount) / (SLASH_MAX_BIPS ** _missedEpochsCount);
+        // uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** _missedEpochsCount) / (SLASH_MAX_BIPS ** _missedEpochsCount);
+        
+        uint256 remainingStakeAmount = stakeAmount;
+        uint256 iterations = _missedEpochsCount / 12;
+        for (uint256 i = 0; i < iterations; i++) {
+            remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** 12) / (SLASH_MAX_BIPS ** 12);
+        }
+
+        uint256 remainingEpochs = _missedEpochsCount % 12;
+        if (remainingEpochs > 0) {
+            remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** remainingEpochs) / (SLASH_MAX_BIPS ** remainingEpochs);
+        }
+        
         uint256 slashAmount = stakeAmount - remainingStakeAmount;
         teeNodes[_enclaveAddress].stakeAmount = remainingStakeAmount;
 
