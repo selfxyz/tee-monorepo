@@ -1,6 +1,6 @@
 use crate::types::Platform;
 use anyhow::{Context, Result};
-use log::info;
+use tracing::info;
 use std::process::Command;
 
 pub fn build_enclave_image(

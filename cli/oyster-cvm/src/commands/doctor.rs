@@ -1,6 +1,6 @@
 use crate::types::Dependency;
 use anyhow::Result;
-use log::{error, info};
+use tracing::{error, info};
 use std::process::Command;
 
 pub fn run_doctor() -> Result<()> {
