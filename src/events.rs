@@ -213,7 +213,7 @@ async fn handle_event_logs(
                         .secrets_awaiting_acknowledgement
                         .lock()
                         .unwrap()
-                        .insert(secret_id, 0);
+                        .insert(secret_id, app_state.num_selected_stores);
 
                     let app_state_clone = app_state.clone();
                     tokio::spawn(async move {
@@ -250,25 +250,21 @@ async fn handle_event_logs(
                 {
                     // Extract the secret ID from the event
                     let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
-                    let Some(secret_ack_count) = app_state.secrets_awaiting_acknowledgement.lock().unwrap().get(&secret_id).cloned() else {
+
+                    let mut secrets_awaiting_acknowledgement_guard = app_state.secrets_awaiting_acknowledgement.lock().unwrap();
+                    let Some(secret_ack_count) = secrets_awaiting_acknowledgement_guard.get(&secret_id).cloned() else {
                         continue;
                     };
 
                     // If the current acknowledgement is the last remaining, remove the secret ID from awaiting acknowledgement
-                    if secret_ack_count+1 == app_state.num_selected_stores {
+                    if secret_ack_count == 1 {
                         // Mark the secret as acknowledged
-                        app_state
-                            .secrets_awaiting_acknowledgement
-                            .lock()
-                            .unwrap()
+                        secrets_awaiting_acknowledgement_guard
                             .remove(&secret_id);
                     }else {
                         // Update the acknowledgement count for the secret ID
-                        app_state
-                            .secrets_awaiting_acknowledgement
-                            .lock()
-                            .unwrap()
-                            .insert(secret_id, secret_ack_count+1);
+                        secrets_awaiting_acknowledgement_guard
+                            .insert(secret_id, secret_ack_count-1);
                     }
                 }
                 // Capture the SecretStoreAcknowledgementFailed event emitted by the SecretManager contract
@@ -314,12 +310,8 @@ async fn handle_event_logs(
                     // Extract the secret ID from the event
                     let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
 
-                    // Mark the current secret as waiting for acknowledgements
-                    app_state
-                        .secrets_awaiting_acknowledgement
-                        .lock()
-                        .unwrap()
-                        .insert(secret_id, 0);
+                    // Mark the current secret as waiting for acknowledgement
+                    app_state.secrets_awaiting_acknowledgement.lock().unwrap().insert(secret_id, app_state.secrets_awaiting_acknowledgement.lock().unwrap().get(&secret_id).cloned().unwrap_or(0)+1);
 
                     let app_state_clone = app_state.clone();
                     tokio::spawn(async move {

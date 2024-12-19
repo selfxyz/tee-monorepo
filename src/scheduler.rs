@@ -63,7 +63,7 @@ pub async fn store_alive_monitor(app_state: Data<AppState>) {
                 "Failed to sign the alive message using enclave key: {:?}",
                 sign.unwrap_err()
             );
-            return;
+            continue;
         };
         let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 

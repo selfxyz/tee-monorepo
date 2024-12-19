@@ -8,11 +8,11 @@ pub const SECRET_STORAGE_CAPACITY_BYTES: usize = 100000000; // this is roughly 9
 // Deadline (in secs) for resending pending/dropped acknowledgement timeout txns
 pub const ACKNOWLEDGEMENT_TIMEOUT_TXN_RESEND_DEADLINE_SECS: u64 = 20;
 // Buffer time (in secs) for sending store alive transaction under the set timeout
-pub const SEND_TRANSACTION_BUFFER_SECS: u64 = 2;
+pub const SEND_TRANSACTION_BUFFER_SECS: u64 = 5;
 // Interval (in secs) for removing expired secrets
-pub const GARBAGE_CLEAN_JOB_INTERVAL_SECS: u64 = 120;
+pub const GARBAGE_CLEAN_JOB_INTERVAL_SECS: u64 = 300;
 // Buffer time (in secs) for removing an expired secret
-pub const SECRET_EXPIRATION_BUFFER_SECS: u64 = 2;
+pub const SECRET_EXPIRATION_BUFFER_SECS: u64 = 5;
 
 // Event signatures of 'SecretStore' and 'SecretManager' contracts
 pub const SECRET_STORE_REGISTERED_EVENT: &str = "SecretStoreRegistered(address,address,uint256)";

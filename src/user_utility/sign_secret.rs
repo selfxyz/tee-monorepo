@@ -1,5 +1,3 @@
-use std::fs;
-
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex;
 use alloy::primitives::{keccak256, U256};
@@ -21,8 +19,8 @@ struct Cli {
     secret_data_hex: String,
 
     // File location of the enclave public key (used to encrypt the data)
-    #[clap(long, value_parser, default_value = "./id.pub")]
-    enclave_public_file: String,
+    #[clap(long, value_parser)]
+    enclave_public_key: String,
 
     // User's private key to sign the data
     #[clap(long, value_parser)]
@@ -36,8 +34,8 @@ fn main() -> Result<()> {
         .context("Failed to hex decode the secret data hex string")?;
     println!("Secret data in bytes: {:?}", secret_data_bytes);
 
-    let enclave_public_key =
-        fs::read(cli.enclave_public_file).context("Failed to read the enclave public key")?;
+    let enclave_public_key = hex::decode(cli.enclave_public_key)
+        .context("Failed to hex decode the enclave public key")?;
 
     // Encrypt secret data using the enclave 'secp256k1' public key
     let encrypted_secret_data_bytes = encrypt(&enclave_public_key, secret_data_bytes.as_slice());
