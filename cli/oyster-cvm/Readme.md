@@ -64,7 +64,7 @@ Add env vars for Pinata:
 # Generates a folder "result" with files
 # image.eif  log.txt  pcr.json
 
-# Upload image to web3.storage
+# Upload image to IPFS using Pinata
 ./oyster-cvm upload --file ./result/image.eif
 # Sample output:
 [INFO] Successfully uploaded to Pinata: https://gateway.pinata.cloud/ipfs/Qm...
