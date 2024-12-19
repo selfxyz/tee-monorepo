@@ -4,10 +4,12 @@ mod commands;
 mod types;
 
 fn setup_logging() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .format_timestamp(None)
-        .format_target(false)
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_level(true)
+        .with_file(false)
+        .with_line_number(false)
         .init();
 }
 
