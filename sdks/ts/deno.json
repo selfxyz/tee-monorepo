@@ -15,5 +15,8 @@
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",
     "@std/assert": "jsr:@std/assert@1",
     "@std/encoding": "jsr:@std/encoding@^1.0.6"
-  }
+  },
+  "exclude": [
+    "npm/"
+  ]
 }
