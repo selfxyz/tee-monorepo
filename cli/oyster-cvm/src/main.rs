@@ -3,13 +3,11 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod types;
 
+use tracing_subscriber::EnvFilter;
+
 fn setup_logging() {
     tracing_subscriber::fmt()
-        .with_target(false)
-        .with_thread_ids(false)
-        .with_level(true)
-        .with_file(false)
-        .with_line_number(false)
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 }
 
