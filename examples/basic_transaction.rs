@@ -55,6 +55,18 @@ async fn main() {
 
     let data = Bytes::from(cd);
 
+    // You can also use the contract instance to get the data
+    //
+    // sol!(
+    //     #[allow(missing_docs)]
+    //     #[sol(rpc)]
+    //     Contract,
+    //     "./ContractAbi.json"
+    // );
+    // let provider = ProviderBuilder::new().on_builtin(rpc_url).await.unwrap();
+    // let contract = Contract::new(contract_address, provider);
+    // let data = contract.approve(address, amount).calldata().to_owned();
+
     let res = txn_manager
         .call_contract_function(contract_address, data, timeout)
         .await;
