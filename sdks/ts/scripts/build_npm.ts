@@ -3,6 +3,7 @@ import { build, emptyDir } from "jsr:@deno/dnt";
 await emptyDir("./npm");
 
 await build({
+  test: false,
   entryPoints: [
     "./mod.ts",
     {
