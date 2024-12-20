@@ -10,6 +10,8 @@
     "jsr:@std/assert@0.226": "0.226.0",
     "jsr:@std/assert@1": "1.0.10",
     "jsr:@std/bytes@0.223": "0.223.0",
+    "jsr:@std/bytes@^1.0.4": "1.0.4",
+    "jsr:@std/cbor@~0.1.4": "0.1.4",
     "jsr:@std/encoding@1": "1.0.6",
     "jsr:@std/encoding@^1.0.6": "1.0.6",
     "jsr:@std/fmt@0.223": "0.223.0",
@@ -24,6 +26,7 @@
     "jsr:@std/path@1.0.0-rc.1": "1.0.0-rc.1",
     "jsr:@std/path@^1.0.8": "1.0.8",
     "jsr:@std/path@~0.225.2": "0.225.2",
+    "jsr:@std/streams@^1.0.8": "1.0.8",
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
     "npm:cose-js@0.9": "0.9.0"
@@ -71,6 +74,16 @@
     "@std/bytes@0.223.0": {
       "integrity": "84b75052cd8680942c397c2631318772b295019098f40aac5c36cead4cba51a8"
     },
+    "@std/bytes@1.0.4": {
+      "integrity": "11a0debe522707c95c7b7ef89b478c13fb1583a7cfb9a85674cd2cc2e3a28abc"
+    },
+    "@std/cbor@0.1.4": {
+      "integrity": "996e661977a9b0cc54b16503abfa62572ea56068d29e72af27fe0e7b6eb93baa",
+      "dependencies": [
+        "jsr:@std/bytes@^1.0.4",
+        "jsr:@std/streams"
+      ]
+    },
     "@std/encoding@1.0.6": {
       "integrity": "ca87122c196e8831737d9547acf001766618e78cd8c33920776c7f5885546069"
     },
@@ -102,7 +115,7 @@
       "integrity": "2d8c3c2ab3a515619b90da2c6ff5ea7b75a94383259ef4d02116b228393f84f1",
       "dependencies": [
         "jsr:@std/assert@0.223",
-        "jsr:@std/bytes"
+        "jsr:@std/bytes@0.223"
       ]
     },
     "@std/path@0.223.0": {
@@ -122,6 +135,9 @@
     },
     "@std/path@1.0.8": {
       "integrity": "548fa456bb6a04d3c1a1e7477986b6cffbce95102d0bb447c67c4ee70e0364be"
+    },
+    "@std/streams@1.0.8": {
+      "integrity": "b41332d93d2cf6a82fe4ac2153b930adf1a859392931e2a19d9fabfb6f154fb3"
     },
     "@ts-morph/bootstrap@0.24.0": {
       "integrity": "a826a2ef7fa8a7c3f1042df2c034d20744d94da2ee32bf29275bcd4dffd3c060",
@@ -241,6 +257,7 @@
     "dependencies": [
       "jsr:@deno/dnt@~0.41.3",
       "jsr:@std/assert@1",
+      "jsr:@std/cbor@~0.1.4",
       "jsr:@std/encoding@^1.0.6",
       "npm:cose-js@0.9"
     ]
