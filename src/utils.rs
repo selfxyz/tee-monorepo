@@ -1,5 +1,5 @@
 use alloy::signers::local::PrivateKeySigner;
-use reqwest::Url;
+use alloy::transports::http::reqwest::Url;
 
 use crate::errors::TxnManagerSendError;
 
