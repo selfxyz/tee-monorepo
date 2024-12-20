@@ -63,7 +63,7 @@ async fn main() {
     //     Contract,
     //     "./ContractAbi.json"
     // );
-    // let provider = ProviderBuilder::new().on_builtin(rpc_url).await.unwrap();
+    // let provider = ProviderBuilder::new().on_http(Url::parse(rpc_url).unwrap());
     // let contract = Contract::new(contract_address, provider);
     // let data = contract.approve(address, amount).calldata().to_owned();
 
