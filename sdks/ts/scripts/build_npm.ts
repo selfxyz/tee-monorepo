@@ -29,6 +29,9 @@ await build({
     bugs: {
       url: "https://github.com/marlinprotocol/oyster-monorepo/issues",
     },
+    devDependencies: {
+      "@types/cose-js": "^0.8.3",
+    },
   },
   postBuild() {
     // steps to run after building and before running the tests
