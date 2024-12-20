@@ -7,7 +7,9 @@
     "./attestation": "./attestation/mod.ts"
   },
   "tasks": {
-    "dev": "deno test --watch mod.ts"
+    "dev": "deno test --watch mod.ts",
+    "build-npm": "deno run -A scripts/build_npm.ts",
+    "publish-npm": "npm publish npm/ --access public"
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",
