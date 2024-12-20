@@ -23,7 +23,8 @@ await build({
     license: "MIT",
     repository: {
       type: "git",
-      url: "https://github.com/marlinprotocol/oyster-monorepo/sdks/ts",
+      url:
+        "https://github.com/marlinprotocol/oyster-monorepo/tree/master/sdks/ts",
     },
     bugs: {
       url: "https://github.com/marlinprotocol/oyster-monorepo/issues",
