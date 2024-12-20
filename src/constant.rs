@@ -45,11 +45,6 @@ pub const COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT: &str =
 pub const COMMON_CHAIN_TXN_CALL_TIMEOUT: u64 = 60;
 pub const REQUEST_CHAIN_TXN_CALL_TIMEOUT: u64 = 60;
 
-pub const COMMON_CHAIN_RELAY_JOB_CALL: &str =
-    "relayJob(bytes,uint256,bytes32,bytes,uint256,uint256,uint8,address,uint8,uint256)";
-pub const COMMON_CHAIN_REASSIGN_GATEWAY_RELAY_CALL: &str =
-    "reassignGatewayRelay(address,uint256,bytes,uint8,uint256,address,uint256)";
-
 pub const REQUEST_CHAIN_JOB_RESPONSE_CALL: &str =
     "jobResponse(bytes,uint256,bytes,uint256,uint8,uint256)";
 pub const REQUEST_CHAIN_JOB_SUBS_RESPONSE_CALL: &str =

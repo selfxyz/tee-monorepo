@@ -17,6 +17,7 @@ use actix_web::{App, HttpServer};
 use alloy::primitives::Address;
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
+use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
 use clap::Parser;
 use env_logger::Env;
@@ -52,6 +53,22 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let args = Cli::parse();
     let config_manager = ConfigManager::new(&args.config_file);
     let config = config_manager.load_config().unwrap();
+
+    match Url::parse(&config.common_chain_http_url) {
+        Ok(_) => (),
+        Err(err) => {
+            eprintln!("Invalid common chain http url: {}", err);
+            return Err(err.into());
+        }
+    }
+
+    match Url::parse(&config.common_chain_ws_url) {
+        Ok(_) => (),
+        Err(err) => {
+            eprintln!("Invalid common chain ws url: {}", err);
+            return Err(err.into());
+        }
+    }
 
     let enclave_signer_key: SigningKey = SigningKey::from_slice(
         fs::read(config.enclave_secret_key)

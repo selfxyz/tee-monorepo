@@ -28,10 +28,9 @@ use crate::common_chain_gateway_state_service::gateway_epoch_state_service;
 use crate::constant::{
     COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
     COMMON_CHAIN_JOB_RELAYED_EVENT, COMMON_CHAIN_JOB_RESOURCE_UNAVAILABLE_EVENT,
-    COMMON_CHAIN_JOB_RESPONDED_EVENT, COMMON_CHAIN_REASSIGN_GATEWAY_RELAY_CALL,
-    COMMON_CHAIN_RELAY_JOB_CALL, COMMON_CHAIN_TXN_CALL_TIMEOUT, GATEWAY_BLOCK_STATES_TO_MAINTAIN,
-    GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES, MIN_GATEWAY_STAKE,
-    REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT, REQUEST_CHAIN_JOB_CANCELLED_EVENT,
+    COMMON_CHAIN_JOB_RESPONDED_EVENT, COMMON_CHAIN_TXN_CALL_TIMEOUT,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
+    MIN_GATEWAY_STAKE, REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT, REQUEST_CHAIN_JOB_CANCELLED_EVENT,
     REQUEST_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_RESPONSE_CALL,
     REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
     REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
@@ -759,28 +758,22 @@ impl ContractsClient {
             return;
         };
 
-        let encoded_tokens = DynSolValue::Tuple(vec![
-            DynSolValue::Bytes(signature.to_vec()),
-            DynSolValue::Uint(job.job_id, 256),
-            DynSolValue::FixedBytes(job.tx_hash, 32),
-            DynSolValue::Bytes(job.code_input.to_vec()),
-            DynSolValue::Uint(job.user_timeout, 256),
-            DynSolValue::Uint(U256::from(job.starttime), 256),
-            DynSolValue::Uint(U256::from(job.sequence_number), 8),
-            DynSolValue::Address(job.job_owner),
-            DynSolValue::Uint(U256::from(job.env), 8),
-            DynSolValue::Uint(U256::from(sign_timestamp), 256),
-        ])
-        .abi_encode();
-
-        let function_selector = &keccak256(COMMON_CHAIN_RELAY_JOB_CALL.as_bytes());
-        let mut selector = [0u8; 4];
-        selector.copy_from_slice(&function_selector[..4]);
-
-        let mut txn_data = selector.to_vec();
-        txn_data.extend(encoded_tokens[32..].to_vec());
-
-        let txn_data = Bytes::from(txn_data);
+        let txn_data = self
+            .gateway_jobs_contract
+            .relayJob(
+                signature,
+                job.job_id,
+                job.tx_hash,
+                job.code_input,
+                job.user_timeout,
+                U256::from(job.starttime),
+                job.sequence_number,
+                job.job_owner,
+                job.env,
+                U256::from(sign_timestamp),
+            )
+            .calldata()
+            .to_owned();
 
         let txn = self
             .common_chain_txn_manager
@@ -820,25 +813,19 @@ impl ContractsClient {
             return;
         };
 
-        let encoded_tokens = DynSolValue::Tuple(vec![
-            DynSolValue::Address(job.gateway_address.unwrap()),
-            DynSolValue::Uint(job.job_id, 256),
-            DynSolValue::Bytes(signature.to_vec()),
-            DynSolValue::Uint(U256::from(job.sequence_number), 8),
-            DynSolValue::Uint(U256::from(job.starttime), 256),
-            DynSolValue::Address(job.job_owner),
-            DynSolValue::Uint(U256::from(sign_timestamp), 256),
-        ])
-        .abi_encode();
-
-        let function_selector = &keccak256(COMMON_CHAIN_REASSIGN_GATEWAY_RELAY_CALL.as_bytes());
-        let mut selector = [0u8; 4];
-        selector.copy_from_slice(&function_selector[..4]);
-
-        let mut txn_data = selector.to_vec();
-        txn_data.extend(encoded_tokens[32..].to_vec());
-
-        let txn_data = Bytes::from(txn_data);
+        let txn_data = self
+            .gateway_jobs_contract
+            .reassignGatewayRelay(
+                job.gateway_address.unwrap(),
+                job.job_id,
+                signature,
+                job.sequence_number,
+                U256::from(job.starttime),
+                job.job_owner,
+                U256::from(sign_timestamp),
+            )
+            .calldata()
+            .to_owned();
 
         let txn = self
             .common_chain_txn_manager

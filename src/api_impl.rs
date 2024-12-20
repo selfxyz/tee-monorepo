@@ -6,6 +6,7 @@ use alloy::primitives::{keccak256, Address, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::local::PrivateKeySigner;
+use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
 use log::info;
 use multi_block_txns::TxnManager;
@@ -15,7 +16,7 @@ use std::str::FromStr;
 use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contract_abi::GatewaysContract;
+use crate::contract_abi::{GatewayJobsContract, GatewaysContract};
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayDetailsResponse, ImmutableConfig, MutableConfig,
     RequestChainData, SignedRegistrationBody, SignedRegistrationResponse,
@@ -287,17 +288,8 @@ async fn export_signed_registration_message(
 
     let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
-    let common_chain_http_provider = ProviderBuilder::new()
-        .on_builtin(&app_state.common_chain_http_url)
-        .await;
-
-    let Ok(common_chain_http_provider) = common_chain_http_provider else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to connect to the common chain http rpc server {}: {}",
-            app_state.common_chain_http_url,
-            common_chain_http_provider.unwrap_err()
-        ));
-    };
+    let common_chain_http_provider =
+        ProviderBuilder::new().on_http(Url::parse(&app_state.common_chain_http_url).unwrap());
 
     let Ok(common_chain_block_number) = common_chain_http_provider.get_block_number().await else {
         return HttpResponse::InternalServerError().body(
@@ -420,6 +412,11 @@ async fn export_signed_registration_message(
             return HttpResponse::BadRequest().body("Gas wallet updated!");
         }
 
+        let gateway_jobs_contract = Arc::new(GatewayJobsContract::new(
+            app_state.gateway_jobs_contract_addr,
+            common_chain_http_provider.clone(),
+        ));
+
         let common_chain_txn_manager = TxnManager::new(
             app_state.common_chain_http_url.clone(),
             app_state.common_chain_id,
@@ -446,6 +443,7 @@ async fn export_signed_registration_message(
             common_chain_txn_manager,
             gateways_contract_address: app_state.gateways_contract_addr,
             gateway_jobs_contract_address: app_state.gateway_jobs_contract_addr,
+            gateway_jobs_contract,
             request_chain_data: Arc::new(RwLock::new(request_chain_data)),
             gateway_epoch_state,
             request_chain_ids: chain_ids.clone(),
