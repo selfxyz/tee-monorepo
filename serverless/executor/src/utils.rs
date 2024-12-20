@@ -86,6 +86,23 @@ pub struct MutableConfig {
     pub gas_key_hex: String,
 }
 
+#[derive(Serialize)]
+pub struct ExecutorConfig {
+    pub enclave_address: H160,
+    pub enclave_public_key: String,
+    pub owner_address: H160,
+    pub gas_address: H160
+}
+
+#[derive(Serialize)]
+pub struct RegistrationMessage {
+    pub job_capacity: usize,
+    pub sign_timestamp: u64,
+    pub env: u8,
+    pub owner: H160,
+    pub signature: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum JobsTxnType {
     OUTPUT,

@@ -10,7 +10,7 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::event_handler::events_listener;
-use crate::utils::{AppState, ImmutableConfig, MutableConfig, EXECUTION_ENV_ID};
+use crate::utils::{AppState, ExecutorConfig, ImmutableConfig, MutableConfig, EXECUTION_ENV_ID, RegistrationMessage};
 
 pub async fn index() {}
 
@@ -136,12 +136,13 @@ pub async fn get_executor_details(app_state: State<AppState>) -> Response {
             .address();
     }
 
-    (StatusCode::OK, json!({
-        "enclave_address": app_state.enclave_address,
-        "enclave_public_key": format!("0x{}", hex::encode(&(app_state.enclave_signer.verifying_key().to_encoded_point(false).as_bytes())[1..])),
-        "owner_address": *app_state.enclave_owner.lock().unwrap(),
-        "gas_address": gas_address,
-    }).to_string()).into_response()
+    let details = ExecutorConfig {
+        enclave_address: app_state.enclave_address,
+        enclave_public_key: format!("0x{}", hex::encode(&(app_state.enclave_signer.verifying_key().to_encoded_point(false).as_bytes())[1..])),
+        owner_address: *app_state.enclave_owner.lock().unwrap(),
+        gas_address: gas_address,
+    };
+    (StatusCode::OK, Json(details)).into_response()
 }
 
 // Endpoint exposed to retrieve the metadata required to register the enclave on the common chain
@@ -222,11 +223,13 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
         });
     }
 
-    (StatusCode::OK, json!({
-        "job_capacity": job_capacity,
-        "sign_timestamp": sign_timestamp,
-        "env": EXECUTION_ENV_ID,
-        "owner": owner,
-        "signature": format!("0x{}", signature),
-    }).to_string()).into_response()
+    let response_body = RegistrationMessage {
+        job_capacity,
+        sign_timestamp,
+        env: EXECUTION_ENV_ID,
+        owner,
+        signature: format!("0x{}", signature),
+    };
+
+    (StatusCode::OK, Json(response_body)).into_response()
 }
