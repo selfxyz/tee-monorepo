@@ -1,5 +1,5 @@
 import { decodeHex } from "jsr:@std/encoding@1/hex";
-import { decode } from "npm:cbor@10";
+import { decode } from "npm:cbor2@1";
 import * as cose from "npm:cose-js@0.9";
 import { X509Certificate } from "npm:@peculiar/x509@1";
 
