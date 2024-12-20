@@ -16,6 +16,7 @@
     "@std/assert": "jsr:@std/assert@1",
     "@std/cbor": "jsr:@std/cbor@^0.1.4",
     "@std/encoding": "jsr:@std/encoding@^1.0.6",
+    "@types/node": "npm:@types/node@^22.10.2",
     "cose-js": "npm:cose-js@^0.9.0"
   },
   "exclude": [
