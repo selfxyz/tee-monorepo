@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding@1/hex";
 import { verify } from "./mod.ts";
 
