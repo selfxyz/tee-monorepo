@@ -1,3 +1,5 @@
+![Marlin Oyster Logo](./logo.svg)
+
 # Multi-Block Transactions
 
 A Rust library for managing multi-block transactions on EVM-compatible blockchains.
@@ -14,7 +16,7 @@ A Rust library for managing multi-block transactions on EVM-compatible blockchai
 Add this to your `Cargo.toml`
 
 ```
-multi-block-txns = { git = "https://github.com/marlinprotocol/multi-block-txns", branch = "main" }
+multi-block-txns = { path = "<oyster-monorepo-path>/serverless/transaction-manager" }
 ```
 
 ## Example
@@ -23,5 +25,9 @@ An example for a basic transaction can be found in `examples/basic_transaction.r
 Run it using -
 
 ```
-cargo run --example basic_transaction -- --private-key <insert your SepoliaEth Test Wallet Private Key>
+cargo run --example basic_transaction -- --private-key <insert your arbitrum SepoliaEth Test Wallet Private Key>
 ```
+
+## License
+
+This project is licensed under the GNU AGPLv3 or any later version. See [LICENSE.txt](./LICENSE.txt).
