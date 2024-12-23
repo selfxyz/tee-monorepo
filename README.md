@@ -26,6 +26,7 @@ The repository is organized into projects:
 - [sdks/rs](./sdks/rs/): Oyster SDK written in Rust.
 - [sdks/go](./sdks/go/): Oyster SDK written in Go.
 - [sdks/docker-enclave](./sdks/docker-enclave/): Enclave that allows docker compose based deployment.
+- [serverless/transaction-manager](./serverless/transaction-manager/): Oyster library for sending transaction and confirmation management
 
 In addition, some external projects are used which are described in [external](./external/).
 
