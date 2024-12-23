@@ -44,8 +44,3 @@ pub const COMMON_CHAIN_GATEWAY_REASSIGNED_EVENT: &str =
 
 pub const COMMON_CHAIN_TXN_CALL_TIMEOUT: u64 = 60;
 pub const REQUEST_CHAIN_TXN_CALL_TIMEOUT: u64 = 60;
-
-pub const REQUEST_CHAIN_JOB_RESPONSE_CALL: &str =
-    "jobResponse(bytes,uint256,bytes,uint256,uint8,uint256)";
-pub const REQUEST_CHAIN_JOB_SUBS_RESPONSE_CALL: &str =
-    "jobSubsResponse(bytes,uint256,bytes,uint256,uint8,uint256)";

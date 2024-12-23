@@ -16,7 +16,7 @@ use std::str::FromStr;
 use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contract_abi::{GatewayJobsContract, GatewaysContract};
+use crate::contract_abi::GatewaysContract;
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayDetailsResponse, ImmutableConfig, MutableConfig,
     RequestChainData, SignedRegistrationBody, SignedRegistrationResponse,
@@ -412,11 +412,6 @@ async fn export_signed_registration_message(
             return HttpResponse::BadRequest().body("Gas wallet updated!");
         }
 
-        let gateway_jobs_contract = Arc::new(GatewayJobsContract::new(
-            app_state.gateway_jobs_contract_addr,
-            common_chain_http_provider.clone(),
-        ));
-
         let common_chain_txn_manager = TxnManager::new(
             app_state.common_chain_http_url.clone(),
             app_state.common_chain_id,
@@ -443,7 +438,6 @@ async fn export_signed_registration_message(
             common_chain_txn_manager,
             gateways_contract_address: app_state.gateways_contract_addr,
             gateway_jobs_contract_address: app_state.gateway_jobs_contract_addr,
-            gateway_jobs_contract,
             request_chain_data: Arc::new(RwLock::new(request_chain_data)),
             gateway_epoch_state,
             request_chain_ids: chain_ids.clone(),

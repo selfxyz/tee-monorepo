@@ -1,11 +1,10 @@
 use actix_web::web::Data;
-use alloy::dyn_abi::DynSolValue;
 use alloy::hex::FromHex;
 use alloy::primitives::{keccak256, Address, Bytes, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy::pubsub::{PubSubFrontend, SubscriptionStream};
 use alloy::rpc::types::{Filter, Log};
-use alloy::sol_types::SolEvent;
+use alloy::sol_types::{SolCall, SolEvent};
 use anyhow::{Context, Result};
 use futures_core::stream::Stream;
 use futures_util::stream::StreamExt;
@@ -31,13 +30,12 @@ use crate::constant::{
     COMMON_CHAIN_JOB_RESPONDED_EVENT, COMMON_CHAIN_TXN_CALL_TIMEOUT,
     GATEWAY_BLOCK_STATES_TO_MAINTAIN, GATEWAY_STAKE_ADJUSTMENT_FACTOR, MAX_GATEWAY_RETRIES,
     MIN_GATEWAY_STAKE, REQUEST_CHAIN_GATEWAY_REGISTERED_EVENT, REQUEST_CHAIN_JOB_CANCELLED_EVENT,
-    REQUEST_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_RESPONSE_CALL,
-    REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
+    REQUEST_CHAIN_JOB_RELAYED_EVENT, REQUEST_CHAIN_JOB_SUBSCRIPTION_JOB_PARAMS_UPDATED_EVENT,
     REQUEST_CHAIN_JOB_SUBSCRIPTION_STARTED_EVENT,
     REQUEST_CHAIN_JOB_SUBSCRIPTION_TERMINATION_PARAMS_UPDATED_EVENT,
-    REQUEST_CHAIN_JOB_SUBS_RESPONSE_CALL, REQUEST_CHAIN_TXN_CALL_TIMEOUT, REQUEST_RELAY_TIMEOUT,
+    REQUEST_CHAIN_TXN_CALL_TIMEOUT, REQUEST_RELAY_TIMEOUT,
 };
-use crate::contract_abi::{GatewayJobsContract, RelayContract};
+use crate::contract_abi::{GatewayJobsContract, RelayContract, RelaySubscriptionsContract};
 use crate::error::ServerlessError;
 use crate::job_subscription_management::{
     add_subscription_job, job_subscription_manager, process_historic_job_subscriptions,
@@ -758,22 +756,20 @@ impl ContractsClient {
             return;
         };
 
-        let txn_data = self
-            .gateway_jobs_contract
-            .relayJob(
-                signature,
-                job.job_id,
-                job.tx_hash,
-                job.code_input,
-                job.user_timeout,
-                U256::from(job.starttime),
-                job.sequence_number,
-                job.job_owner,
-                job.env,
-                U256::from(sign_timestamp),
-            )
-            .calldata()
-            .to_owned();
+        let txn_data = GatewayJobsContract::relayJobCall {
+            _signature: signature,
+            _jobId: job.job_id,
+            _codehash: job.tx_hash,
+            _codeInputs: job.code_input,
+            _deadline: U256::from(job.user_timeout),
+            _jobRequestTimestamp: U256::from(job.starttime),
+            _sequenceId: job.sequence_number,
+            _jobOwner: job.job_owner,
+            _env: job.env,
+            _signTimestamp: U256::from(sign_timestamp),
+        }
+        .abi_encode()
+        .into();
 
         let txn = self
             .common_chain_txn_manager
@@ -813,19 +809,17 @@ impl ContractsClient {
             return;
         };
 
-        let txn_data = self
-            .gateway_jobs_contract
-            .reassignGatewayRelay(
-                job.gateway_address.unwrap(),
-                job.job_id,
-                signature,
-                job.sequence_number,
-                U256::from(job.starttime),
-                job.job_owner,
-                U256::from(sign_timestamp),
-            )
-            .calldata()
-            .to_owned();
+        let txn_data = GatewayJobsContract::reassignGatewayRelayCall {
+            _gatewayOld: job.gateway_address.unwrap(),
+            _jobId: job.job_id,
+            _signature: signature,
+            _sequenceId: job.sequence_number,
+            _jobRequestTimestamp: U256::from(job.starttime),
+            _jobOwner: job.job_owner,
+            _signTimestamp: U256::from(sign_timestamp),
+        }
+        .abi_encode()
+        .into();
 
         let txn = self
             .common_chain_txn_manager
@@ -1216,24 +1210,16 @@ impl ContractsClient {
 
         let txn;
         if response_job.job_mode == JobMode::Once {
-            let encoded_tokens = DynSolValue::Tuple(vec![
-                DynSolValue::Bytes(signature.to_vec()),
-                DynSolValue::Uint(response_job_id, 256),
-                DynSolValue::Bytes(response_job.output.to_vec()),
-                DynSolValue::Uint(response_job.total_time, 256),
-                DynSolValue::Uint(U256::from(response_job.error_code), 8),
-                DynSolValue::Uint(U256::from(sign_timestamp), 256),
-            ])
-            .abi_encode();
-
-            let function_selector = &keccak256(REQUEST_CHAIN_JOB_RESPONSE_CALL.as_bytes());
-            let mut selector = [0u8; 4];
-            selector.copy_from_slice(&function_selector[..4]);
-
-            let mut txn_data = selector.to_vec();
-            txn_data.extend(encoded_tokens[32..].to_vec());
-
-            let txn_data = Bytes::from(txn_data);
+            let txn_data = RelayContract::jobResponseCall {
+                _signature: signature,
+                _jobId: response_job_id,
+                _output: response_job.output,
+                _totalTime: response_job.total_time,
+                _errorCode: response_job.error_code,
+                _signTimestamp: U256::from(sign_timestamp),
+            }
+            .abi_encode()
+            .into();
 
             txn = req_chain_data
                 .request_chain_txn_manager
@@ -1245,24 +1231,16 @@ impl ContractsClient {
                 )
                 .await;
         } else {
-            let encoded_tokens = DynSolValue::Tuple(vec![
-                DynSolValue::Bytes(signature.to_vec()),
-                DynSolValue::Uint(response_job_id, 256),
-                DynSolValue::Bytes(response_job.output.to_vec()),
-                DynSolValue::Uint(response_job.total_time, 256),
-                DynSolValue::Uint(U256::from(response_job.error_code), 8),
-                DynSolValue::Uint(U256::from(sign_timestamp), 256),
-            ])
-            .abi_encode();
-
-            let function_selector = &keccak256(REQUEST_CHAIN_JOB_SUBS_RESPONSE_CALL.as_bytes());
-            let mut selector = [0u8; 4];
-            selector.copy_from_slice(&function_selector[..4]);
-
-            let mut txn_data = selector.to_vec();
-            txn_data.extend(encoded_tokens[32..].to_vec());
-
-            let txn_data = Bytes::from(txn_data);
+            let txn_data = RelaySubscriptionsContract::jobSubsResponseCall {
+                _signature: signature,
+                _jobId: response_job_id,
+                _output: response_job.output,
+                _totalTime: response_job.total_time,
+                _errorCode: response_job.error_code,
+                _signTimestamp: U256::from(sign_timestamp),
+            }
+            .abi_encode()
+            .into();
 
             txn = req_chain_data
                 .request_chain_txn_manager
@@ -1416,6 +1394,7 @@ impl LogsProvider for ContractsClient {
 mod common_chain_interaction_tests {
     use std::str::FromStr;
 
+    use alloy::dyn_abi::DynSolValue;
     use alloy::primitives::{Log as InnerLog, LogData};
     use alloy::signers::local::PrivateKeySigner;
     use serde_json::json;

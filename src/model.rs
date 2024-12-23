@@ -1,14 +1,10 @@
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
-use alloy::providers::RootProvider;
 use alloy::signers::k256::ecdsa::SigningKey;
-use alloy::transports::http::{Client, Http};
 use multi_block_txns::TxnManager;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
-
-use crate::contract_abi::GatewayJobsContract::GatewayJobsContractInstance;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -109,8 +105,6 @@ pub struct ContractsClient {
     pub common_chain_http_url: String,
     pub gateways_contract_address: Address,
     pub gateway_jobs_contract_address: Address,
-    pub gateway_jobs_contract:
-        Arc<GatewayJobsContractInstance<Http<Client>, RootProvider<Http<Client>>>>,
     pub common_chain_txn_manager: Arc<TxnManager>,
     pub request_chain_data: Arc<RwLock<HashMap<u64, RequestChainData>>>,
     pub gateway_epoch_state: Arc<RwLock<BTreeMap<u64, BTreeMap<Address, GatewayData>>>>,
