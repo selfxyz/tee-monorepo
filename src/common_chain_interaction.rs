@@ -114,7 +114,7 @@ impl ContractsClient {
         });
 
         // listen to all the request chains for the GatewayRegistered event
-        for request_chain_data in self.request_chain_data.read().unwrap().values().cloned() {
+        for request_chain_data in self.request_chains_data.read().unwrap().values().cloned() {
             let request_chain_registered_filter = Filter::new()
                 .address(request_chain_data.relay_address)
                 .select(request_chain_data.request_chain_start_block_number..)
@@ -188,7 +188,7 @@ impl ContractsClient {
 
         let mut common_chain_registered = false;
         let mut req_chain_ids_not_registered: HashSet<u64> = self
-            .request_chain_data
+            .request_chains_data
             .read()
             .unwrap()
             .keys()
@@ -303,7 +303,7 @@ impl ContractsClient {
             let job_subscription_tx_clone = job_subscription_tx.clone();
 
             let request_chain_data = self
-                .request_chain_data
+                .request_chains_data
                 .read()
                 .unwrap()
                 .get(&chain_id)
@@ -1189,10 +1189,8 @@ impl ContractsClient {
 
         let response_job_id = response_job.job_id;
 
-        let req_chain_data_hashmap = self.request_chain_data.read().unwrap().clone();
-        let req_chain_data = req_chain_data_hashmap
-            .get(&response_job.request_chain_id)
-            .unwrap();
+        let req_chains_data = self.request_chains_data.read().unwrap().clone();
+        let req_chain_data = req_chains_data.get(&response_job.request_chain_id).unwrap();
 
         let (signature, sign_timestamp) = sign_job_response_request(
             &self.enclave_signer_key,

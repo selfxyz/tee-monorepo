@@ -106,13 +106,13 @@ async fn inject_mutable_config(
             ));
         }
 
-        let mut request_chain_data_hashmap = contracts_client_guard
+        let mut request_chains_data = contracts_client_guard
             .as_ref()
             .unwrap()
-            .request_chain_data
+            .request_chains_data
             .write()
             .unwrap();
-        for request_chain_data in request_chain_data_hashmap.values_mut() {
+        for request_chain_data in request_chains_data.values_mut() {
             let res = request_chain_data
                 .request_chain_txn_manager
                 .update_private_signer(mutable_config.gas_key_hex.clone());
@@ -124,7 +124,7 @@ async fn inject_mutable_config(
             }
         }
 
-        drop(request_chain_data_hashmap);
+        drop(request_chains_data);
     }
 
     app_state
@@ -297,7 +297,7 @@ async fn export_signed_registration_message(
         );
     };
 
-    let mut request_chain_data: HashMap<u64, RequestChainData> = HashMap::new();
+    let mut request_chains_data: HashMap<u64, RequestChainData> = HashMap::new();
 
     let gas_wallet_hex = app_state.wallet.read().unwrap();
 
@@ -365,7 +365,7 @@ async fn export_signed_registration_message(
             ));
         };
 
-        request_chain_data.insert(
+        request_chains_data.insert(
             chain_id,
             RequestChainData {
                 chain_id,
@@ -438,7 +438,7 @@ async fn export_signed_registration_message(
             common_chain_txn_manager,
             gateways_contract_address: app_state.gateways_contract_addr,
             gateway_jobs_contract_address: app_state.gateway_jobs_contract_addr,
-            request_chain_data: Arc::new(RwLock::new(request_chain_data)),
+            request_chains_data: Arc::new(RwLock::new(request_chains_data)),
             gateway_epoch_state,
             request_chain_ids: chain_ids.clone(),
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
