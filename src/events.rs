@@ -311,7 +311,11 @@ async fn handle_event_logs(
                     let secret_id = U256::from_be_slice(event.topics()[1].as_slice());
 
                     // Mark the current secret as waiting for acknowledgement
-                    app_state.secrets_awaiting_acknowledgement.lock().unwrap().insert(secret_id, app_state.secrets_awaiting_acknowledgement.lock().unwrap().get(&secret_id).cloned().unwrap_or(0)+1);
+                    {
+                        let mut secrets_awaiting_acknowledgement_guard = app_state.secrets_awaiting_acknowledgement.lock().unwrap();
+                        let ack_count  = secrets_awaiting_acknowledgement_guard.get(&secret_id).cloned().unwrap_or(0);
+                        secrets_awaiting_acknowledgement_guard.insert(secret_id, ack_count+1);
+                    }
 
                     let app_state_clone = app_state.clone();
                     tokio::spawn(async move {
@@ -323,13 +327,23 @@ async fn handle_event_logs(
                         continue;
                     }
 
-                    let secret_metadata = get_secret_metadata(&app_state.secret_manager_contract_instance, secret_id, app_state.acknowledgement_timeout).await;
+                    let secret_metadata = get_secret_metadata(&app_state.secret_manager_contract_instance, secret_id).await;
                     let Ok(secret_metadata) = secret_metadata else {
                         eprintln!("Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}", secret_id, secret_metadata.unwrap_err());
                         continue;
                     };
 
-                    app_state.secrets_created.lock().unwrap().insert(secret_id, secret_metadata);
+                    let mut start_timestamp = Instant::now();
+                    if let Some(event_block_number) = event.block_number {
+                        if let Ok(event_timestamp) = get_block_timestamp(&app_state.http_rpc_url, event_block_number).await {
+                            start_timestamp = timestamp_to_instant(event_timestamp).unwrap();
+                        }
+                    }
+
+                    app_state.secrets_created.lock().unwrap().insert(secret_id, SecretCreatedMetadata {
+                        secret_metadata: secret_metadata,
+                        acknowledgement_deadline: start_timestamp + Duration::from_secs(app_state.acknowledgement_timeout),
+                    });
                 }
                 // Capture the SecretEndTimestampUpdated event emitted by the SecretManager contract
                 else if event.topic0() == Some(&keccak256(SECRET_END_TIMESTAMP_UPDATED_EVENT)) {

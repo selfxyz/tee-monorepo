@@ -1,5 +1,5 @@
 use std::io::ErrorKind;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use alloy::primitives::{Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
@@ -11,7 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
-use crate::model::{SecretCreatedMetadata, SecretManagerAbi, SecretMetadata};
+use crate::model::{SecretManagerAbi, SecretMetadata};
 
 pub fn verify_rpc_url(rpc_url: &str) -> Result<()> {
     let url = Url::parse(rpc_url).context(format!("Failed to parse the RPC {:?}", rpc_url))?;
@@ -129,22 +129,16 @@ pub async fn get_block_timestamp(http_rpc_url: &String, block_number: u64) -> Re
 pub async fn get_secret_metadata(
     secret_manager_contract: &SecretManagerAbi,
     secret_id: U256,
-    acknowledgement_deadline: u64,
-) -> Result<SecretCreatedMetadata> {
+) -> Result<SecretMetadata> {
     let user_storage = secret_manager_contract
         .userStorage(secret_id)
         .call()
         .await
         .context("Failed to get a response from the RPC server")?;
 
-    let start_timestamp = timestamp_to_instant(user_storage.startTimestamp.to::<u64>()).unwrap();
-
-    Ok(SecretCreatedMetadata {
-        secret_metadata: SecretMetadata {
-            owner: user_storage.owner,
-            size_limit: user_storage.sizeLimit,
-            end_timestamp: user_storage.endTimestamp,
-        },
-        acknowledgement_deadline: start_timestamp + Duration::from_secs(acknowledgement_deadline),
+    Ok(SecretMetadata {
+        owner: user_storage.owner,
+        size_limit: user_storage.sizeLimit,
+        end_timestamp: user_storage.endTimestamp,
     })
 }
