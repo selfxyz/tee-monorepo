@@ -273,6 +273,9 @@ impl ContractsClient {
         tokio::spawn(async move {
             let _ = self_clone.txns_to_common_chain(com_chain_rx).await;
         });
+
+        self.common_chain_txn_manager.run().await;
+
         let _ = &self
             .handle_all_req_chain_events(req_chain_tx.clone(), job_subscription_tx)
             .await?;
@@ -309,6 +312,8 @@ impl ContractsClient {
                 .get(&chain_id)
                 .unwrap()
                 .clone();
+
+            request_chain_data.request_chain_txn_manager.run().await;
 
             tokio::spawn(async move {
                 let _ = self_clone
