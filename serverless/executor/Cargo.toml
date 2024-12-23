@@ -2,6 +2,7 @@
 name = "oyster-serverless-executor"
 version = "0.1.0"
 edition = "2021"
+license = "AGPL-3.0-or-later"
 
 [lib]
 name = "serverless"
@@ -24,7 +25,7 @@ config = "0.14.0"
 data-encoding = "2.5.0"
 ethers = { version = "2.0.14", features = ["ws", "rustls"] }
 hex = "0.4.3"
-http-on-vsock-server = {path = "../http-on-vsock-server"}
+http-on-vsock-server = { git = "https://github.com/marlinprotocol/oyster-monorepo.git", branch = "vikrant/serverless-vsock-http" }
 hyper = { version = "0.14.28", features = ["full"] }
 k256 = { version = "0.13.2", features = ["ecdsa", "ecdsa-core"] }
 openssl = { version = "0.10", features = ["vendored"] }
@@ -43,3 +44,5 @@ tokio-vsock = "0.4.0"
 [profile.release]
 strip = true
 lto = true
+panic = "abort"
+codegen-units = 1
