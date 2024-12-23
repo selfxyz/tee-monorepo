@@ -301,14 +301,14 @@ async fn export_signed_registration_message(
 
     let gas_wallet_hex = app_state.wallet.read().unwrap();
 
+    let gateways_contract = Arc::new(GatewaysContract::new(
+        app_state.gateways_contract_addr,
+        common_chain_http_provider.clone(),
+    ));
+
     // iterate over all chain ids and get their registration signatures
     for &chain_id in &chain_ids {
         // get request chain rpc url
-        let gateways_contract = Arc::new(GatewaysContract::new(
-            app_state.gateways_contract_addr,
-            common_chain_http_provider.clone(),
-        ));
-
         let request_chain_info = match gateways_contract
             .requestChains(U256::from(chain_id))
             .call()
@@ -322,7 +322,6 @@ async fn export_signed_registration_message(
                 ));
             }
         };
-        drop(gateways_contract);
 
         let request_chain_http_provider = ProviderBuilder::new()
             .on_builtin(&request_chain_info.httpRpcUrl)
