@@ -26,11 +26,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // WARN: Had to do Box::pin to get it to work, vsock_connector is not Unpin for some reason
     let connector = tower::service_fn(|dst: Uri| Box::pin(vsock_connector(dst)));
 
-    // TODO: Poll executor to come up
     let client = hyper::Client::builder().build::<_, Body>(connector);
 
-    let mut resp = client.get(cli.url.clone().try_into()?).await?;
-    println!("{:?}", resp);
+    while let Err(err) = client.get(cli.url.clone().try_into()?).await {
+        if err.is_connect() {
+            println!("{:?}", err);
+            println!("Connection refused, retrying...");
+            // sleep for 1 second
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            continue;
+        }
+        return Err(err.into());
+    };
 
     // prepare the post request
     let body = json!({
@@ -39,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = Request::post(cli.url.clone()+"immutable-config")
         .header("Content-Type", "application/json")
         .body(Body::from(body))?;
-    resp = client.request(request).await?;
+    let mut resp = client.request(request).await?;
     println!("{:?}", resp);
     println!("{:?}", String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?);
 

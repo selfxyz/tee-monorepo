@@ -5,7 +5,6 @@ use ethers::abi::{encode, encode_packed, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
-use serde_json::json;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
