@@ -1,11 +1,10 @@
 use std::collections::HashSet;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64},
-    Arc,
-    Mutex
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::Mutex;
 
-use axum::{routing::{get, post}, Router};
+use axum::Router;
+use axum::routing::{get, post};
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use ethers::types::{H160, U256};
