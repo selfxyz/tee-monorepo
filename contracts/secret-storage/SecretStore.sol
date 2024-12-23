@@ -365,9 +365,7 @@ contract SecretStore is
         uint256[] memory stakeAmounts = TEE_MANAGER.getTeeNodesStake(_enclaveAddresses);
         uint256 len = _enclaveAddresses.length;
         for (uint256 index = 0; index < len; index++) {
-            address enclaveAddress = _enclaveAddresses[index];
-            if (secretStores[enclaveAddress].storageOccupied < secretStores[enclaveAddress].storageCapacity)
-                _insert_unchecked(_env, enclaveAddress, uint64(stakeAmounts[index] / STAKE_ADJUSTMENT_FACTOR));
+            _insert_unchecked(_env, _enclaveAddresses[index], uint64(stakeAmounts[index] / STAKE_ADJUSTMENT_FACTOR));
         }
     }
 
@@ -467,7 +465,7 @@ contract SecretStore is
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit,
         address[] memory _selectedStoresToIgnore
-    ) external onlyRole(SECRET_MANAGER_ROLE) returns (SecretManager.SelectedEnclave[] memory) {
+    ) external onlyRole(SECRET_MANAGER_ROLE) isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
         return _selectNonAssignedSecretStore(_env, _noOfNodesToSelect, _sizeLimit, _selectedStoresToIgnore);
     }
 
@@ -475,7 +473,7 @@ contract SecretStore is
         uint8 _env,
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit
-    ) external onlyRole(SECRET_MANAGER_ROLE) returns (SecretManager.SelectedEnclave[] memory) {
+    ) external onlyRole(SECRET_MANAGER_ROLE) isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
         return _selectStores(_env, _noOfNodesToSelect, _sizeLimit);
     }
 

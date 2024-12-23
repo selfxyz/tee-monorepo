@@ -841,19 +841,25 @@ contract SecretManager is
             revert SecretManagerUserNotAllowed();
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
-        address[] memory selectedStores;
+        address[] memory selectedStores = new address[](len);
         uint8 env = userStorage[_secretId].env;
+        uint256 count;
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
             if(userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore) {
                 if(EXECUTORS.isNodePresentInTree(env, enclaveAddress))
-                    selectedStores[index] = enclaveAddress;
+                    selectedStores[count++] = enclaveAddress;
             }
             else if(!_isReplacedStore(_secretId, index))
                 revert SecretManagerUnacknowledged();
         }
 
-        return selectedStores;
+        address[] memory selectedStoresList = new address[](count);
+        for (uint256 index = 0; index < count; index++) {
+            selectedStoresList[index] = selectedStores[index];
+        }
+
+        return selectedStoresList;
     }
 
     function hasSecretAllowedAddress(

@@ -122,6 +122,10 @@ contract TeeManager is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable SLASH_MAX_BIPS;
 
+    /// @notice Maximum epochs accounted for slash calculation in a single iteration, to avoid integer overflow.
+    /// @dev We get this value as (max(uint256) / SLASH_MAX_BIPS), where max value of uint256 is in order on 10^77 and MAX_SLASH_BIPS is 10^6.
+    uint256 public constant MAX_EPOCHS_PER_ITERATION = 12;
+
     Executors public EXECUTORS;
 
     SecretStore public SECRET_STORE;
@@ -176,29 +180,29 @@ contract TeeManager is
     /// @param enclaveAddress The address of the enclave.
     /// @param owner The owner of the enclave.
     /// @param storageCapacity The maximum storage of the enclave(in bytes).
-    event TeeManagerRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity, uint256 storageCapacity, uint8 env);
+    event TeeNodeRegistered(address indexed enclaveAddress, address indexed owner, uint256 jobCapacity, uint256 storageCapacity, uint8 env);
 
     /// @notice Emitted when an enclave is deregistered.
     /// @param enclaveAddress The address of the enclave.
-    event TeeManagerDeregistered(address indexed enclaveAddress);
+    event TeeNodeDeregistered(address indexed enclaveAddress);
 
     /// @notice Emitted when an enclave is drained.
     /// @param enclaveAddress The address of the enclave.
-    event TeeManagerDrained(address indexed enclaveAddress);
+    event TeeNodeDrained(address indexed enclaveAddress);
 
     /// @notice Emitted when an enclave is revived.
     /// @param enclaveAddress The address of the enclave.
-    event TeeManagerRevived(address indexed enclaveAddress);
+    event TeeNodeRevived(address indexed enclaveAddress);
 
     /// @notice Emitted when stake is added to an enclave.
     /// @param enclaveAddress The address of the enclave.
     /// @param addedAmount The amount of stake added.
-    event TeeManagerStakeAdded(address indexed enclaveAddress, uint256 addedAmount);
+    event TeeNodeStakeAdded(address indexed enclaveAddress, uint256 addedAmount);
 
     /// @notice Emitted when stake is removed from an enclave.
     /// @param enclaveAddress The address of the enclave.
     /// @param removedAmount The amount of stake removed.
-    event TeeManagerStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
+    event TeeNodeStakeRemoved(address indexed enclaveAddress, uint256 removedAmount);
 
     /// @notice Thrown when the signature timestamp has expired.
     error TeeManagerSignatureTooOld();
@@ -315,7 +319,7 @@ contract TeeManager is
         EXECUTORS.registerExecutor(_enclaveAddress, _jobCapacity, _env, _stakeAmount);
         SECRET_STORE.registerSecretStore(_enclaveAddress, _storageCapacity, _env, _stakeAmount);
 
-        emit TeeManagerRegistered(_enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env);
+        emit TeeNodeRegistered(_enclaveAddress, _owner, _jobCapacity, _storageCapacity, _env);
     }
 
     function _drainTeeNode(address _enclaveAddress) internal {
@@ -327,7 +331,7 @@ contract TeeManager is
         EXECUTORS.drainExecutor(_enclaveAddress, env);
         SECRET_STORE.drainSecretStore(_enclaveAddress, env);
 
-        emit TeeManagerDrained(_enclaveAddress);
+        emit TeeNodeDrained(_enclaveAddress);
     }
 
     function _reviveTeeNode(address _enclaveAddress) internal {
@@ -342,7 +346,7 @@ contract TeeManager is
             SECRET_STORE.reviveSecretStore(_enclaveAddress, teeNode.env, teeNode.stakeAmount);
         }
 
-        emit TeeManagerRevived(_enclaveAddress);
+        emit TeeNodeRevived(_enclaveAddress);
     }
 
     function _deregisterTeeNode(address _enclaveAddress) internal {
@@ -357,7 +361,7 @@ contract TeeManager is
         _revokeEnclaveKey(_enclaveAddress);
         delete teeNodes[_enclaveAddress];
 
-        emit TeeManagerDeregistered(_enclaveAddress);
+        emit TeeNodeDeregistered(_enclaveAddress);
     }
 
     function _addTeeNodeStake(uint256 _amount, address _enclaveAddress) internal {
@@ -390,7 +394,7 @@ contract TeeManager is
         // transfer stake
         STAKING_TOKEN.safeTransferFrom(teeNodes[_enclaveAddress].owner, address(this), _amount);
 
-        emit TeeManagerStakeAdded(_enclaveAddress, _amount);
+        emit TeeNodeStakeAdded(_enclaveAddress, _amount);
     }
 
     function _removeStake(address _enclaveAddress, uint256 _amount) internal {
@@ -398,7 +402,7 @@ contract TeeManager is
         // transfer stake
         STAKING_TOKEN.safeTransfer(teeNodes[_enclaveAddress].owner, _amount);
 
-        emit TeeManagerStakeRemoved(_enclaveAddress, _amount);
+        emit TeeNodeStakeRemoved(_enclaveAddress, _amount);
     }
 
     //-------------------------------- internal functions end ----------------------------------//
@@ -510,8 +514,8 @@ contract TeeManager is
     function getTeeNodesStake(
         address[] memory _enclaveAddresses
     ) external view returns (uint256[] memory) {
-        uint256[] memory stakeAmounts;
         uint256 len = _enclaveAddresses.length;
+        uint256[] memory stakeAmounts = new uint256[](len);
         for (uint256 index = 0; index < len; index++)
             stakeAmounts[index] = teeNodes[_enclaveAddresses[index]].stakeAmount;
 
@@ -559,14 +563,15 @@ contract TeeManager is
         uint256 stakeAmount = teeNodes[_enclaveAddress].stakeAmount;
         // compounding slashing formula: remainingStakeAmount = stakeAmount * (1 - (r/100)) ^ n
         // uint256 remainingStakeAmount = stakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** _missedEpochsCount) / (SLASH_MAX_BIPS ** _missedEpochsCount);
-        
+
+        // this operation will lose precision over the direct calculation because remainingStakeAmount is getting rounded off after each iteration
         uint256 remainingStakeAmount = stakeAmount;
-        uint256 iterations = _missedEpochsCount / 12;
+        uint256 iterations = _missedEpochsCount / MAX_EPOCHS_PER_ITERATION;
         for (uint256 i = 0; i < iterations; i++) {
-            remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** 12) / (SLASH_MAX_BIPS ** 12);
+            remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** MAX_EPOCHS_PER_ITERATION) / (SLASH_MAX_BIPS ** MAX_EPOCHS_PER_ITERATION);
         }
 
-        uint256 remainingEpochs = _missedEpochsCount % 12;
+        uint256 remainingEpochs = _missedEpochsCount % MAX_EPOCHS_PER_ITERATION;
         if (remainingEpochs > 0) {
             remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** remainingEpochs) / (SLASH_MAX_BIPS ** remainingEpochs);
         }
