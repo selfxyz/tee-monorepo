@@ -31,8 +31,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )?;
     println!("verification successful: {:?}", decoded);
     println!("pcr0: {}", hex::encode(decoded.pcrs[0]));
-    println!("pcr1: {}", hex::encode(decoded.pcrs[0]));
-    println!("pcr2: {}", hex::encode(decoded.pcrs[0]));
+    println!("pcr1: {}", hex::encode(decoded.pcrs[1]));
+    println!("pcr2: {}", hex::encode(decoded.pcrs[2]));
     println!("root pubkey: {}", hex::encode(decoded.root_public_key));
     println!("enclave pubkey: {}", hex::encode(decoded.public_key));
 
