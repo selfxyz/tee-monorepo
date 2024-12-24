@@ -163,6 +163,8 @@ pub enum ScallopError {
     NoiseError(#[from] snow::Error),
     #[error("protocol error")]
     ProtocolError(String),
+    #[error("auth error")]
+    AuthError(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -172,46 +174,72 @@ enum ReadMode {
     Read,
 }
 
+pub type Key = [u8; 32];
+pub type Pcrs = [[u8; 48]; 3];
+
 pub trait ScallopAuthStore {
-    fn contains(&self, key: &[u8; 32]) -> bool;
-    fn get(&self, key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])>;
-    fn set(&mut self, key: [u8; 32], pcrs: ([u8; 48], [u8; 48], [u8; 48]));
-    fn verify(
-        &mut self,
-        attestation: &[u8],
-        key: &[u8; 32],
-    ) -> Option<([u8; 48], [u8; 48], [u8; 48])>;
+    fn contains(&self, key: &Key) -> bool;
+    fn get(&self, key: &Key) -> Option<&Pcrs>;
+    fn set(&mut self, key: Key, pcrs: Pcrs);
+    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<Pcrs>;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
-    fn contains(&self, key: &[u8; 32]) -> bool {
+    fn contains(&self, key: &Key) -> bool {
         (**self).contains(key)
     }
 
-    fn get(&self, key: &[u8; 32]) -> Option<&([u8; 48], [u8; 48], [u8; 48])> {
+    fn get(&self, key: &Key) -> Option<&Pcrs> {
         (**self).get(key)
     }
 
-    fn set(&mut self, key: [u8; 32], pcrs: ([u8; 48], [u8; 48], [u8; 48])) {
+    fn set(&mut self, key: Key, pcrs: Pcrs) {
         (**self).set(key, pcrs)
     }
 
-    fn verify(
-        &mut self,
-        attestation: &[u8],
-        key: &[u8; 32],
-    ) -> Option<([u8; 48], [u8; 48], [u8; 48])> {
+    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<Pcrs> {
         (**self).verify(attestation, key)
     }
 }
 
+// to let callers pass in None with empty type
+impl ScallopAuthStore for () {
+    fn contains(&self, _key: &Key) -> bool {
+        unimplemented!()
+    }
+
+    fn get(&self, _key: &Key) -> Option<&Pcrs> {
+        unimplemented!()
+    }
+
+    fn set(&mut self, _key: Key, _pcrs: Pcrs) {
+        unimplemented!()
+    }
+
+    fn verify(&mut self, _attestation: &[u8], _key: &Key) -> Option<Pcrs> {
+        unimplemented!()
+    }
+}
+
 pub trait ScallopAuther {
-    fn new_auth(&mut self) -> impl std::future::Future<Output = Box<[u8]>>;
+    type Error: std::fmt::Debug;
+    fn new_auth(&mut self) -> impl std::future::Future<Output = Result<Box<[u8]>, Self::Error>>;
 }
 
 impl<T: ScallopAuther> ScallopAuther for &mut T {
-    async fn new_auth(&mut self) -> Box<[u8]> {
+    type Error = T::Error;
+    async fn new_auth(&mut self) -> Result<Box<[u8]>, T::Error> {
         (**self).new_auth().await
+    }
+}
+
+// to let callers pass in None with empty type
+impl ScallopAuther for () {
+    type Error = ();
+    // was not able to implement in the impl Future form
+    // requires higher MSRV
+    async fn new_auth(&mut self) -> Result<Box<[u8]>, ()> {
+        unimplemented!();
     }
 }
 
@@ -416,7 +444,11 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 
     if should_send_auth {
         // safe to unwrap since it has been checked above
-        let payload = auther.unwrap().new_auth().await;
+        let payload = auther
+            .unwrap()
+            .new_auth()
+            .await
+            .map_err(|e| ScallopError::AuthError(format!("{e:?}")))?;
         // check if payload is not too big
         if payload.len() > 60000 {
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
@@ -654,7 +686,11 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 
     if should_send_auth {
         // safe to unwrap since it has been checked above
-        let payload = auther.unwrap().new_auth().await;
+        let payload = auther
+            .unwrap()
+            .new_auth()
+            .await
+            .map_err(|e| ScallopError::AuthError(format!("{e:?}")))?;
         // check if payload is not too big
         if payload.len() > 60000 {
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
