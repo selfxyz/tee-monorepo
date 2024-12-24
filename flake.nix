@@ -107,6 +107,9 @@
         vet = initialization.vet.compressed;
         kernels = kernels.tuna;
       };
+      cli.oyster-cvm = import ./cli/oyster-cvm {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
     };
   in {
     formatter = {
