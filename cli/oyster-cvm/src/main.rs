@@ -13,7 +13,7 @@ fn setup_logging() {
 }
 
 #[derive(Parser)]
-#[command(about = "AWS Nitro Enclave Image Builder")]
+#[command(about = "Oyster CVM command line utility")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -23,7 +23,7 @@ struct Cli {
 enum Commands {
     /// Check environment dependencies including Docker & Nix
     Doctor,
-    /// Build Enclave Image
+    /// Build Oyster CVM Image
     BuildImage {
         /// Platform (amd64 or arm64)
         #[arg(short, long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
             output,
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
-            commands::build::build_enclave_image(platform, docker_compose, docker_images, output)?
+            commands::build::build_oyster_image(platform, docker_compose, docker_images, output)?
         }
     }
 

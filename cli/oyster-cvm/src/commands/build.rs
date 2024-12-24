@@ -3,13 +3,13 @@ use anyhow::{Context, Result};
 use tracing::info;
 use std::process::Command;
 
-pub fn build_enclave_image(
+pub fn build_oyster_image(
     platform: Platform,
     docker_compose: &str,
     docker_images: &[String],
     output: &str,
 ) -> Result<()> {
-    info!("Building enclave image with:");
+    info!("Building oyster-cvm image with:");
     info!("  Platform: {}", platform.as_str());
     info!("  Docker compose: {}", docker_compose);
     info!("  Docker images: {}", docker_images.join(", "));

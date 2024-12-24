@@ -1,6 +1,8 @@
-# Enclave Image Builder CLI
+![Marlin Oyster Logo](./logo.svg)
 
-A CLI tool to build and deploy your apps to the oyster marketplace. Using just your Docker configurations.
+# Oyster CVM CLI
+
+A command line utility to manage Oyster CVM lifecycle: build, upload, deploy and verify. Get started easily with just a `docker-compose` file.
 
 ## Prerequisites
 
@@ -28,31 +30,41 @@ oyster-cvm --help
 
 ### Commands
 
-`doctor`
+#### `doctor`
 Checks if Docker and Nix are installed.
 
-`build-image`
-Builds an enclave image.
---platform (amd64 or arm64)
---docker-compose (path to docker-compose.yml)
---docker-images (list of Docker .tar files to be loaded)
---output (output directory, default result)
+#### `build-image`
+Builds an oyster-cvm image.
 
-## Example
+Options:
+- `--platform` (amd64 or arm64)
+- `--docker-compose` (path to docker-compose.yml)
+- `--docker-images` (list of Docker .tar files to be loaded)
+- `--output` (output directory, default: result)
+
+### Example
 
 ```bash
+# Check system requirements
 ./oyster-cvm doctor
 
 # Sample output:
 [INFO ] Docker is installed ✓
 [INFO ] Nix is installed ✓
 
+# Build an oyster cvm image
 ./oyster-cvm build-image \
   --platform amd64 \
   --docker-compose ./docker-compose.yml \
   --docker-images ./image1.tar ./image2.tar \
   --output ./result
 
-# Generates a folder "result" with files
-# image.eif  log.txt  pcr.json
+# Generated files in "result" directory:
+# - image.eif  
+# - log.txt  
+# - pcr.json
 ```
+
+## License
+
+This project is licensed under the Apache License, Version 2.0. See [LICENSE.txt](./LICENSE.txt).
