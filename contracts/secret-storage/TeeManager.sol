@@ -13,6 +13,7 @@ import "../AttestationAutherUpgradeable.sol";
 import "../interfaces/IAttestationVerifier.sol";
 import "./Executors.sol";
 import "./SecretStore.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title TeeManager Contract
@@ -29,6 +30,7 @@ contract TeeManager is
 {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
+    using Math for uint256;
 
     /// @notice Thrown when the provided ERC20 token address is zero.
     error TeeManagerZeroAddressStakingToken();
@@ -568,12 +570,12 @@ contract TeeManager is
         uint256 remainingStakeAmount = stakeAmount;
         uint256 iterations = _missedEpochsCount / MAX_EPOCHS_PER_ITERATION;
         for (uint256 i = 0; i < iterations; i++) {
-            remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** MAX_EPOCHS_PER_ITERATION) / (SLASH_MAX_BIPS ** MAX_EPOCHS_PER_ITERATION);
+            remainingStakeAmount = remainingStakeAmount.mulDiv(((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** MAX_EPOCHS_PER_ITERATION), (SLASH_MAX_BIPS ** MAX_EPOCHS_PER_ITERATION));
         }
 
         uint256 remainingEpochs = _missedEpochsCount % MAX_EPOCHS_PER_ITERATION;
         if (remainingEpochs > 0) {
-            remainingStakeAmount = remainingStakeAmount * ((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** remainingEpochs) / (SLASH_MAX_BIPS ** remainingEpochs);
+            remainingStakeAmount = remainingStakeAmount.mulDiv(((SLASH_MAX_BIPS - SLASH_PERCENT_IN_BIPS) ** remainingEpochs), (SLASH_MAX_BIPS ** remainingEpochs));
         }
         
         uint256 slashAmount = stakeAmount - remainingStakeAmount;

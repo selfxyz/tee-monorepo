@@ -21,8 +21,30 @@ contract JobsUser {
 
     event FailedCallback(uint256 indexed jobId, uint256 slashedAmount);
 
+    // function createJob(
+    //     uint8 _env,
+    //     bytes32 _codehash,
+    //     bytes memory _codeInputs,
+    //     uint256 _userTimeout,
+    //     uint256 _usdcDeposit
+    // ) external payable returns (bool success) {
+    //     token.safeIncreaseAllowance(jobs, _usdcDeposit);
+
+    //     (bool _success, ) = jobs.call(
+    //         abi.encodeWithSignature(
+    //             "createJob(uint8,bytes32,bytes,uint256)",
+    //             _env,
+    //             _codehash,
+    //             _codeInputs,
+    //             _userTimeout
+    //         )
+    //     );
+    //     return _success;
+    // }
+
     function createJob(
         uint8 _env,
+        uint256 _secretId,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _userTimeout,
@@ -32,8 +54,9 @@ contract JobsUser {
 
         (bool _success, ) = jobs.call(
             abi.encodeWithSignature(
-                "createJob(uint8,bytes32,bytes,uint256)",
+                "createJob(uint8,uint256,bytes32,bytes,uint256)",
                 _env,
+                _secretId,
                 _codehash,
                 _codeInputs,
                 _userTimeout

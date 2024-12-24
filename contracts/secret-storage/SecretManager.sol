@@ -854,12 +854,13 @@ contract SecretManager is
                 revert SecretManagerUnacknowledged();
         }
 
-        address[] memory selectedStoresList = new address[](count);
-        for (uint256 index = 0; index < count; index++) {
-            selectedStoresList[index] = selectedStores[index];
+        if(count != len) {
+            assembly {
+                mstore(selectedStores, count)
+            }
         }
 
-        return selectedStoresList;
+        return selectedStores;
     }
 
     function hasSecretAllowedAddress(
