@@ -42,6 +42,22 @@ Options:
 - `--docker-images` (list of Docker .tar files to be loaded)
 - `--output` (output directory, default: result)
 
+#### `deploy`
+Deploy an Oyster CVM instance.
+
+Required Options:
+- `--cpu` (Number of vCPUs required)
+- `--memory` (Memory in GB required)
+- `--duration` (Duration in days)
+- `--max-usd-per-hour` (Maximum USD cost per hour)
+- `--image-url` (URL of the enclave image)
+- `--platform` (amd64 or arm64)
+- `--region` (Region for deployment)
+- `--wallet-private-key` (Wallet private key for transaction signing)
+
+Optional Options:
+- `--operator` (Specific operator address)
+
 ### Example
 
 ```bash
@@ -63,6 +79,17 @@ Options:
 # - image.eif  
 # - log.txt  
 # - pcr.json
+
+# Deploy an oyster cvm instance
+./oyster-cvm deploy \
+  --cpu 2 \
+  --memory 4 \
+  --duration 7 \
+  --max-usd-per-hour 0.5 \
+  --image-url ipfs://QmXXX... \
+  --platform amd64 \
+  --region us-east-1 \
+  --wallet-private-key 0xYYY...
 ```
 
 ## License

@@ -41,9 +41,48 @@ enum Commands {
         #[arg(short, long, default_value = "result")]
         output: String,
     },
+    /// Deploy an Oyster CVM instance
+    Deploy {
+        /// Number of vCPUs required
+        #[arg(long, required = true)]
+        cpu: u32,
+
+        /// Memory in GB required
+        #[arg(long, required = true)]
+        memory: u32,
+
+        /// Duration in days
+        #[arg(long, required = true)]
+        duration: u32,
+
+        /// Maximum USD cost per hour
+        #[arg(long, required = true)]
+        max_usd_per_hour: f64,
+
+        /// URL of the enclave image
+        #[arg(long, required = true)]
+        image_url: String,
+
+        /// Platform (amd64 or arm64)
+        #[arg(long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()], required = true)]
+        platform: String,
+
+        /// Region for deployment
+        #[arg(long, required = true)]
+        region: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+
+        /// Optional operator address
+        #[arg(long)]
+        operator: Option<String>,
+    },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     setup_logging();
 
     let cli = Cli::parse();
@@ -58,6 +97,30 @@ fn main() -> Result<()> {
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
             commands::build::build_oyster_image(platform, docker_compose, docker_images, output)?
+        }
+        Commands::Deploy {
+            cpu,
+            memory,
+            duration,
+            max_usd_per_hour,
+            image_url,
+            platform,
+            region,
+            wallet_private_key,
+            operator,
+        } => {
+            let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
+            commands::deploy::deploy_oyster_instance(
+                *cpu,
+                *memory,
+                *duration,
+                *max_usd_per_hour,
+                image_url,
+                platform,
+                region,
+                wallet_private_key,
+                operator.as_deref(),
+            ).await?
         }
     }
 
