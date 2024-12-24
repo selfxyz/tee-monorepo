@@ -110,6 +110,9 @@
       serverless.executor = import ./serverless/executor {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      serverless.http-on-vsock-client = import ./serverless/http-on-vsock-client {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
     };
   in {
     formatter = {
