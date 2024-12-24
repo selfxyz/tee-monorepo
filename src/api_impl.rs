@@ -79,17 +79,12 @@ async fn inject_mutable_config(
         ));
     };
 
+    let contracts_client_guard = app_state.contracts_client.lock().unwrap();
+
     let mut wallet_guard = app_state.wallet.write().unwrap();
     if *wallet_guard == mutable_config.gas_key_hex {
         return HttpResponse::NotAcceptable().body("The same wallet address already set.");
     }
-
-    let registration_events_listener_active_guard = app_state
-        .registration_events_listener_active
-        .lock()
-        .unwrap();
-
-    let contracts_client_guard = app_state.contracts_client.lock().unwrap();
 
     *wallet_guard = mutable_config.gas_key_hex.clone();
 
@@ -129,7 +124,7 @@ async fn inject_mutable_config(
         .mutable_params_injected
         .store(true, Ordering::SeqCst);
 
-    drop(registration_events_listener_active_guard);
+    drop(contracts_client_guard);
 
     info!("Mutable params configured!");
 
