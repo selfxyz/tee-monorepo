@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use actix_web::web::Bytes;
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use ethers::abi::{Abi, Token};
 use ethers::middleware::SignerMiddleware;
 use ethers::providers::{Http, Middleware, Provider};
@@ -26,6 +26,7 @@ pub const GAS_LIMIT_BUFFER: u64 = 200000; // Fixed buffer to add to the estimate
 pub const TIMEOUT_TXN_RESEND_DEADLINE: u64 = 20; // Deadline (in secs) for resending pending/dropped execution timeout txns
 pub const RESEND_TXN_INTERVAL: u64 = 5; // Interval (in secs) in which to confirm/resend pending/dropped txns
 pub const RESEND_GAS_PRICE_INCREMENT_PERCENT: u64 = 10; // Gas price increment percent while resending pending/dropped txns
+pub const MAX_OUTPUT_BYTES_LENGTH: usize = 20 * 1024; // 20kB, Maximum allowed serverless output size 
 
 pub type HttpSignerProvider = SignerMiddleware<Provider<Http>, LocalWallet>;
 
@@ -49,9 +50,9 @@ pub struct Config {
 }
 
 // App data struct containing the necessary fields to run the executor
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppState {
-    pub cgroups: Mutex<Cgroups>,
+    pub cgroups: Arc<Mutex<Cgroups>>,
     pub job_capacity: usize,
     pub workerd_runtime_path: String,
     pub execution_buffer_time: u64,
@@ -64,16 +65,16 @@ pub struct AppState {
     pub num_selected_executors: u8,
     pub enclave_address: H160,
     pub enclave_signer: SigningKey,
-    pub immutable_params_injected: Mutex<bool>,
-    pub mutable_params_injected: Mutex<bool>,
-    pub enclave_registered: AtomicBool,
-    pub events_listener_active: Mutex<bool>,
-    pub enclave_owner: Mutex<H160>,
-    pub http_rpc_client: Mutex<Option<HttpSignerProvider>>,
+    pub immutable_params_injected: Arc<Mutex<bool>>,
+    pub mutable_params_injected: Arc<Mutex<bool>>,
+    pub enclave_registered: Arc<AtomicBool>,
+    pub events_listener_active: Arc<Mutex<bool>>,
+    pub enclave_owner: Arc<Mutex<H160>>,
+    pub http_rpc_client: Arc<Mutex<Option<HttpSignerProvider>>>,
     pub jobs_contract_abi: Abi,
-    pub job_requests_running: Mutex<HashSet<U256>>,
-    pub last_block_seen: AtomicU64,
-    pub nonce_to_send: Mutex<U256>,
+    pub job_requests_running: Arc<Mutex<HashSet<U256>>>,
+    pub last_block_seen: Arc<AtomicU64>,
+    pub nonce_to_send: Arc<Mutex<U256>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -84,6 +85,23 @@ pub struct ImmutableConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MutableConfig {
     pub gas_key_hex: String,
+}
+
+#[derive(Serialize)]
+pub struct ExecutorConfig {
+    pub enclave_address: H160,
+    pub enclave_public_key: String,
+    pub owner_address: H160,
+    pub gas_address: H160
+}
+
+#[derive(Serialize)]
+pub struct RegistrationMessage {
+    pub job_capacity: usize,
+    pub sign_timestamp: u64,
+    pub env: u8,
+    pub owner: H160,
+    pub signature: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,6 +1,6 @@
 [package]
 name = "oyster-sdk"
-version = "0.8.4"
+version = "0.12.0"
 edition = "2021"
 description = "Oyster SDK"
 license = "Apache-2.0"
@@ -10,6 +10,7 @@ aws-nitro-enclaves-cose = "0.5.2"
 chrono = "0.4.38"
 clap = { version = "4.5.21", features = ["derive"] }
 hex = "0.4.3"
+hex-literal = "0.4.1"
 http-body-util = "0.1.2"
 hyper = { version = "1.5.1", features = ["client", "http1", "http2"] }
 hyper-util = { version = "0.1.10", features = ["full"] }

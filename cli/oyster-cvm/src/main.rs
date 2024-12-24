@@ -3,18 +3,17 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod types;
 
+use tracing_subscriber::EnvFilter;
+
 fn setup_logging() {
     tracing_subscriber::fmt()
-        .with_target(false)
-        .with_thread_ids(false)
-        .with_level(true)
-        .with_file(false)
-        .with_line_number(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 }
 
 #[derive(Parser)]
-#[command(about = "AWS Nitro Enclave Image Builder")]
+#[command(about = "Oyster CVM command line utility")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -24,7 +23,7 @@ struct Cli {
 enum Commands {
     /// Check environment dependencies including Docker & Nix
     Doctor,
-    /// Build Enclave Image
+    /// Build Oyster CVM Image
     BuildImage {
         /// Platform (amd64 or arm64)
         #[arg(short, long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
@@ -65,7 +64,7 @@ async fn main() -> Result<()> {
             output,
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
-            commands::build::build_enclave_image(platform, docker_compose, docker_images, output)?
+            commands::build::build_oyster_image(platform, docker_compose, docker_images, output)?
         }
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;

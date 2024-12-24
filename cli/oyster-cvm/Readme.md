@@ -1,6 +1,8 @@
-# Enclave Image Builder CLI
+![Marlin Oyster Logo](./logo.svg)
 
-A CLI tool to build and deploy your apps to the oyster marketplace. Using just your Docker configurations.
+# Oyster CVM CLI
+
+A command line utility to manage Oyster CVM lifecycle: build, upload, deploy and verify. Get started easily with just a `docker-compose` file.
 
 ## Prerequisites
 
@@ -33,29 +35,32 @@ oyster-cvm --help
 Checks if Docker and Nix are installed.
 
 #### `build-image`
+Builds an oyster-cvm image.
 
-Builds an enclave image.
---platform (amd64 or arm64)
---docker-compose (path to docker-compose.yml)
---docker-images (list of Docker .tar files to be loaded)
---output (output directory, default result)
+Options:
+- `--platform` (amd64 or arm64)
+- `--docker-compose` (path to docker-compose.yml)
+- `--docker-images` (list of Docker .tar files to be loaded)
+- `--output` (output directory, default: result)
 
 #### `upload`
 
-Uploads an enclave image to IPFS via Pinata or Web3.Storage.
+Uploads an enclave image to IPFS via Pinata.
 --file (path to the enclave image file)
 
 Add env vars for Pinata:
 ["PINATA_API_KEY", "PINATA_SECRET_KEY"]
 
-## Example
+### Example
 
 ```bash
+# Check system requirements
 ./oyster-cvm doctor
 # Sample output:
 [INFO] Docker is installed ✓
 [INFO] Nix is installed ✓
 
+# Build an oyster cvm image
 ./oyster-cvm build-image \
   --platform amd64 \
   --docker-compose ./docker-compose.yml \
@@ -69,3 +74,7 @@ Add env vars for Pinata:
 # Sample output:
 [INFO] Successfully uploaded to Pinata: https://gateway.pinata.cloud/ipfs/Qm...
 ```
+
+## License
+
+This project is licensed under the Apache License, Version 2.0. See [LICENSE.txt](./LICENSE.txt).

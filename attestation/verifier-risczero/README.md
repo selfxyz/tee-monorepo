@@ -20,13 +20,13 @@ cargo build --release
 
 Reproducible builds are enabled for the guest to produce a consistent GUEST_ID.
 
-Expected GUEST_ID: 0xdce6b83ae4bdcf22edbd23b86762ce08e98b1767eab21cdd3bb9d4d1c4d3e2b8
+Expected GUEST_ID: 0xe3a724c82707d022c50fcb8e8c807f54dc9a11b73a83462b52b6d725462f83e7
 
 ## Usage
 
 ```bash
 $ ./target/release/host --help
-GUEST: 0xdce6b83ae4bdcf22edbd23b86762ce08e98b1767eab21cdd3bb9d4d1c4d3e2b8
+GUEST: 0xe3a724c82707d022c50fcb8e8c807f54dc9a11b73a83462b52b6d725462f83e7
 Usage: host --url <URL>
 
 Options:
@@ -35,7 +35,7 @@ Options:
   -V, --version    Print version
 ```
 
-It takes in a URL to an attestation server producing binary attestations. The attestation server should include a 64 byte public key in the attestation.
+It takes in a URL to an attestation server producing binary attestations.
 
 ## Journal format
 
