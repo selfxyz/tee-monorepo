@@ -107,6 +107,9 @@
         vet = initialization.vet.compressed;
         kernels = kernels.tuna;
       };
+      cli.oyster-cvm = import ./cli/oyster-cvm {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       serverless.executor = import ./serverless/executor {
         inherit nixpkgs systemConfig fenix naersk;
       };
