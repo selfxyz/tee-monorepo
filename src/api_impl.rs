@@ -123,8 +123,6 @@ async fn inject_mutable_config(
                 ));
             }
         }
-
-        drop(request_chains_data);
     }
 
     app_state
@@ -299,7 +297,7 @@ async fn export_signed_registration_message(
 
     let mut request_chains_data: HashMap<u64, RequestChainData> = HashMap::new();
 
-    let gas_wallet_hex = app_state.wallet.read().unwrap();
+    let gas_wallet_hex = app_state.wallet.read().unwrap().clone();
 
     let gateways_contract = Arc::new(GatewaysContract::new(
         app_state.gateways_contract_addr,
@@ -408,7 +406,17 @@ async fn export_signed_registration_message(
         let subscription_jobs = Arc::new(RwLock::new(HashMap::new()));
 
         if *gas_wallet_hex != *app_state.wallet.read().unwrap() {
-            return HttpResponse::BadRequest().body("Gas wallet updated!");
+            for request_chain_data in request_chains_data.values_mut() {
+                let res = request_chain_data
+                    .request_chain_txn_manager
+                    .update_private_signer(gas_wallet_hex.clone());
+                if let Err(e) = res {
+                    return HttpResponse::InternalServerError().body(format!(
+                        "Failed to update the private signer for the request chain txn manager: {}",
+                        e
+                    ));
+                }
+            }
         }
 
         let common_chain_txn_manager = TxnManager::new(
