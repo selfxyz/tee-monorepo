@@ -10,20 +10,8 @@ struct Cli {
     #[clap(short, long, value_parser)]
     endpoint: String,
 
-    /// expected pcr0
-    #[arg(long)]
-    pcr0: String,
-
-    /// expected pcr1
-    #[arg(long)]
-    pcr1: String,
-
-    /// expected pcr2
-    #[arg(long)]
-    pcr2: String,
-
     /// maximum age of attestation (in milliseconds)
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "60000")]
     max_age: usize,
 }
 
@@ -31,11 +19,6 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    let pcrs: [[u8; 48]; 3] = [
-        hex::decode(cli.pcr0)?.as_slice().try_into()?,
-        hex::decode(cli.pcr1)?.as_slice().try_into()?,
-        hex::decode(cli.pcr2)?.as_slice().try_into()?,
-    ];
     let attestation_doc = get(cli.endpoint.parse()?).await?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as usize;
@@ -43,11 +26,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         attestation_doc,
         AttestationExpectations {
             age: Some((cli.max_age, now)),
-            pcrs: Some(pcrs),
             ..Default::default()
         },
     )?;
     println!("verification successful: {:?}", decoded);
+    println!("pcr0: {}", hex::encode(decoded.pcrs[0]));
+    println!("pcr1: {}", hex::encode(decoded.pcrs[0]));
+    println!("pcr2: {}", hex::encode(decoded.pcrs[0]));
+    println!("root pubkey: {}", hex::encode(decoded.root_public_key));
+    println!("enclave pubkey: {}", hex::encode(decoded.public_key));
 
     Ok(())
 }
