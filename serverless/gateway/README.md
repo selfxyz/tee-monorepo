@@ -1,6 +1,30 @@
+![Marlin Oyster Logo](./logo.svg)
+
 # Oyster Serverless Gateway
 
 Monitors jobs on Request Chains and transfers them to the Common Chain for Executors to process. Once Executors respond to the jobs on the Common Chain, the Gateway forwards the responses back to the original Request Chain.
+
+## Build
+```
+cargo build --target x86_64-unknown-linux-musl
+```
+
+### Reproducible builds
+
+Reproducible builds can be done using Nix. The monorepo provides a Nix flake which includes this project and can be used to trigger builds:
+
+```bash
+nix build -v .#<flavor>.serverless.gateway.<output>
+```
+
+Supported flavors:
+- `gnu`
+- `musl`
+
+Supported outputs:
+- `default`, same as `compressed`
+- `uncompressed`
+- `compressed`, using `upx`
 
 # Dev Setup
 
@@ -55,3 +79,7 @@ Monitors jobs on Request Chains and transfers them to the Common Chain for Execu
 ```shell
 cargo test
 ```
+
+## License
+
+This project is licensed under the GNU AGPLv3 or any later version. See [LICENSE.txt](./LICENSE.txt).
