@@ -42,6 +42,19 @@ Options:
 - `--docker-images` (list of Docker .tar files to be loaded)
 - `--output` (output directory, default: result)
 
+#### `verify-enclave`
+Verifies an Oyster enclave's attestation document.
+
+Options:
+- `--enclave-ip` (-e): Enclave IP address
+- `--pcr1` (-1): PCR1 value
+- `--pcr2` (-2): PCR2 value  
+- `--pcr3` (-3): PCR3 value
+- `--cpu` (-c): Number of CPU cores
+- `--memory` (-m): Memory in MB
+- `--attestation-port` (-p): Attestation port (default: 1400)
+- `--max-age` (-a): Maximum age of attestation in milliseconds (default: 300000)
+
 ### Example
 
 ```bash
@@ -63,6 +76,23 @@ Options:
 # - image.eif  
 # - log.txt  
 # - pcr.json
+
+# Verify an enclave
+./oyster-cvm verify-enclave \
+  --enclave-ip 192.168.1.100 \
+  --pcr1 value1 \
+  --pcr2 value2 \
+  --pcr3 value3 \
+  --cpu 4 \
+  --memory 8192 \
+  --attestation-port 1400 \
+  --max-age 300000
+
+# Sample output:
+[INFO ] Public key verified from enclave attestation
+[INFO ] PCR values: PCR1=value1, PCR2=value2, PCR3=value3
+[INFO ] CPU: 4, Memory: 8192
+[INFO ] Public key: [...]
 ```
 
 ## License
