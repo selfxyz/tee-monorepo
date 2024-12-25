@@ -42,7 +42,8 @@ Options:
 ```
 
 ```bash
-$ ./gateway-vsock-client --helpUsage: gateway-vsock-client [OPTIONS] --url <URL> --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
+$ ./gateway-vsock-client --help
+Usage: gateway-vsock-client [OPTIONS] --url <URL> --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
 
 Options:
   -u, --url <URL>                      url to query
@@ -60,7 +61,7 @@ $ ./executor-vsock-client --url vsock://88:6000/ --owner-address <OWNER_ADDRESS>
 ```
 
 ```bash
-$ ./gateway-vsock-client --url vsock://88:6000/ --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY> -c 3 -c 4
+$ ./gateway-vsock-client --url vsock://88:6000/ --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY> -c 31337 -c 421614
 ```
 ## License
 

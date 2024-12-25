@@ -1,5 +1,3 @@
-use actix_web::web::{Data, Json};
-use actix_web::{get, post, HttpResponse, Responder};
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex;
 use alloy::primitives::{keccak256, Address, U256};
@@ -8,6 +6,10 @@ use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::Json;
+use axum::response::{IntoResponse, Response};
 use log::info;
 use multi_block_txns::TxnManager;
 use serde_json::json;
@@ -22,29 +24,24 @@ use crate::model::{
     RequestChainData, SignedRegistrationBody, SignedRegistrationResponse,
 };
 
-#[get("/")]
-async fn index() -> impl Responder {
-    info!("Ping successful!");
-    HttpResponse::Ok()
-}
+pub async fn index() {}
 
 // Endpoint exposed to inject immutable gateway config parameters
-#[post("/immutable-config")]
-async fn inject_immutable_config(
+pub async fn inject_immutable_config(
+    app_state: State<AppState>,
     Json(immutable_config): Json<ImmutableConfig>,
-    app_state: Data<AppState>,
-) -> impl Responder {
+) -> Response {
     let owner_address = Address::from_str(&immutable_config.owner_address_hex);
     let Ok(owner_address) = owner_address else {
-        return HttpResponse::BadRequest().body(format!(
-            "Invalid owner address provided: {:?}",
-            owner_address.unwrap_err()
-        ));
+        return (StatusCode::BAD_REQUEST,
+            format!("Invalid owner address provided: {:?}\n", owner_address.unwrap_err())
+        ).into_response();
     };
 
     let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
     if *immutable_params_injected_guard {
-        return HttpResponse::BadRequest().body("Immutable params already configured!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Immutable params already configured!\n")).into_response();
     }
 
     // Initialize owner address for the enclave
@@ -53,37 +50,38 @@ async fn inject_immutable_config(
 
     info!("Immutable params configured!");
 
-    HttpResponse::Ok().body("Immutable params configured!")
+    return (StatusCode::OK, String::from("Immutable params configured!\n")).into_response();
 }
 
 // Endpoint exposed to inject mutable gateway config parameters
-#[post("/mutable-config")]
-async fn inject_mutable_config(
+pub async fn inject_mutable_config(
+    app_state: State<AppState>,
     Json(mutable_config): Json<MutableConfig>,
-    app_state: Data<AppState>,
-) -> impl Responder {
+) -> Response {
     let mut bytes32_gas_key = [0u8; 32];
     if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
-        return HttpResponse::BadRequest().body(format!(
-            "Failed to hex decode the gas private key into 32 bytes: {:?}",
-            err
-        ));
+        return (StatusCode::BAD_REQUEST,
+            format!("Failed to hex decode the gas private key into 32 bytes: {:?}\n", err)
+        ).into_response();
     }
 
     let private_key_signer = mutable_config.gas_key_hex.parse::<PrivateKeySigner>();
 
     let Ok(_) = private_key_signer else {
-        return HttpResponse::BadRequest().body(format!(
-            "Failed to parse the gas private key into a private key signer: {:?}",
-            private_key_signer.unwrap_err()
-        ));
+        return (StatusCode::BAD_REQUEST,
+            format!(
+                "Failed to parse the gas private key into a private key signer: {:?}\n",
+                private_key_signer.unwrap_err()
+            )
+        ).into_response();
     };
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
 
     let mut wallet_guard = app_state.wallet.write().unwrap();
     if *wallet_guard == mutable_config.gas_key_hex {
-        return HttpResponse::NotAcceptable().body("The same wallet address already set.");
+        return (StatusCode::NOT_ACCEPTABLE,
+            String::from("The same wallet address already set.\n")).into_response();
     }
 
     *wallet_guard = mutable_config.gas_key_hex.clone();
@@ -95,10 +93,9 @@ async fn inject_mutable_config(
             .common_chain_txn_manager
             .update_private_signer(mutable_config.gas_key_hex.clone());
         if let Err(e) = res {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to update the private signer for the common chain txn manager: {}",
-                e
-            ));
+            return (StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to update the private signer for the common chain txn manager: {}\n", e)
+            ).into_response();
         }
 
         let mut request_chains_data = contracts_client_guard
@@ -112,10 +109,9 @@ async fn inject_mutable_config(
                 .request_chain_txn_manager
                 .update_private_signer(mutable_config.gas_key_hex.clone());
             if let Err(e) = res {
-                return HttpResponse::InternalServerError().body(format!(
-                    "Failed to update the private signer for the request chain txn manager: {}",
-                    e
-                ));
+                return (StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to update the private signer for the request chain txn manager: {}\n", e)
+                ).into_response();
             }
         }
     }
@@ -126,19 +122,20 @@ async fn inject_mutable_config(
 
     info!("Mutable params configured!");
 
-    HttpResponse::Ok().body("Mutable params configured!")
+    return (StatusCode::OK, String::from("Mutable params configured!\n")).into_response();
 }
 
 // Endpoint exposed to retrieve the metadata required to register the enclave on the common chain and request chains
-#[get("/signed-registration-message")]
-async fn export_signed_registration_message(
+pub async fn export_signed_registration_message(
+    app_state: State<AppState>,
     Json(signed_registration_body): Json<SignedRegistrationBody>,
-    app_state: Data<AppState>,
-) -> impl Responder {
+) -> Response {
     // if gateway is already registered, return error
     {
         if app_state.registered.load(Ordering::SeqCst) {
-            return HttpResponse::BadRequest().body("Enclave has already been registered.");
+            return (StatusCode::BAD_REQUEST,
+                String::from("Enclave has already been registered.\n")
+            ).into_response();
         }
     }
 
@@ -151,33 +148,43 @@ async fn export_signed_registration_message(
 
     // there should be atleast one request chain id
     if chain_ids.is_empty() {
-        return HttpResponse::BadRequest().body("Atleast one request chain id is required!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Atleast one request chain id is required!\n")
+        ).into_response();
     }
 
     {
         // verify that the app state request chain ids are same as the signed registration body chain ids
         let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
         if !request_chain_ids_guard.is_empty() && *request_chain_ids_guard != chain_ids {
-            return HttpResponse::BadRequest().json(json!({
+            return (StatusCode::BAD_REQUEST,
+                json!({
                     "message": "Request chain ids mismatch!",
                     "chain_ids": *request_chain_ids_guard,
-            }));
+                }).to_string()
+            ).into_response();
         }
     }
 
     // if immutable or mutable params are not configured, return error
     if !*app_state.immutable_params_injected.lock().unwrap() {
-        return HttpResponse::BadRequest().body("Immutable params not configured yet!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Immutable params not configured yet!\n")
+        ).into_response();
     }
 
     // if mutable params are not configured, return error
     if !app_state.mutable_params_injected.load(Ordering::SeqCst) {
-        return HttpResponse::BadRequest().body("Mutable params not configured yet!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Mutable params not configured yet!\n")
+        ).into_response();
     }
 
     // if wallet is not configured, return error
     if app_state.wallet.read().unwrap().is_empty() {
-        return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Mutable param wallet not configured yet!\n")
+        ).into_response();
     };
 
     // generate common chain signature
@@ -229,10 +236,12 @@ async fn export_signed_registration_message(
         .enclave_signer_key
         .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to sign the registration message using enclave key: {:?}",
-            sig.unwrap_err()
-        ));
+        return  (StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to sign the registration message using enclave key: {:?}\n",
+                sig.unwrap_err()
+            )
+        ).into_response();
     };
     let common_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
@@ -271,10 +280,12 @@ async fn export_signed_registration_message(
         .enclave_signer_key
         .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to sign the registration message using enclave key: {:?}",
-            sig.unwrap_err()
-        ));
+        return (StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to sign the registration message using enclave key: {:?}\n",
+                sig.unwrap_err()
+            )
+        ).into_response();
     };
 
     let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
@@ -283,9 +294,11 @@ async fn export_signed_registration_message(
         ProviderBuilder::new().on_http(Url::parse(&app_state.common_chain_http_url).unwrap());
 
     let Ok(common_chain_block_number) = common_chain_http_provider.get_block_number().await else {
-        return HttpResponse::InternalServerError().body(
-            format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
-        );
+        return (StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to fetch the latest block number of the common chain for initiating event listening!\n"
+            )
+        ).into_response();
     };
 
     let mut request_chains_data: HashMap<u64, RequestChainData> = HashMap::new();
@@ -307,10 +320,12 @@ async fn export_signed_registration_message(
         {
             Ok(info) => info,
             Err(e) => {
-                return HttpResponse::InternalServerError().body(format!(
-                    "Failed to fetch the request chain data for chain id {}: {}",
-                    chain_id, e
-                ));
+                return (StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to fetch the request chain data for chain id {}: {}\n",
+                        chain_id, e
+                    )
+                ).into_response();
             }
         };
 
@@ -319,12 +334,12 @@ async fn export_signed_registration_message(
             .await;
 
         let Ok(request_chain_http_provider) = request_chain_http_provider else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to connect to the request chain {} http rpc server {}: {}",
-                chain_id,
-                request_chain_info.httpRpcUrl,
-                request_chain_http_provider.unwrap_err()
-            ));
+            return (StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to connect to the request chain {} http rpc server {}: {}\n",
+                    chain_id, request_chain_info.httpRpcUrl, request_chain_http_provider.unwrap_err()
+                )
+            ).into_response();
         };
 
         let block_number = request_chain_http_provider
@@ -335,7 +350,7 @@ async fn export_signed_registration_message(
                 chain_id
             ))
             .unwrap();
-
+        
         drop(request_chain_http_provider);
 
         let request_chain_txn_manager = TxnManager::new(
@@ -349,10 +364,11 @@ async fn export_signed_registration_message(
         );
 
         let Ok(request_chain_txn_manager) = request_chain_txn_manager else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to create txn manager for request chain {}",
-                chain_id
-            ));
+            return (StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to create txn manager for request chain {}\n", chain_id
+                )
+            ).into_response();
         };
 
         request_chains_data.insert(
@@ -376,10 +392,12 @@ async fn export_signed_registration_message(
         *request_chain_ids_guard = chain_ids.clone();
     } else {
         if *request_chain_ids_guard != chain_ids {
-            return HttpResponse::BadRequest().json(json!({
-                "message": "Request chain ids mismatch!",
-                "chain_ids": *request_chain_ids_guard,
-            }));
+            return (StatusCode::BAD_REQUEST,
+                json!({
+                    "message": "Request chain ids mismatch!",
+                    "chain_ids": *request_chain_ids_guard,
+                }).to_string()
+            ).into_response();
         }
     }
 
@@ -404,10 +422,10 @@ async fn export_signed_registration_message(
                     .request_chain_txn_manager
                     .update_private_signer(gas_wallet_hex.clone());
                 if let Err(e) = res {
-                    return HttpResponse::InternalServerError().body(format!(
-                        "Failed to update the private signer for the request chain txn manager: {}",
+                    return (StatusCode::INTERNAL_SERVER_ERROR, String::from(format!(
+                        "Failed to update the private signer for the request chain txn manager: {}\n",
                         e
-                    ));
+                    ))).into_response();
                 }
             }
         }
@@ -423,10 +441,11 @@ async fn export_signed_registration_message(
         );
 
         let Ok(common_chain_txn_manager) = common_chain_txn_manager else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to create txn manager for common chain {}",
-                app_state.common_chain_id
-            ));
+            return (StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to create txn manager for common chain {}\n", app_state.common_chain_id
+                )
+            ).into_response();
         };
 
         let contracts_client = Arc::new(ContractsClient {
@@ -472,18 +491,21 @@ async fn export_signed_registration_message(
         request_chain_signature,
     };
 
-    HttpResponse::Ok().json(response)
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 // Endpoint exposed to retrieve gateway enclave details
-#[get("/gateway-details")]
-async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
+pub async fn get_gateway_details(app_state: State<AppState>) -> Response {
     if !*app_state.immutable_params_injected.lock().unwrap() {
-        return HttpResponse::BadRequest().body("Immutable params not configured yet!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Immutable params not configured yet!\n")
+        ).into_response();
     }
 
     if !app_state.mutable_params_injected.load(Ordering::SeqCst) {
-        return HttpResponse::BadRequest().body("Mutable params not configured yet!");
+        return (StatusCode::BAD_REQUEST,
+            String::from("Mutable params not configured yet!\n")
+        ).into_response();
     }
 
     let wallet: PrivateKeySigner = app_state
@@ -507,7 +529,7 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
         gas_address: wallet.address(),
     };
 
-    HttpResponse::Ok().json(response)
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 #[cfg(test)]
@@ -517,8 +539,8 @@ mod api_impl_tests {
     use std::collections::BTreeSet;
     use std::str::FromStr;
 
-    use actix_web::{body::MessageBody, http};
     use alloy::signers::k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+    use axum_test::TestServer;
     use serde_json::json;
 
     use crate::test_util::{
@@ -530,73 +552,50 @@ mod api_impl_tests {
     #[tokio::test]
     async fn index_test() {
         let app_state = generate_app_state().await;
-        let app = actix_web::test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
-        let req = actix_web::test::TestRequest::get().uri("/").to_request();
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
+        let resp = server.get("/").await;
+        resp.assert_status_ok();
     }
 
     // Test the various response cases for the 'immutable-config' endpoint
     #[tokio::test]
     async fn inject_immutable_config_test() {
         let app_state = generate_app_state().await;
-        let app = actix_web::test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Inject invalid hex address string
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": "0x32255"
-            }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: OddLength".as_bytes()
-        );
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({"owner_address_hex": "0x32255"}))
+            .await;
+        
+        resp.assert_status_bad_request();
+        resp.assert_text("Invalid owner address provided: OddLength\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), Address::ZERO);
 
         // Inject invalid hex character address
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": "0xzfffffffffffffffffffffffffffffffffffffff"
-            }))
-            .to_request();
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({"owner_address_hex": "0xzfffffffffffffffffffffffffffffffffffffff"}))
+            .await;
 
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: InvalidHexCharacter { c: 'z', index: 0 }".as_bytes()
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Invalid owner address provided: InvalidHexCharacter { c: 'z', index: 0 }\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), Address::ZERO);
 
         // Inject a valid address
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({"owner_address_hex": OWNER_ADDRESS}))
+            .await;
 
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Immutable params configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
@@ -605,20 +604,13 @@ mod api_impl_tests {
         );
 
         // Inject the valid address again
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
-                "owner_address_hex": OWNER_ADDRESS
-            }))
-            .to_request();
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({"owner_address_hex": OWNER_ADDRESS}))
+            .await;
 
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params already configured!"
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Immutable params already configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
@@ -631,81 +623,53 @@ mod api_impl_tests {
     #[tokio::test]
     async fn inject_mutable_config_test() {
         let app_state = generate_app_state().await;
-        let app = actix_web::test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Inject invalid hex private key string
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "0x32255"
-            }))
-            .to_request();
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({"gas_key_hex": "0x32255"}))
+            .await;
 
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Failed to hex decode the gas private key into 32 bytes: OddLength".as_bytes()
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Failed to hex decode the gas private key into 32 bytes: OddLength\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject invalid private(signing) key
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffff"
-            }))
-            .to_request();
+        let resp = server
+            .post("/mutable-config")
+            .json(
+                &json!({
+                    "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                })
+            ).await;
 
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Failed to hex decode the gas private key into 32 bytes: InvalidStringLength"
-                .as_bytes()
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Failed to hex decode the gas private key into 32 bytes: InvalidStringLength\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-            }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Failed to parse the gas private key into a private key signer: EcdsaError(signature::Error { source: None })"
-        );
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({"gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}))
+            .await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Failed to parse the gas private key into a private key signer: EcdsaError(signature::Error { source: None })\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject a valid private key for gas wallet
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({"gas_key_hex": GAS_WALLET_KEY}))
+            .await;
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
@@ -717,23 +681,21 @@ mod api_impl_tests {
             .unwrap());
 
         // Build contracts client to verify the contracts client public address
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": OWNER_ADDRESS
             }))
-            .to_request();
-        let resp = actix_web::test::call_service(&app, req).await;
-        assert_eq!(resp.status(), http::StatusCode::OK);
+            .await;
+        resp.assert_status_ok();
 
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                    "chain_ids": [CHAIN_ID]
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
+                "chain_ids": [CHAIN_ID]
             }))
-            .to_request();
-        let resp = actix_web::test::call_service(&app, req).await;
-        assert_eq!(resp.status(), http::StatusCode::OK);
+            .await;
+        resp.assert_status_ok();
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -750,20 +712,12 @@ mod api_impl_tests {
         );
 
         // Inject the same valid private key for gas wallet again
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
-            }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::NOT_ACCEPTABLE);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "The same wallet address already set."
-        );
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({"gas_key_hex": GAS_WALLET_KEY}))
+            .await;
+        resp.assert_status(StatusCode::NOT_ACCEPTABLE);
+        resp.assert_text("The same wallet address already set.\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
@@ -787,20 +741,12 @@ mod api_impl_tests {
         const GAS_WALLET_PUBLIC_ADDRESS_2: &str = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
 
         // Inject another valid private key for gas wallet
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY_2
-            }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({"gas_key_hex": GAS_WALLET_KEY_2}))
+            .await;
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY_2);
@@ -934,23 +880,17 @@ mod api_impl_tests {
     #[tokio::test]
     async fn export_signed_registration_message_test() {
         let app_state = generate_app_state().await;
-        let app = actix_web::test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Get signature without injecting the operator's address or gas key
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
                 "chain_ids": [CHAIN_ID]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params not configured yet!"
-        );
+            .await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Immutable params not configured yet!\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
@@ -961,20 +901,14 @@ mod api_impl_tests {
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Inject a valid address into the enclave
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": OWNER_ADDRESS
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!"
-        );
+            .await;
+        resp.assert_status_ok();
+        resp.assert_text("Immutable params configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
@@ -985,20 +919,14 @@ mod api_impl_tests {
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Get signature without injecting a gas key
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
                 "chain_ids": [CHAIN_ID]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params not configured yet!"
-        );
+            .await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Mutable params not configured yet!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
@@ -1009,20 +937,14 @@ mod api_impl_tests {
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Inject a valid private key
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": GAS_WALLET_KEY
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
+            .await;
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
@@ -1033,18 +955,15 @@ mod api_impl_tests {
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Get signature with invalid chain id
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
                 "chain_ids": ["invalid u64"]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert!(resp.into_body().try_into_bytes().unwrap().starts_with(
-            "Json deserialize error: invalid type: string \"invalid u64\"".as_bytes()
+            .await;
+        resp.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(resp.as_bytes().starts_with(
+            "Failed to deserialize the JSON body into the target type".as_bytes()
         ));
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
@@ -1056,19 +975,15 @@ mod api_impl_tests {
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Get signature with no chain_ids field in json
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({}))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert!(resp
-            .into_body()
-            .try_into_bytes()
-            .unwrap()
-            .starts_with("Json deserialize error: missing field `chain_ids`".as_bytes()));
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({}))
+            .await;
+        resp.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        println!("{}", resp.text());
+        assert!(resp.as_bytes().starts_with(
+            "Failed to deserialize the JSON body into the target type: missing field `chain_ids`".as_bytes()
+        ));
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
@@ -1079,19 +994,16 @@ mod api_impl_tests {
         assert_eq!(*app_state.request_chain_ids.lock().unwrap(), HashSet::new());
 
         // Get signature with valid data points
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
-                    "chain_ids": [CHAIN_ID]
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
+                "chain_ids": [CHAIN_ID]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
+            .await;
+        resp.assert_status_ok();
 
         let response: Result<SignedRegistrationResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+            serde_json::from_slice(&resp.as_bytes());
         assert!(response.is_ok());
 
         let mut chain_id_set: HashSet<u64> = HashSet::new();
@@ -1121,19 +1033,16 @@ mod api_impl_tests {
         ));
 
         // Get signature again with the same chain ids
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
                 "chain_ids": [CHAIN_ID]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
+            .await;
+        resp.assert_status_ok();
 
         let response: Result<SignedRegistrationResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+            serde_json::from_slice(&resp.as_bytes());
         assert!(response.is_ok());
 
         let mut chain_id_set: HashSet<u64> = HashSet::new();
@@ -1163,121 +1072,78 @@ mod api_impl_tests {
         ));
 
         // Get signature with a different chain id
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
                 "chain_ids": [CHAIN_ID + 1]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+            .await;
+        resp.assert_status_bad_request();
         assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
+            resp.as_bytes(),
             json!({
-                    "message": "Request chain ids mismatch!",
-                    "chain_ids": [CHAIN_ID],
+                "message": "Request chain ids mismatch!",
+                "chain_ids": [CHAIN_ID],
             })
             .to_string()
-            .try_into_bytes()
-            .unwrap()
+            .as_bytes()
         );
 
         // After on chain registration
         app_state.registered.store(true, Ordering::SeqCst);
 
         // Get signature after registration
-        let req = actix_web::test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .set_json(&json!({
+        let resp = server
+            .post("/signed-registration-message")
+            .json(&json!({
                 "chain_ids": [CHAIN_ID]
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Enclave has already been registered."
-        );
+            .await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Enclave has already been registered.\n");
     }
 
     #[tokio::test]
     async fn get_gateway_details_test() {
         let app_state = generate_app_state().await;
-        let app = actix_web::test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Get gateway details without adding wallet and gas key
-        let req = actix_web::test::TestRequest::get()
-            .uri("/gateway-details")
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params not configured yet!"
-        );
+        let resp = server.get("/gateway-details").await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Immutable params not configured yet!\n");
 
         // Inject a valid address into the enclave
-        let req = actix_web::test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": OWNER_ADDRESS
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!"
-        );
+            .await;
+        resp.assert_status_ok();
+        resp.assert_text("Immutable params configured!\n");
 
         // Get gateway details without gas key
-        let req = actix_web::test::TestRequest::get()
-            .uri("/gateway-details")
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params not configured yet!"
-        );
+        let resp = server.get("/gateway-details").await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Mutable params not configured yet!\n");
 
         // Inject a valid private gas key
-        let req = actix_web::test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": GAS_WALLET_KEY
             }))
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!"
-        );
+            .await;
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
 
         // Get gateway details
-        let req = actix_web::test::TestRequest::get()
-            .uri("/gateway-details")
-            .to_request();
-
-        let resp = actix_web::test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
+        let resp = server.get("/gateway-details").await;
+        resp.assert_status_ok();
 
         let response: Result<GatewayDetailsResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+            serde_json::from_slice(&resp.as_bytes());
         assert!(response.is_ok());
 
         let response = response.unwrap();

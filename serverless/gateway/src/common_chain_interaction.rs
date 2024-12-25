@@ -1,4 +1,3 @@
-use actix_web::web::Data;
 use alloy::hex::FromHex;
 use alloy::primitives::{keccak256, Address, Bytes, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
@@ -6,6 +5,7 @@ use alloy::pubsub::{PubSubFrontend, SubscriptionStream};
 use alloy::rpc::types::{Filter, Log};
 use alloy::sol_types::{SolCall, SolEvent};
 use anyhow::{Context, Result};
+use axum::extract::State;
 use futures_core::stream::Stream;
 use futures_util::stream::StreamExt;
 use log::{error, info};
@@ -47,7 +47,7 @@ use crate::model::{
 };
 
 impl ContractsClient {
-    pub async fn wait_for_registration(self: Arc<Self>, app_state: Data<AppState>) {
+    pub async fn wait_for_registration(self: Arc<Self>, app_state: State<AppState>) {
         info!("Waiting for registration on the Common Chain and all Request Chains...");
         // create a channel to communicate with the main thread
         let (tx, mut rx) = channel::<RegisteredData>(100);

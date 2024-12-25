@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AppState {
     pub enclave_signer_key: SigningKey,
     pub enclave_address: Address,
@@ -16,16 +16,16 @@ pub struct AppState {
     pub common_chain_ws_url: String,
     pub gateways_contract_addr: Address,
     pub gateway_jobs_contract_addr: Address,
-    pub request_chain_ids: Mutex<HashSet<u64>>,
+    pub request_chain_ids: Arc<Mutex<HashSet<u64>>>,
     pub registered: Arc<AtomicBool>,
     pub epoch: u64,
     pub time_interval: u64,
     pub offset_for_epoch: u64,
-    pub enclave_owner: Mutex<Address>,
-    pub immutable_params_injected: Mutex<bool>,
+    pub enclave_owner: Arc<Mutex<Address>>,
+    pub immutable_params_injected: Arc<Mutex<bool>>,
     pub mutable_params_injected: Arc<AtomicBool>,
-    pub registration_events_listener_active: Mutex<bool>,
-    pub contracts_client: Mutex<Option<Arc<ContractsClient>>>,
+    pub registration_events_listener_active: Arc<Mutex<bool>>,
+    pub contracts_client: Arc<Mutex<Option<Arc<ContractsClient>>>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

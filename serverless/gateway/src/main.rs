@@ -12,20 +12,22 @@ mod model;
 #[cfg(test)]
 mod test_util;
 
-use actix_web::web::Data;
-use actix_web::{App, HttpServer};
 use alloy::primitives::Address;
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
 use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
+use axum::Router;
+use axum::routing::{get, post};
 use clap::Parser;
 use env_logger::Env;
+use http_on_vsock_server::{VsockAddrParser, VsockServer};
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::fs;
+use tokio_vsock::VsockListener;
 
 use crate::api_impl::{
     export_signed_registration_message, get_gateway_details, index, inject_immutable_config,
@@ -42,8 +44,9 @@ struct Cli {
         default_value = "./oyster_serverless_gateway_config.json"
     )]
     config_file: String,
-    #[clap(long, value_parser, default_value = "6001")]
-    port: u16,
+
+    #[clap(short, long, value_parser = VsockAddrParser{})]
+    vsock_addr: (u32, u32),
 }
 
 #[tokio::main]
@@ -81,7 +84,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());
 
     // Create a Appstate
-    let app_data = Data::new(AppState {
+    let app_data = AppState {
         enclave_signer_key,
         enclave_address,
         wallet: Arc::new(RwLock::new(String::new())),
@@ -90,35 +93,36 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         common_chain_ws_url: config.common_chain_ws_url,
         gateways_contract_addr: config.gateways_contract_addr,
         gateway_jobs_contract_addr: config.gateway_jobs_contract_addr,
-        request_chain_ids: Mutex::new(HashSet::new()),
+        request_chain_ids: Arc::new(Mutex::new(HashSet::new())),
         registered: Arc::new(AtomicBool::new(false)),
         epoch: config.epoch,
         time_interval: config.time_interval,
         offset_for_epoch: config.offset_for_epoch,
-        enclave_owner: Mutex::new(Address::ZERO),
-        immutable_params_injected: Mutex::new(false),
+        enclave_owner: Arc::new(Mutex::new(Address::ZERO)),
+        immutable_params_injected: Arc::new(Mutex::new(false)),
         mutable_params_injected: Arc::new(AtomicBool::new(false)),
-        registration_events_listener_active: Mutex::new(false),
-        contracts_client: Mutex::new(None),
-    });
+        registration_events_listener_active: Arc::new(Mutex::new(false)),
+        contracts_client: Arc::new(Mutex::new(None)),
+    };
 
-    // Start a http server
-    let server = HttpServer::new(move || {
-        App::new()
-            .app_data(app_data.clone())
-            .service(index)
-            .service(inject_immutable_config)
-            .service(inject_mutable_config)
-            .service(export_signed_registration_message)
-            .service(get_gateway_details)
+    // Create App using Router
+    let app = Router::new()
+        .route("/", get(index))
+        .route("/immutable-config", post(inject_immutable_config))
+        .route("/mutable-config", post(inject_mutable_config))
+        .route("/gateway-details", get(get_gateway_details))
+        .route("/signed-registration-message", post(export_signed_registration_message))
+        .with_state(app_data);
+
+    let server = axum::Server::builder(VsockServer {
+        listener: VsockListener::bind(args.vsock_addr.0, args.vsock_addr.1)
+            .context("failed to create vsock listener")?,
     })
-    .bind(("0.0.0.0", args.port))
-    .context(format!("could not bind to port {}", args.port))?
-    .run();
+    .serve(app.into_make_service());
 
-    println!("Node server started on port {}", args.port);
+    println!("Node server started on port {:?}", args.vsock_addr);
 
-    server.await?;
+    server.await.context("server exited with error")?;
 
     Ok(())
 }
