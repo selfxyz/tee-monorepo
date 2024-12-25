@@ -447,6 +447,23 @@ contract SecretStore is
         delete secretStores[_enclaveAddress].ackSecretIds;
     }
 
+    function _renounceSecretsPreUpdate(
+        address _enclaveAddress,
+        uint256 _markAliveTimeout,
+        address _recipient
+    ) internal {
+        _slashStore(_enclaveAddress, block.timestamp, _markAliveTimeout, _recipient);
+        secretStores[_enclaveAddress].lastAliveTimestamp = block.timestamp;
+    }
+
+    function _renounceSecretsPostUpdate(
+        address _enclaveAddress,
+        uint256 _storageOccupied
+    ) internal {
+        secretStores[_enclaveAddress].storageOccupied -= _storageOccupied;
+        delete secretStores[_enclaveAddress].ackSecretIds;
+    }
+
     function _secretTerminationUpdate(
         address _enclaveAddress,
         uint256 _secretSize,
@@ -501,6 +518,21 @@ contract SecretStore is
         address _recipient
     ) external onlyRole(SECRET_MANAGER_ROLE) {
         _markDeadUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _storageOccupied, _recipient);
+    }
+
+    function renounceSecretsPreUpdate(
+        address _enclaveAddress,
+        uint256 _markAliveTimeout,
+        address _recipient
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        _renounceSecretsPreUpdate(_enclaveAddress, _markAliveTimeout, _recipient);
+    }
+
+    function renounceSecretsPostUpdate(
+        address _enclaveAddress,
+        uint256 _storageOccupied
+    ) external onlyRole(SECRET_MANAGER_ROLE) {
+        _renounceSecretsPostUpdate(_enclaveAddress, _storageOccupied);
     }
 
     function secretTerminationUpdate(
