@@ -17,8 +17,8 @@ use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
 use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
-use axum::Router;
 use axum::routing::{get, post};
+use axum::Router;
 use clap::Parser;
 use env_logger::Env;
 use http_on_vsock_server::{VsockAddrParser, VsockServer};
@@ -111,7 +111,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         .route("/immutable-config", post(inject_immutable_config))
         .route("/mutable-config", post(inject_mutable_config))
         .route("/gateway-details", get(get_gateway_details))
-        .route("/signed-registration-message", post(export_signed_registration_message))
+        .route(
+            "/signed-registration-message",
+            post(export_signed_registration_message),
+        )
         .with_state(app_data);
 
     let server = axum::Server::builder(VsockServer {

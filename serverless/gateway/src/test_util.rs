@@ -6,8 +6,8 @@ use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::utils::public_key_to_address;
 use anyhow::Result;
-use axum::Router;
 use axum::routing::{get, post};
+use axum::Router;
 use axum_test::TestServer;
 use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
@@ -70,15 +70,16 @@ pub const CODE_HASH: Lazy<FixedBytes<32>> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-pub fn new_app(
-    app_state: AppState,
-) -> Router<()> {
+pub fn new_app(app_state: AppState) -> Router<()> {
     Router::new()
         .route("/", get(index))
         .route("/immutable-config", post(inject_immutable_config))
         .route("/mutable-config", post(inject_mutable_config))
         .route("/gateway-details", get(get_gateway_details))
-        .route("/signed-registration-message", post(export_signed_registration_message))
+        .route(
+            "/signed-registration-message",
+            post(export_signed_registration_message),
+        )
         .with_state(app_state)
 }
 

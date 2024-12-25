@@ -8,8 +8,8 @@ use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use log::info;
 use multi_block_txns::TxnManager;
 use serde_json::json;
@@ -33,15 +33,23 @@ pub async fn inject_immutable_config(
 ) -> Response {
     let owner_address = Address::from_str(&immutable_config.owner_address_hex);
     let Ok(owner_address) = owner_address else {
-        return (StatusCode::BAD_REQUEST,
-            format!("Invalid owner address provided: {:?}\n", owner_address.unwrap_err())
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid owner address provided: {:?}\n",
+                owner_address.unwrap_err()
+            ),
+        )
+            .into_response();
     };
 
     let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
     if *immutable_params_injected_guard {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Immutable params already configured!\n")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Immutable params already configured!\n"),
+        )
+            .into_response();
     }
 
     // Initialize owner address for the enclave
@@ -50,7 +58,11 @@ pub async fn inject_immutable_config(
 
     info!("Immutable params configured!");
 
-    return (StatusCode::OK, String::from("Immutable params configured!\n")).into_response();
+    return (
+        StatusCode::OK,
+        String::from("Immutable params configured!\n"),
+    )
+        .into_response();
 }
 
 // Endpoint exposed to inject mutable gateway config parameters
@@ -60,28 +72,38 @@ pub async fn inject_mutable_config(
 ) -> Response {
     let mut bytes32_gas_key = [0u8; 32];
     if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
-        return (StatusCode::BAD_REQUEST,
-            format!("Failed to hex decode the gas private key into 32 bytes: {:?}\n", err)
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Failed to hex decode the gas private key into 32 bytes: {:?}\n",
+                err
+            ),
+        )
+            .into_response();
     }
 
     let private_key_signer = mutable_config.gas_key_hex.parse::<PrivateKeySigner>();
 
     let Ok(_) = private_key_signer else {
-        return (StatusCode::BAD_REQUEST,
+        return (
+            StatusCode::BAD_REQUEST,
             format!(
                 "Failed to parse the gas private key into a private key signer: {:?}\n",
                 private_key_signer.unwrap_err()
-            )
-        ).into_response();
+            ),
+        )
+            .into_response();
     };
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
 
     let mut wallet_guard = app_state.wallet.write().unwrap();
     if *wallet_guard == mutable_config.gas_key_hex {
-        return (StatusCode::NOT_ACCEPTABLE,
-            String::from("The same wallet address already set.\n")).into_response();
+        return (
+            StatusCode::NOT_ACCEPTABLE,
+            String::from("The same wallet address already set.\n"),
+        )
+            .into_response();
     }
 
     *wallet_guard = mutable_config.gas_key_hex.clone();
@@ -93,9 +115,14 @@ pub async fn inject_mutable_config(
             .common_chain_txn_manager
             .update_private_signer(mutable_config.gas_key_hex.clone());
         if let Err(e) = res {
-            return (StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to update the private signer for the common chain txn manager: {}\n", e)
-            ).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to update the private signer for the common chain txn manager: {}\n",
+                    e
+                ),
+            )
+                .into_response();
         }
 
         let mut request_chains_data = contracts_client_guard
@@ -133,9 +160,11 @@ pub async fn export_signed_registration_message(
     // if gateway is already registered, return error
     {
         if app_state.registered.load(Ordering::SeqCst) {
-            return (StatusCode::BAD_REQUEST,
-                String::from("Enclave has already been registered.\n")
-            ).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                String::from("Enclave has already been registered.\n"),
+            )
+                .into_response();
         }
     }
 
@@ -148,43 +177,54 @@ pub async fn export_signed_registration_message(
 
     // there should be atleast one request chain id
     if chain_ids.is_empty() {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Atleast one request chain id is required!\n")
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Atleast one request chain id is required!\n"),
+        )
+            .into_response();
     }
 
     {
         // verify that the app state request chain ids are same as the signed registration body chain ids
         let request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
         if !request_chain_ids_guard.is_empty() && *request_chain_ids_guard != chain_ids {
-            return (StatusCode::BAD_REQUEST,
+            return (
+                StatusCode::BAD_REQUEST,
                 json!({
                     "message": "Request chain ids mismatch!",
                     "chain_ids": *request_chain_ids_guard,
-                }).to_string()
-            ).into_response();
+                })
+                .to_string(),
+            )
+                .into_response();
         }
     }
 
     // if immutable or mutable params are not configured, return error
     if !*app_state.immutable_params_injected.lock().unwrap() {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Immutable params not configured yet!\n")
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Immutable params not configured yet!\n"),
+        )
+            .into_response();
     }
 
     // if mutable params are not configured, return error
     if !app_state.mutable_params_injected.load(Ordering::SeqCst) {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Mutable params not configured yet!\n")
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Mutable params not configured yet!\n"),
+        )
+            .into_response();
     }
 
     // if wallet is not configured, return error
     if app_state.wallet.read().unwrap().is_empty() {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Mutable param wallet not configured yet!\n")
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Mutable param wallet not configured yet!\n"),
+        )
+            .into_response();
     };
 
     // generate common chain signature
@@ -236,12 +276,14 @@ pub async fn export_signed_registration_message(
         .enclave_signer_key
         .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
-        return  (StatusCode::INTERNAL_SERVER_ERROR,
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
             format!(
                 "Failed to sign the registration message using enclave key: {:?}\n",
                 sig.unwrap_err()
-            )
-        ).into_response();
+            ),
+        )
+            .into_response();
     };
     let common_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
@@ -280,12 +322,14 @@ pub async fn export_signed_registration_message(
         .enclave_signer_key
         .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
-        return (StatusCode::INTERNAL_SERVER_ERROR,
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
             format!(
                 "Failed to sign the registration message using enclave key: {:?}\n",
                 sig.unwrap_err()
-            )
-        ).into_response();
+            ),
+        )
+            .into_response();
     };
 
     let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
@@ -320,12 +364,14 @@ pub async fn export_signed_registration_message(
         {
             Ok(info) => info,
             Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR,
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     format!(
                         "Failed to fetch the request chain data for chain id {}: {}\n",
                         chain_id, e
-                    )
-                ).into_response();
+                    ),
+                )
+                    .into_response();
             }
         };
 
@@ -334,12 +380,16 @@ pub async fn export_signed_registration_message(
             .await;
 
         let Ok(request_chain_http_provider) = request_chain_http_provider else {
-            return (StatusCode::INTERNAL_SERVER_ERROR,
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
                 format!(
                     "Failed to connect to the request chain {} http rpc server {}: {}\n",
-                    chain_id, request_chain_info.httpRpcUrl, request_chain_http_provider.unwrap_err()
-                )
-            ).into_response();
+                    chain_id,
+                    request_chain_info.httpRpcUrl,
+                    request_chain_http_provider.unwrap_err()
+                ),
+            )
+                .into_response();
         };
 
         let block_number = request_chain_http_provider
@@ -350,7 +400,7 @@ pub async fn export_signed_registration_message(
                 chain_id
             ))
             .unwrap();
-        
+
         drop(request_chain_http_provider);
 
         let request_chain_txn_manager = TxnManager::new(
@@ -364,11 +414,14 @@ pub async fn export_signed_registration_message(
         );
 
         let Ok(request_chain_txn_manager) = request_chain_txn_manager else {
-            return (StatusCode::INTERNAL_SERVER_ERROR,
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
                 format!(
-                    "Failed to create txn manager for request chain {}\n", chain_id
-                )
-            ).into_response();
+                    "Failed to create txn manager for request chain {}\n",
+                    chain_id
+                ),
+            )
+                .into_response();
         };
 
         request_chains_data.insert(
@@ -392,12 +445,15 @@ pub async fn export_signed_registration_message(
         *request_chain_ids_guard = chain_ids.clone();
     } else {
         if *request_chain_ids_guard != chain_ids {
-            return (StatusCode::BAD_REQUEST,
+            return (
+                StatusCode::BAD_REQUEST,
                 json!({
                     "message": "Request chain ids mismatch!",
                     "chain_ids": *request_chain_ids_guard,
-                }).to_string()
-            ).into_response();
+                })
+                .to_string(),
+            )
+                .into_response();
         }
     }
 
@@ -441,11 +497,14 @@ pub async fn export_signed_registration_message(
         );
 
         let Ok(common_chain_txn_manager) = common_chain_txn_manager else {
-            return (StatusCode::INTERNAL_SERVER_ERROR,
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
                 format!(
-                    "Failed to create txn manager for common chain {}\n", app_state.common_chain_id
-                )
-            ).into_response();
+                    "Failed to create txn manager for common chain {}\n",
+                    app_state.common_chain_id
+                ),
+            )
+                .into_response();
         };
 
         let contracts_client = Arc::new(ContractsClient {
@@ -497,15 +556,19 @@ pub async fn export_signed_registration_message(
 // Endpoint exposed to retrieve gateway enclave details
 pub async fn get_gateway_details(app_state: State<AppState>) -> Response {
     if !*app_state.immutable_params_injected.lock().unwrap() {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Immutable params not configured yet!\n")
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Immutable params not configured yet!\n"),
+        )
+            .into_response();
     }
 
     if !app_state.mutable_params_injected.load(Ordering::SeqCst) {
-        return (StatusCode::BAD_REQUEST,
-            String::from("Mutable params not configured yet!\n")
-        ).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Mutable params not configured yet!\n"),
+        )
+            .into_response();
     }
 
     let wallet: PrivateKeySigner = app_state
@@ -569,7 +632,7 @@ mod api_impl_tests {
             .post("/immutable-config")
             .json(&json!({"owner_address_hex": "0x32255"}))
             .await;
-        
+
         resp.assert_status_bad_request();
         resp.assert_text("Invalid owner address provided: OddLength\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
@@ -583,7 +646,9 @@ mod api_impl_tests {
             .await;
 
         resp.assert_status_bad_request();
-        resp.assert_text("Invalid owner address provided: InvalidHexCharacter { c: 'z', index: 0 }\n");
+        resp.assert_text(
+            "Invalid owner address provided: InvalidHexCharacter { c: 'z', index: 0 }\n",
+        );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), Address::ZERO);
@@ -640,14 +705,15 @@ mod api_impl_tests {
         // Inject invalid private(signing) key
         let resp = server
             .post("/mutable-config")
-            .json(
-                &json!({
-                    "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-                })
-            ).await;
+            .json(&json!({
+                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            }))
+            .await;
 
         resp.assert_status_bad_request();
-        resp.assert_text("Failed to hex decode the gas private key into 32 bytes: InvalidStringLength\n");
+        resp.assert_text(
+            "Failed to hex decode the gas private key into 32 bytes: InvalidStringLength\n",
+        );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
@@ -962,9 +1028,9 @@ mod api_impl_tests {
             }))
             .await;
         resp.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
-        assert!(resp.as_bytes().starts_with(
-            "Failed to deserialize the JSON body into the target type".as_bytes()
-        ));
+        assert!(resp
+            .as_bytes()
+            .starts_with("Failed to deserialize the JSON body into the target type".as_bytes()));
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert!(!app_state.registered.load(Ordering::SeqCst));
@@ -982,7 +1048,8 @@ mod api_impl_tests {
         resp.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
         println!("{}", resp.text());
         assert!(resp.as_bytes().starts_with(
-            "Failed to deserialize the JSON body into the target type: missing field `chain_ids`".as_bytes()
+            "Failed to deserialize the JSON body into the target type: missing field `chain_ids`"
+                .as_bytes()
         ));
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
