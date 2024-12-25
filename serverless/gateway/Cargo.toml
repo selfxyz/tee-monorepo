@@ -29,3 +29,9 @@ tokio-vsock = "0.4.0"
 
 [dev-dependencies]
 axum-test = "13.4.1"
+
+[profile.release]
+strip = true
+lto = true
+panic = "abort"
+codegen-units = 1
