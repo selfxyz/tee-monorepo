@@ -9,7 +9,7 @@ use alloy::transports::http::reqwest::{Client, Url};
 use alloy::transports::http::Http;
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
@@ -71,6 +71,7 @@ type HttpProvider = FillProvider<
 pub struct TxnManager {
     pub rpc_url: String,
     pub chain_id: u64,
+    pub(crate) manager_running: Arc<Mutex<bool>>,
     pub(crate) private_signer: Arc<RwLock<PrivateKeySigner>>,
     pub(crate) nonce_to_send: Arc<RwLock<u64>>,
     pub(crate) nonce_to_send_private_signer: Arc<RwLock<PrivateKeySigner>>,
@@ -127,6 +128,7 @@ impl TxnManager {
         Ok(Arc::new(Self {
             rpc_url,
             chain_id,
+            manager_running: Arc::new(Mutex::new(false)),
             private_signer,
             nonce_to_send: Arc::new(RwLock::new(0)),
             nonce_to_send_private_signer,
@@ -148,6 +150,12 @@ impl TxnManager {
     /// - One for processing transactions from the queue
     /// - One for garbage collecting old transactions
     pub async fn run(self: &Arc<Self>) {
+        let mut manager_running_guard = self.manager_running.lock().unwrap();
+
+        if *manager_running_guard {
+            return;
+        }
+
         let txn_manager_clone = self.clone();
         tokio::spawn(async move {
             let _ = txn_manager_clone._process_transaction().await;
@@ -157,6 +165,7 @@ impl TxnManager {
         tokio::spawn(async move {
             txn_manager_clone._garbage_collect_transactions().await;
         });
+        *manager_running_guard = true;
     }
 
     /// Calls a contract function by creating a Transaction object and calling it.
