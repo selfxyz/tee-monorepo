@@ -10,13 +10,17 @@ struct Cli {
     #[clap(short, long, value_parser)]
     url: String,
 
-    // owner address
+    /// owner address
     #[clap(short, long, value_parser)]
     owner_address: String,
 
-    // gas key
+    /// gas key
     #[clap(short, long, value_parser)]
     gas_key: String,
+
+    /// list of chain ids
+    #[clap(short, long, value_parser)]
+    chain_ids: Vec<u64>,
 }
 
 #[tokio::main]
@@ -47,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .header("Content-Type", "application/json")
         .body(Body::from(body))?;
     let mut resp = client.request(request).await?;
-    println!("{:?}", resp);
+    println!("{:?}", resp.status());
     println!("{:?}", String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?);
 
     // set mutable config
@@ -58,19 +62,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .header("Content-Type", "application/json")
         .body(Body::from(body))?;
     resp = client.request(request).await?;
-    println!("{:?}", resp);
+    println!("{:?}", resp.status());
     println!("{:?}", String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?);
 
 
     // Get the config
-    resp = client.get((cli.url.clone() + "executor-details").try_into()?).await?;
+    resp = client.get((cli.url.clone() + "gateway-details").try_into()?).await?;
     let body_bytes = hyper::body::to_bytes(resp.into_body()).await?;
     let body_str = String::from_utf8(body_bytes.to_vec())?;
     let json: serde_json::Value = serde_json::from_str(&body_str)?;
     println!("{:?}", json);
 
     // Start the executor
-    resp = client.get((cli.url.clone() + "signed-registration-message").try_into()?).await?;
+    let body = json!({
+        "chain_ids": cli.chain_ids.clone(),
+    }).to_string();
+    println!("{:?}", body);
+    let request = Request::post(cli.url.clone() + "signed-registration-message")
+        .header("Content-Type", "application/json")
+        .body(Body::from(body))?;
+    resp = client.request(request).await?;
+    println!("{:?}", resp);
     let body_bytes = hyper::body::to_bytes(resp.into_body()).await?;
     let body_str = String::from_utf8(body_bytes.to_vec())?;
     let json: serde_json::Value = serde_json::from_str(&body_str)?;

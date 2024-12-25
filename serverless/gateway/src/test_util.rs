@@ -1,9 +1,3 @@
-use actix_web::web::Data;
-use actix_web::{
-    body::MessageBody,
-    dev::{ServiceFactory, ServiceRequest, ServiceResponse},
-    App, Error,
-};
 use alloy::dyn_abi::DynSolValue;
 use alloy::hex;
 use alloy::primitives::{keccak256, Address, FixedBytes, Log as InnerLog, LogData, B256, U256};
@@ -12,6 +6,9 @@ use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::utils::public_key_to_address;
 use anyhow::Result;
+use axum::routing::{get, post};
+use axum::Router;
+use axum_test::TestServer;
 use once_cell::sync::Lazy;
 use rand::rngs::OsRng;
 use serde_json::json;
@@ -73,35 +70,28 @@ pub const CODE_HASH: Lazy<FixedBytes<32>> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-pub fn new_app(
-    app_state: Data<AppState>,
-) -> App<
-    impl ServiceFactory<
-        ServiceRequest,
-        Response = ServiceResponse<impl MessageBody + std::fmt::Debug>,
-        Config = (),
-        InitError = (),
-        Error = Error,
-    >,
-> {
-    App::new()
-        .app_data(app_state)
-        .service(index)
-        .service(inject_immutable_config)
-        .service(inject_mutable_config)
-        .service(export_signed_registration_message)
-        .service(get_gateway_details)
+pub fn new_app(app_state: AppState) -> Router<()> {
+    Router::new()
+        .route("/", get(index))
+        .route("/immutable-config", post(inject_immutable_config))
+        .route("/mutable-config", post(inject_mutable_config))
+        .route("/gateway-details", get(get_gateway_details))
+        .route(
+            "/signed-registration-message",
+            post(export_signed_registration_message),
+        )
+        .with_state(app_state)
 }
 
 #[cfg(test)]
-pub async fn generate_app_state() -> Data<AppState> {
+pub async fn generate_app_state() -> AppState {
     // Initialize random 'secp256k1' signing key for the enclave
 
     use std::sync::RwLock;
 
     let signer_key = SigningKey::random(&mut OsRng);
 
-    Data::new(AppState {
+    AppState {
         enclave_signer_key: signer_key.clone(),
         enclave_address: public_key_to_address(&signer_key.verifying_key()),
         wallet: Arc::new(RwLock::new(String::new())),
@@ -110,52 +100,45 @@ pub async fn generate_app_state() -> Data<AppState> {
         common_chain_ws_url: WS_URL.to_owned(),
         gateways_contract_addr: GATEWAYS_CONTRACT_ADDR.parse::<Address>().unwrap(),
         gateway_jobs_contract_addr: GATEWAY_JOBS_CONTRACT_ADDR.parse::<Address>().unwrap(),
-        request_chain_ids: Mutex::new(HashSet::new()),
+        request_chain_ids: Arc::new(Mutex::new(HashSet::new())),
         registered: Arc::new(AtomicBool::new(false)),
-        registration_events_listener_active: Mutex::new(false),
+        registration_events_listener_active: Arc::new(Mutex::new(false)),
         epoch: EPOCH,
         time_interval: TIME_INTERVAL,
         offset_for_epoch: OFFSET_FOR_EPCOH,
-        enclave_owner: Mutex::new(Address::ZERO),
-        immutable_params_injected: Mutex::new(false),
+        enclave_owner: Arc::new(Mutex::new(Address::ZERO)),
+        immutable_params_injected: Arc::new(Mutex::new(false)),
         mutable_params_injected: Arc::new(AtomicBool::new(false)),
-        contracts_client: Mutex::new(None),
-    })
+        contracts_client: Arc::new(Mutex::new(None)),
+    }
 }
 
 #[cfg(test)]
 pub async fn generate_contracts_client() -> Arc<ContractsClient> {
     let app_state = generate_app_state().await;
-    let app = actix_web::test::init_service(new_app(app_state.clone())).await;
 
+    let server = TestServer::new(new_app(app_state.clone())).unwrap();
     // add immutable config
-    let req = actix_web::test::TestRequest::post()
-        .uri("/immutable-config")
-        .set_json(&json!({
+    let _resp = server
+        .post("/immutable-config")
+        .json(&json!({
             "owner_address_hex": OWNER_ADDRESS
         }))
-        .to_request();
-    actix_web::test::call_service(&app, req).await;
-
+        .await;
     // add mutable config
-    let req = actix_web::test::TestRequest::post()
-        .uri("/mutable-config")
-        .set_json(&json!({
+    let _resp = server
+        .post("/mutable-config")
+        .json(&json!({
             "gas_key_hex": GAS_WALLET_KEY
         }))
-        .to_request();
-    actix_web::test::call_service(&app, req).await;
-
+        .await;
     // Get signature with valid data points
-    let req = actix_web::test::TestRequest::get()
-        .uri("/signed-registration-message")
-        .set_json(&json!({
+    let _resp = server
+        .post("/signed-registration-message")
+        .json(&json!({
             "chain_ids": [CHAIN_ID]
         }))
-        .to_request();
-
-    actix_web::test::call_service(&app, req).await;
-
+        .await;
     let contracts_client = app_state.contracts_client.lock().unwrap().clone().unwrap();
 
     contracts_client
