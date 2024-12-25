@@ -41,6 +41,12 @@ enum Commands {
         #[arg(short, long, default_value = "result")]
         output: String,
     },
+    /// Upload Enclave Image to IPFS
+    Upload {
+        /// Path to enclave image file
+        #[arg(short, long)]
+        file: String,
+    },
     /// Verify Oyster Enclave Attestation
     VerifyEnclave {
         /// Enclave IP
@@ -74,7 +80,7 @@ enum Commands {
         /// Maximum age of attestation (in milliseconds) (default: 300000)
         #[arg(short = 'a', long, default_value = "300000")]
         max_age: usize,
-    }
+    },
 }
 
 #[tokio::main]
@@ -93,6 +99,10 @@ async fn main() -> Result<()> {
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
             commands::build::build_oyster_image(platform, docker_compose, docker_images, output)?
+        },
+        Commands::Upload { file } => {
+            let default_provider = types::StorageProvider::Pinata;
+            commands::upload::upload_enclave_image(file, &default_provider).await?;
         },
         Commands::VerifyEnclave {
             pcr1,
