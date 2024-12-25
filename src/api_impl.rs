@@ -1,28 +1,26 @@
-use abi::encode;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post, HttpResponse, Responder};
+use alloy::dyn_abi::DynSolValue;
+use alloy::hex;
+use alloy::primitives::{keccak256, Address, U256};
+use alloy::providers::{Provider, ProviderBuilder};
+use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
-use ethers::abi::{encode_packed, Token};
-use ethers::prelude::*;
-use ethers::utils::keccak256;
-use k256::elliptic_curve::generic_array::sequence::Lengthen;
 use log::info;
+use multi_block_txns::TxnManager;
 use serde_json::json;
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::Ordering;
-use std::sync::RwLock;
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::Ordering, Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contract_abi::{
-    GatewayJobsContract, GatewaysContract, RelayContract, RelaySubscriptionsContract,
-};
+use crate::contract_abi::GatewaysContract;
 use crate::model::{
     AppState, ContractsClient, GatewayData, GatewayDetailsResponse, ImmutableConfig, MutableConfig,
-    RequestChainClient, RequestChainData, SignedRegistrationBody, SignedRegistrationResponse,
+    RequestChainData, SignedRegistrationBody, SignedRegistrationResponse,
 };
-use crate::HttpProviderType;
 
 #[get("/")]
 async fn index() -> impl Responder {
@@ -36,7 +34,7 @@ async fn inject_immutable_config(
     Json(immutable_config): Json<ImmutableConfig>,
     app_state: Data<AppState>,
 ) -> impl Responder {
-    let owner_address = H160::from_str(&immutable_config.owner_address_hex);
+    let owner_address = Address::from_str(&immutable_config.owner_address_hex);
     let Ok(owner_address) = owner_address else {
         return HttpResponse::BadRequest().body(format!(
             "Invalid owner address provided: {:?}",
@@ -72,126 +70,55 @@ async fn inject_mutable_config(
         ));
     }
 
-    // Initialize local wallet with operator's gas key to send signed transactions to the common chain and request chains
-    let gas_wallet = LocalWallet::from_bytes(&bytes32_gas_key);
-    let Ok(gas_wallet) = gas_wallet else {
+    let private_key_signer = mutable_config.gas_key_hex.parse::<PrivateKeySigner>();
+
+    let Ok(_) = private_key_signer else {
         return HttpResponse::BadRequest().body(format!(
-            "Invalid gas private key provided: {:?}",
-            gas_wallet.unwrap_err()
+            "Failed to parse the gas private key into a private key signer: {:?}",
+            private_key_signer.unwrap_err()
         ));
     };
-    let gas_wallet = gas_wallet.with_chain_id(app_state.common_chain_id);
-
-    let mut wallet_guard = app_state.wallet.lock().unwrap();
-    if *wallet_guard == Some(gas_wallet.clone()) {
-        return HttpResponse::NotAcceptable().body("The same wallet address already set.");
-    }
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
 
+    let mut wallet_guard = app_state.wallet.write().unwrap();
+    if *wallet_guard == mutable_config.gas_key_hex {
+        return HttpResponse::NotAcceptable().body("The same wallet address already set.");
+    }
+
+    *wallet_guard = mutable_config.gas_key_hex.clone();
+
     if contracts_client_guard.is_some() {
-        info!("Updating Contracts Client with the new wallet address");
-        let gas_address = gas_wallet.address();
-
-        // Build Common Chain http rpc client
-        let common_chain_http_rpc_client =
-            Provider::<Http>::try_from(&app_state.common_chain_http_url);
-        let Ok(common_chain_http_rpc_client) = common_chain_http_rpc_client else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to connect to the common chain http rpc server {}: {}",
-                app_state.common_chain_http_url,
-                common_chain_http_rpc_client.unwrap_err()
-            ));
-        };
-        let common_chain_http_rpc_client = Arc::new(
-            common_chain_http_rpc_client
-                .with_signer(gas_wallet.clone())
-                .nonce_manager(gas_address),
-        );
-
-        // Build Request Chain Client's http rpc client
-        let mut request_chain_contract_clients: HashMap<
-            u64,
-            (
-                RelayContract<HttpProviderType>,
-                RelaySubscriptionsContract<HttpProviderType>,
-            ),
-        > = HashMap::new();
-        let request_chain_clients_clone: HashMap<u64, Arc<RequestChainClient>> =
-            contracts_client_guard
-                .as_ref()
-                .unwrap()
-                .request_chain_clients
-                .clone();
-        for (&chain_id, request_chain_client) in request_chain_clients_clone.iter() {
-            let request_chain_http_rpc_client =
-                Provider::<Http>::try_from(&request_chain_client.http_rpc_url);
-            let Ok(request_chain_http_rpc_client) = request_chain_http_rpc_client else {
-                return HttpResponse::InternalServerError().body(format!(
-                    "Failed to connect to the request chain {} http rpc server {}: {}",
-                    chain_id,
-                    request_chain_client.http_rpc_url,
-                    request_chain_http_rpc_client.unwrap_err()
-                ));
-            };
-
-            let gas_wallet = gas_wallet.clone().with_chain_id(chain_id);
-            let request_chain_http_rpc_client = Arc::new(
-                request_chain_http_rpc_client
-                    .with_signer(gas_wallet.clone())
-                    .nonce_manager(gas_address),
-            );
-
-            let relay_contract = RelayContract::new(
-                request_chain_client.relay_address,
-                request_chain_http_rpc_client.clone(),
-            );
-
-            let relay_subs_contract = RelaySubscriptionsContract::new(
-                request_chain_client.relay_subscriptions_address,
-                request_chain_http_rpc_client,
-            );
-            request_chain_contract_clients.insert(chain_id, (relay_contract, relay_subs_contract));
-        }
-
-        // Updating Gateway Jobs Contract's http rpc client with the new wallet address
-        let gateway_jobs_contract = GatewayJobsContract::new(
-            app_state.gateway_jobs_contract_addr,
-            common_chain_http_rpc_client,
-        );
-
-        let mut gateway_jobs_contract_write_guard = contracts_client_guard
+        let res = contracts_client_guard
             .as_ref()
             .unwrap()
-            .gateway_jobs_contract
+            .common_chain_txn_manager
+            .update_private_signer(mutable_config.gas_key_hex.clone());
+        if let Err(e) = res {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to update the private signer for the common chain txn manager: {}",
+                e
+            ));
+        }
+
+        let mut request_chains_data = contracts_client_guard
+            .as_ref()
+            .unwrap()
+            .request_chains_data
             .write()
             .unwrap();
-        *gateway_jobs_contract_write_guard = gateway_jobs_contract;
-
-        // Updating request chain contract's http rpc client with the new wallet address
-        for request_chain_client in contracts_client_guard
-            .as_ref()
-            .unwrap()
-            .request_chain_clients
-            .values()
-        {
-            let (relay_contract, relay_subs_contract) = request_chain_contract_clients
-                .get(&request_chain_client.chain_id)
-                .unwrap()
-                .clone();
-
-            let mut relay_contract_write_guard =
-                request_chain_client.relay_contract.write().unwrap();
-            *relay_contract_write_guard = relay_contract;
-
-            let mut relay_subs_contract_write_guard = request_chain_client
-                .relay_subscriptions_contract
-                .write()
-                .unwrap();
-            *relay_subs_contract_write_guard = relay_subs_contract;
+        for request_chain_data in request_chains_data.values_mut() {
+            let res = request_chain_data
+                .request_chain_txn_manager
+                .update_private_signer(mutable_config.gas_key_hex.clone());
+            if let Err(e) = res {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Failed to update the private signer for the request chain txn manager: {}",
+                    e
+                ));
+            }
         }
     }
-    *wallet_guard = Some(gas_wallet.clone());
 
     app_state
         .mutable_params_injected
@@ -249,7 +176,7 @@ async fn export_signed_registration_message(
     }
 
     // if wallet is not configured, return error
-    if app_state.wallet.lock().unwrap().is_none() {
+    if app_state.wallet.read().unwrap().is_empty() {
         return HttpResponse::BadRequest().body("Mutable param wallet not configured yet!");
     };
 
@@ -263,43 +190,44 @@ async fn export_signed_registration_message(
     let common_chain_register_typehash =
         keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
 
-    let chain_ids_tokens: Vec<Token> = (&chain_ids)
+    let chain_ids_tokens: Vec<DynSolValue> = (&chain_ids)
         .into_iter()
-        .map(|&x| Token::Uint(x.into()))
-        .collect::<Vec<Token>>();
+        .map(|&x| DynSolValue::Uint(U256::from(x), 256))
+        .collect::<Vec<DynSolValue>>();
+    let chain_ids_bytes = keccak256(DynSolValue::Array(chain_ids_tokens).abi_encode_packed());
 
-    let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids_tokens)]).unwrap());
-    let hash_struct = keccak256(encode(&[
-        Token::FixedBytes(common_chain_register_typehash.to_vec()),
-        Token::Address(enclave_owner),
-        Token::FixedBytes(chain_ids_bytes.into()),
-        Token::Uint(sign_timestamp.into()),
-    ]));
+    let hash_struct = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(common_chain_register_typehash, 32),
+            DynSolValue::Address(enclave_owner),
+            DynSolValue::FixedBytes(chain_ids_bytes, 32),
+            DynSolValue::Uint(U256::from(sign_timestamp), 256),
+        ])
+        .abi_encode(),
+    );
 
-    let gateways_domain_separator = keccak256(encode(&[
-        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.Gateways").to_vec()),
-        Token::FixedBytes(keccak256("1").to_vec()),
-    ]));
+    let gateways_domain_separator = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(keccak256("EIP712Domain(string name,string version)"), 32),
+            DynSolValue::FixedBytes(keccak256("marlin.oyster.Gateways"), 32),
+            DynSolValue::FixedBytes(keccak256("1"), 32),
+        ])
+        .abi_encode(),
+    );
 
-    let digest = encode_packed(&[
-        Token::String("\x19\x01".to_string()),
-        Token::FixedBytes(gateways_domain_separator.to_vec()),
-        Token::FixedBytes(hash_struct.to_vec()),
-    ]);
-
-    let Ok(digest) = digest else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to encode the registration message for signing: {:?}",
-            digest.unwrap_err()
-        ));
-    };
-    let digest = keccak256(digest);
+    let digest = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::String("\x19\x01".to_string()),
+            DynSolValue::FixedBytes(gateways_domain_separator, 32),
+            DynSolValue::FixedBytes(hash_struct, 32),
+        ])
+        .abi_encode_packed(),
+    );
 
     // Sign the digest using enclave key
     let sig = app_state
         .enclave_signer_key
-        .sign_prehash_recoverable(&digest);
+        .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to sign the registration message using enclave key: {:?}",
@@ -311,37 +239,37 @@ async fn export_signed_registration_message(
     // create request chain signature and add it to the request chain signatures map
     let request_chain_register_typehash =
         keccak256("Register(address owner,uint256 signTimestamp)");
-    let hash_struct = keccak256(encode(&[
-        Token::FixedBytes(request_chain_register_typehash.to_vec()),
-        Token::Address(enclave_owner),
-        Token::Uint(sign_timestamp.into()),
-    ]));
+    let hash_struct = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(request_chain_register_typehash, 32),
+            DynSolValue::Address(enclave_owner),
+            DynSolValue::Uint(U256::from(sign_timestamp), 256),
+        ])
+        .abi_encode(),
+    );
 
-    let request_chain_domain_separator = keccak256(encode(&[
-        Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
-        Token::FixedBytes(keccak256("1").to_vec()),
-    ]));
+    let request_chain_domain_separator = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::FixedBytes(keccak256("EIP712Domain(string name,string version)"), 32),
+            DynSolValue::FixedBytes(keccak256("marlin.oyster.Relay"), 32),
+            DynSolValue::FixedBytes(keccak256("1"), 32),
+        ])
+        .abi_encode(),
+    );
 
-    let digest = encode_packed(&[
-        Token::String("\x19\x01".to_string()),
-        Token::FixedBytes(request_chain_domain_separator.to_vec()),
-        Token::FixedBytes(hash_struct.to_vec()),
-    ]);
-
-    let Ok(digest) = digest else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to encode the registration message for signing: {:?}",
-            digest.unwrap_err()
-        ));
-    };
-
-    let digest = keccak256(digest);
+    let digest = keccak256(
+        DynSolValue::Tuple(vec![
+            DynSolValue::String("\x19\x01".to_string()),
+            DynSolValue::FixedBytes(request_chain_domain_separator, 32),
+            DynSolValue::FixedBytes(hash_struct, 32),
+        ])
+        .abi_encode_packed(),
+    );
 
     // Sign the digest using enclave key
     let sig = app_state
         .enclave_signer_key
-        .sign_prehash_recoverable(&digest);
+        .sign_prehash_recoverable(&digest.to_vec());
     let Ok((rs, v)) = sig else {
         return HttpResponse::InternalServerError().body(format!(
             "Failed to sign the registration message using enclave key: {:?}",
@@ -351,141 +279,96 @@ async fn export_signed_registration_message(
 
     let request_chain_signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
-    // Create GatewaysContract instance
-    let common_chain_http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
-    let Ok(common_chain_http_rpc_client) = common_chain_http_rpc_client else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to connect to the common chain http rpc server {}: {}",
-            app_state.common_chain_http_url,
-            common_chain_http_rpc_client.unwrap_err()
-        ));
-    };
-    let common_chain_http_rpc_client = Arc::new(common_chain_http_rpc_client);
-    let gateways_contract = GatewaysContract::new(
-        app_state.gateways_contract_addr,
-        common_chain_http_rpc_client.clone(),
-    );
+    let common_chain_http_provider =
+        ProviderBuilder::new().on_http(Url::parse(&app_state.common_chain_http_url).unwrap());
 
-    let Ok(common_chain_block_number) = common_chain_http_rpc_client.get_block_number().await
-    else {
+    let Ok(common_chain_block_number) = common_chain_http_provider.get_block_number().await else {
         return HttpResponse::InternalServerError().body(
-                format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
-            );
+            format!("Failed to fetch the latest block number of the common chain for initiating event listening!")
+        );
     };
 
     let mut request_chains_data: HashMap<u64, RequestChainData> = HashMap::new();
 
+    let gas_wallet_hex = app_state.wallet.read().unwrap().clone();
+
+    let gateways_contract = Arc::new(GatewaysContract::new(
+        app_state.gateways_contract_addr,
+        common_chain_http_provider.clone(),
+    ));
+
     // iterate over all chain ids and get their registration signatures
     for &chain_id in &chain_ids {
         // get request chain rpc url
-        let request_chain_info = gateways_contract.request_chains(U256::from(chain_id)).await;
-        if request_chain_info.is_err() {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to fetch the request chain data for chain id {}: {}",
-                chain_id,
-                request_chain_info.unwrap_err()
-            ));
-        }
-        let (relay_address, relay_subscriptions_address, http_rpc_url, ws_rpc_url) =
-            request_chain_info.unwrap();
+        let request_chain_info = match gateways_contract
+            .requestChains(U256::from(chain_id))
+            .call()
+            .await
+        {
+            Ok(info) => info,
+            Err(e) => {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Failed to fetch the request chain data for chain id {}: {}",
+                    chain_id, e
+                ));
+            }
+        };
 
-        let http_rpc_client = Provider::<Http>::try_from(&http_rpc_url);
-        let Ok(http_rpc_client) = http_rpc_client else {
+        let request_chain_http_provider = ProviderBuilder::new()
+            .on_builtin(&request_chain_info.httpRpcUrl)
+            .await;
+
+        let Ok(request_chain_http_provider) = request_chain_http_provider else {
             return HttpResponse::InternalServerError().body(format!(
                 "Failed to connect to the request chain {} http rpc server {}: {}",
                 chain_id,
-                http_rpc_url,
-                http_rpc_client.unwrap_err()
+                request_chain_info.httpRpcUrl,
+                request_chain_http_provider.unwrap_err()
             ));
         };
 
-        let block_number = http_rpc_client
+        let block_number = request_chain_http_provider
             .get_block_number()
             .await
-            .context("Failed to get the latest block number of the request chain")
-            .unwrap()
-            .as_u64();
+            .context(format!(
+                "Failed to get the latest block number of the request chain {}",
+                chain_id
+            ))
+            .unwrap();
+
+        drop(request_chain_http_provider);
+
+        let request_chain_txn_manager = TxnManager::new(
+            request_chain_info.httpRpcUrl.to_string(),
+            chain_id,
+            gas_wallet_hex.clone(),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let Ok(request_chain_txn_manager) = request_chain_txn_manager else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to create txn manager for request chain {}",
+                chain_id
+            ));
+        };
 
         request_chains_data.insert(
             chain_id,
             RequestChainData {
-                relay_address,
-                relay_subscriptions_address,
-                http_rpc_url: http_rpc_url.to_string(),
-                ws_rpc_url: ws_rpc_url.to_string(),
-                block_number,
+                chain_id,
+                relay_address: request_chain_info.relayAddress.clone(),
+                relay_subscriptions_address: request_chain_info.relaySubscriptionsAddress.clone(),
+                ws_rpc_url: request_chain_info.wsRpcUrl.to_string().clone(),
+                http_rpc_url: request_chain_info.httpRpcUrl.to_string().clone(),
+                request_chain_start_block_number: block_number,
+                confirmation_blocks: 5,
+                last_seen_block: Arc::new(0.into()),
+                request_chain_txn_manager,
             },
         );
-    }
-
-    let wallet_guard = app_state.wallet.lock().unwrap();
-
-    let signer_wallet = wallet_guard
-        .clone()
-        .unwrap()
-        .with_chain_id(app_state.common_chain_id);
-    let signer_address = signer_wallet.address();
-
-    let common_chain_http_rpc_client = Provider::<Http>::try_from(&app_state.common_chain_http_url);
-    let Ok(common_chain_http_rpc_client) = common_chain_http_rpc_client else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to connect to the common chain http rpc server {}: {}",
-            app_state.common_chain_http_url,
-            common_chain_http_rpc_client.unwrap_err()
-        ));
-    };
-    let common_chain_http_rpc_client = Arc::new(
-        common_chain_http_rpc_client
-            .with_signer(signer_wallet.clone())
-            .nonce_manager(signer_address),
-    );
-
-    let mut request_chain_clients: HashMap<u64, Arc<RequestChainClient>> = HashMap::new();
-
-    for &chain_id in &chain_ids {
-        let request_chain_data = request_chains_data.get(&chain_id).unwrap();
-
-        let signer_wallet = wallet_guard.clone().unwrap().with_chain_id(chain_id);
-
-        let request_chain_http_rpc_client =
-            Provider::<Http>::try_from(&request_chain_data.http_rpc_url);
-        let Ok(request_chain_http_rpc_client) = request_chain_http_rpc_client else {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed to connect to the request chain {} http rpc server {}: {}",
-                chain_id,
-                request_chain_data.http_rpc_url,
-                request_chain_http_rpc_client.unwrap_err()
-            ));
-        };
-
-        let request_chain_http_rpc_client = Arc::new(
-            request_chain_http_rpc_client
-                .with_signer(signer_wallet)
-                .nonce_manager(signer_address),
-        );
-        let relay_contract = RelayContract::new(
-            request_chain_data.relay_address,
-            request_chain_http_rpc_client.clone(),
-        );
-
-        let relay_subs_contract = RelaySubscriptionsContract::new(
-            request_chain_data.relay_subscriptions_address,
-            request_chain_http_rpc_client.clone(),
-        );
-
-        let request_chain_client = Arc::from(RequestChainClient {
-            chain_id,
-            relay_address: request_chain_data.relay_address,
-            relay_subscriptions_address: request_chain_data.relay_subscriptions_address,
-            relay_contract: Arc::new(RwLock::new(relay_contract)),
-            relay_subscriptions_contract: Arc::new(RwLock::new(relay_subs_contract)),
-            ws_rpc_url: request_chain_data.ws_rpc_url.to_string(),
-            http_rpc_url: request_chain_data.http_rpc_url.to_string(),
-            request_chain_start_block_number: request_chain_data.block_number,
-            confirmation_blocks: 5, // TODO: fetch from contract
-            last_seen_block: Arc::new(0.into()),
-        });
-        request_chain_clients.insert(chain_id, request_chain_client);
     }
 
     let mut request_chain_ids_guard = app_state.request_chain_ids.lock().unwrap();
@@ -512,13 +395,39 @@ async fn export_signed_registration_message(
             Arc::new(RwLock::new(BTreeMap::new()));
         let gateway_epoch_state_waitlist = Arc::new(RwLock::new(HashMap::new()));
 
-        let gateway_jobs_contract = GatewayJobsContract::new(
-            app_state.gateway_jobs_contract_addr,
-            common_chain_http_rpc_client.clone(),
-        );
-
         let subscription_job_instance_heap = Arc::new(RwLock::new(BinaryHeap::new()));
         let subscription_jobs = Arc::new(RwLock::new(HashMap::new()));
+
+        if *gas_wallet_hex != *app_state.wallet.read().unwrap() {
+            for request_chain_data in request_chains_data.values_mut() {
+                let res = request_chain_data
+                    .request_chain_txn_manager
+                    .update_private_signer(gas_wallet_hex.clone());
+                if let Err(e) = res {
+                    return HttpResponse::InternalServerError().body(format!(
+                        "Failed to update the private signer for the request chain txn manager: {}",
+                        e
+                    ));
+                }
+            }
+        }
+
+        let common_chain_txn_manager = TxnManager::new(
+            app_state.common_chain_http_url.clone(),
+            app_state.common_chain_id,
+            app_state.wallet.read().unwrap().clone(),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let Ok(common_chain_txn_manager) = common_chain_txn_manager else {
+            return HttpResponse::InternalServerError().body(format!(
+                "Failed to create txn manager for common chain {}",
+                app_state.common_chain_id
+            ));
+        };
 
         let contracts_client = Arc::new(ContractsClient {
             enclave_owner,
@@ -526,9 +435,10 @@ async fn export_signed_registration_message(
             enclave_address: app_state.enclave_address,
             common_chain_ws_url: app_state.common_chain_ws_url.clone(),
             common_chain_http_url: app_state.common_chain_http_url.clone(),
+            common_chain_txn_manager,
             gateways_contract_address: app_state.gateways_contract_addr,
-            gateway_jobs_contract: Arc::new(RwLock::new(gateway_jobs_contract)),
-            request_chain_clients,
+            gateway_jobs_contract_address: app_state.gateway_jobs_contract_addr,
+            request_chains_data: Arc::new(RwLock::new(request_chains_data)),
             gateway_epoch_state,
             request_chain_ids: chain_ids.clone(),
             active_jobs: Arc::new(RwLock::new(HashMap::new())),
@@ -537,9 +447,7 @@ async fn export_signed_registration_message(
             time_interval: app_state.time_interval,
             offset_for_epoch: app_state.offset_for_epoch,
             gateway_epoch_state_waitlist,
-            common_chain_start_block_number: Arc::new(Mutex::new(
-                common_chain_block_number.as_u64(),
-            )),
+            common_chain_start_block_number: Arc::new(Mutex::new(common_chain_block_number)),
             subscription_job_instance_heap,
             subscription_jobs,
         });
@@ -578,6 +486,13 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
         return HttpResponse::BadRequest().body("Mutable params not configured yet!");
     }
 
+    let wallet: PrivateKeySigner = app_state
+        .wallet
+        .read()
+        .unwrap()
+        .parse::<PrivateKeySigner>()
+        .unwrap();
+
     let response = GatewayDetailsResponse {
         enclave_public_key: "0x".to_string()
             + &hex::encode(
@@ -589,7 +504,7 @@ async fn get_gateway_details(app_state: Data<AppState>) -> impl Responder {
             ),
         enclave_address: app_state.enclave_address,
         owner_address: *app_state.enclave_owner.lock().unwrap(),
-        gas_address: app_state.wallet.lock().unwrap().clone().unwrap().address(),
+        gas_address: wallet.address(),
     };
 
     HttpResponse::Ok().json(response)
@@ -602,10 +517,8 @@ mod api_impl_tests {
     use std::collections::BTreeSet;
     use std::str::FromStr;
 
-    use abi::{encode, encode_packed, Token};
     use actix_web::{body::MessageBody, http};
-    use ethers::types::{Address, H160};
-    use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+    use alloy::signers::k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
     use serde_json::json;
 
     use crate::test_util::{
@@ -644,11 +557,11 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: Invalid input length".as_bytes()
+            "Invalid owner address provided: OddLength".as_bytes()
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
+        assert_eq!(*app_state.enclave_owner.lock().unwrap(), Address::ZERO);
 
         // Inject invalid hex character address
         let req = actix_web::test::TestRequest::post()
@@ -663,11 +576,11 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address provided: Invalid character 'z' at position 0".as_bytes()
+            "Invalid owner address provided: InvalidHexCharacter { c: 'z', index: 0 }".as_bytes()
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.enclave_owner.lock().unwrap(), H160::zero());
+        assert_eq!(*app_state.enclave_owner.lock().unwrap(), Address::ZERO);
 
         // Inject a valid address
         let req = actix_web::test::TestRequest::post()
@@ -688,7 +601,7 @@ mod api_impl_tests {
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.enclave_owner.lock().unwrap(),
-            H160::from_str(OWNER_ADDRESS).unwrap()
+            Address::from_str(OWNER_ADDRESS).unwrap()
         );
 
         // Inject the valid address again
@@ -710,16 +623,8 @@ mod api_impl_tests {
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(
             *app_state.enclave_owner.lock().unwrap(),
-            H160::from_str(OWNER_ADDRESS).unwrap()
+            Address::from_str(OWNER_ADDRESS).unwrap()
         );
-    }
-
-    fn wallet_from_hex(hex: &str) -> LocalWallet {
-        let mut bytes32 = [0u8; 32];
-        let _ = hex::decode_to_slice(hex, &mut bytes32);
-        LocalWallet::from_bytes(&bytes32)
-            .unwrap()
-            .with_chain_id(CHAIN_ID)
     }
 
     // Test the various response cases for the 'mutable-config' endpoint
@@ -745,7 +650,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject invalid private(signing) key
         let req = actix_web::test::TestRequest::post()
@@ -765,7 +670,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
         let req = actix_web::test::TestRequest::post()
@@ -780,11 +685,11 @@ mod api_impl_tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(
             resp.into_body().try_into_bytes().unwrap(),
-            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })"
+            "Failed to parse the gas private key into a private key signer: EcdsaError(signature::Error { source: None })"
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(*app_state.wallet.lock().unwrap(), None);
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
 
         // Inject a valid private key for gas wallet
         let req = actix_web::test::TestRequest::post()
@@ -803,10 +708,7 @@ mod api_impl_tests {
         );
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
-        assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(wallet_from_hex(GAS_WALLET_KEY))
-        );
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
         assert!(!app_state.registered.load(Ordering::SeqCst));
         assert!(app_state.contracts_client.lock().unwrap().is_none());
         assert!(!*app_state
@@ -832,20 +734,18 @@ mod api_impl_tests {
             .to_request();
         let resp = actix_web::test::call_service(&app, req).await;
         assert_eq!(resp.status(), http::StatusCode::OK);
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .get_private_signer()
+            .address();
         assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .gateway_jobs_contract
-                .read()
-                .unwrap()
-                .client()
-                .inner()
-                .signer()
-                .address(),
+            gas_wallet_address,
             GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
         );
 
@@ -866,24 +766,19 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .get_private_signer()
+            .address();
         assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(wallet_from_hex(GAS_WALLET_KEY))
-        );
-        assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .gateway_jobs_contract
-                .read()
-                .unwrap()
-                .client()
-                .inner()
-                .signer()
-                .address(),
+            gas_wallet_address,
             GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
         );
 
@@ -908,31 +803,26 @@ mod api_impl_tests {
         );
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY_2);
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .get_private_signer()
+            .address();
         assert_eq!(
-            *app_state.wallet.lock().unwrap(),
-            Some(wallet_from_hex(GAS_WALLET_KEY_2))
-        );
-        assert_eq!(
-            app_state
-                .contracts_client
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .gateway_jobs_contract
-                .read()
-                .unwrap()
-                .client()
-                .inner()
-                .signer()
-                .address(),
+            gas_wallet_address,
             GAS_WALLET_PUBLIC_ADDRESS_2.parse::<Address>().unwrap()
         );
     }
 
     fn recover_key(
         chain_ids: Vec<u64>,
-        enclave_owner: H160,
+        enclave_owner: Address,
         sign_timestamp: usize,
         common_chain_signature: String,
         request_chain_signature: String,
@@ -942,32 +832,39 @@ mod api_impl_tests {
             keccak256("Register(address owner,uint256[] chainIds,uint256 signTimestamp)");
 
         let chain_ids = chain_ids.into_iter().collect::<BTreeSet<u64>>();
-        let chain_ids_tokens: Vec<Token> = chain_ids
-            .clone()
+        let chain_ids_tokens: Vec<DynSolValue> = (&chain_ids)
             .into_iter()
-            .map(|x| Token::Uint(x.into()))
-            .collect::<Vec<Token>>();
-        let chain_ids_bytes = keccak256(encode_packed(&[Token::Array(chain_ids_tokens)]).unwrap());
-        let hash_struct = keccak256(encode(&[
-            Token::FixedBytes(common_chain_register_typehash.to_vec()),
-            Token::Address(enclave_owner),
-            Token::FixedBytes(chain_ids_bytes.into()),
-            Token::Uint(sign_timestamp.into()),
-        ]));
+            .map(|&x| DynSolValue::Uint(U256::from(x), 256))
+            .collect::<Vec<DynSolValue>>();
+        let chain_ids_bytes = keccak256(DynSolValue::Array(chain_ids_tokens).abi_encode_packed());
 
-        let domain_separator = keccak256(encode(&[
-            Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-            Token::FixedBytes(keccak256("marlin.oyster.Gateways").to_vec()),
-            Token::FixedBytes(keccak256("1").to_vec()),
-        ]));
+        let hash_struct = keccak256(
+            DynSolValue::Tuple(vec![
+                DynSolValue::FixedBytes(common_chain_register_typehash, 32),
+                DynSolValue::Address(enclave_owner),
+                DynSolValue::FixedBytes(chain_ids_bytes, 32),
+                DynSolValue::Uint(U256::from(sign_timestamp), 256),
+            ])
+            .abi_encode(),
+        );
 
-        let digest = encode_packed(&[
-            Token::String("\x19\x01".to_string()),
-            Token::FixedBytes(domain_separator.to_vec()),
-            Token::FixedBytes(hash_struct.to_vec()),
-        ])
-        .unwrap();
-        let digest = keccak256(digest);
+        let domain_separator = keccak256(
+            DynSolValue::Tuple(vec![
+                DynSolValue::FixedBytes(keccak256("EIP712Domain(string name,string version)"), 32),
+                DynSolValue::FixedBytes(keccak256("marlin.oyster.Gateways"), 32),
+                DynSolValue::FixedBytes(keccak256("1"), 32),
+            ])
+            .abi_encode(),
+        );
+
+        let digest = keccak256(
+            DynSolValue::Tuple(vec![
+                DynSolValue::String("\x19\x01".to_string()),
+                DynSolValue::FixedBytes(domain_separator, 32),
+                DynSolValue::FixedBytes(hash_struct, 32),
+            ])
+            .abi_encode_packed(),
+        );
 
         let signature = Signature::from_slice(
             hex::decode(&common_chain_signature[0..128])
@@ -979,7 +876,7 @@ mod api_impl_tests {
             RecoveryId::try_from((hex::decode(&common_chain_signature[128..]).unwrap()[0]) - 27)
                 .unwrap();
         let common_chain_recovered_key =
-            VerifyingKey::recover_from_prehash(&digest, &signature, v).unwrap();
+            VerifyingKey::recover_from_prehash(&digest.to_vec(), &signature, v).unwrap();
 
         if common_chain_recovered_key != verifying_key {
             return false;
@@ -988,25 +885,32 @@ mod api_impl_tests {
         // create request chain signature and add it to the request chain signatures map
         let request_chain_register_typehash =
             keccak256("Register(address owner,uint256 signTimestamp)");
-        let hash_struct = keccak256(encode(&[
-            Token::FixedBytes(request_chain_register_typehash.to_vec()),
-            Token::Address(enclave_owner),
-            Token::Uint(sign_timestamp.into()),
-        ]));
+        let hash_struct = keccak256(
+            DynSolValue::Tuple(vec![
+                DynSolValue::FixedBytes(request_chain_register_typehash, 32),
+                DynSolValue::Address(enclave_owner),
+                DynSolValue::Uint(U256::from(sign_timestamp), 256),
+            ])
+            .abi_encode(),
+        );
 
-        let request_chain_domain_separator = keccak256(encode(&[
-            Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-            Token::FixedBytes(keccak256("marlin.oyster.Relay").to_vec()),
-            Token::FixedBytes(keccak256("1").to_vec()),
-        ]));
+        let request_chain_domain_separator = keccak256(
+            DynSolValue::Tuple(vec![
+                DynSolValue::FixedBytes(keccak256("EIP712Domain(string name,string version)"), 32),
+                DynSolValue::FixedBytes(keccak256("marlin.oyster.Relay"), 32),
+                DynSolValue::FixedBytes(keccak256("1"), 32),
+            ])
+            .abi_encode(),
+        );
 
-        let digest = encode_packed(&[
-            Token::String("\x19\x01".to_string()),
-            Token::FixedBytes(request_chain_domain_separator.to_vec()),
-            Token::FixedBytes(hash_struct.to_vec()),
-        ])
-        .unwrap();
-        let digest = keccak256(digest);
+        let digest = keccak256(
+            DynSolValue::Tuple(vec![
+                DynSolValue::String("\x19\x01".to_string()),
+                DynSolValue::FixedBytes(request_chain_domain_separator, 32),
+                DynSolValue::FixedBytes(hash_struct, 32),
+            ])
+            .abi_encode_packed(),
+        );
 
         let signature = Signature::from_slice(
             hex::decode(&request_chain_signature[0..128])
@@ -1018,7 +922,7 @@ mod api_impl_tests {
             RecoveryId::try_from((hex::decode(&request_chain_signature[128..]).unwrap()[0]) - 27)
                 .unwrap();
         let request_chain_recovered_key =
-            VerifyingKey::recover_from_prehash(&digest, &signature, v).unwrap();
+            VerifyingKey::recover_from_prehash(&digest.to_vec(), &signature, v).unwrap();
 
         if request_chain_recovered_key != verifying_key {
             return false;
@@ -1377,6 +1281,14 @@ mod api_impl_tests {
         assert!(response.is_ok());
 
         let response = response.unwrap();
+        let gas_address = app_state
+            .wallet
+            .read()
+            .unwrap()
+            .clone()
+            .parse::<PrivateKeySigner>()
+            .unwrap()
+            .address();
         let expected_response = GatewayDetailsResponse {
             enclave_public_key: "0x".to_string()
                 + &hex::encode(
@@ -1388,7 +1300,7 @@ mod api_impl_tests {
                 ),
             enclave_address: app_state.enclave_address,
             owner_address: *app_state.enclave_owner.lock().unwrap(),
-            gas_address: app_state.wallet.lock().unwrap().clone().unwrap().address(),
+            gas_address,
         };
         assert_eq!(
             response.enclave_public_key,

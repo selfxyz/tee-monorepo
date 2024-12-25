@@ -1,4 +1,4 @@
-use ethers::types::U256;
+use alloy::primitives::U256;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -23,8 +23,4 @@ pub enum ServerlessError {
     #[cfg(test)]
     #[error("Empty Topics")]
     EmptyTopics,
-
-    #[cfg(test)]
-    #[error("Empty Topic 0")]
-    EmptyTopic0,
 }
