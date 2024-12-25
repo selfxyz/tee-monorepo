@@ -34,12 +34,16 @@ enum Commands {
         docker_compose: String,
 
         /// List of Docker image .tar file paths
-        #[arg(short = 'i', long, required = true)]
-        docker_images: Vec<String>,
+        #[arg(short = 'i', long, required = false)]
+        docker_images: Option<Vec<String>>,
 
         /// Output folder name
         #[arg(short, long, default_value = "result")]
         output: String,
+
+        /// Git commit reference for oyster-monorepo
+        #[arg(short = 'r', long, default_value = "3e6dbc844b42281462e65d7742d9436d4205fcfd")]
+        commit_ref: String,
     },
     /// Upload Enclave Image to IPFS
     Upload {
@@ -62,9 +66,10 @@ async fn main() -> Result<()> {
             docker_compose,
             docker_images,
             output,
+            commit_ref,
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
-            commands::build::build_oyster_image(platform, docker_compose, docker_images, output)?
+            commands::build::build_oyster_image(platform, docker_compose, docker_images, output, commit_ref)?
         }
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;
