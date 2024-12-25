@@ -20,19 +20,19 @@ pub fn build_oyster_image(
     info!("  Docker compose: {}", docker_compose);
     info!("  Commit ref: {}", commit_ref);
     
-    let docker_images_arg = docker_images
+    let docker_images_list = docker_images
         .as_ref()
         .map(|images| images.join(" "))
-        .unwrap_or_else(|| "".to_string());
+        .unwrap_or_default();
 
-    info!("  Docker images: {}", docker_images_arg);
+    info!("  Docker images: {}", docker_images_list);
 
     let nix_expr = format!(
         r#"((builtins.getFlake "github:marlinprotocol/oyster-monorepo?rev={}").packages.{}.sdks.docker-enclave.override {{compose={};dockerImages=[{}];}}).default"#,
         commit_ref,
         platform.nix_arch(),
         docker_compose,
-        docker_images_arg
+        docker_images_list
     );
 
     let mut cmd = Command::new("nix")
