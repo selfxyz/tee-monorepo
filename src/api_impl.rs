@@ -124,8 +124,6 @@ async fn inject_mutable_config(
         .mutable_params_injected
         .store(true, Ordering::SeqCst);
 
-    drop(contracts_client_guard);
-
     info!("Mutable params configured!");
 
     HttpResponse::Ok().body("Mutable params configured!")
