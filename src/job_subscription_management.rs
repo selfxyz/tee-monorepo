@@ -89,13 +89,12 @@ pub async fn process_historic_job_subscriptions(
         let req_chain_tx_clone = req_chain_tx.clone();
 
         let job_sub_tx_clone = job_sub_tx.clone();
-        let request_chains_data_clone = request_chains_data.clone();
+        let request_chain_data = request_chains_data.get(&request_chain_id).unwrap().clone();
         tokio::spawn(async move {
-            let request_chain_data = request_chains_data_clone.get(&request_chain_id).unwrap();
             let http_provider = HttpProvider::new(request_chain_data.http_rpc_url.clone());
             process_historic_subscription_jobs_on_request_chain(
                 &contracts_client_clone,
-                request_chain_data,
+                &request_chain_data,
                 req_chain_tx_clone,
                 job_sub_tx_clone,
                 http_provider,
