@@ -229,7 +229,7 @@ async fn handle_event_logs(
                     if is_node_selected {
                         let mut start_timestamp = Instant::now();
                         if let Some(event_block_number) = event.block_number {
-                            if let Ok(event_timestamp) = 
+                            if let Ok(event_timestamp) =
                                 get_block_timestamp(&app_state.http_rpc_url, event_block_number).await {
                                 start_timestamp = timestamp_to_instant(event_timestamp).unwrap();
                             }
@@ -241,7 +241,7 @@ async fn handle_event_logs(
                                 size_limit: event_decoded.sizeLimit,
                                 end_timestamp: event_decoded.endTimestamp,
                             },
-                            acknowledgement_deadline: start_timestamp 
+                            acknowledgement_deadline: start_timestamp
                                 + Duration::from_secs(app_state.acknowledgement_timeout),
                         });
                     }
@@ -338,19 +338,19 @@ async fn handle_event_logs(
                         continue;
                     }
 
-                    let secret_metadata = 
+                    let secret_metadata =
                         get_secret_metadata(&app_state.secret_manager_contract_instance, secret_id).await;
                     let Ok(secret_metadata) = secret_metadata else {
                         eprintln!(
-                            "Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}", 
-                            secret_id, 
+                            "Failed to extract secret metadata from ID {} for 'SecretStoreReplaced' event: {:?}",
+                            secret_id,
                             secret_metadata.unwrap_err());
                         continue;
                     };
 
                     let mut start_timestamp = Instant::now();
                     if let Some(event_block_number) = event.block_number {
-                        if let Ok(event_timestamp) = 
+                        if let Ok(event_timestamp) =
                             get_block_timestamp(&app_state.http_rpc_url, event_block_number).await {
                             start_timestamp = timestamp_to_instant(event_timestamp).unwrap();
                         }
@@ -358,7 +358,7 @@ async fn handle_event_logs(
 
                     app_state.secrets_created.lock().unwrap().insert(secret_id, SecretCreatedMetadata {
                         secret_metadata: secret_metadata,
-                        acknowledgement_deadline: start_timestamp 
+                        acknowledgement_deadline: start_timestamp
                             + Duration::from_secs(app_state.acknowledgement_timeout),
                     });
                 }
