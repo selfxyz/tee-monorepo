@@ -53,33 +53,33 @@ enum Commands {
         #[arg(short = 'e', long, required = true)]
         enclave_ip: String,
 
+        /// PCR 0
+        #[arg(short = '0', long, default_value = "")]
+        pcr0: String,
+
         /// PCR 1
-        #[arg(short = '1', long, required = true)]
+        #[arg(short = '1', long, default_value = "")]
         pcr1: String,
 
         /// PCR 2
-        #[arg(short = '2', long, required = true)]
+        #[arg(short = '2', long, default_value = "")]
         pcr2: String,
 
-        /// PCR 3
-        #[arg(short = '3', long, required = true)]
-        pcr3: String,
-
-        /// CPU cores
-        #[arg(short = 'c', long, required = true)]
-        cpu: String,
-
-        /// Memory (in MB)
-        #[arg(short = 'm', long, required = true)]
-        memory: String,
-
-        /// Attestation Port (default: 1400)
-        #[arg(short = 'p', long, required = true, default_value = "1400")]
+        /// Attestation Port (default: 1300)
+        #[arg(short = 'p', long, default_value = "1300")]
         attestation_port: u16,
 
         /// Maximum age of attestation (in milliseconds) (default: 300000)
         #[arg(short = 'a', long, default_value = "300000")]
         max_age: usize,
+
+        /// Attestation timestamp (in milliseconds)
+        #[arg(short = 't', long, default_value = "0")]
+        timestamp: usize,
+
+        /// Root public key
+        #[arg(short = 'r', long, default_value = "")]
+        root_public_key: String,
     },
 }
 
@@ -89,8 +89,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    match &cli.command {
-        Commands::Doctor => commands::doctor::run_doctor()?,
+    let result = match &cli.command {
+        Commands::Doctor => commands::doctor::run_doctor(),
         Commands::BuildImage {
             platform,
             docker_compose,
@@ -98,25 +98,30 @@ async fn main() -> Result<()> {
             output,
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
-            commands::build::build_oyster_image(platform, docker_compose, docker_images, output)?
+            commands::build::build_oyster_image(platform, docker_compose, docker_images, output)
         },
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;
-            commands::upload::upload_enclave_image(file, &default_provider).await?;
+            commands::upload::upload_enclave_image(file, &default_provider).await
         },
         Commands::VerifyEnclave {
+            pcr0,
             pcr1,
             pcr2,
-            pcr3,
-            cpu,
-            memory,
             enclave_ip,
             attestation_port,
             max_age,
+            root_public_key,
+            timestamp,
         } => {
-            commands::verify::verify_image(pcr1, pcr2, pcr3, cpu, memory, enclave_ip, attestation_port, max_age).await?
+            commands::verify::verify_enclave(pcr0, pcr1, pcr2, enclave_ip, attestation_port, max_age, root_public_key, timestamp).await
         }
+    };
+
+    if let Err(err) = &result {
+        tracing::error!("Error: {:#}", err);
+        std::process::exit(1);
     }
 
-    Ok(())
+    result
 }

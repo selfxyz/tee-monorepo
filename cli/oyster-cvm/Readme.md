@@ -56,14 +56,14 @@ Add env vars for Pinata:
 Verifies an Oyster enclave's attestation document.
 
 Options:
-- `--enclave-ip` (-e): Enclave IP address
-- `--pcr1` (-1): PCR1 value
-- `--pcr2` (-2): PCR2 value  
-- `--pcr3` (-3): PCR3 value
-- `--cpu` (-c): Number of CPU cores
-- `--memory` (-m): Memory in MB
-- `--attestation-port` (-p): Attestation port (default: 1400)
+- `--enclave-ip` (-e): Enclave IP address (required)
+- `--pcr0` (-0): PCR0 value (optional)
+- `--pcr1` (-1): PCR1 value (optional)
+- `--pcr2` (-2): PCR2 value (optional)
+- `--attestation-port` (-p): Attestation port (default: 1300)
 - `--max-age` (-a): Maximum age of attestation in milliseconds (default: 300000)
+- `--timestamp` (-t): Attestation timestamp in milliseconds (default: 0)
+- `--root-public-key` (-r): Root public key (optional, defaults to AWS root key)
 
 ### Example
 
@@ -91,19 +91,16 @@ Options:
 # Verify an enclave
 ./oyster-cvm verify-enclave \
   --enclave-ip 192.168.1.100 \
-  --pcr1 value1 \
-  --pcr2 value2 \
-  --pcr3 value3 \
-  --cpu 4 \
-  --memory 8192 \
-  --attestation-port 1400 \
-  --max-age 300000
+  --pcr0 pcr0_value \
+  --pcr1 pcr1_value \
+  --pcr2 pcr2_value \
 
 # Sample output:
-[INFO ] Public key verified from enclave attestation
-[INFO ] PCR values: PCR1=value1, PCR2=value2, PCR3=value3
-[INFO ] CPU: 4, Memory: 8192
-[INFO ] Public key: [...]
+[INFO] Connecting to attestation endpoint: http://192.168.1.100:1300/attestation/raw
+[INFO] Successfully fetched attestation document
+[INFO] Root public key: <hex-encoded-key>
+[INFO] Enclave public key: <hex-encoded-key>
+[INFO] Verification successful ✓
 ```
 
 ## License

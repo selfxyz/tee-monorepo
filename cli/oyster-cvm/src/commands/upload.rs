@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::{env, fs, time::Duration};
 use crate::types::StorageProvider;
 
-pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -> Result<String> {
+pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -> Result<()> {
     info!("Uploading enclave image with:");
     info!("  File path: {}", file_path);
     info!("  Provider: {}", provider.as_str());
@@ -21,7 +21,8 @@ pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -
         env::var("PINATA_API_KEY").context("PINATA_API_KEY not set in environment")?,
         env::var("PINATA_SECRET_KEY").context("PINATA_SECRET_KEY not set in environment")?
     );
-    upload_to_pinata(&file_content, file_name, &api_key, &secret_key).await
+    upload_to_pinata(&file_content, file_name, &api_key, &secret_key).await?;
+    Ok(())
 }
 
 async fn upload_to_pinata(content: &[u8], filename: &str, api_key: &str, secret_key: &str) -> Result<String> {
