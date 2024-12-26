@@ -34,8 +34,8 @@ enum Commands {
         docker_compose: String,
 
         /// List of Docker image .tar file paths
-        #[arg(short = 'i', long, required = false)]
-        docker_images: Option<Vec<String>>,
+        #[arg(short = 'i', long, default_value = "")]
+        docker_images: Vec<String>,
 
         /// Output folder name
         #[arg(short, long, default_value = "result")]

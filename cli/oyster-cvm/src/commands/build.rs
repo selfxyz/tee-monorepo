@@ -7,11 +7,10 @@ use std::io::{BufReader, BufRead};
 pub fn build_oyster_image(
     platform: Platform,
     docker_compose: &str,
-    docker_images: &Option<Vec<String>>,
+    docker_images: &[String],
     output: &str,
     commit_ref: &str,
 ) -> Result<()> {
-    // Check if the current user is in the nix trusted-users list
     info!("Checking if the current user is in the nix trusted-users list");
     check_trusted_user()?;
 
@@ -20,12 +19,10 @@ pub fn build_oyster_image(
     info!("  Docker compose: {}", docker_compose);
     info!("  Commit ref: {}", commit_ref);
     
-    let docker_images_list = docker_images
-        .as_ref()
-        .map(|images| images.join(" "))
-        .unwrap_or_default();
-
-    info!("  Docker images: {}", docker_images_list);
+    let docker_images_list = docker_images.join(" ");
+    if !docker_images_list.is_empty() {
+        info!("  Docker images: {}", docker_images_list);
+    }
 
     let nix_expr = format!(
         r#"((builtins.getFlake "github:marlinprotocol/oyster-monorepo?rev={}").packages.{}.sdks.docker-enclave.override {{compose={};dockerImages=[{}];}}).default"#,
