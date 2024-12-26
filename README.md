@@ -28,6 +28,7 @@ The repository is organized into projects:
 - [sdks/docker-enclave](./sdks/docker-enclave/): Enclave that allows docker compose based deployment.
 - [serverless/executor](./serverless/executor/): Oyster serverless executor to execute serverless requests.
 - [serverless/gateway](./serverless/gateway/) : Oyster serverless gateway to relay serverless requests and responses between request and common chains.
+- [serverless/gateway-enclave](./serverless/gateway/) : Enclave that packages the Serverless Gateway and supporting applications.
 - [serverless/http-on-vsock-client](./serverless/http-on-vsock-client/): Client for HTTP over vsock connections.
 - [serverless/http-on-vsock-server](./serverless/http-on-vsock-server/): Server library for HTTP over vsock connections.
 - [serverless/transaction-manager](./serverless/transaction-manager/): Oyster library for sending transaction and confirmation management

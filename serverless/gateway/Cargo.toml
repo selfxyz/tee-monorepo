@@ -1,5 +1,5 @@
 [package]
-name = "serverless-gateway"
+name = "oyster-serverless-gateway"
 version = "0.1.0"
 edition = "2021"
 
