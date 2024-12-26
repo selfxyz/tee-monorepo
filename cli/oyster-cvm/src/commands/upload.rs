@@ -19,7 +19,7 @@ pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -
 
     let (api_key, secret_key) = (
         env::var("PINATA_API_KEY").context("PINATA_API_KEY not set in environment")?,
-        env::var("PINATA_SECRET_KEY").context("PINATA_SECRET_KEY not set in environment")?,
+        env::var("PINATA_API_SECRET").context("PINATA_API_SECRET not set in environment")?,
     );
     upload_to_pinata(&file_content, file_name, &api_key, &secret_key).await?;
     Ok(())
