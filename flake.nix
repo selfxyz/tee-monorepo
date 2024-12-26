@@ -113,6 +113,17 @@
       serverless.executor = import ./serverless/executor {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      serverless.executor-enclave = import ./serverless/executor-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        tcp-proxy = networking.tcp-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        executor = serverless.executor.compressed;
+        kernels = kernels.vanilla;
+        workerd = serverless.workerd;
+      };
       serverless.gateway = import ./serverless/gateway {
         inherit nixpkgs systemConfig fenix naersk;
       };
@@ -129,6 +140,7 @@
       serverless.http-on-vsock-client = import ./serverless/http-on-vsock-client {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      serverless.workerd = ./. + "/serverless/executor/runtime/workerd";
     };
   in {
     formatter = {
