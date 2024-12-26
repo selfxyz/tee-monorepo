@@ -18,3 +18,7 @@ The contracts are built on a relatively modern (as of early 2024) stack includin
 ```bash
 npm install @marlinorg/oyster-contracts
 ```
+
+## License
+
+This project is licensed under the MIT license or any later version. See [LICENSE.txt](./LICENSE.txt).
