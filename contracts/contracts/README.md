@@ -21,4 +21,4 @@ npm install @marlinorg/oyster-contracts
 
 ## License
 
-This project is licensed under the MIT license or any later version. See [LICENSE.txt](./LICENSE.txt).
+This project is licensed under the MIT license. See [LICENSE.txt](./LICENSE.txt).
