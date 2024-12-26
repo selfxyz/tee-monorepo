@@ -1398,7 +1398,6 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
- "hex-literal",
  "log",
  "openssl",
  "oyster-sdk",
