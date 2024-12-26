@@ -2,7 +2,7 @@
 
 # Attestation Verifier Enclave
 
-The attestation verifier enclave packages the [attestation verifier](https://github.com/marlinprotocol/oyster-attestation-verifier) along with related services in an enclave.
+The attestation verifier enclave packages the [attestation verifier](https://github.com/marlinprotocol/oyster-monorepo/tree/master/attestation/verifier) along with related services in an enclave.
 
 The attestation verifier enclave is built using Nix for reproducibility. It does NOT use the standard `nitro-cli` based pipeline, and instead uses [monzo/aws-nitro-util](https://github.com/monzo/aws-nitro-util) in order to produce bit-for-bit reproducible enclaves.
 

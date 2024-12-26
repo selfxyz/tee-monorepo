@@ -2,6 +2,15 @@
 name = "http-on-vsock-client"
 version = "0.1.0"
 edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[[bin]]
+name = "gateway-vsock-client"
+path = "src/gw_vsock_client.rs"
+
+[[bin]]
+name = "executor-vsock-client"
+path = "src/exec_vsock_client.rs"
 
 [dependencies]
 clap = { version = "4.4.6", features = ["derive"] }

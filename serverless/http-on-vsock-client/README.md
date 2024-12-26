@@ -30,13 +30,26 @@ Supported outputs:
 ## Usage
 
 ```bash
-$ ./http-on-vsock-client --help
-Usage: http-on-vsock-client --url <URL> --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
+$ ./executor-vsock-client --help
+Usage: executor-vsock-client --url <URL> --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
 
 Options:
   -u, --url <URL>                      url to query
-  -o, --owner-address <OWNER_ADDRESS>  
-  -g, --gas-key <GAS_KEY>              
+  -o, --owner-address <OWNER_ADDRESS>  owner address
+  -g, --gas-key <GAS_KEY>              gas key
+  -h, --help                           Print help
+  -V, --version                        Print version
+```
+
+```bash
+$ ./gateway-vsock-client --help
+Usage: gateway-vsock-client [OPTIONS] --url <URL> --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
+
+Options:
+  -u, --url <URL>                      url to query
+  -o, --owner-address <OWNER_ADDRESS>  owner address
+  -g, --gas-key <GAS_KEY>              gas key
+  -c, --chain-ids <CHAIN_IDS>          list of chain ids
   -h, --help                           Print help
   -V, --version                        Print version
 ```
@@ -44,7 +57,11 @@ Options:
 ## Example
 
 ```bash
-$ ./http-on-vsock-client --url vsock://88:6000/ --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
+$ ./executor-vsock-client --url vsock://88:6000/ --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY>
+```
+
+```bash
+$ ./gateway-vsock-client --url vsock://88:6000/ --owner-address <OWNER_ADDRESS> --gas-key <GAS_KEY> -c 31337 -c 421614
 ```
 ## License
 

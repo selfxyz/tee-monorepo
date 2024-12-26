@@ -1,0 +1,7 @@
+.vscode/
+.history/
+
+debug/
+target/
+
+config.json

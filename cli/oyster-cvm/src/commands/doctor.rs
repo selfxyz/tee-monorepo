@@ -1,7 +1,7 @@
 use crate::types::Dependency;
 use anyhow::Result;
-use tracing::{error, info};
 use std::process::Command;
+use tracing::{error, info};
 
 pub fn run_doctor() -> Result<()> {
     let mut has_error = false;
