@@ -44,7 +44,11 @@ enum Commands {
         output: String,
 
         /// Git commit reference for oyster-monorepo
-        #[arg(short = 'r', long, default_value = "3e6dbc844b42281462e65d7742d9436d4205fcfd")]
+        #[arg(
+            short = 'r',
+            long,
+            default_value = "3e6dbc844b42281462e65d7742d9436d4205fcfd"
+        )]
         commit_ref: String,
     },
     /// Upload Enclave Image to IPFS
@@ -105,7 +109,13 @@ async fn main() -> Result<()> {
             commit_ref,
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
-            commands::build::build_oyster_image(platform, docker_compose, docker_images, output, commit_ref)
+            commands::build::build_oyster_image(
+                platform,
+                docker_compose,
+                docker_images,
+                output,
+                commit_ref,
+            )
         }
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;

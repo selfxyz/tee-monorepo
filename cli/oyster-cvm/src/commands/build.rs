@@ -1,8 +1,8 @@
 use crate::types::Platform;
 use anyhow::{Context, Result};
-use tracing::info;
+use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
-use std::io::{BufReader, BufRead};
+use tracing::info;
 
 pub fn build_oyster_image(
     platform: Platform,
@@ -18,7 +18,7 @@ pub fn build_oyster_image(
     info!("  Platform: {}", platform.as_str());
     info!("  Docker compose: {}", docker_compose);
     info!("  Commit ref: {}", commit_ref);
-    
+
     let docker_images_list = docker_images.join(" ");
     if !docker_images_list.is_empty() {
         info!("  Docker images: {}", docker_images_list);
@@ -47,7 +47,7 @@ pub fn build_oyster_image(
         .stdout(Stdio::piped())
         .spawn()
         .context("Failed to execute Nix build command")?;
-    
+
     let stdout = cmd.stdout.take().unwrap();
     let stdout_reader = BufReader::new(stdout);
 
@@ -60,7 +60,6 @@ pub fn build_oyster_image(
     Ok(())
 }
 
-
 fn check_trusted_user() -> Result<()> {
     let output = Command::new("nix")
         .args(["config", "show", "trusted-users"])
@@ -71,8 +70,8 @@ fn check_trusted_user() -> Result<()> {
         return Err(anyhow::anyhow!("Failed to get nix trusted users"));
     }
 
-    let trusted_users = String::from_utf8(output.stdout)
-        .context("Failed to parse nix trusted users output")?;
+    let trusted_users =
+        String::from_utf8(output.stdout).context("Failed to parse nix trusted users output")?;
 
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
@@ -87,7 +86,8 @@ fn check_trusted_user() -> Result<()> {
                trusted-users = root {}\n\
             3. Restart nix-daemon:\n\
                $ sudo systemctl restart nix-daemon",
-            username, username
+            username,
+            username
         ));
     }
 
