@@ -1,7 +1,7 @@
 use crate::types::Platform;
 use anyhow::{Context, Result};
-use tracing::info;
 use std::process::Command;
+use tracing::info;
 
 pub fn build_oyster_image(
     platform: Platform,
