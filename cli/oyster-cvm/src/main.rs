@@ -8,7 +8,9 @@ use tracing_subscriber::EnvFilter;
 fn setup_logging() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 }
 
@@ -99,11 +101,11 @@ async fn main() -> Result<()> {
         } => {
             let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
             commands::build::build_oyster_image(platform, docker_compose, docker_images, output)
-        },
+        }
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;
             commands::upload::upload_enclave_image(file, &default_provider).await
-        },
+        }
         Commands::VerifyEnclave {
             pcr0,
             pcr1,
@@ -114,7 +116,17 @@ async fn main() -> Result<()> {
             root_public_key,
             timestamp,
         } => {
-            commands::verify::verify_enclave(pcr0, pcr1, pcr2, enclave_ip, attestation_port, max_age, root_public_key, timestamp).await
+            commands::verify::verify_enclave(
+                pcr0,
+                pcr1,
+                pcr2,
+                enclave_ip,
+                attestation_port,
+                max_age,
+                root_public_key,
+                timestamp,
+            )
+            .await
         }
     };
 
@@ -123,5 +135,5 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    result
+    Ok(())
 }

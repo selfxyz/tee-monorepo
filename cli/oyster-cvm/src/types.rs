@@ -68,7 +68,7 @@ pub enum StorageProvider {
 impl StorageProvider {
     pub fn as_str(&self) -> &'static str {
         match self {
-            StorageProvider::Pinata => "pinata"
+            StorageProvider::Pinata => "pinata",
         }
     }
 }
