@@ -800,6 +800,33 @@ EOF
         Ok(())
     }
 
+    // Inherently declarative
+    fn run_fragment_download_and_check_image(&self, sess: &Session, image_url: &str) -> Result<()> {
+        Self::ssh_exec(
+            sess,
+            &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
+                + image_url),
+        )
+        .context("Failed to download enclave image")?;
+
+        let is_eif_allowed = self
+            .check_eif_blacklist_whitelist(sess)
+            .context("Failed to retrieve image hash")?;
+
+        if !is_eif_allowed {
+            return Err(anyhow!("EIF NOT ALLOWED"));
+        }
+
+        // store eif_url only when the image is allowed
+        Self::ssh_exec(
+            sess,
+            &("echo \"".to_owned() + image_url + "\" > image_url.txt"),
+        )
+        .context("Failed to write EIF URL to txt file.")?;
+
+        Ok(())
+    }
+
     // Enclave deployment fragments end here
 
     /* AWS EC2 UTILITY */
