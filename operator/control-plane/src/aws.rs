@@ -742,6 +742,43 @@ EOF
         Ok(())
     }
 
+    fn run_fragment_logger(sess: &Session) -> Result<()> {
+        let (_, stderr) = Self::ssh_exec(sess, "curl -fsS https://artifacts.marlin.org/oyster/binaries/nitro-logger_v1.0.0_linux_`uname -m | sed 's/x86_64/amd64/g; s/aarch64/arm64/g'` -o nitro-logger && chmod +x nitro-logger")
+                .context("Failed to download logger")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to download logger: {stderr}"));
+        }
+
+        let (_, stderr) = Self::ssh_exec(
+                sess,
+                "<<EOF cat | sudo tee /etc/supervisor/conf.d/logger.conf
+[program:logger]
+command=/home/ubuntu/nitro-logger --enclave-log-file-path /home/ubuntu/enclave.log --script-log-file-path /home/ubuntu/logger.log
+autostart=true
+autorestart=true
+EOF
+                ",
+            )
+            .context("Failed to setup supervisor conf")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to setup supervisor conf: {stderr}"));
+        }
+
+        let (_, stderr) = Self::ssh_exec(
+            sess,
+            "sudo supervisorctl reread && sudo supervisorctl update logger",
+        )
+        .context("Failed to start logger")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to start logger: {stderr}"));
+        }
+
+        Ok(())
+    }
+
     // Enclave deployment fragments end here
 
     /* AWS EC2 UTILITY */
