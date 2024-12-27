@@ -745,7 +745,6 @@ EOF
     // IMPORTANT: Each fragment is expected to be declarative where it will take the system
     // to the desired state by executing whatever commands necessary
 
-    // Inherently declarative
     fn run_fragment_ephemeral_ports(sess: &Session) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
@@ -800,8 +799,15 @@ EOF
         Ok(())
     }
 
-    // Inherently declarative
     fn run_fragment_download_and_check_image(&self, sess: &Session, image_url: &str) -> Result<()> {
+        let (stdout, stderr) =
+            Self::ssh_exec(sess, "cat image_url.txt").context("Failed to read image_url.txt")?;
+
+        if stderr.is_empty() && stdout == image_url {
+            // return if url has not changed
+            return Ok(());
+        }
+
         Self::ssh_exec(
             sess,
             &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
@@ -811,7 +817,7 @@ EOF
 
         let is_eif_allowed = self
             .check_eif_blacklist_whitelist(sess)
-            .context("Failed to retrieve image hash")?;
+            .context("Failed whitelist/blacklist check")?;
 
         if !is_eif_allowed {
             return Err(anyhow!("EIF NOT ALLOWED"));
