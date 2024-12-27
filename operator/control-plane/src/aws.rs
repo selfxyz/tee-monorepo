@@ -264,46 +264,6 @@ impl Aws {
         bandwidth: u64,
         debug: bool,
     ) -> Result<()> {
-        if family == "salmon" {
-            self.run_enclave_salmon(
-                job_id,
-                instance_id,
-                region,
-                image_url,
-                req_vcpu,
-                req_mem,
-                bandwidth,
-                debug,
-            )
-            .await
-        } else if family == "tuna" {
-            self.run_enclave_tuna(
-                job_id,
-                instance_id,
-                region,
-                image_url,
-                req_vcpu,
-                req_mem,
-                bandwidth,
-                debug,
-            )
-            .await
-        } else {
-            Err(anyhow!("unsupported image family"))
-        }
-    }
-
-    async fn run_enclave_salmon(
-        &self,
-        _job_id: &str,
-        instance_id: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
         let public_ip_address = self
             .get_instance_ip(instance_id, region)
             .await
@@ -313,6 +273,27 @@ impl Aws {
             .await
             .context("error establishing ssh connection")?;
 
+        if family == "salmon" {
+            self.run_enclave_salmon(sess, job_id, image_url, req_vcpu, req_mem, bandwidth, debug)
+                .await
+        } else if family == "tuna" {
+            self.run_enclave_tuna(sess, job_id, image_url, req_vcpu, req_mem, bandwidth, debug)
+                .await
+        } else {
+            Err(anyhow!("unsupported image family"))
+        }
+    }
+
+    async fn run_enclave_salmon(
+        &self,
+        sess: &Session,
+        _job_id: &str,
+        image_url: &str,
+        req_vcpu: i32,
+        req_mem: i64,
+        bandwidth: u64,
+        debug: bool,
+    ) -> Result<()> {
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
 
         info!(
@@ -518,24 +499,14 @@ EOF
 
     async fn run_enclave_tuna(
         &self,
+        sess: &Session,
         job_id: &str,
-        instance_id: &str,
-        region: &str,
         image_url: &str,
         req_vcpu: i32,
         req_mem: i64,
         bandwidth: u64,
         debug: bool,
     ) -> Result<()> {
-        let public_ip_address = self
-            .get_instance_ip(instance_id, region)
-            .await
-            .context("could not fetch instance ip")?;
-        let sess = &self
-            .ssh_connect(&(public_ip_address + ":22"))
-            .await
-            .context("error establishing ssh connection")?;
-
         let (_, stderr) = Self::ssh_exec(
             sess,
             "sudo sysctl -w net.ipv4.ip_local_port_range=\"61440 65535\"",
