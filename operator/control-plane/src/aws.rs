@@ -737,6 +737,29 @@ EOF
         Ok(())
     }
 
+    fn run_fragment_init_server(sess: &Session, job_id: &str) -> Result<()> {
+        let (_, stderr) = Self::ssh_exec(
+            sess,
+            &("sudo sed -i -e 's/placeholder_job_id/".to_owned()
+                + job_id
+                + "/g' /etc/supervisor/conf.d/oyster-init-server.conf"),
+        )
+        .context("Failed to set job id for init server")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to set job id for init server: {stderr}"));
+        }
+
+        let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl update")
+            .context("Failed to update init server")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to update init server: {stderr}"));
+        }
+
+        Ok(())
+    }
+
     // Enclave deployment fragments end here
 
     /* AWS EC2 UTILITY */
