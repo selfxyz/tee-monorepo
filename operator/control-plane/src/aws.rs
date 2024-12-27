@@ -296,71 +296,7 @@ impl Aws {
     ) -> Result<()> {
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
         self.run_fragment_download_and_check_image(sess, image_url)?;
-
-        let (stdout, stderr) =
-            Self::ssh_exec(sess, "nmcli device status").context("Failed to get nmcli status")?;
-        if !stderr.is_empty() || stdout.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error fetching network interface name: {stderr}"));
-        }
-        let mut interface = String::new();
-        let entries: Vec<&str> = stdout.split('\n').collect();
-        for line in entries {
-            let entry: Vec<&str> = line.split_whitespace().collect();
-            if entry.len() > 1 && entry[1] == "ethernet" {
-                interface = entry[0].to_string();
-                break;
-            }
-        }
-
-        if !interface.is_empty() {
-            let (stdout, stderr) = Self::ssh_exec(
-                sess,
-                &("sudo tc qdisc show dev ".to_owned() + &interface + " root"),
-            )
-            .context("Failed to fetch tc config")?;
-            if !stderr.is_empty() || stdout.is_empty() {
-                error!(stderr);
-                return Err(anyhow!(
-                    "Error fetching network interface qdisc configuration: {stderr}"
-                ));
-            }
-            let entries: Vec<&str> = stdout.trim().split('\n').collect();
-            let mut is_any_rule_set = true;
-            if entries[0].to_lowercase().contains("qdisc mq 0: root") && entries.len() == 1 {
-                is_any_rule_set = false;
-            }
-
-            // remove previously defined rules
-            if is_any_rule_set {
-                let (_, stderr) = Self::ssh_exec(
-                    sess,
-                    &("sudo tc qdisc del dev ".to_owned() + &interface + " root"),
-                )?;
-                if !stderr.is_empty() {
-                    error!(stderr);
-                    return Err(anyhow!(
-                        "Error removing network interface qdisc configuration: {stderr}"
-                    ));
-                }
-            }
-
-            let (_, stderr) = Self::ssh_exec(
-                sess,
-                &("sudo tc qdisc add dev ".to_owned()
-                    + &interface
-                    + " root tbf rate "
-                    + &bandwidth.to_string()
-                    + "kbit burst 4000Mb latency 100ms"),
-            )?;
-
-            if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Error setting up bandwidth limit: {stderr}"));
-            }
-        } else {
-            return Err(anyhow!("Error fetching network interface name"));
-        }
+        Self::run_fragment_bandwidth(sess, bandwidth)?;
 
         let iptables_rules: [&str; 4] = [
             "-P PREROUTING ACCEPT",
@@ -482,71 +418,7 @@ EOF
         Self::run_fragment_ephemeral_ports(sess)?;
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
         self.run_fragment_download_and_check_image(sess, image_url)?;
-
-        let (stdout, stderr) =
-            Self::ssh_exec(sess, "nmcli device status").context("Failed to get nmcli status")?;
-        if !stderr.is_empty() || stdout.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error fetching network interface name: {stderr}"));
-        }
-        let mut interface = String::new();
-        let entries: Vec<&str> = stdout.split('\n').collect();
-        for line in entries {
-            let entry: Vec<&str> = line.split_whitespace().collect();
-            if entry.len() > 1 && entry[1] == "ethernet" {
-                interface = entry[0].to_string();
-                break;
-            }
-        }
-
-        if !interface.is_empty() {
-            let (stdout, stderr) = Self::ssh_exec(
-                sess,
-                &("sudo tc qdisc show dev ".to_owned() + &interface + " root"),
-            )
-            .context("Failed to fetch tc config")?;
-            if !stderr.is_empty() || stdout.is_empty() {
-                error!(stderr);
-                return Err(anyhow!(
-                    "Error fetching network interface qdisc configuration: {stderr}"
-                ));
-            }
-            let entries: Vec<&str> = stdout.trim().split('\n').collect();
-            let mut is_any_rule_set = true;
-            if entries[0].to_lowercase().contains("qdisc mq 0: root") && entries.len() == 1 {
-                is_any_rule_set = false;
-            }
-
-            // remove previously defined rules
-            if is_any_rule_set {
-                let (_, stderr) = Self::ssh_exec(
-                    sess,
-                    &("sudo tc qdisc del dev ".to_owned() + &interface + " root"),
-                )?;
-                if !stderr.is_empty() {
-                    error!(stderr);
-                    return Err(anyhow!(
-                        "Error removing network interface qdisc configuration: {stderr}"
-                    ));
-                }
-            }
-
-            let (_, stderr) = Self::ssh_exec(
-                sess,
-                &("sudo tc qdisc add dev ".to_owned()
-                    + &interface
-                    + " root tbf rate "
-                    + &bandwidth.to_string()
-                    + "kbit burst 4000Mb latency 100ms"),
-            )?;
-
-            if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Error setting up bandwidth limit: {stderr}"));
-            }
-        } else {
-            return Err(anyhow!("Error fetching network interface name"));
-        }
+        Self::run_fragment_bandwidth(sess, bandwidth)?;
 
         let iptables_rules: [&str; 4] = [
             "-P INPUT ACCEPT",
