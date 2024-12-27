@@ -264,6 +264,11 @@ impl Aws {
         bandwidth: u64,
         debug: bool,
     ) -> Result<()> {
+        if family != "salmon" && family != "tuna" {
+            return Err(anyhow!("unsupported image family"));
+        }
+
+        // make a ssh session
         let public_ip_address = self
             .get_instance_ip(instance_id, region)
             .await
@@ -273,27 +278,34 @@ impl Aws {
             .await
             .context("error establishing ssh connection")?;
 
-        if family == "salmon" {
-            Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
-            self.run_fragment_download_and_check_image(sess, image_url)?;
-            Self::run_fragment_bandwidth(sess, bandwidth)?;
-            Self::run_fragment_iptables_salmon(sess)?;
-            Self::run_fragment_logger(sess, debug)?;
-            Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
-            Ok(())
-        } else if family == "tuna" {
+        if family == "tuna" {
+            // set up ephemeral ports for the host
             Self::run_fragment_ephemeral_ports(sess)?;
-            Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
-            self.run_fragment_download_and_check_image(sess, image_url)?;
-            Self::run_fragment_bandwidth(sess, bandwidth)?;
-            Self::run_fragment_iptables_tuna(sess)?;
-            Self::run_fragment_init_server(sess, job_id)?;
-            Self::run_fragment_logger(sess, debug)?;
-            Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
-            Ok(())
-        } else {
-            Err(anyhow!("unsupported image family"))
         }
+
+        // set up nitro enclaves allocator
+        Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
+        // download enclave image and perform whitelist/blacklist checks
+        self.run_fragment_download_and_check_image(sess, image_url)?;
+        // set up bandwidth rate limiting
+        Self::run_fragment_bandwidth(sess, bandwidth)?;
+
+        if family == "tuna" {
+            // set up iptables rules
+            Self::run_fragment_iptables_tuna(sess)?;
+            // set up job id in the init server
+            Self::run_fragment_init_server(sess, job_id)?;
+        } else {
+            // set up iptables rules
+            Self::run_fragment_iptables_salmon(sess)?;
+        }
+
+        // set up debug logger if enabled
+        Self::run_fragment_logger(sess, debug)?;
+        // run the enclave
+        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
+
+        Ok(())
     }
 
     // Enclave deployment fragments start here
