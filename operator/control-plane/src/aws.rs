@@ -713,6 +713,35 @@ EOF
         Ok(())
     }
 
+    // TODO: Enclave might already be running
+    fn run_fragment_enclave(
+        sess: &Session,
+        req_vcpu: i32,
+        req_mem: i64,
+        debug: bool,
+    ) -> Result<()> {
+        let (_, stderr) = Self::ssh_exec(
+            sess,
+            &("nitro-cli run-enclave --cpu-count ".to_owned()
+                + &((req_vcpu).to_string())
+                + " --memory "
+                + &((req_mem).to_string())
+                + " --eif-path enclave.eif --enclave-cid 88"
+                + if debug { " --debug-mode" } else { "" }),
+        )?;
+
+        if !stderr.is_empty() {
+            error!(stderr);
+            if !stderr.contains("Started enclave with enclave-cid") {
+                return Err(anyhow!("Error running enclave image: {stderr}"));
+            }
+        }
+
+        info!("Enclave running");
+
+        Ok(())
+    }
+
     // Enclave deployment fragments end here
 
     /* AWS EC2 UTILITY */
