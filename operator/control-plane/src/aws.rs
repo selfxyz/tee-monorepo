@@ -372,25 +372,7 @@ EOF
         self.run_fragment_download_and_check_image(sess, image_url)?;
         Self::run_fragment_bandwidth(sess, bandwidth)?;
         Self::run_fragment_iptables_tuna(sess)?;
-
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            &("sudo sed -i -e 's/placeholder_job_id/".to_owned()
-                + job_id
-                + "/g' /etc/supervisor/conf.d/oyster-init-server.conf"),
-        )
-        .context("Failed to set job id for init server")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to set job id for init server: {stderr}"));
-        }
-
-        let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl update")
-            .context("Failed to update init server")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to update init server: {stderr}"));
-        }
+        Self::run_fragment_init_server(sess, job_id)?;
 
         // set up logger if debug flag is set
         if debug {
