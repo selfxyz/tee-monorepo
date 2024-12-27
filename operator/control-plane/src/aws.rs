@@ -732,6 +732,71 @@ EOF
         Ok(())
     }
 
+    fn run_fragment_iptables_tuna(sess: &Session) -> Result<()> {
+        let iptables_rules: [&str; 4] = [
+            "-P INPUT ACCEPT",
+            "-A INPUT -i ens5 -p tcp -m tcp --dport 80 -j NFQUEUE --queue-num 0",
+            "-A INPUT -i ens5 -p tcp -m tcp --dport 443 -j NFQUEUE --queue-num 0",
+            "-A INPUT -i ens5 -p tcp -m tcp --dport 1024:61439 -j NFQUEUE --queue-num 0",
+        ];
+        let (stdout, stderr) =
+            Self::ssh_exec(sess, "sudo iptables -S INPUT").context("Failed to query iptables")?;
+
+        if !stderr.is_empty() || stdout.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to get iptables rules: {stderr}"));
+        }
+
+        let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
+
+        if rules[0] != iptables_rules[0] {
+            error!(
+                got = rules[0],
+                expected = iptables_rules[0],
+                "Rule mismatch"
+            );
+            return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
+        }
+
+        if !rules.contains(&iptables_rules[1]) {
+            let (_, stderr) = Self::ssh_exec(
+                sess,
+                "sudo iptables -A INPUT -p tcp -i ens5 --dport 80 -j NFQUEUE --queue-num 0",
+            )
+            .context("Failed to set iptables rule")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+            }
+        }
+
+        if !rules.contains(&iptables_rules[2]) {
+            let (_, stderr) = Self::ssh_exec(
+                sess,
+                "sudo iptables -A INPUT -p tcp -i ens5 --dport 443 -j NFQUEUE --queue-num 0",
+            )
+            .context("Failed to set iptables rule")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+            }
+        }
+
+        if !rules.contains(&iptables_rules[3]) {
+            let (_, stderr) = Self::ssh_exec(
+                sess,
+                "sudo iptables -A INPUT -p tcp -i ens5 --dport 1024:61439 -j NFQUEUE --queue-num 0",
+            )
+            .context("Failed to set iptables rule")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+            }
+        }
+
+        Ok(())
+    }
+
     // Enclave deployment fragments end here
 
     /* AWS EC2 UTILITY */
