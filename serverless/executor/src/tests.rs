@@ -16,8 +16,8 @@ pub mod serverless_executor_test {
     use std::sync::{Arc, Mutex};
 
     use axum::extract::State;
-    use axum::Router;
     use axum::routing::{get, post};
+    use axum::Router;
     use axum_test::TestServer;
     use bytes::Bytes;
     use ethers::abi::{encode, encode_packed, Token};
@@ -37,7 +37,8 @@ pub mod serverless_executor_test {
     use crate::event_handler::handle_event_logs;
     use crate::node_handler::*;
     use crate::utils::{
-        load_abi_from_file, AppState, JobsTxnMetadata, JobsTxnType, EXECUTION_ENV_ID, MAX_OUTPUT_BYTES_LENGTH
+        load_abi_from_file, AppState, JobsTxnMetadata, JobsTxnType, EXECUTION_ENV_ID,
+        MAX_OUTPUT_BYTES_LENGTH,
     };
 
     // Testnet or Local blockchain (Hardhat) configurations
@@ -81,19 +82,20 @@ pub mod serverless_executor_test {
     }
 
     // Return the Router app with the provided app state
-    fn new_app(
-        app_data: AppState,
-    ) -> Router<()> {
+    fn new_app(app_data: AppState) -> Router<()> {
         Router::new()
             .route("/", get(index))
             .route("/immutable-config", post(inject_immutable_config))
             .route("/mutable-config", post(inject_mutable_config))
             .route("/executor-details", get(get_executor_details))
-            .route("/signed-registration-message", get(export_signed_registration_message))
+            .route(
+                "/signed-registration-message",
+                get(export_signed_registration_message),
+            )
             .with_state(app_data)
     }
 
-// TODO: add test attribute
+    // TODO: add test attribute
     // Test the various response cases for the 'inject_immutable_config' endpoint
     #[tokio::test]
     async fn inject_immutable_config_test() {
@@ -102,39 +104,48 @@ pub mod serverless_executor_test {
 
         // Inject invalid owner address hex string (odd length)
 
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": "32255",
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
         resp.assert_text("Invalid owner address hex string: OddLength\n");
 
-
         // Inject invalid owner address hex string (invalid hex character)
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": "32255G",
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
-        resp.assert_text("Invalid owner address hex string: InvalidHexCharacter { c: 'G', index: 5 }\n");
+        resp.assert_text(
+            "Invalid owner address hex string: InvalidHexCharacter { c: 'G', index: 5 }\n",
+        );
 
         // Inject invalid owner address hex string (less than 20 bytes)
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": "322557",
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
         resp.assert_text("Owner address must be 20 bytes long!\n");
 
         // Inject valid immutable config params
         let valid_owner = H160::random();
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Immutable params configured!\n");
@@ -142,10 +153,12 @@ pub mod serverless_executor_test {
 
         // Inject valid immutable config params again to test immutability
         let valid_owner_2 = H160::random();
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner_2),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
         resp.assert_text("Immutable params already configured!\n");
@@ -158,39 +171,51 @@ pub mod serverless_executor_test {
         let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Inject invalid gas private key hex string (less than 32 bytes)
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "322557",
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
         resp.assert_text("Gas private key must be 32 bytes long!\n");
 
         // Inject invalid gas private key hex string (invalid hex character)
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "fffffffffffffffffzffffffffffffffffffffffffffffgfffffffffffffffff",
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
-        resp.assert_text("Invalid gas private key hex string: InvalidHexCharacter { c: 'z', index: 17 }\n");
+        resp.assert_text(
+            "Invalid gas private key hex string: InvalidHexCharacter { c: 'z', index: 17 }\n",
+        );
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_bad_request();
-        resp.assert_text("Invalid gas private key provided: EcdsaError(signature::Error { source: None })\n");
+        resp.assert_text(
+            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })\n",
+        );
 
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
 
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Mutable params configured!\n");
@@ -207,10 +232,12 @@ pub mod serverless_executor_test {
 
         // Inject valid mutable config params again to test mutability
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Mutable params configured!\n");
@@ -254,10 +281,12 @@ pub mod serverless_executor_test {
 
         // Inject valid immutable config params
         let valid_owner = H160::random();
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Immutable params configured!\n");
@@ -284,10 +313,12 @@ pub mod serverless_executor_test {
 
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Mutable params configured!\n");
@@ -348,10 +379,12 @@ pub mod serverless_executor_test {
 
         // Inject valid immutable config params
         let valid_owner = H160::random();
-        let resp = server.post("/immutable-config")
+        let resp = server
+            .post("/immutable-config")
             .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Immutable params configured!\n");
@@ -364,10 +397,12 @@ pub mod serverless_executor_test {
 
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let resp = server.post("/mutable-config")
+        let resp = server
+            .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
-            })).await;
+            }))
+            .await;
 
         resp.assert_status_ok();
         resp.assert_text("Mutable params configured!\n");
@@ -516,7 +551,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -571,7 +608,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -654,7 +693,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -710,7 +751,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -765,7 +808,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -820,7 +865,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -883,7 +930,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 pin!(tokio_stream::empty()),
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -932,7 +981,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::pending()),
                 pin!(tokio_stream::pending()),
                 executor_deregistered_stream,
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -992,7 +1043,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 pin!(tokio_stream::empty()),
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -1029,9 +1082,7 @@ pub mod serverless_executor_test {
             app_state.enclave_address,
         )];
 
-        let jobs_responded_logs = vec![
-            get_job_responded_log(1.into(), 0.into()),
-        ];
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
 
         let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
 
@@ -1047,7 +1098,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -1063,7 +1116,6 @@ pub mod serverless_executor_test {
         assert_eq!(responses.len(), 1);
 
         assert_response(responses[0].clone(), 0.into(), 5, "".into());
-
     }
 
     #[tokio::test]
@@ -1091,9 +1143,7 @@ pub mod serverless_executor_test {
             app_state.enclave_address,
         )];
 
-        let jobs_responded_logs = vec![
-            get_job_responded_log(1.into(), 0.into()),
-        ];
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
 
         let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
 
@@ -1109,7 +1159,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                State {0: app_state.clone()},
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
