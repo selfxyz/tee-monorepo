@@ -507,16 +507,7 @@ EOF
         bandwidth: u64,
         debug: bool,
     ) -> Result<()> {
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            "sudo sysctl -w net.ipv4.ip_local_port_range=\"61440 65535\"",
-        )
-        .context("Failed to set ephemeral ports")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to set ephemeral ports: {stderr}"));
-        }
-
+        Self::run_fragment_ephemeral_ports(sess)?;
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
 
         info!(
