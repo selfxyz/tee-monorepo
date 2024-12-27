@@ -14,8 +14,8 @@ impl Platform {
 
     pub fn nix_arch(&self) -> &'static str {
         match self {
-            Platform::AMD64 => "x86_64-linux.musl",
-            Platform::ARM64 => "aarch64-linux.musl",
+            Platform::AMD64 => "x86_64-linux",
+            Platform::ARM64 => "aarch64-linux",
         }
     }
 

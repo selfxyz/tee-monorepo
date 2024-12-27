@@ -50,7 +50,7 @@ Options:
 --file (path to the enclave image file)
 
 Add env vars for Pinata:
-["PINATA_API_KEY", "PINATA_SECRET_KEY"]
+["PINATA_API_KEY", "PINATA_API_SECRET"]
 
 #### `verify-enclave`
 Verifies an Oyster enclave's attestation document.
