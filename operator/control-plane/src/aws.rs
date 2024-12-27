@@ -820,6 +820,39 @@ EOF
         Ok(())
     }
 
+    // Enclave deployment fragments start here
+    //
+    // IMPORTANT: Each fragment is expected to be idempotent and
+    // declarative where it will undo previous invocations if needed
+
+    async fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
+        Self::ssh_exec(
+            sess,
+            &("echo -e '---\\nmemory_mib: ".to_owned()
+                + &((req_mem).to_string())
+                + "\\ncpu_count: "
+                + &((req_vcpu).to_string())
+                + "' | sudo tee /etc/nitro_enclaves/allocator.yaml"),
+        )
+        .context("Failed to set allocator file")?;
+
+        let (_, stderr) = Self::ssh_exec(
+            sess,
+            "sudo systemctl restart nitro-enclaves-allocator.service",
+        )
+        .context("Failed to restart allocator service")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!(
+                "Error restarting nitro-enclaves-allocator service: {stderr}"
+            ));
+        }
+
+        Ok(())
+    }
+
+    // Enclave deployment fragments end here
+
     /* AWS EC2 UTILITY */
 
     pub async fn get_instance_ip(&self, instance_id: &str, region: &str) -> Result<String> {
