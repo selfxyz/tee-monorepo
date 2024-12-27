@@ -826,6 +826,18 @@ EOF
     // declarative where it will undo previous invocations if needed
 
     async fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
+        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+            .context("could not describe enclaves")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error describing enclaves: {stderr}"));
+        }
+
+        if stdout != "[]" {
+            // return if enclave is already running
+            return Ok(());
+        }
+
         Self::ssh_exec(
             sess,
             &("echo -e '---\\nmemory_mib: ".to_owned()
