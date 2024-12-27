@@ -299,25 +299,7 @@ impl Aws {
         Self::run_fragment_bandwidth(sess, bandwidth)?;
         Self::run_fragment_iptables_salmon(sess)?;
         Self::run_fragment_logger(sess, debug)?;
-
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            &("nitro-cli run-enclave --cpu-count ".to_owned()
-                + &((req_vcpu).to_string())
-                + " --memory "
-                + &((req_mem).to_string())
-                + " --eif-path enclave.eif --enclave-cid 88"
-                + if debug { " --debug-mode" } else { "" }),
-        )?;
-
-        if !stderr.is_empty() {
-            error!(stderr);
-            if !stderr.contains("Started enclave with enclave-cid") {
-                return Err(anyhow!("Error running enclave image: {stderr}"));
-            }
-        }
-
-        info!("Enclave running");
+        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
 
         Ok(())
     }
@@ -339,25 +321,7 @@ impl Aws {
         Self::run_fragment_iptables_tuna(sess)?;
         Self::run_fragment_init_server(sess, job_id)?;
         Self::run_fragment_logger(sess, debug)?;
-
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            &("nitro-cli run-enclave --cpu-count ".to_owned()
-                + &((req_vcpu).to_string())
-                + " --memory "
-                + &((req_mem).to_string())
-                + " --eif-path enclave.eif --enclave-cid 88"
-                + if debug { " --debug-mode" } else { "" }),
-        )?;
-
-        if !stderr.is_empty() {
-            error!(stderr);
-            if !stderr.contains("Started enclave with enclave-cid") {
-                return Err(anyhow!("Error running enclave image: {stderr}"));
-            }
-        }
-
-        info!("Enclave running");
+        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
 
         Ok(())
     }
