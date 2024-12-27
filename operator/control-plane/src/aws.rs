@@ -313,27 +313,7 @@ impl Aws {
             .await
             .context("error establishing ssh connection")?;
 
-        Self::ssh_exec(
-            sess,
-            &("echo -e '---\\nmemory_mib: ".to_owned()
-                + &((req_mem).to_string())
-                + "\\ncpu_count: "
-                + &((req_vcpu).to_string())
-                + "' | sudo tee /etc/nitro_enclaves/allocator.yaml"),
-        )
-        .context("Failed to set allocator file")?;
-
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            "sudo systemctl restart nitro-enclaves-allocator.service",
-        )
-        .context("Failed to restart allocator service")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!(
-                "Error restarting nitro-enclaves-allocator service: {stderr}"
-            ));
-        }
+        Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
 
         info!(
             cpus = req_vcpu,
@@ -566,27 +546,7 @@ EOF
             return Err(anyhow!("Failed to set ephemeral ports: {stderr}"));
         }
 
-        Self::ssh_exec(
-            sess,
-            &("echo -e '---\\nmemory_mib: ".to_owned()
-                + &((req_mem).to_string())
-                + "\\ncpu_count: "
-                + &((req_vcpu).to_string())
-                + "' | sudo tee /etc/nitro_enclaves/allocator.yaml"),
-        )
-        .context("Failed to set allocator file")?;
-
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            "sudo systemctl restart nitro-enclaves-allocator.service",
-        )
-        .context("Failed to restart allocator service")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!(
-                "Error restarting nitro-enclaves-allocator service: {stderr}"
-            ));
-        }
+        Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
 
         info!(
             cpus = req_vcpu,
@@ -825,7 +785,7 @@ EOF
     // IMPORTANT: Each fragment is expected to be idempotent and
     // declarative where it will undo previous invocations if needed
 
-    async fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
+    fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
         let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
         if !stderr.is_empty() {
