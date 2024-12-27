@@ -302,27 +302,7 @@ impl Aws {
             "Nitro Enclave Service set up"
         );
 
-        Self::ssh_exec(
-            sess,
-            &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
-                + image_url),
-        )
-        .context("Failed to download enclave image")?;
-
-        let is_eif_allowed = self
-            .check_eif_blacklist_whitelist(sess)
-            .context("Failed to retrieve image hash")?;
-
-        if !is_eif_allowed {
-            return Err(anyhow!("EIF NOT ALLOWED"));
-        }
-
-        // store eif_url only when the image is allowed
-        Self::ssh_exec(
-            sess,
-            &("echo \"".to_owned() + image_url + "\" > image_url.txt"),
-        )
-        .context("Failed to write EIF URL to txt file.")?;
+        self.run_fragment_download_and_check_image(sess, image_url)?;
 
         let (stdout, stderr) =
             Self::ssh_exec(sess, "nmcli device status").context("Failed to get nmcli status")?;
@@ -515,27 +495,7 @@ EOF
             "Nitro Enclave Service set up"
         );
 
-        Self::ssh_exec(
-            sess,
-            &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
-                + image_url),
-        )
-        .context("Failed to download enclave image")?;
-
-        let is_eif_allowed = self
-            .check_eif_blacklist_whitelist(sess)
-            .context("Failed to retrieve image hash")?;
-
-        if !is_eif_allowed {
-            return Err(anyhow!("EIF NOT ALLOWED"));
-        }
-
-        // store eif_url only when the image is allowed
-        Self::ssh_exec(
-            sess,
-            &("echo \"".to_owned() + image_url + "\" > image_url.txt"),
-        )
-        .context("Failed to write EIF URL to txt file.")?;
+        self.run_fragment_download_and_check_image(sess, image_url)?;
 
         let (stdout, stderr) =
             Self::ssh_exec(sess, "nmcli device status").context("Failed to get nmcli status")?;
@@ -1490,33 +1450,7 @@ EOF
             .await
             .context("error establishing ssh connection")?;
 
-        let (stdout, stderr) =
-            Self::ssh_exec(sess, "cat image_url.txt").context("Failed to read image_url.txt")?;
-
-        if stderr.is_empty() && stdout == eif_url {
-            return Ok(());
-        }
-
-        Self::ssh_exec(
-            sess,
-            &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
-                + eif_url),
-        )
-        .context("Failed to download enclave image")?;
-
-        let is_eif_allowed = self
-            .check_eif_blacklist_whitelist(sess)
-            .context("Failed to retrieve image hash")?;
-
-        if !is_eif_allowed {
-            return Err(anyhow!("EIF NOT ALLOWED"));
-        }
-
-        Self::ssh_exec(
-            sess,
-            &("echo \"".to_owned() + eif_url + "\" > image_url.txt"),
-        )
-        .context("Failed to write EIF URL to txt file.")?;
+        self.run_fragment_download_and_check_image(sess, eif_url)?;
 
         let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
 
