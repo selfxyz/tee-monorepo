@@ -295,13 +295,6 @@ impl Aws {
         debug: bool,
     ) -> Result<()> {
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
-
-        info!(
-            cpus = req_vcpu,
-            memory = req_mem,
-            "Nitro Enclave Service set up"
-        );
-
         self.run_fragment_download_and_check_image(sess, image_url)?;
 
         let (stdout, stderr) =
@@ -488,13 +481,6 @@ EOF
     ) -> Result<()> {
         Self::run_fragment_ephemeral_ports(sess)?;
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
-
-        info!(
-            cpus = req_vcpu,
-            memory = req_mem,
-            "Nitro Enclave Service set up"
-        );
-
         self.run_fragment_download_and_check_image(sess, image_url)?;
 
         let (stdout, stderr) =
@@ -755,6 +741,12 @@ EOF
                 "Error restarting nitro-enclaves-allocator service: {stderr}"
             ));
         }
+
+        info!(
+            cpus = req_vcpu,
+            memory = req_mem,
+            "Nitro Enclave Service set up"
+        );
 
         Ok(())
     }
