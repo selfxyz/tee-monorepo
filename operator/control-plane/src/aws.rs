@@ -199,7 +199,7 @@ impl Aws {
         Ok((stdout, stderr))
     }
 
-    async fn check_eif_blacklist_whitelist(&self, sess: &Session) -> Result<bool> {
+    fn check_eif_blacklist_whitelist(&self, sess: &Session) -> Result<bool> {
         if self.whitelist.is_some() || self.blacklist.is_some() {
             let (stdout, stderr) = Self::ssh_exec(sess, "sha256sum /home/ubuntu/enclave.eif")
                 .context("Failed to calculate image hash")?;
@@ -311,7 +311,6 @@ impl Aws {
 
         let is_eif_allowed = self
             .check_eif_blacklist_whitelist(sess)
-            .await
             .context("Failed to retrieve image hash")?;
 
         if !is_eif_allowed {
@@ -525,7 +524,6 @@ EOF
 
         let is_eif_allowed = self
             .check_eif_blacklist_whitelist(sess)
-            .await
             .context("Failed to retrieve image hash")?;
 
         if !is_eif_allowed {
@@ -1475,7 +1473,6 @@ EOF
 
         let is_eif_allowed = self
             .check_eif_blacklist_whitelist(sess)
-            .await
             .context("Failed to retrieve image hash")?;
 
         if !is_eif_allowed {
