@@ -727,6 +727,59 @@ EOF
         Ok(())
     }
 
+    fn run_fragment_iptables_salmon(sess: &Session) -> Result<()> {
+        let iptables_rules: [&str; 4] = [
+            "-P PREROUTING ACCEPT",
+            "-A PREROUTING -i ens5 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 1200",
+            "-A PREROUTING -i ens5 -p tcp -m tcp --dport 443 -j REDIRECT --to-ports 1200",
+            "-A PREROUTING -i ens5 -p tcp -m tcp --dport 1025:65535 -j REDIRECT --to-ports 1200",
+        ];
+        let (stdout, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -S PREROUTING")
+            .context("Failed to query iptables")?;
+
+        if !stderr.is_empty() || stdout.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to get iptables rules: {stderr}"));
+        }
+
+        let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
+
+        if rules[0] != iptables_rules[0] {
+            error!(
+                got = rules[0],
+                expected = iptables_rules[0],
+                "Rule mismatch"
+            );
+            return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
+        }
+
+        if !rules.contains(&iptables_rules[1]) {
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 80 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+            }
+        }
+
+        if !rules.contains(&iptables_rules[2]) {
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 443 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+            }
+        }
+
+        if !rules.contains(&iptables_rules[3]) {
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 1025:65535 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+            }
+        }
+
+        Ok(())
+    }
+
     // Enclave deployment fragments end here
 
     /* AWS EC2 UTILITY */
