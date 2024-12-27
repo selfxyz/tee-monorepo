@@ -753,9 +753,26 @@ EOF
 
     // Enclave deployment fragments start here
     //
-    // IMPORTANT: Each fragment is expected to be idempotent and
-    // declarative where it will undo previous invocations if needed
+    // IMPORTANT: Each fragment is expected to be declarative where it will take the system
+    // to the desired state by executing whatever commands necessary
 
+    // Inherently declarative
+    fn run_fragment_ephemeral_ports(sess: &Session) -> Result<()> {
+        let (_, stderr) = Self::ssh_exec(
+            sess,
+            "sudo sysctl -w net.ipv4.ip_local_port_range=\"61440 65535\"",
+        )
+        .context("Failed to set ephemeral ports")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Failed to set ephemeral ports: {stderr}"));
+        }
+
+        Ok(())
+    }
+
+    // TODO: Making this declarative would mean potentially restarting enclaves, unsure how to
+    // handle this
     fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
         let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
