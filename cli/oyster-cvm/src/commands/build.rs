@@ -57,6 +57,8 @@ pub fn build_oyster_image(
         info!(target: "nix", "{}", line);
     }
 
+    info!("Build finished");
+
     Ok(())
 }
 
