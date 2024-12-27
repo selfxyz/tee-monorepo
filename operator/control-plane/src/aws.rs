@@ -274,56 +274,26 @@ impl Aws {
             .context("error establishing ssh connection")?;
 
         if family == "salmon" {
-            self.run_enclave_salmon(sess, job_id, image_url, req_vcpu, req_mem, bandwidth, debug)
-                .await
+            Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
+            self.run_fragment_download_and_check_image(sess, image_url)?;
+            Self::run_fragment_bandwidth(sess, bandwidth)?;
+            Self::run_fragment_iptables_salmon(sess)?;
+            Self::run_fragment_logger(sess, debug)?;
+            Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
+            Ok(())
         } else if family == "tuna" {
-            self.run_enclave_tuna(sess, job_id, image_url, req_vcpu, req_mem, bandwidth, debug)
-                .await
+            Self::run_fragment_ephemeral_ports(sess)?;
+            Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
+            self.run_fragment_download_and_check_image(sess, image_url)?;
+            Self::run_fragment_bandwidth(sess, bandwidth)?;
+            Self::run_fragment_iptables_tuna(sess)?;
+            Self::run_fragment_init_server(sess, job_id)?;
+            Self::run_fragment_logger(sess, debug)?;
+            Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
+            Ok(())
         } else {
             Err(anyhow!("unsupported image family"))
         }
-    }
-
-    async fn run_enclave_salmon(
-        &self,
-        sess: &Session,
-        _job_id: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
-        self.run_fragment_download_and_check_image(sess, image_url)?;
-        Self::run_fragment_bandwidth(sess, bandwidth)?;
-        Self::run_fragment_iptables_salmon(sess)?;
-        Self::run_fragment_logger(sess, debug)?;
-        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
-
-        Ok(())
-    }
-
-    async fn run_enclave_tuna(
-        &self,
-        sess: &Session,
-        job_id: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        Self::run_fragment_ephemeral_ports(sess)?;
-        Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
-        self.run_fragment_download_and_check_image(sess, image_url)?;
-        Self::run_fragment_bandwidth(sess, bandwidth)?;
-        Self::run_fragment_iptables_tuna(sess)?;
-        Self::run_fragment_init_server(sess, job_id)?;
-        Self::run_fragment_logger(sess, debug)?;
-        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
-
-        Ok(())
     }
 
     // Enclave deployment fragments start here
