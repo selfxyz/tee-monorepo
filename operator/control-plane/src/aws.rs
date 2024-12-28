@@ -384,6 +384,14 @@ impl Aws {
             return Ok(());
         }
 
+        // enclave should be redeployed, kill it if it is still running
+        let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
+
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error terminating enclave: {stderr}"));
+        }
+
         Self::ssh_exec(
             sess,
             &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
