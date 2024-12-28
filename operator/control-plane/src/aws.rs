@@ -326,8 +326,8 @@ impl Aws {
     }
 
     // Goal: allocate the specified cpus and memory for the enclave
-    // TODO: Making this declarative would mean potentially restarting enclaves,
-    // not sure how to handle this
+    // Making this declarative would mean potentially restarting enclaves,
+    // not sure how to handle this, instead just prevent them from being different
     fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
         if Self::is_enclave_running(sess)? {
             // return if enclave is already running
@@ -388,9 +388,9 @@ impl Aws {
 
         Self::ssh_exec(
             sess,
-            // FIXME: Interpolation is not safe
             &format!(
-                "curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 '{image_url}'"
+                "curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 '{}'",
+                shell_escape::escape(image_url.into()),
             ),
         )
         .context("Failed to download enclave image")?;
@@ -406,8 +406,10 @@ impl Aws {
         // store eif_url only when the image is allowed
         Self::ssh_exec(
             sess,
-            // FIXME: Interpolation is not safe
-            &format!("echo \"{image_url}\" > image_url.txt"),
+            &format!(
+                "echo \"{}\" > image_url.txt",
+                shell_escape::escape(image_url.into()),
+            ),
         )
         .context("Failed to write EIF URL to txt file.")?;
 
@@ -580,8 +582,10 @@ impl Aws {
     fn run_fragment_init_server(sess: &Session, job_id: &str) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
-            // FIXME: Interpolation is not safe
-            &format!("sudo sed -i -e 's/placeholder_job_id/{job_id}/g' /etc/supervisor/conf.d/oyster-init-server.conf"),
+            &format!(
+                "sudo sed -i -e 's/placeholder_job_id/{}/g' /etc/supervisor/conf.d/oyster-init-server.conf",
+                job_id.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>(),
+            ),
         )
         .context("Failed to set job id for init server")?;
         if !stderr.is_empty() {
