@@ -444,9 +444,8 @@ impl Aws {
 
         let (_, stderr) = Self::ssh_exec(
             sess,
-            &("sudo tc qdisc add dev ens5 root tbf rate ".to_owned()
-                + &bandwidth.to_string()
-                + "kbit burst 4000Mb latency 100ms"),
+            // interpolation is safe since values are integers
+            &format!("sudo tc qdisc add dev ens5 root tbf rate {bandwidth}kbit burst 4000Mb latency 100ms"),
         )?;
 
         if !stderr.is_empty() {
