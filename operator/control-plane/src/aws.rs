@@ -327,14 +327,7 @@ impl Aws {
     // TODO: Making this declarative would mean potentially restarting enclaves,
     // not sure how to handle this
     fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
-        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
-            .context("could not describe enclaves")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing enclaves: {stderr}"));
-        }
-
-        if stdout != "[]" {
+        if Self::is_enclave_running(sess)? {
             // return if enclave is already running
             return Ok(());
         }
@@ -381,15 +374,7 @@ impl Aws {
             return Ok(());
         }
 
-        // check if enclave is running
-        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
-            .context("could not describe enclaves")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing enclaves: {stderr}"));
-        }
-
-        if stdout != "[]" {
+        if Self::is_enclave_running(sess)? {
             // enclave should be redeployed, kill it if it is still running
             let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
 
@@ -682,15 +667,7 @@ EOF
         req_mem: i64,
         debug: bool,
     ) -> Result<()> {
-        // check if enclave is running
-        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
-            .context("could not describe enclaves")?;
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing enclaves: {stderr}"));
-        }
-
-        if stdout != "[]" {
+        if Self::is_enclave_running(sess)? {
             // return if enclave is already running
             return Ok(());
         }
@@ -719,8 +696,6 @@ EOF
 
     // Enclave deployment fragments end here
 
-    // Command functions start here
-
     fn is_enclave_running(sess: &Session) -> Result<bool> {
         let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
@@ -731,8 +706,6 @@ EOF
 
         Ok(stdout != "[]")
     }
-
-    // Command functions end here
 
     /* AWS EC2 UTILITY */
 
