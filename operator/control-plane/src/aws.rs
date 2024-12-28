@@ -1354,26 +1354,10 @@ EOF
             .ssh_connect(&(public_ip_address + ":22"))
             .await
             .context("error establishing ssh connection")?;
+        let debug = false;
 
         self.run_fragment_download_and_check_image(sess, eif_url)?;
-
-        let (_, stderr) = Self::ssh_exec(
-            sess,
-            &("nitro-cli run-enclave --cpu-count ".to_owned()
-                + &((req_vcpu).to_string())
-                + " --memory "
-                + &((req_mem).to_string())
-                + " --eif-path enclave.eif --enclave-cid 88"),
-        )?;
-
-        if !stderr.is_empty() {
-            error!(stderr);
-            if !stderr.contains("Started enclave with enclave-cid") {
-                return Err(anyhow!("Error running enclave image: {stderr}"));
-            }
-        }
-
-        info!("Enclave running");
+        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
 
         Ok(())
     }
