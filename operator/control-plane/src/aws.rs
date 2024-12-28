@@ -580,9 +580,8 @@ impl Aws {
     fn run_fragment_init_server(sess: &Session, job_id: &str) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
-            &("sudo sed -i -e 's/placeholder_job_id/".to_owned()
-                + job_id
-                + "/g' /etc/supervisor/conf.d/oyster-init-server.conf"),
+            // FIXME: Interpolation is not safe
+            &format!("sudo sed -i -e 's/placeholder_job_id/{job_id}/g' /etc/supervisor/conf.d/oyster-init-server.conf"),
         )
         .context("Failed to set job id for init server")?;
         if !stderr.is_empty() {
