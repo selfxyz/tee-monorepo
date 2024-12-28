@@ -336,11 +336,8 @@ impl Aws {
 
         Self::ssh_exec(
             sess,
-            &("echo -e '---\\nmemory_mib: ".to_owned()
-                + &((req_mem).to_string())
-                + "\\ncpu_count: "
-                + &((req_vcpu).to_string())
-                + "' | sudo tee /etc/nitro_enclaves/allocator.yaml"),
+            // interpolation is safe since values are integers
+            &format!("echo -e '---\\nmemory_mib: {req_mem}\\ncpu_count: {req_vcpu}' | sudo tee /etc/nitro_enclaves/allocator.yaml"),
         )
         .context("Failed to set allocator file")?;
 
