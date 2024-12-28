@@ -390,7 +390,7 @@ impl Aws {
             sess,
             // FIXME: Interpolation is not safe
             &format!(
-                "curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 {image_url}"
+                "curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 '{image_url}'"
             ),
         )
         .context("Failed to download enclave image")?;
@@ -641,7 +641,7 @@ EOF
         Ok(())
     }
 
-    // Goal: set up enclave matching enclave.eif
+    // Goal: set up enclave matching enclave.eif, with debug mode if necessary
     // TODO: Making this declarative implies checking if the enclave image
     // matches the running enclave
     fn run_fragment_enclave(
@@ -657,12 +657,10 @@ EOF
 
         let (_, stderr) = Self::ssh_exec(
             sess,
-            &("nitro-cli run-enclave --cpu-count ".to_owned()
-                + &((req_vcpu).to_string())
-                + " --memory "
-                + &((req_mem).to_string())
-                + " --eif-path enclave.eif --enclave-cid 88"
-                + if debug { " --debug-mode" } else { "" }),
+            &format!(
+                "nitro-cli run-enclave --cpu-count {req_vcpu} --memory {req_mem} --eif-path enclave.eif --enclave-cid 88{}",
+                if debug { " --debug-mode" } else { "" }
+            ),
         )?;
 
         if !stderr.is_empty() {
