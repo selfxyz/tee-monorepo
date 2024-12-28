@@ -278,11 +278,8 @@ impl Aws {
             .await
             .context("error establishing ssh connection")?;
 
-        if family == "tuna" {
-            // set up ephemeral ports for the host
-            Self::run_fragment_ephemeral_ports(sess)?;
-        }
-
+        // set up ephemeral ports for the host
+        Self::run_fragment_ephemeral_ports(sess)?;
         // set up nitro enclaves allocator
         Self::run_fragment_allocator(sess, req_vcpu, req_mem)?;
         // download enclave image and perform whitelist/blacklist checks
