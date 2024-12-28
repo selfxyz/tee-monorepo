@@ -327,8 +327,8 @@ impl Aws {
         Ok(())
     }
 
-    // TODO: Making this declarative would mean potentially restarting enclaves, unsure how to
-    // handle this
+    // TODO: Making this declarative would mean potentially restarting enclaves,
+    // not sure how to handle this
     fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
         let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
@@ -377,6 +377,8 @@ impl Aws {
         let (stdout, stderr) =
             Self::ssh_exec(sess, "cat image_url.txt").context("Failed to read image_url.txt")?;
 
+        // check stderr to handle old CVMs without a url txt file
+        // we assume url was different and redeploy
         if stderr.is_empty() && stdout == image_url {
             // return if url has not changed
             return Ok(());
