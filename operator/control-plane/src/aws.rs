@@ -388,8 +388,10 @@ impl Aws {
 
         Self::ssh_exec(
             sess,
-            &("curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 ".to_owned()
-                + image_url),
+            // FIXME: Interpolation is not safe
+            &format!(
+                "curl -sL -o enclave.eif --max-filesize 4000000000 --max-time 120 {image_url}"
+            ),
         )
         .context("Failed to download enclave image")?;
 
@@ -404,7 +406,8 @@ impl Aws {
         // store eif_url only when the image is allowed
         Self::ssh_exec(
             sess,
-            &("echo \"".to_owned() + image_url + "\" > image_url.txt"),
+            // FIXME: Interpolation is not safe
+            &format!("echo \"{image_url}\" > image_url.txt"),
         )
         .context("Failed to write EIF URL to txt file.")?;
 
@@ -414,69 +417,41 @@ impl Aws {
     // Goal: set bandwidth rate
     // TODO: this always resets tc rules, check if rate has changed
     fn run_fragment_bandwidth(sess: &Session, bandwidth: u64) -> Result<()> {
-        let (stdout, stderr) =
-            Self::ssh_exec(sess, "nmcli device status").context("Failed to get nmcli status")?;
+        let (stdout, stderr) = Self::ssh_exec(sess, &("sudo tc qdisc show dev ens5 root"))
+            .context("Failed to fetch tc config")?;
         if !stderr.is_empty() || stdout.is_empty() {
             error!(stderr);
-            return Err(anyhow!("Error fetching network interface name: {stderr}"));
+            return Err(anyhow!(
+                "Error fetching network interface qdisc configuration: {stderr}"
+            ));
         }
-        let mut interface = String::new();
-        let entries: Vec<&str> = stdout.split('\n').collect();
-        for line in entries {
-            let entry: Vec<&str> = line.split_whitespace().collect();
-            if entry.len() > 1 && entry[1] == "ethernet" {
-                interface = entry[0].to_string();
-                break;
-            }
+        let entries: Vec<&str> = stdout.trim().split('\n').collect();
+        let mut is_any_rule_set = true;
+        if entries[0].to_lowercase().contains("qdisc mq 0: root") && entries.len() == 1 {
+            is_any_rule_set = false;
         }
 
-        if !interface.is_empty() {
-            let (stdout, stderr) = Self::ssh_exec(
-                sess,
-                &("sudo tc qdisc show dev ".to_owned() + &interface + " root"),
-            )
-            .context("Failed to fetch tc config")?;
-            if !stderr.is_empty() || stdout.is_empty() {
-                error!(stderr);
-                return Err(anyhow!(
-                    "Error fetching network interface qdisc configuration: {stderr}"
-                ));
-            }
-            let entries: Vec<&str> = stdout.trim().split('\n').collect();
-            let mut is_any_rule_set = true;
-            if entries[0].to_lowercase().contains("qdisc mq 0: root") && entries.len() == 1 {
-                is_any_rule_set = false;
-            }
-
-            // remove previously defined rules
-            if is_any_rule_set {
-                let (_, stderr) = Self::ssh_exec(
-                    sess,
-                    &("sudo tc qdisc del dev ".to_owned() + &interface + " root"),
-                )?;
-                if !stderr.is_empty() {
-                    error!(stderr);
-                    return Err(anyhow!(
-                        "Error removing network interface qdisc configuration: {stderr}"
-                    ));
-                }
-            }
-
-            let (_, stderr) = Self::ssh_exec(
-                sess,
-                &("sudo tc qdisc add dev ".to_owned()
-                    + &interface
-                    + " root tbf rate "
-                    + &bandwidth.to_string()
-                    + "kbit burst 4000Mb latency 100ms"),
-            )?;
-
+        // remove previously defined rules
+        if is_any_rule_set {
+            let (_, stderr) = Self::ssh_exec(sess, &("sudo tc qdisc del dev ens5 root"))?;
             if !stderr.is_empty() {
                 error!(stderr);
-                return Err(anyhow!("Error setting up bandwidth limit: {stderr}"));
+                return Err(anyhow!(
+                    "Error removing network interface qdisc configuration: {stderr}"
+                ));
             }
-        } else {
-            return Err(anyhow!("Error fetching network interface name"));
+        }
+
+        let (_, stderr) = Self::ssh_exec(
+            sess,
+            &("sudo tc qdisc add dev ens5 root tbf rate ".to_owned()
+                + &bandwidth.to_string()
+                + "kbit burst 4000Mb latency 100ms"),
+        )?;
+
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error setting up bandwidth limit: {stderr}"));
         }
 
         Ok(())
