@@ -384,12 +384,22 @@ impl Aws {
             return Ok(());
         }
 
-        // enclave should be redeployed, kill it if it is still running
-        let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
-
+        // check if enclave is running
+        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+            .context("could not describe enclaves")?;
         if !stderr.is_empty() {
             error!(stderr);
-            return Err(anyhow!("Error terminating enclave: {stderr}"));
+            return Err(anyhow!("Error describing enclaves: {stderr}"));
+        }
+
+        if stdout != "[]" {
+            // enclave should be redeployed, kill it if it is still running
+            let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
+
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Error terminating enclave: {stderr}"));
+            }
         }
 
         Self::ssh_exec(
