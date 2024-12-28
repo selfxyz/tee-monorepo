@@ -310,6 +310,7 @@ impl Aws {
     // IMPORTANT: Each fragment is expected to be declarative where it will take the system
     // to the desired state by executing whatever commands necessary
 
+    // Goal: set ephemeral ports to 61440-65535
     fn run_fragment_ephemeral_ports(sess: &Session) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
@@ -324,6 +325,7 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: allocate the specified cpus and memory for the enclave
     // TODO: Making this declarative would mean potentially restarting enclaves,
     // not sure how to handle this
     fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
@@ -363,6 +365,8 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: make enclave.eif match the provided image url
+    // uses image_url.txt file to track state instead of redownloading every time
     fn run_fragment_download_and_check_image(&self, sess: &Session, image_url: &str) -> Result<()> {
         let (stdout, stderr) =
             Self::ssh_exec(sess, "cat image_url.txt").context("Failed to read image_url.txt")?;
@@ -376,6 +380,7 @@ impl Aws {
 
         if Self::is_enclave_running(sess)? {
             // enclave should be redeployed, kill it if it is still running
+            // not needed once enclave fragment can detect this case
             let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
 
             if !stderr.is_empty() {
@@ -409,6 +414,7 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: set bandwidth rate
     // TODO: this always resets tc rules, check if rate has changed
     fn run_fragment_bandwidth(sess: &Session, bandwidth: u64) -> Result<()> {
         let (stdout, stderr) =
@@ -479,6 +485,7 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: set up iptables rules
     fn run_fragment_iptables_salmon(sess: &Session) -> Result<()> {
         let iptables_rules: [&str; 4] = [
             "-P PREROUTING ACCEPT",
@@ -532,6 +539,7 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: set up iptables rules
     fn run_fragment_iptables_tuna(sess: &Session) -> Result<()> {
         let iptables_rules: [&str; 4] = [
             "-P INPUT ACCEPT",
@@ -597,6 +605,7 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: set up init server params
     fn run_fragment_init_server(sess: &Session, job_id: &str) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
@@ -620,6 +629,7 @@ impl Aws {
         Ok(())
     }
 
+    // Goal: set up or tear down debug logger
     // TODO: debug -> prod
     fn run_fragment_logger(sess: &Session, debug: bool) -> Result<()> {
         // set up logger if debug flag is set
@@ -661,6 +671,9 @@ EOF
         Ok(())
     }
 
+    // Goal: set up enclave matching enclave.eif
+    // TODO: Making this declarative implies checking if the enclave image
+    // matches the running enclave
     fn run_fragment_enclave(
         sess: &Session,
         req_vcpu: i32,
