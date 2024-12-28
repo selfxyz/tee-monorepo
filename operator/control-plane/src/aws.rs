@@ -520,7 +520,7 @@ impl Aws {
         }
 
         if !rules.contains(&iptables_rules[3]) {
-            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 1025:65535 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 1024:65535 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
                 return Err(anyhow!("Failed to set iptables rule: {stderr}"));
