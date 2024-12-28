@@ -1259,7 +1259,7 @@ EOF
                 .memory_info()
                 .ok_or(anyhow!("error fetching instance memory info"))?
                 .size_in_mib()
-                .ok_or(anyhow!("error fetching instance v_cpu info"))?;
+                .ok_or(anyhow!("error fetching instance memory info"))?;
             info!(mem);
         }
 
