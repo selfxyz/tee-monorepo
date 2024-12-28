@@ -676,13 +676,25 @@ EOF
         Ok(())
     }
 
-    // TODO: Enclave might already be running
     fn run_fragment_enclave(
         sess: &Session,
         req_vcpu: i32,
         req_mem: i64,
         debug: bool,
     ) -> Result<()> {
+        // check if enclave is running
+        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+            .context("could not describe enclaves")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error describing enclaves: {stderr}"));
+        }
+
+        if stdout != "[]" {
+            // return if enclave is already running
+            return Ok(());
+        }
+
         let (_, stderr) = Self::ssh_exec(
             sess,
             &("nitro-cli run-enclave --cpu-count ".to_owned()
