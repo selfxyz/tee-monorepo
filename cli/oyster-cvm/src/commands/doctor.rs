@@ -116,7 +116,9 @@ fn check_nix_experimental_features() -> Result<()> {
             3. Restart nix-daemon:\n\
                $ sudo systemctl restart nix-daemon"
         );
-        return Err(anyhow::anyhow!("Missing required Nix experimental features (nix-command and flakes)"));
+        return Err(anyhow::anyhow!(
+            "Missing required Nix experimental features (nix-command and flakes)"
+        ));
     }
 
     info!("Nix experimental features (nix-command and flakes) are enabled ✓");
