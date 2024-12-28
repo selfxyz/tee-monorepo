@@ -719,6 +719,21 @@ EOF
 
     // Enclave deployment fragments end here
 
+    // Command functions start here
+
+    fn is_enclave_running(sess: &Session) -> Result<bool> {
+        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+            .context("could not describe enclaves")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error describing enclaves: {stderr}"));
+        }
+
+        Ok(stdout != "[]")
+    }
+
+    // Command functions end here
+
     /* AWS EC2 UTILITY */
 
     pub async fn get_instance_ip(&self, instance_id: &str, region: &str) -> Result<String> {
