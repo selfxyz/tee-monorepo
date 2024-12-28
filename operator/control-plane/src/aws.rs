@@ -1357,13 +1357,6 @@ EOF
 
         self.run_fragment_download_and_check_image(sess, eif_url)?;
 
-        let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
-
-        if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error terminating enclave: {stderr}"));
-        }
-
         let (_, stderr) = Self::ssh_exec(
             sess,
             &("nitro-cli run-enclave --cpu-count ".to_owned()
