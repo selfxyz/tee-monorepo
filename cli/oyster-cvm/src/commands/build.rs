@@ -11,9 +11,6 @@ pub fn build_oyster_image(
     output: &str,
     commit_ref: &str,
 ) -> Result<()> {
-    info!("Checking if the current user is in the nix trusted-users list");
-    check_trusted_user()?;
-
     info!("Building oyster-cvm image with:");
     info!("  Platform: {}", platform.as_str());
     info!("  Docker compose: {}", docker_compose);
@@ -58,40 +55,6 @@ pub fn build_oyster_image(
     }
 
     info!("Build finished");
-
-    Ok(())
-}
-
-fn check_trusted_user() -> Result<()> {
-    let output = Command::new("nix")
-        .args(["config", "show", "trusted-users"])
-        .output()
-        .context("Failed to get nix trusted users")?;
-
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("Failed to get nix trusted users"));
-    }
-
-    let trusted_users =
-        String::from_utf8(output.stdout).context("Failed to parse nix trusted users output")?;
-
-    let username = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .context("Failed to get current username")?;
-
-    if !trusted_users.contains(&username) {
-        return Err(anyhow::anyhow!(
-            "Current user '{}' is not in nix trusted-users. To fix this:\n\
-            1. Edit /etc/nix/nix.conf with sudo:\n\
-               $ sudo nano /etc/nix/nix.conf\n\
-            2. Add your username to trusted-users line (create if doesn't exist):\n\
-               trusted-users = root {}\n\
-            3. Restart nix-daemon:\n\
-               $ sudo systemctl restart nix-daemon",
-            username,
-            username
-        ));
-    }
 
     Ok(())
 }
