@@ -704,7 +704,7 @@ EOF
             return Err(anyhow!("Error describing enclaves: {stderr}"));
         }
 
-        Ok(stdout != "[]")
+        Ok(stdout.trim() != "[]")
     }
 
     /* AWS EC2 UTILITY */
