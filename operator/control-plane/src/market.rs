@@ -690,6 +690,17 @@ impl<'a> JobState<'a> {
         res
     }
 
+    // implements the following:
+    // if instance launch scheduled
+    //     if healthy instance exists
+    //         ensure enclave is set up as required and return
+    //     else (unhealthy instance)
+    //         terminate the unhealthy instance and proceed to next step
+    //
+    //     at this point, instance for the job does not exist
+    //     launch a new instance and run enclave
+    // else (termination scheduled)
+    //     terminate instance if not already teminated
     async fn change_infra_impl(&mut self, mut infra_provider: impl InfraProvider) -> bool {
         let res = infra_provider
             .get_job_instance(&self.job_id, &self.region)
