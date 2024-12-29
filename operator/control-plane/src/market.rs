@@ -481,7 +481,7 @@ async fn job_manager(
         )
         .await;
 
-        if res == -2 || res == 0 {
+        if res == JobResult::Done || res == JobResult::Terminate {
             // full exit
             break;
         }
@@ -829,13 +829,11 @@ impl<'a> JobState<'a> {
         gb_rates: &[GBRateCard],
         address_whitelist: &[String],
         address_blacklist: &[String],
-    ) -> i8 {
-        if log.is_none() {
+    ) -> JobResult {
+        let Some(log) = log else {
             // error in the stream, can retry with new conn
-            return -1;
-        }
-
-        let log = log.unwrap();
+            return JobResult::Retry;
+        };
         info!(topic = ?log.topics()[0], data = ?log.data(), "New log");
 
         // events
@@ -870,7 +868,7 @@ impl<'a> JobState<'a> {
                 <(String, U256, U256, U256)>::abi_decode_sequence(&log.data().data, true)
                     .inspect_err(|err| error!(?err, data = ?log.data(), "OPENED: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -891,45 +889,45 @@ impl<'a> JobState<'a> {
             let Ok(v) = serde_json::from_str::<Value>(&metadata)
                 .inspect_err(|err| error!(?err, "Error reading metadata"))
             else {
-                return -2;
+                return JobResult::Terminate;
             };
 
             let Some(t) = v["instance"].as_str() else {
                 error!("Instance type not set");
-                return -2;
+                return JobResult::Terminate;
             };
             self.instance_type = t.to_string();
             info!(self.instance_type, "Instance type set");
 
             let Some(t) = v["region"].as_str() else {
                 error!("Job region not set");
-                return -2;
+                return JobResult::Terminate;
             };
             self.region = t.to_string();
             info!(self.region, "Job region set");
 
             if !self.allowed_regions.contains(&self.region) {
                 error!(self.region, "Region not suppported, exiting job");
-                return -2;
+                return JobResult::Terminate;
             }
 
             let Some(t) = v["memory"].as_i64() else {
                 error!("Memory not set");
-                return -2;
+                return JobResult::Terminate;
             };
             self.req_mem = t;
             info!(self.req_mem, "Required memory");
 
             let Some(t) = v["vcpu"].as_i64() else {
                 error!("vcpu not set");
-                return -2;
+                return JobResult::Terminate;
             };
             self.req_vcpus = t.try_into().unwrap_or(i32::MAX);
             info!(self.req_vcpus, "Required vcpu");
 
             let Some(url) = v["url"].as_str() else {
                 error!("EIF url not found! Exiting job");
-                return -2;
+                return JobResult::Terminate;
             };
             self.eif_url = url.to_string();
 
@@ -946,8 +944,7 @@ impl<'a> JobState<'a> {
                 whitelist_blacklist_check(log.clone(), address_whitelist, address_blacklist);
             if !allowed {
                 // blacklisted or not whitelisted address
-                self.schedule_termination(0);
-                return -3;
+                return JobResult::Done;
             }
 
             let mut supported = false;
@@ -966,7 +963,7 @@ impl<'a> JobState<'a> {
 
             if !supported {
                 error!(self.instance_type, "Instance type not supported",);
-                return -2;
+                return JobResult::Terminate;
             }
 
             info!(
@@ -989,8 +986,9 @@ impl<'a> JobState<'a> {
                     }
                 }
                 self.schedule_launch(self.launch_delay);
+                return JobResult::Success;
             } else {
-                self.schedule_termination(0);
+                return JobResult::Done;
             }
         } else if log.topics()[0] == JOB_SETTLED {
             // decode
@@ -998,7 +996,7 @@ impl<'a> JobState<'a> {
                 <(U256, U256)>::abi_decode_sequence(&log.data().data, true)
                     .inspect_err(|err| error!(?err, data = ?log.data(), "SETTLED: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1018,8 +1016,10 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "SETTLED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_CLOSED {
-            self.schedule_termination(0);
+            return JobResult::Done;
         } else if log.topics()[0] == JOB_DEPOSITED {
             // decode
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
@@ -1027,7 +1027,7 @@ impl<'a> JobState<'a> {
             let Ok(amount) = U256::abi_decode(&log.data().data, true)
                 .inspect_err(|err| error!(?err, data = ?log.data(), "DEPOSITED: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1046,6 +1046,8 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "DEPOSITED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_WITHDREW {
             // decode
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
@@ -1053,7 +1055,7 @@ impl<'a> JobState<'a> {
             let Ok(amount) = U256::abi_decode(&log.data().data, true)
                 .inspect_err(|err| error!(?err, data = ?log.data(), "WITHDREW: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1072,13 +1074,15 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "WITHDREW",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_REVISE_RATE_INITIATED {
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
             // if this is changed in the future
             let Ok(new_rate) = U256::abi_decode(&log.data().data, true).inspect_err(
                 |err| error!(?err, data = ?log.data(), "JOB_REVISE_RATE_INTIATED: Decode failure"),
             ) else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1091,8 +1095,8 @@ impl<'a> JobState<'a> {
             self.original_rate = self.rate;
             self.rate = new_rate;
             if self.rate < self.min_rate {
-                self.schedule_termination(0);
                 info!("Revised job rate below min rate, shut down");
+                return JobResult::Done;
             }
             info!(
                 self.original_rate = self.original_rate.to_string(),
@@ -1101,6 +1105,8 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "JOB_REVISE_RATE_INTIATED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_REVISE_RATE_CANCELLED {
             info!(
                 rate = self.rate.to_string(),
@@ -1115,13 +1121,15 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "JOB_REVISE_RATE_CANCELLED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_REVISE_RATE_FINALIZED {
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
             // if this is changed in the future
             let Ok(new_rate) = U256::abi_decode(&log.data().data, true).inspect_err(
                 |err| error!(?err, data = ?log.data(), "JOB_REVISE_RATE_FINALIZED: Decode failure"),
             ) else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1133,7 +1141,7 @@ impl<'a> JobState<'a> {
             );
             if self.rate != new_rate {
                 error!("Something went wrong, finalized rate not same as initiated rate");
-                return -2;
+                return JobResult::Internal;
             }
             self.original_rate = new_rate;
             info!(
@@ -1143,14 +1151,15 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "JOB_REVISE_RATE_FINALIZED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == METADATA_UPDATED {
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
             // if this is changed in the future
             let Ok(metadata) = String::abi_decode(&log.data().data, true).inspect_err(
                 |err| error!(?err, data = ?log.data(), "METADATA_UPDATED: Decode failure"),
             ) else {
-                error!(data = ?log.data(), "METADATA_UPDATED: Decode failure");
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(metadata, "METADATA_UPDATED");
@@ -1158,59 +1167,49 @@ impl<'a> JobState<'a> {
             let Ok(v) = serde_json::from_str::<Value>(&metadata)
                 .inspect_err(|err| error!(?err, "Error reading metadata"))
             else {
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             };
 
             let Some(t) = v["instance"].as_str() else {
                 error!("Instance type not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             };
             if self.instance_type != t {
                 error!("Instance type change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             }
 
             let Some(t) = v["region"].as_str() else {
                 error!("Job region not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             };
             if self.region != t {
                 error!("Region change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             }
 
             let Some(t) = v["memory"].as_i64() else {
                 error!("Memory not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             };
             if self.req_mem != t {
                 error!("Memory change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             }
 
             let Some(t) = v["vcpu"].as_i64() else {
                 error!("vcpu not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             };
             if self.req_vcpus != t.try_into().unwrap_or(2) {
                 error!("vcpu change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             }
 
             let family = v["family"].as_str();
             if family.is_some() && self.family != family.unwrap() {
                 error!("Family change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             }
 
             let debug = v["debug"].as_bool().unwrap_or(false);
@@ -1218,8 +1217,7 @@ impl<'a> JobState<'a> {
 
             let Some(url) = v["url"].as_str() else {
                 error!("EIF url not found! Exiting job");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Terminate;
             };
 
             self.eif_url = url.to_string();
@@ -1228,13 +1226,27 @@ impl<'a> JobState<'a> {
             if !self.infra_change_scheduled {
                 self.schedule_launch(0);
             }
+
+            return JobResult::Success;
         } else {
             error!(topic = ?log.topics()[0], "Unknown event");
-            return -2;
+            return JobResult::Terminate;
         }
-
-        0
     }
+}
+
+#[derive(PartialEq)]
+enum JobResult {
+    // success
+    Success,
+    // done, should terminate instance, if any
+    Done,
+    // error, can retry with a new conn
+    Retry,
+    // error, should terminate instance, if any
+    Terminate,
+    // error, likely internal bug, exit but do not terminate instance
+    Internal,
 }
 
 // manage the complete lifecycle of a job
@@ -1250,10 +1262,12 @@ async fn job_manager_once(
     gb_rates: &[GBRateCard],
     address_whitelist: &[String],
     address_blacklist: &[String],
-) -> i8 {
+) -> JobResult {
     let mut state = JobState::new(&context, job_id, aws_delay_duration, allowed_regions);
 
-    let res = 'event: loop {
+    let mut job_result = JobResult::Done;
+
+    'event: loop {
         // compute time to insolvency
         let insolvency_duration = state.insolvency_duration();
         info!(duration = insolvency_duration.as_secs(), "Insolvency after");
@@ -1269,10 +1283,24 @@ async fn job_manager_once(
             biased;
 
             log = job_stream.next() => {
-                let res = state.process_log(log, rates, gb_rates, address_whitelist, address_blacklist);
-                if res == -2 || res == -1 {
-                    break 'event res;
-                }
+                use JobResult::*;
+                job_result = state.process_log(log, rates, gb_rates, address_whitelist, address_blacklist);
+                match job_result {
+                    // just proceed
+                    Success => {},
+                    // terminate
+                    Done => {
+                        state.schedule_termination(0);
+                    },
+                    // break and eventually retry
+                    Retry => break 'event,
+                    // terminate
+                    Terminate => {
+                        state.schedule_termination(0);
+                    },
+                    // break
+                    Internal => break 'event,
+                };
             }
 
             // running instance heartbeat check
@@ -1293,19 +1321,13 @@ async fn job_manager_once(
                 let res = state.change_infra(&mut infra_provider).await;
                 if res && !state.infra_state {
                     // successful termination, exit
-                    break 'event 0;
+                    break 'event;
                 }
             }
         }
-    };
-
-    if res == 0 {
-        info!(res, "Job stream ended");
-    } else {
-        error!(res, "Job stream ended");
     }
 
-    res
+    job_result
 }
 
 async fn job_logs(
