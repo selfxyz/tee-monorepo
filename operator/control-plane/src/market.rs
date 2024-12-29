@@ -607,55 +607,50 @@ impl<'a> JobState<'a> {
     }
 
     async fn heartbeat_check(&mut self, mut infra_provider: impl InfraProvider) {
-        let is_running = infra_provider
+        let Ok(is_running) = infra_provider
             .check_instance_running(&self.instance_id, &self.region)
-            .await;
-        match is_running {
-            Err(err) => {
-                error!(?err, "Failed to retrieve instance state");
-            }
-            Ok(is_running) => {
-                if is_running {
-                    let is_enclave_running = infra_provider
-                        .check_enclave_running(&self.instance_id, &self.region)
-                        .await;
+            .await
+            .inspect_err(|err| error!(?err, "Failed to retrieve instance state"))
+        else {
+            return;
+        };
 
-                    match is_enclave_running {
-                        Ok(is_enclave_running) => {
-                            if !is_enclave_running {
-                                info!("Enclave not running on the instance, running the enclave");
-                                let res = infra_provider
-                                    .run_enclave(
-                                        &self.job_id,
-                                        &self.instance_id,
-                                        &self.family,
-                                        &self.region,
-                                        &self.eif_url,
-                                        self.req_vcpus,
-                                        self.req_mem,
-                                        self.bandwidth,
-                                        self.debug,
-                                    )
-                                    .await;
-                                match res {
-                                    Ok(_) => {
-                                        info!("Enclave successfully ran on the instance");
-                                    }
-                                    Err(err) => {
-                                        error!(?err, "Failed to run enclave");
-                                    }
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            error!(?err, "Failed to retrieve enclave state");
-                        }
+        if is_running {
+            let Ok(is_enclave_running) = infra_provider
+                .check_enclave_running(&self.instance_id, &self.region)
+                .await
+                .inspect_err(|err| error!(?err, "Failed to retrieve enclave state"))
+            else {
+                return;
+            };
+
+            if !is_enclave_running {
+                info!("Enclave not running on the instance, running the enclave");
+                let res = infra_provider
+                    .run_enclave(
+                        &self.job_id,
+                        &self.instance_id,
+                        &self.family,
+                        &self.region,
+                        &self.eif_url,
+                        self.req_vcpus,
+                        self.req_mem,
+                        self.bandwidth,
+                        self.debug,
+                    )
+                    .await;
+                match res {
+                    Ok(_) => {
+                        info!("Enclave successfully ran on the instance");
                     }
-                } else if !is_running && self.rate >= self.min_rate {
-                    info!("Instance not running, scheduling new launch");
-                    self.schedule_launch(0);
+                    Err(err) => {
+                        error!(?err, "Failed to run enclave");
+                    }
                 }
             }
+        } else if !is_running && self.rate >= self.min_rate {
+            info!("Instance not running, scheduling new launch");
+            self.schedule_launch(0);
         }
     }
 
@@ -1218,7 +1213,7 @@ impl<'a> JobState<'a> {
 
             self.eif_url = url.to_string();
 
-            // schedule change immediately if not already schedules
+            // schedule change immediately if not already scheduled
             if !self.infra_change_scheduled {
                 self.schedule_launch(0);
             }
