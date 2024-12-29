@@ -2507,7 +2507,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_eif_update_after_spin_up() {
+    async fn test_eif_update_before_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
 
@@ -2533,7 +2533,7 @@ mod tests {
             res: 0,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
-                    time: start_time + Duration::from_secs(400),
+                    time: start_time + Duration::from_secs(300),
                     job: job_id.clone(),
                     instance_type: "c6a.xlarge".into(),
                     family: "salmon".into(),
@@ -2546,7 +2546,7 @@ mod tests {
                     instance_id: compute_instance_id(0),
                 }),
                 TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(400),
+                    time: start_time + Duration::from_secs(300),
                     job: job_id.clone(),
                     family: "salmon".into(),
                     region: "ap-south-1".into(),
@@ -2570,7 +2570,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_other_metadata_update_after_spin_up() {
+    async fn test_other_metadata_update_before_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
 
@@ -2601,9 +2601,8 @@ mod tests {
         run_test(start_time, logs, job_manager_params, test_results).await;
     }
 
-    // TODO: Should this work like this?
     #[tokio::test(start_paused = true)]
-    async fn test_metadata_update_event_with_no_updates_after_spin_up() {
+    async fn test_metadata_update_event_with_no_updates_before_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
 
@@ -2626,8 +2625,40 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: 0,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    instance_id: compute_instance_id(0),
+                    eif_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    instance_id: compute_instance_id(0),
+                    region: "ap-south-1".into(),
+                }),
+            ],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
