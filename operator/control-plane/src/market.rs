@@ -1235,11 +1235,11 @@ impl<'a> JobState<'a> {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum JobResult {
     // success
     Success,
-    // done, should terminate instance, if any
+    // done, should still terminate instance, if any
     Done,
     // error, can retry with a new conn
     Retry,
@@ -1313,6 +1313,7 @@ async fn job_manager_once(
             // enable when termination is not already scheduled
             () = sleep(insolvency_duration), if !state.infra_change_scheduled || state.infra_state => {
                 state.handle_insolvency();
+                job_result = JobResult::Done;
             }
 
             // aws delayed spin up check
@@ -1409,7 +1410,7 @@ mod tests {
         self, compute_address_word, compute_instance_id, Action, TestAws, TestAwsOutcome,
     };
 
-    use super::SystemContext;
+    use super::{JobResult, SystemContext};
 
     struct TestSystemContext {
         start: Instant,
@@ -1429,7 +1430,7 @@ mod tests {
     }
 
     struct TestResults {
-        res: i8,
+        res: JobResult,
         outcomes: Vec<TestAwsOutcome>,
     }
 
@@ -1500,7 +1501,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1562,7 +1563,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1624,7 +1625,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1689,7 +1690,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1755,7 +1756,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1817,7 +1818,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![],
         };
 
@@ -1847,7 +1848,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![],
         };
 
@@ -1877,7 +1878,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![],
         };
 
@@ -1907,7 +1908,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![],
         };
 
@@ -1937,7 +1938,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![],
         };
 
@@ -1967,7 +1968,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![],
         };
 
@@ -1997,7 +1998,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![],
         };
 
@@ -2030,7 +2031,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2095,7 +2096,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2160,7 +2161,7 @@ mod tests {
         // expected to deploy
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2225,7 +2226,7 @@ mod tests {
         // expected to not deploy
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![],
         };
 
@@ -2258,7 +2259,7 @@ mod tests {
         // expected to not deploy
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![],
         };
 
@@ -2291,7 +2292,7 @@ mod tests {
         // expected to deploy
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2552,7 +2553,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2615,7 +2616,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2679,7 +2680,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![],
         };
 
@@ -2710,7 +2711,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2773,7 +2774,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2848,7 +2849,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2924,7 +2925,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
+            res: JobResult::Terminate,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2987,7 +2988,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
