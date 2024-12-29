@@ -481,7 +481,7 @@ async fn job_manager(
         )
         .await;
 
-        if res == JobResult::Done || res == JobResult::Terminate {
+        if res == JobResult::Done || res == JobResult::Failed {
             // full exit
             break;
         }
@@ -889,45 +889,45 @@ impl<'a> JobState<'a> {
             let Ok(v) = serde_json::from_str::<Value>(&metadata)
                 .inspect_err(|err| error!(?err, "Error reading metadata"))
             else {
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
 
             let Some(t) = v["instance"].as_str() else {
                 error!("Instance type not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             self.instance_type = t.to_string();
             info!(self.instance_type, "Instance type set");
 
             let Some(t) = v["region"].as_str() else {
                 error!("Job region not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             self.region = t.to_string();
             info!(self.region, "Job region set");
 
             if !self.allowed_regions.contains(&self.region) {
                 error!(self.region, "Region not suppported, exiting job");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["memory"].as_i64() else {
                 error!("Memory not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             self.req_mem = t;
             info!(self.req_mem, "Required memory");
 
             let Some(t) = v["vcpu"].as_i64() else {
                 error!("vcpu not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             self.req_vcpus = t.try_into().unwrap_or(i32::MAX);
             info!(self.req_vcpus, "Required vcpu");
 
             let Some(url) = v["url"].as_str() else {
                 error!("EIF url not found! Exiting job");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             self.eif_url = url.to_string();
 
@@ -963,7 +963,7 @@ impl<'a> JobState<'a> {
 
             if !supported {
                 error!(self.instance_type, "Instance type not supported",);
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             info!(
@@ -1167,49 +1167,49 @@ impl<'a> JobState<'a> {
             let Ok(v) = serde_json::from_str::<Value>(&metadata)
                 .inspect_err(|err| error!(?err, "Error reading metadata"))
             else {
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
 
             let Some(t) = v["instance"].as_str() else {
                 error!("Instance type not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             if self.instance_type != t {
                 error!("Instance type change not allowed");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["region"].as_str() else {
                 error!("Job region not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             if self.region != t {
                 error!("Region change not allowed");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["memory"].as_i64() else {
                 error!("Memory not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             if self.req_mem != t {
                 error!("Memory change not allowed");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["vcpu"].as_i64() else {
                 error!("vcpu not set");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
             if self.req_vcpus != t.try_into().unwrap_or(2) {
                 error!("vcpu change not allowed");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             let family = v["family"].as_str();
             if family.is_some() && self.family != family.unwrap() {
                 error!("Family change not allowed");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             }
 
             let debug = v["debug"].as_bool().unwrap_or(false);
@@ -1217,7 +1217,7 @@ impl<'a> JobState<'a> {
 
             let Some(url) = v["url"].as_str() else {
                 error!("EIF url not found! Exiting job");
-                return JobResult::Terminate;
+                return JobResult::Failed;
             };
 
             self.eif_url = url.to_string();
@@ -1230,7 +1230,7 @@ impl<'a> JobState<'a> {
             return JobResult::Success;
         } else {
             error!(topic = ?log.topics()[0], "Unknown event");
-            return JobResult::Terminate;
+            return JobResult::Failed;
         }
     }
 }
@@ -1244,7 +1244,7 @@ enum JobResult {
     // error, can retry with a new conn
     Retry,
     // error, should terminate instance, if any
-    Terminate,
+    Failed,
     // error, likely internal bug, exit but do not terminate instance
     Internal,
 }
@@ -1295,7 +1295,7 @@ async fn job_manager_once(
                     // break and eventually retry
                     Retry => break 'event,
                     // terminate
-                    Terminate => {
+                    Failed => {
                         state.schedule_termination(0);
                     },
                     // break
@@ -1818,7 +1818,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![],
         };
 
@@ -1848,7 +1848,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![],
         };
 
@@ -1878,7 +1878,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![],
         };
 
@@ -1908,7 +1908,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![],
         };
 
@@ -1938,7 +1938,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![],
         };
 
@@ -2680,7 +2680,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![],
         };
 
@@ -2925,7 +2925,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Terminate,
+            res: JobResult::Failed,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
