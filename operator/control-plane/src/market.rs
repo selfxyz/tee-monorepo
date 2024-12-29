@@ -655,6 +655,7 @@ impl<'a> JobState<'a> {
         info!("Instance termination scheduled");
     }
 
+    // exists to implement rescheduling of infra changes on errors
     async fn change_infra(&mut self, infra_provider: impl InfraProvider) -> bool {
         let res = self.change_infra_impl(infra_provider).await;
         if res {
@@ -679,6 +680,8 @@ impl<'a> JobState<'a> {
     //     run enclave
     // else (termination scheduled)
     //     terminate instance if not already teminated
+    //
+    // on errors, return false, will be rescheduled after a short delay
     async fn change_infra_impl(&mut self, mut infra_provider: impl InfraProvider) -> bool {
         let res = infra_provider
             .get_job_instance(&self.job_id, &self.region)
@@ -1230,6 +1233,7 @@ async fn job_manager_once(
 ) -> JobResult {
     let mut state = JobState::new(&context, job_id, aws_delay_duration, allowed_regions);
 
+    // usually tracks the result of the last log processed
     let mut job_result = JobResult::Success;
 
     // The processing loop follows this:
@@ -1286,9 +1290,8 @@ async fn job_manager_once(
             }
 
             // insolvency check
-            // enable when termination is not already scheduled
-            // and processing is successful
-            () = sleep(insolvency_duration), if (!state.infra_change_scheduled || state.infra_state) && job_result == JobResult::Success => {
+            // enable when processing is successful
+            () = sleep(insolvency_duration), if job_result == JobResult::Success => {
                 state.handle_insolvency();
                 job_result = JobResult::Done;
             }
