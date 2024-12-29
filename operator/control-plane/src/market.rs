@@ -1304,9 +1304,8 @@ async fn job_manager_once(
             }
 
             // running instance heartbeat check
-            // should only happen if instance id is available
-            // and processing is successful
-            () = sleep(Duration::from_secs(5)), if !state.instance_id.is_empty() && job_result == JobResult::Success => {
+            // should only happen if infra change is not scheduled
+            () = sleep(Duration::from_secs(5)), if !state.infra_change_scheduled => {
                 state.heartbeat_check(&mut infra_provider).await;
             }
         }
