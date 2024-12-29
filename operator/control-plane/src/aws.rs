@@ -369,21 +369,10 @@ impl Aws {
             Self::ssh_exec(sess, "cat image_url.txt").context("Failed to read image_url.txt")?;
 
         // check stderr to handle old CVMs without a url txt file
-        // we assume url was different and redeploy
+        // we assume url was different and redownload
         if stderr.is_empty() && stdout == image_url {
             // return if url has not changed
             return Ok(());
-        }
-
-        if Self::is_enclave_running(sess)? {
-            // enclave should be redeployed, kill it if it is still running
-            // not needed once enclave fragment can detect this case
-            let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
-
-            if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Error terminating enclave: {stderr}"));
-            }
         }
 
         Self::ssh_exec(
