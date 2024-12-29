@@ -481,7 +481,7 @@ async fn job_manager(
         )
         .await;
 
-        if res == JobResult::Done || res == JobResult::Failed {
+        if res != JobResult::Retry {
             // full exit
             break;
         }
@@ -1265,8 +1265,17 @@ async fn job_manager_once(
 ) -> JobResult {
     let mut state = JobState::new(&context, job_id, aws_delay_duration, allowed_regions);
 
-    let mut job_result = JobResult::Done;
+    let mut job_result = JobResult::Success;
 
+    // The processing loop follows this:
+    // Keep processing events till you hit an unsuccessful processing
+    // If result is Retry or Internal, these are likely RPC issues and bugs
+    // Hence just break out, the parent function handles retrying
+    // If result is Done, the job is naturally "done", schedule termination
+    // If result is Failed, the job ran into a user error, schedule termination
+    // If job is insolvent, schedule termination
+    // Once job is successfully terminated, break out
+    // Insolvency and heartbeats only matter when job is not already scheduled for termination
     'event: loop {
         // compute time to insolvency
         let insolvency_duration = state.insolvency_duration();
@@ -1280,9 +1289,17 @@ async fn job_manager_once(
         // extract as much stuff as possible outside it
         tokio::select! {
             // order matters
+            // first process all logs because they might end up closing the job
+            // then process insolvency because it might end up closing the job
+            // then infra changes
+            // then heartbeat
+            // this ensures that any log which results in a job getting closed or insolvent
+            // is given priority and the job is terminated even if other infra changes are
+            // scheduled
             biased;
 
-            log = job_stream.next() => {
+            // keep processing logs till the processing is successful
+            log = job_stream.next(), if job_result == JobResult::Success => {
                 use JobResult::*;
                 job_result = state.process_log(log, rates, gb_rates, address_whitelist, address_blacklist);
                 match job_result {
@@ -1303,15 +1320,10 @@ async fn job_manager_once(
                 };
             }
 
-            // running instance heartbeat check
-            // should only happen if instance id is available
-            () = sleep(Duration::from_secs(5)), if !state.instance_id.is_empty() => {
-                state.heartbeat_check(&mut infra_provider).await;
-            }
-
             // insolvency check
             // enable when termination is not already scheduled
-            () = sleep(insolvency_duration), if !state.infra_change_scheduled || state.infra_state => {
+            // and processing is successful
+            () = sleep(insolvency_duration), if (!state.infra_change_scheduled || state.infra_state) && job_result == JobResult::Success => {
                 state.handle_insolvency();
                 job_result = JobResult::Done;
             }
@@ -1324,6 +1336,13 @@ async fn job_manager_once(
                     // successful termination, exit
                     break 'event;
                 }
+            }
+
+            // running instance heartbeat check
+            // should only happen if instance id is available
+            // and processing is successful
+            () = sleep(Duration::from_secs(5)), if !state.instance_id.is_empty() && job_result == JobResult::Success => {
+                state.heartbeat_check(&mut infra_provider).await;
             }
         }
     }
