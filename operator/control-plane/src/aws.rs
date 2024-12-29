@@ -678,8 +678,10 @@ EOF
             serde_json::from_str(&stdout).context("could not parse enclave description")?;
 
         if let Some(item) = enclave_data.first() {
-            if item["Measurements"] == eif_data["Measurements"] {
-                // same enclave, just return
+            if item["Measurements"] == eif_data["Measurements"]
+                && item["Flags"] == (if debug { "DEBUG_MODE" } else { "NONE" })
+            {
+                // same enclave, correct debug mode, just return
                 return Ok(());
             } else {
                 // different enclave, kill it
