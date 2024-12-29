@@ -671,12 +671,12 @@ impl<'a> JobState<'a> {
     // implements the following:
     // if instance launch scheduled
     //     if healthy instance exists
-    //         ensure enclave is set up as required and return
+    //         proceed
     //     else (unhealthy instance)
-    //         terminate the unhealthy instance and proceed to next step
+    //         terminate the unhealthy instance and proceed
     //
-    //     at this point, instance for the job does not exist
-    //     launch a new instance and run enclave
+    //     if instance still does not exist, launch one
+    //     run enclave
     // else (termination scheduled)
     //     terminate instance if not already teminated
     async fn change_infra_impl(&mut self, mut infra_provider: impl InfraProvider) -> bool {
@@ -688,7 +688,7 @@ impl<'a> JobState<'a> {
             error!(?err, "Failed to get job instance");
             return false;
         }
-        let (exist, instance, state) = res.unwrap();
+        let (mut exist, instance, state) = res.unwrap();
 
         if self.infra_state {
             // launch mode
@@ -698,29 +698,7 @@ impl<'a> JobState<'a> {
                     // instance exists and is already running, we are done
                     info!(instance, "Found existing healthy instance");
                     self.instance_id = instance;
-                    // call run_enclave to ensure instance is up to date
-                    let res = infra_provider
-                        .run_enclave(
-                            &self.job_id,
-                            &self.instance_id,
-                            &self.family,
-                            &self.region,
-                            &self.eif_url,
-                            self.req_vcpus,
-                            self.req_mem,
-                            self.bandwidth,
-                            self.debug,
-                        )
-                        .await;
-                    if let Err(err) = res {
-                        error!(?err, "Failed to ensure instance is up to date");
-                        return false;
-                    }
-
-                    return true;
-                }
-
-                if state == "stopping" || state == "stopped" {
+                } else if state == "stopping" || state == "stopped" {
                     // instance unhealthy, terminate
                     info!(instance, "Found existing unhealthy instance");
                     let res = infra_provider
@@ -730,30 +708,38 @@ impl<'a> JobState<'a> {
                         error!(?err, "Failed to terminate instance");
                         return false;
                     }
+
+                    // set to false so new one can be provisioned
+                    exist = false;
+                } else {
+                    // state is shutting-down or terminated
+                    // set to false so new one can be provisioned
+                    exist = false;
+                }
+            }
+
+            if !exist {
+                // either no old instance or old instance was not enough, launch new one
+                info!("Launching new instance");
+                let res = infra_provider
+                    .spin_up(
+                        &self.job_id,
+                        self.instance_type.as_str(),
+                        self.family.as_str(),
+                        &self.region,
+                        self.req_mem,
+                        self.req_vcpus,
+                        self.bandwidth,
+                    )
+                    .await;
+                if let Err(err) = res {
+                    error!(?err, "Instance launch failed");
+                    return false;
                 }
 
-                // state is shutting-down or terminated at this point
+                self.instance_id = res.unwrap();
+                info!(self.instance_id, "Instance launched");
             }
-
-            // either no old instance or old instance was not enough, launch new one
-            info!("Launching new instance");
-            let res = infra_provider
-                .spin_up(
-                    &self.job_id,
-                    self.instance_type.as_str(),
-                    self.family.as_str(),
-                    &self.region,
-                    self.req_mem,
-                    self.req_vcpus,
-                    self.bandwidth,
-                )
-                .await;
-            if let Err(err) = res {
-                error!(?err, "Instance launch failed");
-                return false;
-            }
-            self.instance_id = res.unwrap();
-            info!(self.instance_id, "Instance launched");
 
             // run the enclave
             let res = infra_provider
@@ -773,6 +759,8 @@ impl<'a> JobState<'a> {
                 error!(?err, "Enclave launch failed");
                 return false;
             }
+
+            return true;
         } else {
             // terminate mode
             if !exist || state == "shutting-down" || state == "terminated" {
@@ -790,9 +778,9 @@ impl<'a> JobState<'a> {
                 error!(?err, "Failed to terminate instance");
                 return false;
             }
-        }
 
-        true
+            return true;
+        }
     }
 
     // return 0 on success
