@@ -604,10 +604,9 @@ impl Aws {
     }
 
     // Goal: set up or tear down debug logger
-    // TODO: debug -> prod
     fn run_fragment_logger(sess: &Session, debug: bool) -> Result<()> {
-        // set up logger if debug flag is set
         if debug {
+            // set up logger if debug flag is set
             let (_, stderr) = Self::ssh_exec(sess, "curl -fsS https://artifacts.marlin.org/oyster/binaries/nitro-logger_v1.0.0_linux_`uname -m | sed 's/x86_64/amd64/g; s/aarch64/arm64/g'` -o nitro-logger && chmod +x nitro-logger")
                 .context("Failed to download logger")?;
             if !stderr.is_empty() {
@@ -639,6 +638,22 @@ EOF
             if !stderr.is_empty() {
                 error!(stderr);
                 return Err(anyhow!("Failed to start logger: {stderr}"));
+            }
+        } else {
+            // check if logger is running
+            let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl status logger")
+                .context("Failed to start logger")?;
+            if !stderr.is_empty() {
+                // logger is not running
+                return Ok(());
+            }
+
+            // kill the logger
+            let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl stop logger")
+                .context("Failed to stop logger")?;
+            if !stderr.is_empty() {
+                error!(stderr);
+                return Err(anyhow!("Failed to stop logger: {stderr}"));
             }
         }
 
