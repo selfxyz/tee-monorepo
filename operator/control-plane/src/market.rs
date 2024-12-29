@@ -1218,9 +1218,10 @@ impl<'a> JobState<'a> {
 
             self.eif_url = url.to_string();
 
-            // WARN: this effectively delays the launch
-            // should revisit and see if it is desirable
-            self.schedule_launch(self.launch_delay);
+            // schedule change immediately if not already schedules
+            if !self.infra_change_scheduled {
+                self.schedule_launch(0);
+            }
         } else {
             error!(topic = ?log.topics()[0], "Unknown event");
             return -2;
