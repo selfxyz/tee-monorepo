@@ -1220,11 +1220,7 @@ impl<'a> JobState<'a> {
                 self.schedule_termination(0);
                 return -2;
             };
-            if self.eif_url == url {
-                error!("No url change for EIF update event");
-                self.schedule_termination(0);
-                return -2;
-            }
+
             self.eif_url = url.to_string();
             self.eif_update = true;
             // WARN: this effectively delays the launch
