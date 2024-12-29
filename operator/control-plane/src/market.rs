@@ -553,8 +553,6 @@ struct JobState<'a> {
     infra_change_time: Instant,
     // whether to schedule change
     infra_change_scheduled: bool,
-    // whether to just update the eif
-    eif_update: bool,
 }
 
 impl<'a> JobState<'a> {
@@ -585,11 +583,10 @@ impl<'a> JobState<'a> {
             region: "ap-south-1".to_string(),
             req_vcpus: 2,
             req_mem: 4096,
+            debug: false,
             infra_state: false,
             infra_change_time: Instant::now(),
             infra_change_scheduled: false,
-            eif_update: false,
-            debug: false,
         }
     }
 
@@ -1220,7 +1217,6 @@ impl<'a> JobState<'a> {
             };
 
             self.eif_url = url.to_string();
-            self.eif_update = true;
 
             // WARN: this effectively delays the launch
             // should revisit and see if it is desirable
