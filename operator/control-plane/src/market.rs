@@ -2949,8 +2949,8 @@ mod tests {
                     req_vcpu: 2,
                     bandwidth: 76,
                     instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/updated-enclave.eif".into(),
-                    debug: true,
+                    eif_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                 }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(400),
