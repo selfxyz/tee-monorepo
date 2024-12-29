@@ -661,17 +661,46 @@ EOF
     }
 
     // Goal: set up enclave matching enclave.eif, with debug mode if necessary
-    // TODO: Making this declarative implies checking if the enclave image
-    // matches the running enclave
     fn run_fragment_enclave(
         sess: &Session,
         req_vcpu: i32,
         req_mem: i64,
         debug: bool,
     ) -> Result<()> {
-        if Self::is_enclave_running(sess)? {
-            // return if enclave is already running
-            return Ok(());
+        let (stdout, stderr) =
+            Self::ssh_exec(&sess, "nitro-cli describe-eif --eif-path enclave.eif")
+                .context("could not describe eif")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error describing eif: {stderr}"));
+        }
+
+        let eif_data: HashMap<String, Value> =
+            serde_json::from_str(&stdout).context("could not parse eif description")?;
+
+        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+            .context("could not describe enclaves")?;
+        if !stderr.is_empty() {
+            error!(stderr);
+            return Err(anyhow!("Error describing enclaves: {stderr}"));
+        }
+
+        let enclave_data: Vec<HashMap<String, Value>> =
+            serde_json::from_str(&stdout).context("could not parse enclave description")?;
+
+        if let Some(item) = enclave_data.first() {
+            if item["Measurements"] == eif_data["Measurements"] {
+                // same enclave, just return
+                return Ok(());
+            } else {
+                // different enclave, kill it
+                let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
+
+                if !stderr.is_empty() {
+                    error!(stderr);
+                    return Err(anyhow!("Error terminating enclave: {stderr}"));
+                }
+            }
         }
 
         let (_, stderr) = Self::ssh_exec(
