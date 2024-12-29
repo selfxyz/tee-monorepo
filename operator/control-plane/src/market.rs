@@ -717,23 +717,25 @@ impl<'a> JobState<'a> {
                     // instance exists and is already running, we are done
                     info!(instance, "Found existing healthy instance");
                     self.instance_id = instance;
-                    if self.eif_update {
-                        // update eif
-                        let res = infra_provider
-                            .update_enclave_image(
-                                &self.instance_id,
-                                &self.region,
-                                &self.eif_url,
-                                self.req_vcpus,
-                                self.req_mem,
-                            )
-                            .await;
-                        if let Err(err) = res {
-                            error!(?err, "Failed to update eif");
-                            return false;
-                        }
-                        self.eif_update = false;
+                    // call run_enclave to ensure instance is up to date
+                    let res = infra_provider
+                        .run_enclave(
+                            &self.job_id,
+                            &self.instance_id,
+                            &self.family,
+                            &self.region,
+                            &self.eif_url,
+                            self.req_vcpus,
+                            self.req_mem,
+                            self.bandwidth,
+                            self.debug,
+                        )
+                        .await;
+                    if let Err(err) = res {
+                        error!(?err, "Failed to ensure instance is up to date");
+                        return false;
                     }
+
                     return true;
                 }
 
@@ -1219,6 +1221,7 @@ impl<'a> JobState<'a> {
 
             self.eif_url = url.to_string();
             self.eif_update = true;
+
             // WARN: this effectively delays the launch
             // should revisit and see if it is desirable
             self.schedule_launch(self.launch_delay);
