@@ -98,15 +98,6 @@ pub trait InfraProvider {
         bandwidth: u64,
         debug: bool,
     ) -> impl Future<Output = Result<()>> + Send;
-
-    fn update_enclave_image(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 impl<'a, T> InfraProvider for &'a mut T
@@ -180,19 +171,6 @@ where
                 bandwidth,
                 debug,
             )
-            .await
-    }
-
-    async fn update_enclave_image(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> Result<()> {
-        (**self)
-            .update_enclave_image(instance_id, region, eif_url, req_vcpu, req_mem)
             .await
     }
 }
@@ -777,7 +755,7 @@ impl<'a> JobState<'a> {
             self.instance_id = res.unwrap();
             info!(self.instance_id, "Instance launched");
 
-            // try to run the enclave, ignore errors
+            // run the enclave
             let res = infra_provider
                 .run_enclave(
                     &self.job_id,
@@ -793,8 +771,7 @@ impl<'a> JobState<'a> {
                 .await;
             if let Err(err) = res {
                 error!(?err, "Enclave launch failed");
-                // NOTE: return true here and let heartbeat check pick up from the errors
-                return true;
+                return false;
             }
         } else {
             // terminate mode

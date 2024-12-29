@@ -1363,31 +1363,6 @@ EOF
             .context("could not terminate instance")?;
         Ok(())
     }
-
-    pub async fn update_enclave_image_impl(
-        &self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> Result<()> {
-        let public_ip_address = self
-            .get_instance_ip(instance_id, region)
-            .await
-            .context("could not fetch instance ip")?;
-
-        let sess = &self
-            .ssh_connect(&(public_ip_address + ":22"))
-            .await
-            .context("error establishing ssh connection")?;
-        let debug = false;
-
-        self.run_fragment_download_and_check_image(sess, eif_url)?;
-        Self::run_fragment_enclave(sess, req_vcpu, req_mem, debug)?;
-
-        Ok(())
-    }
 }
 
 impl InfraProvider for Aws {
@@ -1491,20 +1466,6 @@ impl InfraProvider for Aws {
         )
         .await
         .context("could not run enclave")?;
-        Ok(())
-    }
-
-    async fn update_enclave_image(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> Result<()> {
-        self.update_enclave_image_impl(instance_id, region, eif_url, req_vcpu, req_mem)
-            .await
-            .context("could not update enclave image")?;
         Ok(())
     }
 }

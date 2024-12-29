@@ -69,7 +69,6 @@ pub enum TestAwsOutcome {
     SpinUp(SpinUpOutcome),
     SpinDown(SpinDownOutcome),
     RunEnclave(RunEnclaveOutcome),
-    UpdateEnclaveImage(UpdateEnclaveImageOutcome),
 }
 
 pub fn compute_instance_id(counter: u64) -> String {
@@ -255,28 +254,6 @@ impl InfraProvider for TestAws {
                 bandwidth,
                 debug,
             }));
-
-        Ok(())
-    }
-
-    async fn update_enclave_image(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> Result<()> {
-        self.outcomes.push(TestAwsOutcome::UpdateEnclaveImage(
-            UpdateEnclaveImageOutcome {
-                time: Instant::now(),
-                instance_id: instance_id.to_owned(),
-                region: region.to_owned(),
-                eif_url: eif_url.to_owned(),
-                req_mem,
-                req_vcpu,
-            },
-        ));
 
         Ok(())
     }
