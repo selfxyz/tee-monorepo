@@ -101,21 +101,9 @@ enum Commands {
         #[arg(long, required = true)]
         memory: u32,
 
-        /// Duration in days
-        #[arg(long, required = true)]
-        duration: u32,
-
-        /// Maximum USD cost per hour
-        #[arg(long, required = true)]
-        max_usd_per_hour: f64,
-
         /// URL of the enclave image
         #[arg(long, required = true)]
         image_url: String,
-
-        /// Platform (amd64 or arm64)
-        #[arg(long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()], required = true)]
-        platform: String,
 
         /// Region for deployment
         #[arg(long, required = true)]
@@ -126,8 +114,24 @@ enum Commands {
         wallet_private_key: String,
 
         /// Optional operator address
-        #[arg(long)]
-        operator: Option<String>,
+        #[arg(long, required = true)]
+        operator: String,
+
+        /// Instance type (e.g. "m5a.2xlarge")
+        #[arg(long, required = true)]
+        instance_type: String,
+
+        /// Optional bandwidth in Kbps (default: 100)
+        #[arg(long, default_value = "100")]
+        bandwidth: u32,
+
+        /// Duration in minutes
+        #[arg(long, required = true)]
+        duration: u32,
+
+        /// Platform (amd64 or arm64)
+        #[arg(long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
+        platform: String,
     },
 }
 
@@ -184,26 +188,28 @@ async fn main() -> Result<()> {
         Commands::Deploy {
             cpu,
             memory,
-            duration,
-            max_usd_per_hour,
             image_url,
-            platform,
             region,
             wallet_private_key,
             operator,
+            instance_type,
+            bandwidth,
+            duration,
+            platform,
         } => {
-            let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
             commands::deploy::deploy_oyster_instance(
                 *cpu,
                 *memory,
-                *duration,
-                *max_usd_per_hour,
                 image_url,
-                platform,
                 region,
                 wallet_private_key,
-                operator.as_deref(),
-            ).await
+                operator,
+                instance_type,
+                *bandwidth,
+                *duration,
+                platform,
+            )
+            .await
         }
     };
 

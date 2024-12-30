@@ -1,39 +1,42 @@
-use crate::types::Platform;
-use anyhow::{anyhow, Result};
+use crate::commands::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
+use anyhow::{anyhow, Context, Result};
+use ethers::contract::abigen;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider};
-use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{Address, U256, H256};
-use ethers::contract::abigen;
+use ethers::signers::LocalWallet;
+use ethers::types::{Address, H256, U256};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
+use tokio::time::Duration;
 use tracing::info;
 
-const OPERATOR_LIST_URL: &str = "https://sk.arb1.marlin.org/operators/spec/ArbOne";
-const ARBITRUM_SEPOLIA_RPC_URL: &str = "https://arbitrum-sepolia.blockpi.network/v1/rpc/public";
-const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B";
-const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+// Network Configuration Constants
+const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
 const JOB_REFRESH_ENDPOINT: &str = "https://sk.arb1.marlin.org/operators/jobs/refresh/ArbOne/";
+const CHAINLINK_ETH_USD_FEED: &str = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612";
+const MAINNET_OPERATOR_LIST_URL: &str = "https://sk.arb1.marlin.org/operators/spec/ArbOne";
+
+// Contract Addresses
+const OYSTER_MARKET_ADDRESS: &str = "0x6C85c60A2dDa6dA0cD53ff0934Dc3AF3b5C3708D"; // Mainnet Contract Address
+const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
+
+const MAX_RETRIES: u32 = 10;
+const BACKOFF_DURATION: u64 = 120;
 
 // Generate type-safe contract bindings
 abigen!(
-    ChainlinkPriceFeed,
-    "./src/abis/chainlink_abi.json",
-    event_derives(serde::Serialize, serde::Deserialize)
-);
+    ChainlinkPriceFeed, "./src/abis/chainlink_abi.json",
+    event_derives(serde::Serialize, serde::Deserialize);
 
-abigen!(
-    USDC,
-    "./src/abis/token_abi.json",
-    event_derives(serde::Serialize, serde::Deserialize)
-);
+    USDC, "./src/abis/token_abi.json",
+    event_derives(serde::Serialize, serde::Deserialize);
 
-abigen!(
-    OysterMarket,
-    "./src/abis/oyster_market_abi.json",
+    OysterMarket, "./src/abis/oyster_market_abi.json",
     event_derives(serde::Serialize, serde::Deserialize)
 );
 
@@ -61,126 +64,82 @@ struct InstanceRate {
 pub async fn deploy_oyster_instance(
     cpu: u32,
     memory: u32,
-    duration: u32,
-    max_usd_per_hour: f64,
     image_url: &str,
-    platform: Platform,
     region: &str,
     wallet_private_key: &str,
-    operator: Option<&str>,
+    operator: &str,
+    instance_type: &str,
+    bandwidth: u32,
+    duration: u32,
+    platform: &str,
 ) -> Result<()> {
-    info!("Fetching available operators...");
-    let operators = fetch_operators(OPERATOR_LIST_URL).await?;
+    tracing::info!("Starting deployment...");
 
-    // Filter operators based on requirements
-    let matching_operators: Vec<_> = operators
-        .iter()
-        .filter(|(_, op)| {
-            op.allowed_regions.contains(&region.to_string())
-                && op.min_rates.iter().any(|rate_card| {
-                    rate_card.region == region
-                        && rate_card.rate_cards.iter().any(|instance| {
-                            instance.cpu == cpu
-                                && instance.memory == memory
-                                && instance.arch == platform.as_str()
-                        })
-                })
-        })
-        .collect();
-
-    if matching_operators.is_empty() {
-        return Err(anyhow!("No matching operators found for the given requirements"));
-    }
-
-    // If operator is specified, verify it's in the matching list
-    let selected_operator = if let Some(op_addr) = operator {
-        matching_operators
-            .iter()
-            .find(|(addr, _)| addr == &op_addr)
-            .ok_or_else(|| anyhow!("Specified operator does not match requirements"))?
-    } else {
-        // Select the operator with the lowest rate
-        matching_operators
-            .iter()
-            .min_by_key(|(_, op)| {
-                op.min_rates
-                    .iter()
-                    .find(|rc| rc.region == region)
-                    .and_then(|rc| {
-                        rc.rate_cards
-                            .iter()
-                            .find(|ir| ir.cpu == cpu && ir.memory == memory)
-                            .map(|ir| U256::from_str_radix(&ir.min_rate[2..], 16).unwrap_or_default())
-                    })
-                    .unwrap_or_default()
-            })
-            .ok_or_else(|| anyhow!("Failed to find operator with lowest rate"))?
-    };
-
-    let rate_card = selected_operator
-        .1
-        .min_rates
-        .iter()
-        .find(|rc| rc.region == region)
-        .ok_or_else(|| anyhow!("No rate card found for region"))?;
-
-    let instance_rate = rate_card
-        .rate_cards
-        .iter()
-        .find(|ir| ir.cpu == cpu && ir.memory == memory)
-        .ok_or_else(|| anyhow!("No matching instance rate found"))?;
-
-    // Convert rate to USD and verify against max_usd_per_hour
-    let rate_eth = U256::from_str_radix(&instance_rate.min_rate[2..], 16)?;
-    let rate_usd = convert_eth_to_usd(rate_eth).await?;
-    if rate_usd > max_usd_per_hour {
-        return Err(anyhow!(
-            "Instance rate ${:.2} exceeds maximum USD per hour ${:.2}",
-            rate_usd,
-            max_usd_per_hour
-        ));
-    }
-
-    info!("Selected operator: {}", selected_operator.0);
-    info!("Hourly rate: ${:.2}", rate_usd);
+    let operators = fetch_operators(MAINNET_OPERATOR_LIST_URL)
+        .await
+        .context("Failed to fetch operator list")?;
+    let selected_operator = operators
+        .into_iter()
+        .find(|(addr, _)| addr.to_lowercase() == operator.to_lowercase())
+        .map(|(_, operator)| operator)
+        .context("Error: Operator not found in operator list")?;
 
     // Setup wallet and provider
-    let wallet: LocalWallet = wallet_private_key.parse::<LocalWallet>()?.with_chain_id(421614u64);
-    let provider = Provider::<Http>::try_from(ARBITRUM_SEPOLIA_RPC_URL)?;
-    let client = Arc::new(SignerMiddleware::new(provider, wallet));
+    let wallet =
+        LocalWallet::from_bytes(&hex::decode(wallet_private_key)?)?.with_chain_id(42161u64);
+    let provider = Provider::<Http>::try_from(ARBITRUM_ONE_RPC_URL)?;
+    let client = Arc::new(SignerMiddleware::new(provider.clone(), wallet.clone()));
 
-    // Create metadata
-    let metadata = create_metadata(
-        &instance_rate.instance,
+    // Fetch operator min rates
+    let min_rate = find_minimum_rate_instance(
+        &selected_operator,
         region,
-        memory,
+        instance_type,
         cpu,
-        image_url,
-        "oyster_job",
+        memory,
+        platform,
+    )
+    .context("failed to fetch operator min rate")?;
+
+    // Calculate costs
+    let duration_seconds = (duration as u64) * 60;
+    let (total_cost, total_rate) = calculate_total_cost(
+        &min_rate,
+        duration_seconds,
+        bandwidth,
+        region,
+        provider.clone(),
+        CHAINLINK_ETH_USD_FEED.parse()?,
+    )
+    .await?;
+
+    info!(
+        "Total cost: {} USDC ({:.6} USDC)",
+        total_cost,
+        total_cost.as_u128() as f64 / 1_000_000.0
+    );
+    info!(
+        "Total rate: {} wei/hour ({:.6} ETH/hour)",
+        total_rate,
+        total_rate.as_u128() as f64 / 1e18
     );
 
-    // Calculate total cost
-    let duration_hours = duration * 24;
-    let total_cost = rate_eth
-        .checked_mul(U256::from(duration_hours))
-        .ok_or_else(|| anyhow!("Total cost calculation overflow"))?;
+    // Create metadata
+    let metadata = create_metadata(instance_type, region, memory, cpu, image_url, "oyster_job");
 
-    // Approve USDC
+    // Approve USDC and create job
     approve_usdc(total_cost, client.clone()).await?;
-
-    // Create job
     let job_id = create_new_oyster_job(
         metadata,
-        selected_operator.0.parse()?,
-        rate_eth,
+        operator.parse::<Address>()?,
+        total_rate,
         total_cost,
         client.clone(),
     )
     .await?;
 
+    // Wait for IP and attestation
     info!("Job created with ID: {:?}", job_id);
-
-    // Wait for IP address
     let url = format!("{}{:?}", JOB_REFRESH_ENDPOINT, job_id);
     info!("Waiting for enclave to start...");
 
@@ -189,78 +148,22 @@ pub async fn deploy_oyster_instance(
         if ping_ip(&ip_address).await {
             if check_attestation(&ip_address).await {
                 info!("Enclave is ready! IP address: {}", ip_address);
-                break;
+                return Ok(());
             }
             info!("Waiting for attestation...");
         }
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(StdDuration::from_secs(5)).await;
     }
-
-    Ok(())
-}
-
-async fn fetch_operators(url: &str) -> Result<Vec<(String, Operator)>> {
-    let client = reqwest::Client::new();
-    
-    info!("Requesting operators from URL: {}", url);
-    let response = client.get(url).send().await.map_err(|e| {
-        anyhow::anyhow!("Failed to fetch operators: {}", e)
-    })?;
-
-    let status = response.status();
-    info!("Response status: {}", status);
-
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Error fetching operators. Status: {} Body: {}",
-            status,
-            body
-        ));
-    }
-
-    let body = response.text().await.map_err(|e| {
-        anyhow::anyhow!("Failed to get response body: {}", e)
-    })?;
-
-    info!("Response body: {}", body);
-
-    let operators_map: HashMap<String, Operator> = serde_json::from_str(&body).map_err(|e| {
-        anyhow::anyhow!("Failed to parse JSON: {}", e)
-    })?;
-
-    Ok(operators_map.into_iter().collect())
-}
-
-async fn convert_eth_to_usd(amount_eth: U256) -> Result<f64> {
-    let provider = Arc::new(Provider::<Http>::try_from("https://arb1.arbitrum.io/rpc")?);
-    let price_feed_address = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612"
-        .parse::<Address>()
-        .unwrap();
-    let price_feed = ChainlinkPriceFeed::new(price_feed_address, provider.clone());
-    let price_feed = Arc::new(price_feed);
-
-    let (_, price, _, _, _) = price_feed.latest_round_data().call().await?;
-
-    let price_usd = U256::try_from(price.abs())?;
-    let amount_usd = amount_eth
-        .checked_mul(price_usd)
-        .ok_or_else(|| anyhow!("USD conversion overflow"))?
-        / U256::exp10(8);
-
-    Ok(amount_usd.as_u128() as f64 / 1e18)
 }
 
 async fn approve_usdc(
     amount: U256,
     client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
 ) -> Result<()> {
-    let usdc_address = USDC_ADDRESS.parse::<Address>()?;
+    let usdc_address: Address = USDC_ADDRESS.parse()?;
     let usdc = USDC::new(usdc_address, client.clone());
-    let usdc = Arc::new(usdc);
+    let market_address: Address = OYSTER_MARKET_ADDRESS.parse()?;
 
-    let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
-    // Create an approve call before sending, so its value isn't dropped too early
     let approve_call = usdc.approve(market_address, amount);
     let tx = approve_call.send().await?;
 
@@ -268,7 +171,6 @@ async fn approve_usdc(
     tx.await?;
     Ok(())
 }
-
 async fn create_new_oyster_job(
     metadata: String,
     provider: Address,
@@ -277,27 +179,34 @@ async fn create_new_oyster_job(
     client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
 ) -> Result<H256> {
     let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
-    let market = OysterMarket::new(market_address, client.clone());
-    let market = Arc::new(market);
 
-    // Create the transaction call first to extend its lifetime
-    let job_open_call = market.job_open(metadata, provider, rate, balance);
-    let tx = job_open_call.send().await?;
-    info!("Job creation transaction: {:?}", tx.tx_hash());
+    let method_call = OysterMarket::new(market_address, client.clone())
+        .job_open(metadata, provider, rate, balance);
+    let pending_tx = method_call.send().await?;
 
-    let receipt = tx.await?.ok_or_else(|| anyhow!("No receipt found"))?;
+    info!("Job creation transaction: {:?}", pending_tx.tx_hash());
+    let receipt = pending_tx
+        .await?
+        .ok_or_else(|| anyhow!("No receipt found"))?;
+
+    let job_opened_event_signature =
+        "JobOpened(bytes32,string,address,address,uint256,uint256,uint256)";
+    let job_opened_event_hash = ethers::utils::keccak256(job_opened_event_signature.as_bytes());
+
     let job_opened_event = receipt
         .logs
         .iter()
-        .find(|log| {
-            log.topics[0]
-                == H256::from_slice(&ethers::utils::keccak256(
-                    "JobOpened(bytes32,string,address,address,uint256,uint256,uint256)",
-                ))
-        })
+        .find(|log| log.topics[0] == H256::from_slice(&job_opened_event_hash))
         .ok_or_else(|| anyhow!("JobOpened event not found"))?;
 
     Ok(job_opened_event.topics[1])
+}
+
+async fn fetch_operators(url: &str) -> Result<Vec<(String, Operator)>> {
+    let client: Client = Client::new();
+    let response = client.get(url).send().await?;
+    let operators_map: HashMap<String, Operator> = response.json().await?;
+    Ok(operators_map.into_iter().collect())
 }
 
 async fn wait_for_ip_address(url: &str) -> Result<String> {
@@ -313,28 +222,27 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
 async fn ping_ip(ip: &str) -> bool {
     let address = format!("{}:1300", ip);
     for _ in 0..3 {
-        match tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(&address)).await {
-            Ok(Ok(_)) => return true,
-            _ => tokio::time::sleep(Duration::from_secs(2)).await,
+        if tokio::time::timeout(StdDuration::from_secs(2), TcpStream::connect(&address))
+            .await
+            .is_ok()
+        {
+            return true;
         }
+        tokio::time::sleep(StdDuration::from_secs(2)).await;
     }
     false
 }
 
 async fn check_attestation(ip: &str) -> bool {
-    let url = format!("http://{}:1300/attestation/raw", ip);
-    let client = reqwest::Client::new();
-    match client.get(&url).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                if let Ok(bytes) = response.bytes().await {
-                    return !bytes.is_empty();
-                }
-            }
-        }
-        Err(_) => {}
+    let response = reqwest::Client::new()
+        .get(format!("http://{}:1300/attestation/raw", ip))
+        .send()
+        .await;
+
+    match response {
+        Ok(r) if r.status().is_success() => r.bytes().await.map_or(false, |b| !b.is_empty()),
+        _ => false,
     }
-    false
 }
 
 fn create_metadata(
@@ -354,4 +262,145 @@ fn create_metadata(
         "name": name
     })
     .to_string()
+}
+
+fn find_minimum_rate_instance(
+    operator: &Operator,
+    region: &str,
+    instance: &str,
+    vcpu: u32,
+    memory: u32,
+    arch: &str,
+) -> Result<InstanceRate> {
+    operator.min_rates.iter().find_map(|rate_card| {
+        if rate_card.region == region {
+            let matching_rates: Vec<InstanceRate> = rate_card
+                .rate_cards
+                .iter()
+                .filter(|instance_rate| {
+                    instance_rate.instance == instance
+                        && instance_rate.cpu == vcpu
+                        && instance_rate.memory == memory
+                        && instance_rate.arch == arch
+                })
+                .cloned()
+                .collect();
+
+            if !matching_rates.is_empty() {
+                return Some(
+                    matching_rates
+                        .into_iter()
+                        .min_by(|a, b| {
+                            let a_rate = U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16)
+                                .unwrap_or(U256::max_value());
+                            let b_rate = U256::from_str_radix(b.min_rate.trim_start_matches("0x"), 16)
+                                .unwrap_or(U256::max_value());
+                            a_rate.cmp(&b_rate)
+                        })
+                        .unwrap(),
+                );
+            }
+        }
+        None
+    })
+    .with_context(|| format!(
+        "No matching instance rate found for region: {}, instance: {}, vcpu: {}, memory: {}, arch: {}",
+        region, instance, vcpu, memory, arch
+    ))
+}
+
+async fn calculate_total_cost(
+    instance_rate: &InstanceRate,
+    duration: u64,
+    bandwidth: u32,
+    region: &str,
+    provider: Provider<Http>,
+    price_feed_address: Address,
+) -> Result<(U256, U256)> {
+    let instance_hourly_rate_eth =
+        U256::from_str_radix(instance_rate.min_rate.trim_start_matches("0x"), 16)?;
+
+    // todo convert_eth_to_usdc error handling
+    let instance_hourly_rate_scaled = U256::from(
+        retry_with_backoff(
+            || async {
+                convert_eth_to_usdc(
+                    provider.clone(),
+                    price_feed_address,
+                    instance_hourly_rate_eth.as_u64(),
+                )
+                .await
+            },
+            MAX_RETRIES,
+            Duration::from_secs(BACKOFF_DURATION),
+        )
+        .await?,
+    ); // In 10**18 USDC denom
+    let instance_secondly_rate_scaled = instance_hourly_rate_scaled / 3600;
+
+    let instance_cost_scaled = U256::from(duration) * instance_secondly_rate_scaled;
+
+    let bandwidth_rate_region = get_bandwidth_rate_for_region(region);
+    let bandwidth_cost_scaled = U256::from(calculate_bandwidth_cost(
+        &bandwidth.to_string(),
+        "kbps",
+        bandwidth_rate_region,
+        duration,
+    ));
+    let bandwidth_rate_scaled = bandwidth_cost_scaled / duration;
+
+    let total_cost_scaled = (instance_cost_scaled + bandwidth_cost_scaled) / U256::exp10(12);
+    let total_rate_scaled = instance_hourly_rate_eth + bandwidth_rate_scaled;
+
+    Ok((total_cost_scaled, total_rate_scaled))
+}
+
+async fn convert_eth_to_usdc(
+    provider: Provider<Http>,
+    price_feed_address: Address,
+    amount_eth: u64,
+) -> Result<u64> {
+    let client = Arc::new(provider);
+    let price_feed_abi = include_bytes!("../abis/chainlink_abi.json");
+    let price_feed_abi = ethers::abi::Abi::load(price_feed_abi.as_ref())?;
+    let price_feed_contract = Contract::new(price_feed_address, price_feed_abi, client.clone());
+
+    let (_, price, _, _, _) = price_feed_contract
+        .method::<_, (u8, I256, U256, U256, u8)>("latestRoundData", ())?
+        .call()
+        .await?;
+    let price_usd = U256::from(price.as_u64());
+    let amount_eth = U256::from(amount_eth);
+    let amount_usdc = (amount_eth * price_usd) / U256::exp10(8);
+
+    Ok(amount_usdc.as_u64())
+}
+
+async fn retry_with_backoff<T, Fut, F>(
+    mut operation: F,
+    max_retries: u32,
+    sleep_duration: Duration,
+) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let mut retry_count = 0;
+    loop {
+        match operation().await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                retry_count += 1;
+                if retry_count >= max_retries {
+                    println!("Maximum retries reached. Exiting...");
+                    return Err(e);
+                }
+                println!(
+                    "Operation failed: {}. Retrying in {:?}... (Attempt {} of {})",
+                    e, sleep_duration, retry_count, max_retries
+                );
+                tokio::time::sleep(sleep_duration).await;
+            }
+        }
+    }
 }
