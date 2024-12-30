@@ -602,34 +602,12 @@ impl<'a> JobState<'a> {
                 return;
             };
 
-            if !is_enclave_running {
-                info!("Enclave not running on the instance, running the enclave");
-                let res = infra_provider
-                    .run_enclave(
-                        &self.job_id,
-                        &self.instance_id,
-                        &self.family,
-                        &self.region,
-                        &self.eif_url,
-                        self.req_vcpus,
-                        self.req_mem,
-                        self.bandwidth,
-                        self.debug,
-                    )
-                    .await;
-                match res {
-                    Ok(_) => {
-                        info!("Enclave successfully ran on the instance");
-                    }
-                    Err(err) => {
-                        error!(?err, "Failed to run enclave");
-                    }
-                }
+            if is_enclave_running {
+                return;
             }
-        } else if !is_running && self.rate >= self.min_rate {
-            info!("Instance not running, scheduling new launch");
-            self.schedule_launch(0);
         }
+        info!("Enclave not running, scheduling new launch");
+        self.schedule_launch(0);
     }
 
     fn handle_insolvency(&mut self) {
