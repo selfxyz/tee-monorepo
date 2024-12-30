@@ -582,6 +582,8 @@ impl Aws {
     }
 
     // Goal: set up init server params
+    // assumes the .conf has not been modified externally
+    // cheap, so just always does `sed`
     fn run_fragment_init_server(sess: &Session, job_id: &str) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
@@ -607,6 +609,8 @@ impl Aws {
     }
 
     // Goal: set up or tear down debug logger
+    // if debug is set, downloads logger and set it up, does not care about previous setup
+    // if debug is false, stops the logger if it is running
     fn run_fragment_logger(sess: &Session, debug: bool) -> Result<()> {
         if debug {
             // set up logger if debug flag is set
@@ -664,6 +668,8 @@ EOF
     }
 
     // Goal: set up enclave matching enclave.eif, with debug mode if necessary
+    // does nothing if running enclave has matching PCRs and has correct debug mode
+    // else deploys, killing the running enclave if needed
     fn run_fragment_enclave(
         sess: &Session,
         req_vcpu: i32,
