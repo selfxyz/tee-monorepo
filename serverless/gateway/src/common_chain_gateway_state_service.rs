@@ -5,19 +5,19 @@ use alloy::rpc::types::{Filter, Log};
 use alloy::sol_types::SolEvent;
 use alloy::transports::http::reqwest::Url;
 use alloy::transports::http::{Client, Http};
-use anyhow::{Context, Error, Result};
+use anyhow::{Error, Result};
 use log::{error, info};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::Sender;
-use tokio::time::{self, Duration, Instant};
+use tokio::time::{self, sleep, Duration, Instant};
 
 use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::{
     COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT, COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT,
     COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, WAIT_BEFORE_CHECKING_BLOCK,
 };
 use crate::contract_abi::GatewaysContract::{self, GatewaysContractInstance};
 use crate::model::{ContractsClient, GatewayData, Job};
@@ -275,11 +275,22 @@ pub async fn generate_gateway_epoch_state_for_cycle(
             COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT,
         ]);
 
-    let logs = provider
-        .get_logs(&event_filter)
-        .await
-        .context("Failed to get logs for the gateway contract")
-        .unwrap();
+    let logs;
+    loop {
+        let res = provider.get_logs(&event_filter).await;
+
+        if res.is_err() {
+            error!(
+                "Failed to get logs for the gateway contract - Error: {:?}",
+                res.err().unwrap()
+            );
+            sleep(Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            continue;
+        }
+
+        logs = res.unwrap();
+        break;
+    }
 
     for log in logs {
         let topics = log.topics();
