@@ -40,21 +40,6 @@ pub struct SpinDownOutcome {
 
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq)]
-pub struct RunEnclaveOutcome {
-    pub time: Instant,
-    pub job: String,
-    pub instance_id: String,
-    pub family: String,
-    pub region: String,
-    pub eif_url: String,
-    pub req_mem: i64,
-    pub req_vcpu: i32,
-    pub bandwidth: u64,
-    pub debug: bool,
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug, PartialEq)]
 pub struct UpdateEnclaveImageOutcome {
     pub time: Instant,
     pub instance_id: String,
