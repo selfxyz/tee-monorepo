@@ -585,27 +585,18 @@ impl<'a> JobState<'a> {
     }
 
     async fn heartbeat_check(&mut self, mut infra_provider: impl InfraProvider) {
-        let Ok(is_running) = infra_provider
-            .check_instance_running(&self.instance_id, &self.region)
+        let Ok(is_enclave_running) = infra_provider
+            .check_enclave_running(&self.instance_id, &self.region)
             .await
-            .inspect_err(|err| error!(?err, "Failed to retrieve instance state"))
+            .inspect_err(|err| error!(?err, "Failed to retrieve enclave state"))
         else {
             return;
         };
 
-        if is_running {
-            let Ok(is_enclave_running) = infra_provider
-                .check_enclave_running(&self.instance_id, &self.region)
-                .await
-                .inspect_err(|err| error!(?err, "Failed to retrieve enclave state"))
-            else {
-                return;
-            };
-
-            if is_enclave_running {
-                return;
-            }
+        if is_enclave_running {
+            return;
         }
+
         info!("Enclave not running, scheduling new launch");
         self.schedule_launch(0);
     }
