@@ -1260,7 +1260,7 @@ EOF
         debug: bool,
     ) -> Result<()> {
         let (mut exist, mut instance, state) = self
-            .get_job_instance(job, region)
+            .get_job_instance_id(job, region)
             .await
             .context("failed to get job instance")?;
 
@@ -1387,7 +1387,7 @@ EOF
 
     async fn spin_down_impl(&self, job: &JobId, region: &str) -> Result<()> {
         let (exist, instance, state) = self
-            .get_job_instance(job, region)
+            .get_job_instance_id(job, region)
             .await
             .context("failed to get job instance")?;
 
@@ -1473,15 +1473,9 @@ impl InfraProvider for Aws {
             .context("could not spin down enclave")
     }
 
-    async fn get_job_instance(&self, job: &JobId, region: &str) -> Result<(bool, String, String)> {
-        self.get_job_instance_id(job, region)
-            .await
-            .context("could not get instance id for job")
-    }
-
     async fn get_job_ip(&self, job: &JobId, region: &str) -> Result<String> {
         let instance = self
-            .get_job_instance(job, region)
+            .get_job_instance_id(job, region)
             .await
             .context("could not get instance id for job instance ip")?;
 
@@ -1523,33 +1517,5 @@ impl InfraProvider for Aws {
             .context("could not get current enclace state")?;
         // There can be 2 states - RUNNING or TERMINATING
         Ok(res == "RUNNING")
-    }
-
-    async fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        self.run_enclave_impl(
-            &job.id,
-            family,
-            instance_id,
-            region,
-            image_url,
-            req_vcpu,
-            req_mem,
-            bandwidth,
-            debug,
-        )
-        .await
-        .context("could not run enclave")?;
-        Ok(())
     }
 }

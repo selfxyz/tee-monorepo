@@ -63,12 +63,6 @@ pub trait InfraProvider {
 
     fn spin_down(&mut self, job: &JobId, region: &str) -> impl Future<Output = Result<()>> + Send;
 
-    fn get_job_instance(
-        &self,
-        job: &JobId,
-        region: &str,
-    ) -> impl Future<Output = Result<(bool, String, String)>> + Send;
-
     fn get_job_ip(&self, job: &JobId, region: &str) -> impl Future<Output = Result<String>> + Send;
 
     fn check_enclave_running(
@@ -76,19 +70,6 @@ pub trait InfraProvider {
         instance_id: &str,
         region: &str,
     ) -> impl Future<Output = Result<bool>> + Send;
-
-    fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 impl<'a, T> InfraProvider for &'a mut T
@@ -126,43 +107,12 @@ where
         (**self).spin_down(job, region).await
     }
 
-    async fn get_job_instance(&self, job: &JobId, region: &str) -> Result<(bool, String, String)> {
-        (**self).get_job_instance(job, region).await
-    }
-
     async fn get_job_ip(&self, job: &JobId, region: &str) -> Result<String> {
         (**self).get_job_ip(job, region).await
     }
 
     async fn check_enclave_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
         (**self).check_enclave_running(instance_id, region).await
-    }
-
-    async fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        (**self)
-            .run_enclave(
-                job,
-                instance_id,
-                family,
-                region,
-                image_url,
-                req_vcpu,
-                req_mem,
-                bandwidth,
-                debug,
-            )
-            .await
     }
 }
 

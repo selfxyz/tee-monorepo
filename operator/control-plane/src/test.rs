@@ -69,7 +69,6 @@ pub struct UpdateEnclaveImageOutcome {
 pub enum TestAwsOutcome {
     SpinUp(SpinUpOutcome),
     SpinDown(SpinDownOutcome),
-    RunEnclave(RunEnclaveOutcome),
 }
 
 pub fn compute_instance_id(counter: u64) -> String {
@@ -210,15 +209,6 @@ impl InfraProvider for TestAws {
         Ok(())
     }
 
-    async fn get_job_instance(&self, job: &JobId, _region: &str) -> Result<(bool, String, String)> {
-        let res = self.instances.get_key_value(&job.id);
-        if let Some(x) = res {
-            return Ok((true, x.1.instance_id.clone(), "running".to_owned()));
-        }
-
-        Ok((false, String::new(), String::new()))
-    }
-
     async fn get_job_ip(&self, job: &JobId, _region: &str) -> Result<String> {
         let instance_metadata = self.instances.get(&job.id);
         instance_metadata
@@ -228,35 +218,6 @@ impl InfraProvider for TestAws {
 
     async fn check_enclave_running(&mut self, _instance_id: &str, _region: &str) -> Result<bool> {
         Ok(true)
-    }
-
-    async fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        self.outcomes
-            .push(TestAwsOutcome::RunEnclave(RunEnclaveOutcome {
-                time: Instant::now(),
-                job: job.id.clone(),
-                instance_id: instance_id.to_owned(),
-                family: family.to_owned(),
-                region: region.to_owned(),
-                eif_url: image_url.to_owned(),
-                req_mem,
-                req_vcpu,
-                bandwidth,
-                debug,
-            }));
-
-        Ok(())
     }
 }
 
@@ -297,14 +258,14 @@ impl LogsProvider for TestLogger {
 #[cfg(test)]
 #[derive(Clone)]
 pub enum Action {
-    Open,                // metadata(region, url, instance), rate, balance, timestamp
-    Close,               //
-    Settle,              // amount, timestamp
-    Deposit,             // amount
-    Withdraw,            // amount
-    ReviseRateInitiated, // new_rate
-    ReviseRateCancelled, //
-    ReviseRateFinalized, //
+    Open,
+    Close,
+    Settle,
+    Deposit,
+    Withdraw,
+    ReviseRateInitiated,
+    ReviseRateCancelled,
+    ReviseRateFinalized,
     MetadataUpdated,
 }
 
