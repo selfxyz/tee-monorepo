@@ -357,7 +357,7 @@ impl Aws {
         info!(
             cpus = req_vcpu,
             memory = req_mem,
-            "Nitro Enclave Service set up"
+            "Nitro Enclave Allocator Service set up"
         );
 
         Ok(())
@@ -365,6 +365,8 @@ impl Aws {
 
     // Goal: make enclave.eif match the provided image url
     // uses image_url.txt file to track state instead of redownloading every time
+    // WARN: the enclave image at the url might have changed, we would have to
+    // redownload the image every time to verify it, simply ignore for now
     fn run_fragment_download_and_check_image(&self, sess: &Session, image_url: &str) -> Result<()> {
         let (stdout, stderr) =
             Self::ssh_exec(sess, "cat image_url.txt").context("Failed to read image_url.txt")?;
@@ -448,7 +450,7 @@ impl Aws {
         Ok(())
     }
 
-    // Goal: set up iptables rules
+    // Goal: set up iptables rules for salmon
     // first two rules are just expected to be there
     // rest of the rules are replaced if needed
     fn run_fragment_iptables_salmon(sess: &Session) -> Result<()> {
@@ -511,14 +513,12 @@ impl Aws {
         Ok(())
     }
 
-    // Goal: set up iptables rules
+    // Goal: set up iptables rules for tuna
     // first two rules are just expected to be there
     // rest of the rules are replaced if needed
     fn run_fragment_iptables_tuna(sess: &Session) -> Result<()> {
-        let iptables_rules: [&str; 5] = [
+        let iptables_rules: [&str; 4] = [
             "-P INPUT ACCEPT",
-            // expected to exist due to how the images are built
-            "-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER",
             "-A INPUT -i ens5 -p tcp -m tcp --dport 80 -j NFQUEUE --queue-num 0",
             "-A INPUT -i ens5 -p tcp -m tcp --dport 443 -j NFQUEUE --queue-num 0",
             "-A INPUT -i ens5 -p tcp -m tcp --dport 1024:61439 -j NFQUEUE --queue-num 0",
@@ -533,27 +533,27 @@ impl Aws {
 
         let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
 
-        for i in 0..2 {
+        for i in 0..1 {
             if rules[i] != iptables_rules[i] {
                 error!(
                     got = rules[i],
                     expected = iptables_rules[i],
                     "Rule mismatch"
                 );
-                return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
+                return Err(anyhow!("Failed to get INPUT ACCEPT rules"));
             }
         }
 
         // return if rest of the rules match
-        if rules[2..] == iptables_rules[2..] {
+        if rules[1..] == iptables_rules[1..] {
             return Ok(());
         }
 
         // rules have to be replaced
         // remove existing rules beyond the docker one
-        for _ in 2..rules.len() {
-            // keep deleting rule 2 till nothing would be left
-            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -D PREROUTING 2")
+        for _ in 1..rules.len() {
+            // keep deleting rule 1 till nothing would be left
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -D INPUT 1")
                 .context("Failed to delete iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
@@ -562,8 +562,8 @@ impl Aws {
         }
 
         // set rules
-        for rule in iptables_rules[2..].iter() {
-            let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables -t nat {rule}"))
+        for rule in iptables_rules[1..].iter() {
+            let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables {rule}"))
                 .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
@@ -663,6 +663,9 @@ EOF
     // Goal: set up enclave matching enclave.eif, with debug mode if necessary
     // does nothing if running enclave has matching PCRs and has correct debug mode
     // else deploys, killing the running enclave if needed
+    // WARN: it does not care about the vcpu and mem of running enclaves, it is assumed
+    // that the market prevents them from being different while enclaves are running
+    // since the same if enforced for the allocator fragment as well
     fn run_fragment_enclave(
         sess: &Session,
         req_vcpu: i32,
