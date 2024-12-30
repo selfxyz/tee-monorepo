@@ -14,8 +14,8 @@ impl Platform {
 
     pub fn nix_arch(&self) -> &'static str {
         match self {
-            Platform::AMD64 => "x86_64-linux.musl",
-            Platform::ARM64 => "aarch64-linux.musl",
+            Platform::AMD64 => "x86_64-linux",
+            Platform::ARM64 => "aarch64-linux",
         }
     }
 
@@ -56,6 +56,19 @@ impl Dependency {
         match self {
             Dependency::Docker => "https://docs.docker.com/engine/install/",
             Dependency::Nix => "https://github.com/DeterminateSystems/nix-installer",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum StorageProvider {
+    Pinata,
+}
+
+impl StorageProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StorageProvider::Pinata => "pinata",
         }
     }
 }

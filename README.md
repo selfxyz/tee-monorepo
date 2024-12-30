@@ -12,6 +12,7 @@ The repository is organized into projects:
 - [attestation/verifier](./attestation/verifier/): Attestation verifier server that verifies attestations.
 - [attestation/verifier-enclave](./attestation/verifier-enclave/): Attestation verifier enclave that packages the attestation verifier server.
 - [attestation/verifier-risczero](./attestation/verifier-risczero/): Attestation verifier that generates a ZK proof of attestation verification using RISCZero.
+- [contracts/contracts](./contracts/contracts/): All of the Oyster contracts are included here.
 - [contracts/indexer](./contracts/indexer/): Indexer for the Oyster contracts.
 - [initialization/init-server](./initialization/init-server/): Server that provides data endpoints over vsocks during enclave initialization.
 - [initialization/vet](./initialization/vet/): Curl-like utility that makes http queries over vsocks instead of TCP sockets.
@@ -26,6 +27,13 @@ The repository is organized into projects:
 - [sdks/rs](./sdks/rs/): Oyster SDK written in Rust.
 - [sdks/go](./sdks/go/): Oyster SDK written in Go.
 - [sdks/docker-enclave](./sdks/docker-enclave/): Enclave that allows docker compose based deployment.
+- [serverless/executor](./serverless/executor/): Oyster serverless executor to execute serverless requests.
+- [serverless/gateway](./serverless/gateway/): Oyster serverless gateway to relay serverless requests and responses between request and common chains.
+- [serverless/gateway-enclave](./serverless/gateway-enclave/): Enclave that packages the Serverless Gateway and supporting applications.
+- [serverless/http-on-vsock-client](./serverless/http-on-vsock-client/): Client for HTTP over vsock connections.
+- [serverless/http-on-vsock-server](./serverless/http-on-vsock-server/): Server library for HTTP over vsock connections.
+- [serverless/transaction-manager](./serverless/transaction-manager/): Oyster library for sending transaction and confirmation management
+
 
 In addition, some external projects are used which are described in [external](./external/).
 

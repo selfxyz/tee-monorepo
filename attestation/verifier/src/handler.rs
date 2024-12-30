@@ -1,8 +1,12 @@
-use std::error::Error;
 use std::num::TryFromIntError;
+use std::time::{SystemTimeError, UNIX_EPOCH};
+use std::{error::Error, time::SystemTime};
 
 use actix_web::{error, http::StatusCode, post, web, Responder};
 use ethers::types::U256;
+use oyster::attestation::{
+    verify as verify_attestation, AttestationError, AttestationExpectations,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -37,11 +41,13 @@ pub enum UserError {
     #[error("error while decoding attestation doc from hex")]
     AttestationDecode(#[source] hex::FromHexError),
     #[error("error while verifying attestation")]
-    AttestationVerification(#[source] oyster::AttestationError),
+    AttestationVerification(#[source] AttestationError),
     #[error("Message generation failed")]
     MessageGeneration(#[source] secp256k1::Error),
     #[error("invalid recovery id")]
     InvalidRecovery(#[source] TryFromIntError),
+    #[error("system time error, clocks might be incorrect")]
+    InvalidSystemTime(#[source] SystemTimeError),
 }
 
 impl error::ResponseError for UserError {
@@ -58,6 +64,7 @@ impl error::ResponseError for UserError {
             AttestationVerification(_) => StatusCode::UNAUTHORIZED,
             MessageGeneration(_) => StatusCode::INTERNAL_SERVER_ERROR,
             InvalidRecovery(_) => StatusCode::UNAUTHORIZED,
+            InvalidSystemTime(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -130,19 +137,27 @@ fn verify(
     secret: &secp256k1::SecretKey,
     public: &[u8; 64],
 ) -> actix_web::Result<impl Responder, UserError> {
-    let parsed = oyster::decode_attestation(attestation.clone())
-        .map_err(UserError::AttestationVerification)?;
-    oyster::verify_with_timestamp(attestation, parsed.pcrs, parsed.timestamp)
-        .map_err(UserError::AttestationVerification)?;
-
-    let requester_secp256k1_public = parsed.public_key.as_slice();
+    let decoded = verify_attestation(
+        attestation,
+        AttestationExpectations {
+            age: Some((
+                300000,
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(UserError::InvalidSystemTime)?
+                    .as_millis() as usize,
+            )),
+            ..Default::default()
+        },
+    )
+    .map_err(UserError::AttestationVerification)?;
 
     let digest = compute_digest(
-        &requester_secp256k1_public,
-        &parsed.pcrs[0],
-        &parsed.pcrs[1],
-        &parsed.pcrs[2],
-        parsed.timestamp,
+        &decoded.public_key.as_slice(),
+        &decoded.pcrs[0],
+        &decoded.pcrs[1],
+        &decoded.pcrs[2],
+        decoded.timestamp,
     );
 
     let response_msg =
@@ -161,11 +176,11 @@ fn verify(
 
     Ok(web::Json(VerifyAttestationResponse {
         signature: sig + &recid,
-        secp256k1_public: hex::encode(requester_secp256k1_public),
-        pcr0: hex::encode(parsed.pcrs[0]),
-        pcr1: hex::encode(parsed.pcrs[1]),
-        pcr2: hex::encode(parsed.pcrs[2]),
-        timestamp: parsed.timestamp,
+        secp256k1_public: hex::encode(decoded.public_key),
+        pcr0: hex::encode(decoded.pcrs[0]),
+        pcr1: hex::encode(decoded.pcrs[1]),
+        pcr2: hex::encode(decoded.pcrs[2]),
+        timestamp: decoded.timestamp,
         verifier_secp256k1_public: hex::encode(public),
     }))
 }

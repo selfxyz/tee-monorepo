@@ -31,6 +31,7 @@ oyster-cvm --help
 ### Commands
 
 #### `doctor`
+
 Checks if Docker and Nix are installed.
 
 #### `build-image`
@@ -42,31 +43,36 @@ Options:
 - `--docker-images` (list of Docker .tar files to be loaded)
 - `--output` (output directory, default: result)
 
-#### `deploy`
-Deploy an Oyster CVM instance.
+#### `upload`
+Uploads an enclave image to IPFS via Pinata.
 
-Required Options:
-- `--cpu` (Number of vCPUs required)
-- `--memory` (Memory in GB required)
-- `--duration` (Duration in days)
-- `--max-usd-per-hour` (Maximum USD cost per hour)
-- `--image-url` (URL of the enclave image)
-- `--platform` (amd64 or arm64)
-- `--region` (Region for deployment)
-- `--wallet-private-key` (Wallet private key for transaction signing)
+Options:
+--file (path to the enclave image file)
 
-Optional Options:
-- `--operator` (Specific operator address)
+Add env vars for Pinata:
+["PINATA_API_KEY", "PINATA_API_SECRET"]
+
+#### `verify-enclave`
+Verifies an Oyster enclave's attestation document.
+
+Options:
+- `--enclave-ip` (-e): Enclave IP address (required)
+- `--pcr0` (-0): PCR0 value (optional)
+- `--pcr1` (-1): PCR1 value (optional)
+- `--pcr2` (-2): PCR2 value (optional)
+- `--attestation-port` (-p): Attestation port (default: 1300)
+- `--max-age` (-a): Maximum age of attestation in milliseconds (default: 300000)
+- `--timestamp` (-t): Attestation timestamp in milliseconds (default: 0)
+- `--root-public-key` (-r): Root public key (optional, defaults to AWS root key)
 
 ### Example
 
 ```bash
 # Check system requirements
 ./oyster-cvm doctor
-
 # Sample output:
-[INFO ] Docker is installed ✓
-[INFO ] Nix is installed ✓
+[INFO] Docker is installed ✓
+[INFO] Nix is installed ✓
 
 # Build an oyster cvm image
 ./oyster-cvm build-image \
@@ -74,22 +80,27 @@ Optional Options:
   --docker-compose ./docker-compose.yml \
   --docker-images ./image1.tar ./image2.tar \
   --output ./result
+# Generates a folder "result" with files
+# image.eif  log.txt  pcr.json
 
-# Generated files in "result" directory:
-# - image.eif  
-# - log.txt  
-# - pcr.json
+# Upload image to IPFS using Pinata
+./oyster-cvm upload --file ./result/image.eif
+# Sample output:
+[INFO] Successfully uploaded to Pinata: https://gateway.pinata.cloud/ipfs/Qm...
 
-# Deploy an oyster cvm instance
-./oyster-cvm deploy \
-  --cpu 2 \
-  --memory 4 \
-  --duration 7 \
-  --max-usd-per-hour 0.5 \
-  --image-url ipfs://QmXXX... \
-  --platform amd64 \
-  --region us-east-1 \
-  --wallet-private-key 0xYYY...
+# Verify an enclave
+./oyster-cvm verify-enclave \
+  --enclave-ip 192.168.1.100 \
+  --pcr0 pcr0_value \
+  --pcr1 pcr1_value \
+  --pcr2 pcr2_value \
+
+# Sample output:
+[INFO] Connecting to attestation endpoint: http://192.168.1.100:1300/attestation/raw
+[INFO] Successfully fetched attestation document
+[INFO] Root public key: <hex-encoded-key>
+[INFO] Enclave public key: <hex-encoded-key>
+[INFO] Verification successful ✓
 ```
 
 ## License

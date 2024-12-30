@@ -1,0 +1,11 @@
+{
+  "common_chain_id": 421614,
+  "common_chain_ws_url": "wss://arb-sepolia.g.alchemy.com/v2/U8uYtmU3xK9j7HEZ74riWfj3C4ode7n1",
+  "common_chain_http_url": "https://sepolia-rollup.arbitrum.io/rpc",
+  "gateways_contract_addr": "0x56Fb98c417E61609c472Aa941E0ea915Efd9615F",
+  "gateway_jobs_contract_addr": "0x7a3406cf602aCEc0Dd1f80549171F778010C31C2",
+  "enclave_secret_key": "/app/ecdsa.sec",
+  "epoch": 1718602200,
+  "time_interval": 60,
+  "offset_for_epoch": 20
+}

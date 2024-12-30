@@ -1,7 +1,11 @@
-use std::fs;
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use oyster::attestation::{verify as verify_attestation, AttestationExpectations};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -20,16 +24,20 @@ fn main() -> Result<()> {
     ))?;
     let attestation =
         hex::decode(attestation).context("Failed to decode attestation hex string")?;
-    let parsed_attestation = oyster::decode_attestation(attestation.clone())
-        .context("Failed to decode the attestation doc")?;
 
-    oyster::verify_with_timestamp(
+    let decoded = verify_attestation(
         attestation,
-        parsed_attestation.pcrs,
-        parsed_attestation.timestamp,
+        AttestationExpectations {
+            age: Some((
+                300000,
+                SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as usize,
+            )),
+            ..Default::default()
+        },
     )
     .context("Failed to verify the attestation doc")?;
-    println!("{:?}", parsed_attestation);
+
+    println!("{:?}", decoded);
 
     Ok(())
 }

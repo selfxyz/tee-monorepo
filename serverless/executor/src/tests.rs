@@ -12,12 +12,14 @@ pub mod serverless_executor_test {
     use std::collections::HashSet;
     use std::pin::pin;
     use std::str::FromStr;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex};
 
-    use actix_web::body::MessageBody;
-    use actix_web::dev::{ServiceFactory, ServiceRequest, ServiceResponse};
-    use actix_web::web::{Bytes, Data};
-    use actix_web::{http, test, App, Error};
+    use axum::extract::State;
+    use axum::routing::{get, post};
+    use axum::Router;
+    use axum_test::TestServer;
+    use bytes::Bytes;
     use ethers::abi::{encode, encode_packed, Token};
     use ethers::types::{Address, BigEndianHash, Log, H160, H256, U256, U64};
     use ethers::utils::{keccak256, public_key_to_address};
@@ -36,6 +38,7 @@ pub mod serverless_executor_test {
     use crate::node_handler::*;
     use crate::utils::{
         load_abi_from_file, AppState, JobsTxnMetadata, JobsTxnType, EXECUTION_ENV_ID,
+        MAX_OUTPUT_BYTES_LENGTH,
     };
 
     // Testnet or Local blockchain (Hardhat) configurations
@@ -47,13 +50,13 @@ pub mod serverless_executor_test {
     const CODE_CONTRACT_ADDR: &str = "0x44fe06d2940b8782a0a9a9ffd09c65852c0156b1";
 
     // Generate test app state
-    async fn generate_app_state() -> Data<AppState> {
+    async fn generate_app_state() -> AppState {
         let signer = SigningKey::random(&mut OsRng);
         let signer_verifier_address = public_key_to_address(signer.verifying_key());
 
-        Data::new(AppState {
+        AppState {
             job_capacity: 20,
-            cgroups: Cgroups::new().unwrap().into(),
+            cgroups: Arc::new(Mutex::new(Cgroups::new().unwrap())),
             workerd_runtime_path: "./runtime/".to_owned(),
             execution_buffer_time: 10,
             common_chain_id: CHAIN_ID,
@@ -65,200 +68,157 @@ pub mod serverless_executor_test {
             num_selected_executors: 1,
             enclave_address: signer_verifier_address,
             enclave_signer: signer,
-            immutable_params_injected: false.into(),
-            mutable_params_injected: false.into(),
-            enclave_registered: false.into(),
-            events_listener_active: false.into(),
-            enclave_owner: H160::zero().into(),
-            http_rpc_client: None.into(),
-            job_requests_running: HashSet::new().into(),
-            last_block_seen: 0.into(),
-            nonce_to_send: U256::from(0).into(),
+            immutable_params_injected: Arc::new(Mutex::new(false)),
+            mutable_params_injected: Arc::new(Mutex::new(false)),
+            enclave_registered: Arc::new(AtomicBool::new(false)),
+            events_listener_active: Arc::new(Mutex::new(false)),
+            enclave_owner: Arc::new(Mutex::new(H160::zero())),
+            http_rpc_client: Arc::new(Mutex::new(None)),
+            job_requests_running: Arc::new(Mutex::new(HashSet::new())),
+            last_block_seen: Arc::new(AtomicU64::new(0)),
+            nonce_to_send: Arc::new(Mutex::new(U256::from(0))),
             jobs_contract_abi: load_abi_from_file().unwrap(),
-        })
+        }
     }
 
-    // Return the actix server with the provided app state
-    fn new_app(
-        app_state: Data<AppState>,
-    ) -> App<
-        impl ServiceFactory<
-            ServiceRequest,
-            Response = ServiceResponse<impl MessageBody + std::fmt::Debug>,
-            Config = (),
-            InitError = (),
-            Error = Error,
-        >,
-    > {
-        App::new()
-            .app_data(app_state)
-            .service(index)
-            .service(inject_immutable_config)
-            .service(inject_mutable_config)
-            .service(get_executor_details)
-            .service(export_signed_registration_message)
+    // Return the Router app with the provided app state
+    fn new_app(app_data: AppState) -> Router<()> {
+        Router::new()
+            .route("/", get(index))
+            .route("/immutable-config", post(inject_immutable_config))
+            .route("/mutable-config", post(inject_mutable_config))
+            .route("/executor-details", get(get_executor_details))
+            .route(
+                "/signed-registration-message",
+                get(export_signed_registration_message),
+            )
+            .with_state(app_data)
     }
 
-    #[actix_web::test]
+    // TODO: add test attribute
     // Test the various response cases for the 'inject_immutable_config' endpoint
+    #[tokio::test]
     async fn inject_immutable_config_test() {
         let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Inject invalid owner address hex string (odd length)
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": "32255",
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address hex string: OddLength\n"
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Invalid owner address hex string: OddLength\n");
 
         // Inject invalid owner address hex string (invalid hex character)
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": "32255G",
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid owner address hex string: InvalidHexCharacter { c: 'G', index: 5 }\n"
+        resp.assert_status_bad_request();
+        resp.assert_text(
+            "Invalid owner address hex string: InvalidHexCharacter { c: 'G', index: 5 }\n",
         );
 
         // Inject invalid owner address hex string (less than 20 bytes)
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": "322557",
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Owner address must be 20 bytes long!\n"
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Owner address must be 20 bytes long!\n");
 
         // Inject valid immutable config params
         let valid_owner = H160::random();
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Immutable params configured!\n");
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), valid_owner);
 
         // Inject valid immutable config params again to test immutability
         let valid_owner_2 = H160::random();
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner_2),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params already configured!\n"
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Immutable params already configured!\n");
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test the various response cases for the 'inject_mutable_config' endpoint
     async fn inject_mutable_config_test() {
         let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Inject invalid gas private key hex string (less than 32 bytes)
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": "322557",
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Gas private key must be 32 bytes long!\n"
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Gas private key must be 32 bytes long!\n");
 
         // Inject invalid gas private key hex string (invalid hex character)
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": "fffffffffffffffffzffffffffffffffffffffffffffffgfffffffffffffffff",
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid gas private key hex string: InvalidHexCharacter { c: 'z', index: 17 }\n"
+        resp.assert_status_bad_request();
+        resp.assert_text(
+            "Invalid gas private key hex string: InvalidHexCharacter { c: 'z', index: 17 }\n",
         );
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })\n"
+        resp.assert_status_bad_request();
+        resp.assert_text(
+            "Invalid gas private key provided: EcdsaError(signature::Error { source: None })\n",
         );
 
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert_eq!(
             app_state
                 .http_rpc_client
@@ -272,20 +232,15 @@ pub mod serverless_executor_test {
 
         // Inject valid mutable config params again to test mutability
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert_eq!(
             app_state
                 .http_rpc_client
@@ -298,38 +253,19 @@ pub mod serverless_executor_test {
         );
     }
 
-    #[derive(Serialize, Deserialize, Debug)]
-    struct ExecutorDetails {
-        enclave_address: H160,
-        enclave_public_key: String,
-        owner_address: H160,
-        gas_address: H160,
-    }
-
-    #[actix_web::test]
+    #[tokio::test]
     // Test the various response cases for the 'get_executor_details' endpoint
     async fn get_executor_details_test() {
         let app_state = generate_app_state().await;
-        let app = test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Get the executor details without injecting any config params
-        let req = test::TestRequest::get()
-            .uri("/executor-details")
-            .to_request();
+        let resp = server.get("/executor-details").await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        let response: Result<ExecutorDetails, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
-        assert!(response.is_ok());
-
-        let response = response.unwrap();
-        assert_eq!(response.enclave_address, app_state.enclave_address);
-        assert_eq!(
-            response.enclave_public_key,
-            format!(
+        resp.assert_status_ok();
+        resp.assert_json(&json!({
+            "enclave_address": app_state.enclave_address,
+            "enclave_public_key": format!(
                 "0x{}",
                 hex::encode(
                     &(app_state
@@ -338,47 +274,30 @@ pub mod serverless_executor_test {
                         .to_encoded_point(false)
                         .as_bytes())[1..]
                 )
-            )
-        );
-        assert_eq!(response.owner_address, H160::zero());
-        assert_eq!(response.gas_address, H160::zero());
+            ),
+            "owner_address": H160::zero(),
+            "gas_address": H160::zero(),
+        }));
 
         // Inject valid immutable config params
         let valid_owner = H160::random();
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Immutable params configured!\n");
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), valid_owner);
 
         // Get the executor details without injecting mutable config params
-        let req = test::TestRequest::get()
-            .uri("/executor-details")
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        let response: Result<ExecutorDetails, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
-        assert!(response.is_ok());
-
-        let response = response.unwrap();
-        assert_eq!(response.enclave_address, app_state.enclave_address);
-        assert_eq!(
-            response.enclave_public_key,
-            format!(
+        let resp = server.get("/executor-details").await;
+        resp.assert_status_ok();
+        resp.assert_json(&json!({
+            "enclave_address": app_state.enclave_address,
+            "enclave_public_key": format!(
                 "0x{}",
                 hex::encode(
                     &(app_state
@@ -387,27 +306,22 @@ pub mod serverless_executor_test {
                         .to_encoded_point(false)
                         .as_bytes())[1..]
                 )
-            )
-        );
-        assert_eq!(response.owner_address, valid_owner);
-        assert_eq!(response.gas_address, H160::zero());
+            ),
+            "owner_address": valid_owner,
+            "gas_address": H160::zero(),
+        }));
 
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert_eq!(
             app_state
                 .http_rpc_client
@@ -420,23 +334,11 @@ pub mod serverless_executor_test {
         );
 
         // Get the executor details
-        let req = test::TestRequest::get()
-            .uri("/executor-details")
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
-        let response: Result<ExecutorDetails, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
-        assert!(response.is_ok());
-
-        let response = response.unwrap();
-        assert_eq!(response.enclave_address, app_state.enclave_address);
-        assert_eq!(
-            response.enclave_public_key,
-            format!(
+        let resp = server.get("/executor-details").await;
+        resp.assert_status_ok();
+        resp.assert_json(&json!({
+            "enclave_address": app_state.enclave_address,
+            "enclave_public_key": format!(
                 "0x{}",
                 hex::encode(
                     &(app_state
@@ -445,13 +347,10 @@ pub mod serverless_executor_test {
                         .to_encoded_point(false)
                         .as_bytes())[1..]
                 )
-            )
-        );
-        assert_eq!(response.owner_address, valid_owner);
-        assert_eq!(
-            response.gas_address,
-            public_key_to_address(gas_wallet_key.verifying_key())
-        );
+            ),
+            "owner_address": valid_owner,
+            "gas_address": public_key_to_address(gas_wallet_key.verifying_key()),
+        }));
     }
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -462,7 +361,7 @@ pub mod serverless_executor_test {
         signature: String,
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test the various response cases for the 'export_signed_registration_message' endpoint
     async fn export_signed_registration_message_test() {
         let metrics = Handle::current().metrics();
@@ -470,68 +369,43 @@ pub mod serverless_executor_test {
         let app_state = generate_app_state().await;
         let verifying_key = app_state.enclave_signer.verifying_key().to_owned();
 
-        let app = test::init_service(new_app(app_state.clone())).await;
+        let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
         // Export the enclave registration details without injecting executor config params
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .to_request();
+        let resp = server.get("/signed-registration-message").await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params not configured yet!\n"
-        );
+        resp.assert_status_bad_request();
+        resp.assert_text("Immutable params not configured yet!\n");
 
         // Inject valid immutable config params
         let valid_owner = H160::random();
-        let req = test::TestRequest::post()
-            .uri("/immutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/immutable-config")
+            .json(&json!({
                 "owner_address_hex": hex::encode(valid_owner),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Immutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Immutable params configured!\n");
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), valid_owner);
 
         // Export the enclave registration details without injecting executor config params
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params not configured yet!\n"
-        );
+        let resp = server.get("/signed-registration-message").await;
+        resp.assert_status_bad_request();
+        resp.assert_text("Mutable params not configured yet!\n");
 
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let req = test::TestRequest::post()
-            .uri("/mutable-config")
-            .set_json(&json!({
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
             }))
-            .to_request();
+            .await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        assert_eq!(
-            resp.into_body().try_into_bytes().unwrap(),
-            "Mutable params configured!\n"
-        );
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert_eq!(
             app_state
                 .http_rpc_client
@@ -544,16 +418,12 @@ pub mod serverless_executor_test {
         );
 
         // Export the enclave registration details
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .to_request();
+        let resp = server.get("/signed-registration-message").await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-
+        resp.assert_status_ok();
         let response: Result<ExportResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+            serde_json::from_slice(&resp.as_bytes());
+
         assert!(response.is_ok());
 
         let response = response.unwrap();
@@ -570,19 +440,15 @@ pub mod serverless_executor_test {
             verifying_key
         );
         assert_eq!(*app_state.events_listener_active.lock().unwrap(), true);
-        let active_tasks = metrics.active_tasks_count();
+        let active_tasks = metrics.num_alive_tasks();
 
         // Export the enclave registration details again
-        let req = test::TestRequest::get()
-            .uri("/signed-registration-message")
-            .to_request();
+        let resp = server.get("/signed-registration-message").await;
 
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
+        resp.assert_status_ok();
 
         let response: Result<ExportResponse, serde_json::Error> =
-            serde_json::from_slice(&resp.into_body().try_into_bytes().unwrap());
+            serde_json::from_slice(&resp.as_bytes());
         assert!(response.is_ok());
 
         let response = response.unwrap();
@@ -598,10 +464,10 @@ pub mod serverless_executor_test {
             ),
             verifying_key
         );
-        assert_eq!(active_tasks, metrics.active_tasks_count());
+        assert_eq!(active_tasks, metrics.num_alive_tasks());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test a valid job request with different inputs and verify the responses
     async fn valid_job_test() {
         let app_state = generate_app_state().await;
@@ -685,7 +551,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -700,12 +568,12 @@ pub mod serverless_executor_test {
 
         assert_eq!(responses.len(), 3);
 
-        assert_response(responses[0].clone(), 0.into(), 0, "2,5");
-        assert_response(responses[1].clone(), 1.into(), 0, "2,2,5");
-        assert_response(responses[2].clone(), 2.into(), 0, "2,2,2,3,5,5");
+        assert_response(responses[0].clone(), 0.into(), 0, "2,5".into());
+        assert_response(responses[1].clone(), 1.into(), 0, "2,2,5".into());
+        assert_response(responses[2].clone(), 2.into(), 0, "2,2,2,3,5,5".into());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test a valid job request with invalid input and verify the response
     async fn invalid_input_job_test() {
         let app_state = generate_app_state().await;
@@ -740,7 +608,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -759,11 +629,11 @@ pub mod serverless_executor_test {
             responses[0].clone(),
             0.into(),
             0,
-            "Please provide a valid integer as input in the format{'num':10}",
+            "Please provide a valid integer as input in the format{'num':10}".into(),
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test '1' error code job requests and verify the responses
     async fn invalid_transaction_job_test() {
         let app_state = generate_app_state().await;
@@ -823,7 +693,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -838,11 +710,11 @@ pub mod serverless_executor_test {
 
         assert_eq!(responses.len(), 2);
 
-        assert_response(responses[0].clone(), 0.into(), 1, "");
-        assert_response(responses[1].clone(), 1.into(), 1, "");
+        assert_response(responses[0].clone(), 0.into(), 1, "".into());
+        assert_response(responses[1].clone(), 1.into(), 1, "".into());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test '2' error code job request and verify the response
     async fn invalid_code_calldata_test() {
         let app_state = generate_app_state().await;
@@ -879,7 +751,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -894,10 +768,10 @@ pub mod serverless_executor_test {
 
         assert_eq!(responses.len(), 1);
 
-        assert_response(responses[0].clone(), 0.into(), 2, "");
+        assert_response(responses[0].clone(), 0.into(), 2, "".into());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test '3' error code job request and verify the response
     async fn invalid_code_job_test() {
         let app_state = generate_app_state().await;
@@ -934,7 +808,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -949,10 +825,10 @@ pub mod serverless_executor_test {
 
         assert_eq!(responses.len(), 1);
 
-        assert_response(responses[0].clone(), 0.into(), 3, "");
+        assert_response(responses[0].clone(), 0.into(), 3, "".into());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test '4' error code job request and verify the response
     async fn deadline_timeout_job_test() {
         let app_state = generate_app_state().await;
@@ -989,7 +865,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::iter(jobs_created_logs)),
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -1004,10 +882,10 @@ pub mod serverless_executor_test {
 
         assert_eq!(responses.len(), 1);
 
-        assert_response(responses[0].clone(), 0.into(), 4, "");
+        assert_response(responses[0].clone(), 0.into(), 4, "".into());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test the execution timeout case where enough job responses are not received and slashing transaction should be sent for the job request
     async fn timeout_job_execution_test() {
         let app_state = generate_app_state().await;
@@ -1052,7 +930,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 pin!(tokio_stream::empty()),
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -1072,7 +952,7 @@ pub mod serverless_executor_test {
         assert!(job_response.job_output.is_none());
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test ExecutorDeregistered event handling
     async fn executor_deregistered_test() {
         let app_state = generate_app_state().await;
@@ -1101,7 +981,9 @@ pub mod serverless_executor_test {
                 pin!(tokio_stream::pending()),
                 pin!(tokio_stream::pending()),
                 executor_deregistered_stream,
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -1117,7 +999,7 @@ pub mod serverless_executor_test {
         );
     }
 
-    #[actix_web::test]
+    #[tokio::test]
     // Test different env ID job created event
     async fn invalid_env_id_test() {
         let app_state = generate_app_state().await;
@@ -1161,7 +1043,9 @@ pub mod serverless_executor_test {
                 jobs_created_stream,
                 pin!(tokio_stream::empty()),
                 pin!(tokio_stream::empty()),
-                app_state,
+                State {
+                    0: app_state.clone(),
+                },
                 tx,
             )
             .await;
@@ -1170,6 +1054,128 @@ pub mod serverless_executor_test {
         while rx.recv().await.is_some() {
             assert!(false, "Response received for different ENV ID!");
         }
+    }
+
+    #[tokio::test]
+    // Test '5' error code, serverless output size exceeds the limit
+    async fn output_size_too_large() {
+        let app_state = generate_app_state().await;
+
+        // This serverless code return bytes array of given length filled with zeros
+        let code_hash = "9fa3e2632fdefe0986cac05b839dd4df8d492dbcfc85ec1a5b647e1fd8ed3157";
+        let user_deadline = 5000;
+
+        // Case 1: Output size is exceeds the limit
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({
+            "len": MAX_OUTPUT_BYTES_LENGTH + 1
+        }))
+        .unwrap()
+        .into();
+
+        let jobs_created_logs = vec![get_job_created_log(
+            1.into(),
+            0.into(),
+            EXECUTION_ENV_ID,
+            code_hash,
+            code_input_bytes,
+            user_deadline,
+            app_state.enclave_address,
+        )];
+
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
+                .then(|log| async move {
+                    sleep(Duration::from_millis(user_deadline + 1000)).await;
+                    log
+                }));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                pin!(tokio_stream::iter(jobs_created_logs)),
+                jobs_responded_stream,
+                pin!(tokio_stream::empty()),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        let mut responses: Vec<JobsTxnMetadata> = vec![];
+
+        // Receive and store the responses
+        while let Some(job_response) = rx.recv().await {
+            responses.push(job_response);
+        }
+
+        assert_eq!(responses.len(), 1);
+
+        assert_response(responses[0].clone(), 0.into(), 5, "".into());
+    }
+
+    #[tokio::test]
+    //Test Output size is equals to the limit
+    async fn output_size_limit_test() {
+        let app_state = generate_app_state().await;
+
+        // This serverless code return bytes array of given length filled with zeros
+        let code_hash = "9fa3e2632fdefe0986cac05b839dd4df8d492dbcfc85ec1a5b647e1fd8ed3157";
+        let user_deadline = 5000;
+
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({
+            "len": MAX_OUTPUT_BYTES_LENGTH
+        }))
+        .unwrap()
+        .into();
+
+        let jobs_created_logs = vec![get_job_created_log(
+            1.into(),
+            0.into(),
+            EXECUTION_ENV_ID,
+            code_hash,
+            code_input_bytes,
+            user_deadline,
+            app_state.enclave_address,
+        )];
+
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
+                .then(|log| async move {
+                    sleep(Duration::from_millis(user_deadline + 1000)).await;
+                    log
+                }));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                pin!(tokio_stream::iter(jobs_created_logs)),
+                jobs_responded_stream,
+                pin!(tokio_stream::empty()),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        let mut responses: Vec<JobsTxnMetadata> = vec![];
+
+        // Receive and store the responses
+        while let Some(job_response) = rx.recv().await {
+            responses.push(job_response);
+        }
+        assert_eq!(responses.len(), 1);
+        let expected_resp: Bytes = Bytes::from_static(&[0u8; MAX_OUTPUT_BYTES_LENGTH]);
+        assert_response(responses[0].clone(), 0.into(), 0, expected_resp);
     }
 
     fn get_job_created_log(
@@ -1261,7 +1267,7 @@ pub mod serverless_executor_test {
         return recovered_key;
     }
 
-    fn assert_response(job_response: JobsTxnMetadata, id: U256, error: u8, output: &str) {
+    fn assert_response(job_response: JobsTxnMetadata, id: U256, error: u8, output: Bytes) {
         assert_eq!(job_response.txn_type, JobsTxnType::OUTPUT);
         assert_eq!(job_response.job_id, id);
         assert!(job_response.job_output.is_some());

@@ -23,3 +23,7 @@ path = "src/ed25519.rs"
 [[bin]]
 name = "keygen-secp256k1"
 path = "src/secp256k1.rs"
+
+[[bin]]
+name = "keygen-x25519"
+path = "src/x25519.rs"
