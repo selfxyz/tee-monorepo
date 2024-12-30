@@ -470,22 +470,15 @@ impl Aws {
 
         let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
 
-        if rules[0] != iptables_rules[0] {
-            error!(
-                got = rules[0],
-                expected = iptables_rules[0],
-                "Rule mismatch"
-            );
-            return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
-        }
-
-        if rules[1] != iptables_rules[1] {
-            error!(
-                got = rules[1],
-                expected = iptables_rules[1],
-                "Rule mismatch"
-            );
-            return Err(anyhow!("Docker rule does not match"));
+        for i in 0..2 {
+            if rules[i] != iptables_rules[i] {
+                error!(
+                    got = rules[i],
+                    expected = iptables_rules[i],
+                    "Rule mismatch"
+                );
+                return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
+            }
         }
 
         // return if rest of the rules match
@@ -495,7 +488,7 @@ impl Aws {
 
         // rules have to be replaced
         // remove existing rules beyond the docker one
-        for _ in 0..rules.len() - 2 {
+        for _ in 2..rules.len() {
             // keep deleting rule 2 till nothing would be left
             let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -D PREROUTING 2")
                 .context("Failed to delete iptables rule")?;
@@ -506,7 +499,7 @@ impl Aws {
         }
 
         // set rules
-        for rule in rules[2..].iter() {
+        for rule in iptables_rules[2..].iter() {
             let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables -t nat {rule}"))
                 .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
