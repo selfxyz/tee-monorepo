@@ -220,11 +220,6 @@ impl InfraProvider for TestAws {
             .ok_or(anyhow!("Instance not found for job - {}", job.id))
     }
 
-    async fn check_instance_running(&mut self, _instance_id: &str, _region: &str) -> Result<bool> {
-        // println!("TEST: check_instance_running | instance_id: {}, region: {}", instance_id, region);
-        Ok(true)
-    }
-
     async fn check_enclave_running(&mut self, _instance_id: &str, _region: &str) -> Result<bool> {
         Ok(true)
     }

@@ -74,12 +74,6 @@ pub trait InfraProvider {
 
     fn get_job_ip(&self, job: &JobId, region: &str) -> impl Future<Output = Result<String>> + Send;
 
-    fn check_instance_running(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-    ) -> impl Future<Output = Result<bool>> + Send;
-
     fn check_enclave_running(
         &mut self,
         instance_id: &str,
@@ -137,10 +131,6 @@ where
 
     async fn get_job_ip(&self, job: &JobId, region: &str) -> Result<String> {
         (**self).get_job_ip(job, region).await
-    }
-
-    async fn check_instance_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
-        (**self).check_instance_running(instance_id, region).await
     }
 
     async fn check_enclave_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
