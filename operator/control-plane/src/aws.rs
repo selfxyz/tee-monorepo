@@ -204,8 +204,7 @@ impl Aws {
             let (stdout, stderr) = Self::ssh_exec(sess, "sha256sum /home/ubuntu/enclave.eif")
                 .context("Failed to calculate image hash")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Error calculating hash of enclave image: {stderr}"));
+                return Err(anyhow!(stderr)).context("Error calculating hash of enclave image");
             }
 
             let line = stdout
@@ -319,8 +318,7 @@ impl Aws {
         )
         .context("Failed to set ephemeral ports")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to set ephemeral ports: {stderr}"));
+            return Err(anyhow!(stderr)).context("Failed to set ephemeral ports");
         }
 
         Ok(())
@@ -348,10 +346,8 @@ impl Aws {
         )
         .context("Failed to restart allocator service")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!(
-                "Error restarting nitro-enclaves-allocator service: {stderr}"
-            ));
+            return Err(anyhow!(stderr))
+                .context("Error restarting nitro-enclaves-allocator service");
         }
 
         info!(
@@ -414,10 +410,8 @@ impl Aws {
         let (stdout, stderr) = Self::ssh_exec(sess, "sudo tc qdisc show dev ens5 root")
             .context("Failed to fetch tc config")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!(
-                "Error fetching network interface qdisc configuration: {stderr}"
-            ));
+            return Err(anyhow!(stderr))
+                .context("Error fetching network interface qdisc configuration");
         }
         let entries: Vec<&str> = stdout.trim().split('\n').collect();
         let mut is_any_rule_set = true;
@@ -429,10 +423,8 @@ impl Aws {
         if is_any_rule_set {
             let (_, stderr) = Self::ssh_exec(sess, "sudo tc qdisc del dev ens5 root")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!(
-                    "Error removing network interface qdisc configuration: {stderr}"
-                ));
+                return Err(anyhow!(stderr))
+                    .context("Error removing network interface qdisc configuration");
             }
         }
 
@@ -443,8 +435,7 @@ impl Aws {
         )?;
 
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error setting up bandwidth limit: {stderr}"));
+            return Err(anyhow!(stderr)).context("Error setting up bandwidth limit");
         }
 
         Ok(())
@@ -466,20 +457,18 @@ impl Aws {
             .context("Failed to query iptables")?;
 
         if !stderr.is_empty() || stdout.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to get iptables rules: {stderr}"));
+            return Err(anyhow!(stderr)).context("Failed to get iptables rules");
         }
 
         let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
 
         for i in 0..2 {
             if rules[i] != iptables_rules[i] {
-                error!(
-                    got = rules[i],
-                    expected = iptables_rules[i],
-                    "Rule mismatch"
-                );
-                return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
+                return Err(anyhow!(
+                    "Failed to match rule: got '{}' expected '{}'",
+                    rules[i],
+                    iptables_rules[i],
+                ));
             }
         }
 
@@ -495,8 +484,7 @@ impl Aws {
             let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -D PREROUTING 2")
                 .context("Failed to delete iptables rule")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to delete iptables rule: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to delete iptables rule");
             }
         }
 
@@ -505,8 +493,7 @@ impl Aws {
             let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables -t nat {rule}"))
                 .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to set iptables rule");
             }
         }
 
@@ -527,20 +514,18 @@ impl Aws {
             Self::ssh_exec(sess, "sudo iptables -S INPUT").context("Failed to query iptables")?;
 
         if !stderr.is_empty() || stdout.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to get iptables rules: {stderr}"));
+            return Err(anyhow!(stderr)).context("Failed to get iptables rules");
         }
 
         let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
 
         for i in 0..1 {
             if rules[i] != iptables_rules[i] {
-                error!(
-                    got = rules[i],
-                    expected = iptables_rules[i],
-                    "Rule mismatch"
-                );
-                return Err(anyhow!("Failed to get INPUT ACCEPT rules"));
+                return Err(anyhow!(
+                    "Failed to match rule: got '{}' expected '{}'",
+                    rules[i],
+                    iptables_rules[i],
+                ));
             }
         }
 
@@ -556,8 +541,7 @@ impl Aws {
             let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -D INPUT 1")
                 .context("Failed to delete iptables rule")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to delete iptables rule: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to delete iptables rule");
             }
         }
 
@@ -566,8 +550,7 @@ impl Aws {
             let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables {rule}"))
                 .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to set iptables rule");
             }
         }
 
@@ -587,15 +570,13 @@ impl Aws {
         )
         .context("Failed to set job id for init server")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to set job id for init server: {stderr}"));
+            return Err(anyhow!(stderr)).context("Failed to set job id for init server");
         }
 
         let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl update")
             .context("Failed to update init server")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Failed to update init server: {stderr}"));
+            return Err(anyhow!(stderr)).context("Failed to update init server");
         }
 
         Ok(())
@@ -610,8 +591,7 @@ impl Aws {
             let (_, stderr) = Self::ssh_exec(sess, "curl -fsS https://artifacts.marlin.org/oyster/binaries/nitro-logger_v1.0.0_linux_`uname -m | sed 's/x86_64/amd64/g; s/aarch64/arm64/g'` -o nitro-logger && chmod +x nitro-logger")
                 .context("Failed to download logger")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to download logger: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to download logger");
             }
 
             let (_, stderr) = Self::ssh_exec(
@@ -626,8 +606,7 @@ EOF
             )
             .context("Failed to setup supervisor conf")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to setup supervisor conf: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to setup supervisor conf");
             }
 
             let (_, stderr) = Self::ssh_exec(
@@ -636,8 +615,7 @@ EOF
             )
             .context("Failed to start logger")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to start logger: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to start logger");
             }
         } else {
             // check if logger is running
@@ -652,8 +630,7 @@ EOF
             let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl stop logger")
                 .context("Failed to stop logger")?;
             if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to stop logger: {stderr}"));
+                return Err(anyhow!(stderr)).context("Failed to stop logger");
             }
         }
 
@@ -676,8 +653,7 @@ EOF
             Self::ssh_exec(sess, "nitro-cli describe-eif --eif-path enclave.eif")
                 .context("could not describe eif")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing eif: {stderr}"));
+            return Err(anyhow!(stderr)).context("Error describing eif");
         }
 
         let eif_data: HashMap<String, Value> =
@@ -686,8 +662,7 @@ EOF
         let (stdout, stderr) = Self::ssh_exec(sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing enclaves: {stderr}"));
+            return Err(anyhow!(stderr)).context("Error describing enclaves");
         }
 
         let enclave_data: Vec<HashMap<String, Value>> =
@@ -704,8 +679,7 @@ EOF
                 let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
 
                 if !stderr.is_empty() {
-                    error!(stderr);
-                    return Err(anyhow!("Error terminating enclave: {stderr}"));
+                    return Err(anyhow!(stderr)).context("Error terminating enclave");
                 }
             }
         }
@@ -719,9 +693,10 @@ EOF
         )?;
 
         if !stderr.is_empty() {
-            error!(stderr);
             if !stderr.contains("Started enclave with enclave-cid") {
-                return Err(anyhow!("Error running enclave image: {stderr}"));
+                return Err(anyhow!(stderr)).context("Error running enclave image");
+            } else {
+                info!(stderr);
             }
         }
 
@@ -736,8 +711,7 @@ EOF
         let (stdout, stderr) = Self::ssh_exec(sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing enclaves: {stderr}"));
+            return Err(anyhow!(stderr)).context("Error describing enclaves");
         }
 
         Ok(stdout.trim() != "[]")
@@ -1070,8 +1044,7 @@ EOF
         let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
         if !stderr.is_empty() {
-            error!(stderr);
-            return Err(anyhow!("Error describing enclaves: {stderr}"));
+            return Err(anyhow!(stderr)).context("Error describing enclaves");
         }
 
         let enclave_data: Vec<HashMap<String, Value>> =
