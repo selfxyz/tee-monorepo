@@ -228,7 +228,7 @@ async fn execute_job(
     };
 
     if response.len() > MAX_OUTPUT_BYTES_LENGTH {
-        return Some(JobOutput{
+        return Some(JobOutput {
             output: Bytes::new(),
             error_code: 5,
             total_time: execution_timer_start.elapsed().as_millis().into(),

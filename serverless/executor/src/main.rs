@@ -1,11 +1,11 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::Arc;
 use std::sync::Mutex;
 
-use axum::Router;
-use axum::routing::{get, post};
 use anyhow::{anyhow, Context, Result};
+use axum::routing::{get, post};
+use axum::Router;
 use clap::Parser;
 use ethers::types::{H160, U256};
 use ethers::utils::public_key_to_address;
@@ -15,11 +15,8 @@ use tokio::fs;
 
 use serverless::cgroups::Cgroups;
 use serverless::node_handler::{
-    export_signed_registration_message,
-    get_executor_details,
-    index,
-    inject_immutable_config,
-    inject_mutable_config
+    export_signed_registration_message, get_executor_details, index, inject_immutable_config,
+    inject_mutable_config,
 };
 use serverless::utils::{load_abi_from_file, AppState, ConfigManager};
 use tokio_vsock::VsockListener;
@@ -98,7 +95,10 @@ async fn main() -> Result<()> {
         .route("/immutable-config", post(inject_immutable_config))
         .route("/mutable-config", post(inject_mutable_config))
         .route("/executor-details", get(get_executor_details))
-        .route("/signed-registration-message", get(export_signed_registration_message))
+        .route(
+            "/signed-registration-message",
+            get(export_signed_registration_message),
+        )
         .with_state(app_data);
 
     println!("Node server started on port {:?}", args.vsock_addr);
