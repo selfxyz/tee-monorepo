@@ -551,7 +551,7 @@ impl Aws {
 
         // rules have to be replaced
         // remove existing rules beyond the docker one
-        for _ in 0..rules.len() - 2 {
+        for _ in 2..rules.len() {
             // keep deleting rule 2 till nothing would be left
             let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -D PREROUTING 2")
                 .context("Failed to delete iptables rule")?;
@@ -562,7 +562,7 @@ impl Aws {
         }
 
         // set rules
-        for rule in rules[2..].iter() {
+        for rule in iptables_rules[2..].iter() {
             let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables -t nat {rule}"))
                 .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
