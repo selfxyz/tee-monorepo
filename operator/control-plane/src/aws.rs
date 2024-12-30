@@ -413,7 +413,7 @@ impl Aws {
     fn run_fragment_bandwidth(sess: &Session, bandwidth: u64) -> Result<()> {
         let (stdout, stderr) = Self::ssh_exec(sess, "sudo tc qdisc show dev ens5 root")
             .context("Failed to fetch tc config")?;
-        if !stderr.is_empty() || stdout.is_empty() {
+        if !stderr.is_empty() {
             error!(stderr);
             return Err(anyhow!(
                 "Error fetching network interface qdisc configuration: {stderr}"
