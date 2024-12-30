@@ -665,7 +665,7 @@ EOF
     // else deploys, killing the running enclave if needed
     // WARN: it does not care about the vcpu and mem of running enclaves, it is assumed
     // that the market prevents them from being different while enclaves are running
-    // since the same if enforced for the allocator fragment as well
+    // since the same is enforced for the allocator fragment as well
     fn run_fragment_enclave(
         sess: &Session,
         req_vcpu: i32,
