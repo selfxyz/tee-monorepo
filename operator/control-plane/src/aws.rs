@@ -311,6 +311,7 @@ impl Aws {
     // to the desired state by executing whatever commands necessary
 
     // Goal: set ephemeral ports to 61440-65535
+    // cheap, so just always overwrites previous state
     fn run_fragment_ephemeral_ports(sess: &Session) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
@@ -326,8 +327,8 @@ impl Aws {
     }
 
     // Goal: allocate the specified cpus and memory for the enclave
-    // Making this declarative would mean potentially restarting enclaves,
-    // not sure how to handle this, instead just prevent them from being different
+    // WARN: Making this declarative would mean potentially restarting enclaves,
+    // not sure how to handle this, instead just prevent them from being different in market
     fn run_fragment_allocator(sess: &Session, req_vcpu: i32, req_mem: i64) -> Result<()> {
         if Self::is_enclave_running(sess)? {
             // return if enclave is already running
@@ -448,12 +449,16 @@ impl Aws {
     }
 
     // Goal: set up iptables rules
+    // first two rules are just expected to be there
+    // rest of the rules are replaced if needed
     fn run_fragment_iptables_salmon(sess: &Session) -> Result<()> {
-        let iptables_rules: [&str; 4] = [
+        let iptables_rules: [&str; 5] = [
             "-P PREROUTING ACCEPT",
+            // expected to exist due to how the images are built
+            "-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER",
             "-A PREROUTING -i ens5 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 1200",
             "-A PREROUTING -i ens5 -p tcp -m tcp --dport 443 -j REDIRECT --to-ports 1200",
-            "-A PREROUTING -i ens5 -p tcp -m tcp --dport 1025:65535 -j REDIRECT --to-ports 1200",
+            "-A PREROUTING -i ens5 -p tcp -m tcp --dport 1024:65535 -j REDIRECT --to-ports 1200",
         ];
         let (stdout, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -S PREROUTING")
             .context("Failed to query iptables")?;
@@ -474,24 +479,36 @@ impl Aws {
             return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
         }
 
-        if !rules.contains(&iptables_rules[1]) {
-            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 80 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
+        if rules[1] != iptables_rules[1] {
+            error!(
+                got = rules[1],
+                expected = iptables_rules[1],
+                "Rule mismatch"
+            );
+            return Err(anyhow!("Docker rule does not match"));
+        }
+
+        // return if rest of the rules match
+        if rules[2..] == iptables_rules[2..] {
+            return Ok(());
+        }
+
+        // rules have to be replaced
+        // remove existing rules beyond the docker one
+        for _ in 0..rules.len() - 2 {
+            // keep deleting rule 2 till nothing would be left
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -D PREROUTING 2")
+                .context("Failed to delete iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
-                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+                return Err(anyhow!("Failed to delete iptables rule: {stderr}"));
             }
         }
 
-        if !rules.contains(&iptables_rules[2]) {
-            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 443 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
-            if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
-            }
-        }
-
-        if !rules.contains(&iptables_rules[3]) {
-            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -A PREROUTING -t nat -p tcp --dport 1024:65535 -i ens5 -j REDIRECT --to-port 1200").context("Failed to set iptables rule")?;
+        // set rules
+        for rule in rules[2..].iter() {
+            let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables -t nat {rule}"))
+                .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
                 return Err(anyhow!("Failed to set iptables rule: {stderr}"));
@@ -502,9 +519,13 @@ impl Aws {
     }
 
     // Goal: set up iptables rules
+    // first two rules are just expected to be there
+    // rest of the rules are replaced if needed
     fn run_fragment_iptables_tuna(sess: &Session) -> Result<()> {
-        let iptables_rules: [&str; 4] = [
+        let iptables_rules: [&str; 5] = [
             "-P INPUT ACCEPT",
+            // expected to exist due to how the images are built
+            "-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER",
             "-A INPUT -i ens5 -p tcp -m tcp --dport 80 -j NFQUEUE --queue-num 0",
             "-A INPUT -i ens5 -p tcp -m tcp --dport 443 -j NFQUEUE --queue-num 0",
             "-A INPUT -i ens5 -p tcp -m tcp --dport 1024:61439 -j NFQUEUE --queue-num 0",
@@ -528,36 +549,36 @@ impl Aws {
             return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
         }
 
-        if !rules.contains(&iptables_rules[1]) {
-            let (_, stderr) = Self::ssh_exec(
-                sess,
-                "sudo iptables -A INPUT -p tcp -i ens5 --dport 80 -j NFQUEUE --queue-num 0",
-            )
-            .context("Failed to set iptables rule")?;
+        if rules[1] != iptables_rules[1] {
+            error!(
+                got = rules[1],
+                expected = iptables_rules[1],
+                "Rule mismatch"
+            );
+            return Err(anyhow!("Docker rule does not match"));
+        }
+
+        // return if rest of the rules match
+        if rules[2..] == iptables_rules[2..] {
+            return Ok(());
+        }
+
+        // rules have to be replaced
+        // remove existing rules beyond the docker one
+        for _ in 0..rules.len() - 2 {
+            // keep deleting rule 2 till nothing would be left
+            let (_, stderr) = Self::ssh_exec(sess, "sudo iptables -t nat -D PREROUTING 2")
+                .context("Failed to delete iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
-                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
+                return Err(anyhow!("Failed to delete iptables rule: {stderr}"));
             }
         }
 
-        if !rules.contains(&iptables_rules[2]) {
-            let (_, stderr) = Self::ssh_exec(
-                sess,
-                "sudo iptables -A INPUT -p tcp -i ens5 --dport 443 -j NFQUEUE --queue-num 0",
-            )
-            .context("Failed to set iptables rule")?;
-            if !stderr.is_empty() {
-                error!(stderr);
-                return Err(anyhow!("Failed to set iptables rule: {stderr}"));
-            }
-        }
-
-        if !rules.contains(&iptables_rules[3]) {
-            let (_, stderr) = Self::ssh_exec(
-                sess,
-                "sudo iptables -A INPUT -p tcp -i ens5 --dport 1024:61439 -j NFQUEUE --queue-num 0",
-            )
-            .context("Failed to set iptables rule")?;
+        // set rules
+        for rule in rules[2..].iter() {
+            let (_, stderr) = Self::ssh_exec(sess, &format!("sudo iptables -t nat {rule}"))
+                .context("Failed to set iptables rule")?;
             if !stderr.is_empty() {
                 error!(stderr);
                 return Err(anyhow!("Failed to set iptables rule: {stderr}"));
