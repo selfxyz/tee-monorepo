@@ -626,10 +626,12 @@ impl<'a> JobState<'a> {
         }
     }
 
-    // return 0 on success
-    // -1 on recoverable errors (can retry)
-    // -2 on unrecoverable errors (no point retrying)
-    // -3 when blacklist/whitelist check fails
+    // return
+    // JobResult::Success on successful processing of a log
+    // JobResult::Done on successful processing of a log which ends a job
+    // JobResult::Retry on recoverable errors, usually networking
+    // JobResult::Failed on unrecoverable errors
+    // JobResult::Internal on internal errors, usually bugs
     fn process_log(
         &mut self,
         log: Option<Log>,
