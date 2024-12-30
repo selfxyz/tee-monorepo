@@ -695,9 +695,7 @@ impl TxnManager {
             let dummy_txn = TransactionRequest::default()
                 .with_to(transaction.private_signer.address())
                 .with_value(U256::ZERO)
-                .with_nonce(transaction.nonce.unwrap())
-                .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
-                .with_gas_price(transaction.gas_price);
+                .with_nonce(transaction.nonce.unwrap());
 
             let provider = self._create_provider(&transaction, false);
             let provider = match provider {
@@ -710,12 +708,28 @@ impl TxnManager {
                 }
             };
 
+            let res = self
+                ._estimate_gas_limit_and_price(&provider, &mut transaction, dummy_txn.clone())
+                .await;
+            if res.is_err() {
+                sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
+                continue;
+            }
+
+            let dummy_txn = dummy_txn
+                .with_gas_limit(transaction.estimated_gas)
+                .with_gas_price(transaction.gas_price);
+
             let pending_txn = provider.send_transaction(dummy_txn).await;
             let Ok(pending_txn) = pending_txn else {
                 let err = parse_send_error(pending_txn.err().unwrap().to_string());
                 match err {
                     TxnManagerSendError::NonceTooLow(_) => {
                         break;
+                    }
+                    TxnManagerSendError::OutOfGas(_) => {
+                        transaction.estimated_gas += self.gas_limit_increment_amount;
+                        continue;
                     }
                     TxnManagerSendError::GasPriceLow(_) => {
                         transaction.gas_price =
