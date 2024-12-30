@@ -15,12 +15,14 @@ pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
         return TxnManagerSendError::NonceTooHigh(error);
     }
 
-    if error_lowercase.contains("out of gas")
-        || (error_lowercase.contains("transaction requires at least")
-            && error_lowercase.contains("gas but got"))
-        || error_lowercase.contains("gas too low")
-    {
+    if error_lowercase.contains("out of gas") || error_lowercase.contains("gas too low") {
         return TxnManagerSendError::OutOfGas(error);
+    }
+
+    if error_lowercase.contains("transaction requires at least")
+        && error_lowercase.contains("gas but got")
+    {
+        return TxnManagerSendError::NotEnoughGas(error);
     }
 
     if error_lowercase.contains("gas limit too high")
