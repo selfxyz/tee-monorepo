@@ -1434,6 +1434,14 @@ impl InfraProvider for Aws {
 
     async fn check_enclave_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
         let res = self
+            .get_instance_state(instance_id, region)
+            .await
+            .context("could not get current instance state")?;
+        if res != "running" && res != "pending" {
+            return Ok(false);
+        }
+
+        let res = self
             .get_enclave_state(instance_id, region)
             .await
             .context("could not get current enclace state")?;
