@@ -533,22 +533,15 @@ impl Aws {
 
         let rules: Vec<&str> = stdout.trim().split('\n').map(|s| s.trim()).collect();
 
-        if rules[0] != iptables_rules[0] {
-            error!(
-                got = rules[0],
-                expected = iptables_rules[0],
-                "Rule mismatch"
-            );
-            return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
-        }
-
-        if rules[1] != iptables_rules[1] {
-            error!(
-                got = rules[1],
-                expected = iptables_rules[1],
-                "Rule mismatch"
-            );
-            return Err(anyhow!("Docker rule does not match"));
+        for i in 0..2 {
+            if rules[i] != iptables_rules[i] {
+                error!(
+                    got = rules[i],
+                    expected = iptables_rules[i],
+                    "Rule mismatch"
+                );
+                return Err(anyhow!("Failed to get PREROUTING ACCEPT rules"));
+            }
         }
 
         // return if rest of the rules match
