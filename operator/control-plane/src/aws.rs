@@ -408,7 +408,7 @@ impl Aws {
     // Goal: set bandwidth rate
     // TODO: this always resets tc rules, check if rate has changed
     fn run_fragment_bandwidth(sess: &Session, bandwidth: u64) -> Result<()> {
-        let (stdout, stderr) = Self::ssh_exec(sess, &("sudo tc qdisc show dev ens5 root"))
+        let (stdout, stderr) = Self::ssh_exec(sess, "sudo tc qdisc show dev ens5 root")
             .context("Failed to fetch tc config")?;
         if !stderr.is_empty() || stdout.is_empty() {
             error!(stderr);
@@ -424,7 +424,7 @@ impl Aws {
 
         // remove previously defined rules
         if is_any_rule_set {
-            let (_, stderr) = Self::ssh_exec(sess, &("sudo tc qdisc del dev ens5 root"))?;
+            let (_, stderr) = Self::ssh_exec(sess, "sudo tc qdisc del dev ens5 root")?;
             if !stderr.is_empty() {
                 error!(stderr);
                 return Err(anyhow!(
@@ -657,7 +657,7 @@ EOF
         debug: bool,
     ) -> Result<()> {
         let (stdout, stderr) =
-            Self::ssh_exec(&sess, "nitro-cli describe-eif --eif-path enclave.eif")
+            Self::ssh_exec(sess, "nitro-cli describe-eif --eif-path enclave.eif")
                 .context("could not describe eif")?;
         if !stderr.is_empty() {
             error!(stderr);
@@ -667,7 +667,7 @@ EOF
         let eif_data: HashMap<String, Value> =
             serde_json::from_str(&stdout).context("could not parse eif description")?;
 
-        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+        let (stdout, stderr) = Self::ssh_exec(sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
         if !stderr.is_empty() {
             error!(stderr);
@@ -717,7 +717,7 @@ EOF
     // Enclave deployment fragments end here
 
     fn is_enclave_running(sess: &Session) -> Result<bool> {
-        let (stdout, stderr) = Self::ssh_exec(&sess, "nitro-cli describe-enclaves")
+        let (stdout, stderr) = Self::ssh_exec(sess, "nitro-cli describe-enclaves")
             .context("could not describe enclaves")?;
         if !stderr.is_empty() {
             error!(stderr);
@@ -1403,7 +1403,7 @@ EOF
             .await
             .context("failed to terminate instance")?;
 
-        return Ok(());
+        Ok(())
     }
 
     pub async fn spin_down_instance(

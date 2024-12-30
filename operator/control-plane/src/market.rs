@@ -613,7 +613,7 @@ impl<'a> JobState<'a> {
                 return false;
             }
 
-            return true;
+            true
         } else {
             // terminate mode
             let res = infra_provider.spin_down(&self.job_id, &self.region).await;
@@ -622,7 +622,7 @@ impl<'a> JobState<'a> {
                 return false;
             }
 
-            return true;
+            true
         }
     }
 
@@ -794,9 +794,9 @@ impl<'a> JobState<'a> {
                     }
                 }
                 self.schedule_launch(self.launch_delay);
-                return JobResult::Success;
+                JobResult::Success
             } else {
-                return JobResult::Done;
+                JobResult::Done
             }
         } else if log.topics()[0] == JOB_SETTLED {
             // decode
