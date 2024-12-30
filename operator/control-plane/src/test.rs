@@ -40,17 +40,6 @@ pub struct SpinDownOutcome {
 
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq)]
-pub struct UpdateEnclaveImageOutcome {
-    pub time: Instant,
-    pub instance_id: String,
-    pub region: String,
-    pub eif_url: String,
-    pub req_mem: i64,
-    pub req_vcpu: i32,
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug, PartialEq)]
 pub enum TestAwsOutcome {
     SpinUp(SpinUpOutcome),
     SpinDown(SpinDownOutcome),
