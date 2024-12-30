@@ -57,14 +57,11 @@ pub trait InfraProvider {
         req_mem: i64,
         req_vcpu: i32,
         bandwidth: u64,
-    ) -> impl Future<Output = Result<String>> + Send;
-
-    fn spin_down(
-        &mut self,
-        instance_id: &str,
-        job: &JobId,
-        region: &str,
+        image_url: &str,
+        debug: bool,
     ) -> impl Future<Output = Result<()>> + Send;
+
+    fn spin_down(&mut self, job: &JobId, region: &str) -> impl Future<Output = Result<()>> + Send;
 
     fn get_job_instance(
         &self,
@@ -107,7 +104,9 @@ where
         req_mem: i64,
         req_vcpu: i32,
         bandwidth: u64,
-    ) -> Result<String> {
+        image_url: &str,
+        debug: bool,
+    ) -> Result<()> {
         (**self)
             .spin_up(
                 job,
@@ -117,12 +116,14 @@ where
                 req_mem,
                 req_vcpu,
                 bandwidth,
+                image_url,
+                debug,
             )
             .await
     }
 
-    async fn spin_down(&mut self, instance_id: &str, job: &JobId, region: &str) -> Result<()> {
-        (**self).spin_down(instance_id, job, region).await
+    async fn spin_down(&mut self, job: &JobId, region: &str) -> Result<()> {
+        (**self).spin_down(job, region).await
     }
 
     async fn get_job_instance(&self, job: &JobId, region: &str) -> Result<(bool, String, String)> {
@@ -642,100 +643,30 @@ impl<'a> JobState<'a> {
     //
     // on errors, return false, will be rescheduled after a short delay
     async fn change_infra_impl(&mut self, mut infra_provider: impl InfraProvider) -> bool {
-        let res = infra_provider
-            .get_job_instance(&self.job_id, &self.region)
-            .await;
-
-        if let Err(err) = res {
-            error!(?err, "Failed to get job instance");
-            return false;
-        }
-        let (mut exist, instance, state) = res.unwrap();
-
         if self.infra_state {
             // launch mode
-            if exist {
-                // instance exists already
-                if state == "pending" || state == "running" {
-                    // instance exists and is already running, we are done
-                    info!(instance, "Found existing healthy instance");
-                    self.instance_id = instance;
-                } else if state == "stopping" || state == "stopped" {
-                    // instance unhealthy, terminate
-                    info!(instance, "Found existing unhealthy instance");
-                    let res = infra_provider
-                        .spin_down(&instance, &self.job_id, &self.region)
-                        .await;
-                    if let Err(err) = res {
-                        error!(?err, "Failed to terminate instance");
-                        return false;
-                    }
-
-                    // set to false so new one can be provisioned
-                    exist = false;
-                } else {
-                    // state is shutting-down or terminated
-                    // set to false so new one can be provisioned
-                    exist = false;
-                }
-            }
-
-            if !exist {
-                // either no old instance or old instance was not enough, launch new one
-                info!("Launching new instance");
-                let res = infra_provider
-                    .spin_up(
-                        &self.job_id,
-                        self.instance_type.as_str(),
-                        self.family.as_str(),
-                        &self.region,
-                        self.req_mem,
-                        self.req_vcpus,
-                        self.bandwidth,
-                    )
-                    .await;
-                if let Err(err) = res {
-                    error!(?err, "Instance launch failed");
-                    return false;
-                }
-
-                self.instance_id = res.unwrap();
-                info!(self.instance_id, "Instance launched");
-            }
-
-            // run the enclave
             let res = infra_provider
-                .run_enclave(
+                .spin_up(
                     &self.job_id,
-                    &self.instance_id,
-                    &self.family,
+                    self.instance_type.as_str(),
+                    self.family.as_str(),
                     &self.region,
-                    &self.eif_url,
-                    self.req_vcpus,
                     self.req_mem,
+                    self.req_vcpus,
                     self.bandwidth,
+                    &self.eif_url,
                     self.debug,
                 )
                 .await;
             if let Err(err) = res {
-                error!(?err, "Enclave launch failed");
+                error!(?err, "Instance launch failed");
                 return false;
             }
 
             return true;
         } else {
             // terminate mode
-            if !exist || state == "shutting-down" || state == "terminated" {
-                // instance does not really exist anyway, we are done
-                info!("Instance does not exist or is already terminated");
-                return true;
-            }
-
-            // terminate instance
-            info!(instance, "Terminating existing instance");
-            let res = infra_provider
-                .spin_down(&instance, &self.job_id, &self.region)
-                .await;
+            let res = infra_provider.spin_down(&self.job_id, &self.region).await;
             if let Err(err) = res {
                 error!(?err, "Failed to terminate instance");
                 return false;
@@ -1457,26 +1388,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(301),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1519,26 +1439,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: true,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: true,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(301),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1581,26 +1490,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "tuna".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(301),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1646,26 +1544,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1712,26 +1599,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1764,7 +1640,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Failed,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-east-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1794,7 +1674,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Failed,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1824,7 +1708,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Failed,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1854,7 +1742,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Failed,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1884,7 +1776,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Failed,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1914,7 +1810,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Done,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1944,7 +1844,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Done,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1987,26 +1891,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(350),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2052,26 +1945,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(350),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2117,26 +1999,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(500),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2172,7 +2043,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Done,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2205,7 +2080,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Done,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2248,26 +2127,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(500),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2509,26 +2377,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/updated-enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/updated-enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2572,26 +2429,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2626,7 +2472,11 @@ mod tests {
 
         let test_results = TestResults {
             res: JobResult::Failed,
-            outcomes: vec![],
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(100),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2667,26 +2517,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2730,38 +2569,30 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(400),
                     job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
                     family: "salmon".into(),
                     region: "ap-south-1".into(),
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/updated-enclave.eif".into(),
+                    image_url: "https://example.com/updated-enclave.eif".into(),
                     debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
                 }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2805,38 +2636,30 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: true,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: true,
-                }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(400),
                     job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
                     family: "salmon".into(),
                     region: "ap-south-1".into(),
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
+                    image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
                 }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2881,26 +2704,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(400),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2944,38 +2756,30 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(400),
                     job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
                     family: "salmon".into(),
                     region: "ap-south-1".into(),
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
+                    image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
                 }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],

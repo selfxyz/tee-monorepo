@@ -1247,6 +1247,59 @@ EOF
         Ok(())
     }
 
+    async fn spin_up_impl(
+        &mut self,
+        job: &JobId,
+        instance_type: &str,
+        family: &str,
+        region: &str,
+        req_mem: i64,
+        req_vcpu: i32,
+        bandwidth: u64,
+        image_url: &str,
+        debug: bool,
+    ) -> Result<()> {
+        let (mut exist, mut instance, state) = self
+            .get_job_instance(job, region)
+            .await
+            .context("failed to get job instance")?;
+
+        if exist {
+            // instance exists already
+            if state == "pending" || state == "running" {
+                // instance exists and is already running, we are done
+                info!(instance, "Found existing healthy instance");
+            } else if state == "stopping" || state == "stopped" {
+                // instance unhealthy, terminate
+                info!(instance, "Found existing unhealthy instance");
+                self.spin_down_instance(&instance, job, region)
+                    .await
+                    .context("failed to terminate instance")?;
+
+                // set to false so new one can be provisioned
+                exist = false;
+            } else {
+                // state is shutting-down or terminated
+                // set to false so new one can be provisioned
+                exist = false;
+            }
+        }
+
+        if !exist {
+            // either no old instance or old instance was not enough, launch new one
+            instance = self
+                .spin_up_instance(job, instance_type, family, region, req_mem, req_vcpu)
+                .await
+                .context("failed to spin up instance")?;
+        }
+
+        self.run_enclave_impl(
+            &job.id, family, &instance, region, image_url, req_vcpu, req_mem, bandwidth, debug,
+        )
+        .await
+        .context("failed to run enclave")
+    }
+
     pub async fn spin_up_instance(
         &self,
         job: &JobId,
@@ -1332,6 +1385,27 @@ EOF
         Ok(())
     }
 
+    async fn spin_down_impl(&self, job: &JobId, region: &str) -> Result<()> {
+        let (exist, instance, state) = self
+            .get_job_instance(job, region)
+            .await
+            .context("failed to get job instance")?;
+
+        if !exist || state == "shutting-down" || state == "terminated" {
+            // instance does not really exist anyway, we are done
+            info!("Instance does not exist or is already terminated");
+            return Ok(());
+        }
+
+        // terminate instance
+        info!(instance, "Terminating existing instance");
+        self.spin_down_instance(&instance, job, region)
+            .await
+            .context("failed to terminate instance")?;
+
+        return Ok(());
+    }
+
     pub async fn spin_down_instance(
         &self,
         instance_id: &str,
@@ -1374,19 +1448,29 @@ impl InfraProvider for Aws {
         region: &str,
         req_mem: i64,
         req_vcpu: i32,
-        _bandwidth: u64,
-    ) -> Result<String> {
-        let instance = self
-            .spin_up_instance(job, instance_type, family, region, req_mem, req_vcpu)
-            .await
-            .context("could not spin up instance")?;
-        Ok(instance)
+        bandwidth: u64,
+        image_url: &str,
+        debug: bool,
+    ) -> Result<()> {
+        self.spin_up_impl(
+            job,
+            instance_type,
+            family,
+            region,
+            req_mem,
+            req_vcpu,
+            bandwidth,
+            image_url,
+            debug,
+        )
+        .await
+        .context("could not spin up enclave")
     }
 
-    async fn spin_down(&mut self, instance_id: &str, job: &JobId, region: &str) -> Result<()> {
-        self.spin_down_instance(instance_id, job, region)
+    async fn spin_down(&mut self, job: &JobId, region: &str) -> Result<()> {
+        self.spin_down_impl(job, region)
             .await
-            .context("could not spin down instance")
+            .context("could not spin down enclave")
     }
 
     async fn get_job_instance(&self, job: &JobId, region: &str) -> Result<(bool, String, String)> {

@@ -23,6 +23,8 @@ pub struct SpinUpOutcome {
     pub req_mem: i64,
     pub req_vcpu: i32,
     pub bandwidth: u64,
+    pub image_url: String,
+    pub debug: bool,
     pub contract_address: String,
     pub chain_id: String,
     pub instance_id: String,
@@ -33,7 +35,6 @@ pub struct SpinUpOutcome {
 pub struct SpinDownOutcome {
     pub time: Instant,
     pub job: String,
-    pub instance_id: String,
     pub region: String,
 }
 
@@ -147,7 +148,9 @@ impl InfraProvider for TestAws {
         req_mem: i64,
         req_vcpu: i32,
         bandwidth: u64,
-    ) -> Result<String> {
+        image_url: &str,
+        debug: bool,
+    ) -> Result<()> {
         let res = self.instances.get_key_value(&job.id);
         if let Some(x) = res {
             self.outcomes.push(TestAwsOutcome::SpinUp(SpinUpOutcome {
@@ -159,12 +162,14 @@ impl InfraProvider for TestAws {
                 req_mem,
                 req_vcpu,
                 bandwidth,
+                image_url: image_url.to_owned(),
+                debug,
                 contract_address: job.contract.clone(),
                 chain_id: job.chain.clone(),
                 instance_id: x.1.instance_id.clone(),
             }));
 
-            return Ok(x.1.instance_id.clone());
+            return Ok(());
         }
 
         let instance_metadata: InstanceMetadata = InstanceMetadata::new(self.counter).await;
@@ -182,20 +187,21 @@ impl InfraProvider for TestAws {
             req_mem,
             req_vcpu,
             bandwidth,
+            image_url: image_url.to_owned(),
+            debug,
             contract_address: job.contract.clone(),
             chain_id: job.chain.clone(),
             instance_id: instance_metadata.instance_id.clone(),
         }));
 
-        Ok(instance_metadata.instance_id)
+        Ok(())
     }
 
-    async fn spin_down(&mut self, instance_id: &str, job: &JobId, region: &str) -> Result<()> {
+    async fn spin_down(&mut self, job: &JobId, region: &str) -> Result<()> {
         self.outcomes
             .push(TestAwsOutcome::SpinDown(SpinDownOutcome {
                 time: Instant::now(),
                 job: job.id.clone(),
-                instance_id: instance_id.to_owned(),
                 region: region.to_owned(),
             }));
 
