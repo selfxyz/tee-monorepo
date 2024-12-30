@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
                 region,
                 wallet_private_key,
                 operator.as_deref(),
-            ).await?
+            ).await
         }
     };
 
