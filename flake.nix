@@ -121,7 +121,7 @@
         tcp-proxy = networking.tcp-proxy.compressed;
         attestation-server = attestation.server.compressed;
         executor = serverless.executor.compressed;
-        kernels = kernels.vanilla;
+        kernels = kernels.serverless;
         workerd = serverless.workerd;
       };
       serverless.gateway = import ./serverless/gateway {

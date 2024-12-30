@@ -28,8 +28,9 @@
   init = kernels.init;
   setup = ./. + "/setup.sh";
   supervisorConf = ./. + "/supervisord.conf";
+  cgroupSetup = ./. + "/cgroupv2_setup.sh";
   execConf = ./. + "/oyster_serverless_executor_config.json";
-  app = pkgs.runCommand "app" {} ''
+  app = pkgs.runCommand "app" { nativeBuildInputs = [pkgs.gcc]; } ''
     echo Preparing the app folder
     pwd
     mkdir -p $out
@@ -43,7 +44,11 @@
     cp ${keygenSecp256k1} $out/app/keygen-secp256k1
     cp ${executor'} $out/app/oyster-serverless-executor
     cp ${setup} $out/app/setup.sh
+    cp ${cgroupSetup} $out/app/cgroupv2_setup.sh
+    cp ${workerd} $out/app/workerd
     chmod +x $out/app/*
+    chmod +w $out/app/workerd
+    patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" $out/app/workerd
     cp ${supervisorConf} $out/etc/supervisord.conf
     cp ${execConf} $out/etc/oyster_serverless_executor_config.json
   '';
@@ -67,7 +72,7 @@ in {
     env = "";
     copyToRoot = pkgs.buildEnv {
       name = "image-root";
-      paths = [app pkgs.busybox pkgs.nettools pkgs.iproute2 pkgs.iptables-legacy pkgs.cacert];
+      paths = [app pkgs.busybox pkgs.nettools pkgs.iproute2 pkgs.iptables-legacy pkgs.cacert pkgs.libcgroup];
       pathsToLink = ["/bin" "/app" "/etc"];
     };
   };
