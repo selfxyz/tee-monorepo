@@ -12,7 +12,7 @@ pub enum TxnManagerSendError {
     NonceTooHigh(String),
     #[error("Out of gas. Error: {0}")]
     OutOfGas(String),
-    #[error("Not enough gas. Error: {0}")]
+    #[error("Insufficient balance in wallet. Error: {0}")]
     InsufficientBalance(String),
     #[error("Gas too high. Error: {0}")]
     GasTooHigh(String),
