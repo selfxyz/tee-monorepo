@@ -9,6 +9,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
@@ -22,7 +23,7 @@ const CHAINLINK_ETH_USD_FEED: &str = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612
 const MAINNET_OPERATOR_LIST_URL: &str = "https://sk.arb1.marlin.org/operators/spec/ArbOne";
 
 // Contract Addresses
-const OYSTER_MARKET_ADDRESS: &str = "0x6C85c60A2dDa6dA0cD53ff0934Dc3AF3b5C3708D"; // Mainnet Contract Address
+const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
 const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
 
 const MAX_RETRIES: u32 = 10;
@@ -114,13 +115,11 @@ pub async fn deploy_oyster_instance(
     .await?;
 
     info!(
-        "Total cost: {} USDC ({:.6} USDC)",
-        total_cost,
+        "Total cost: {:.6} USDC",
         total_cost.as_u128() as f64 / 1_000_000.0
     );
     info!(
-        "Total rate: {} wei/hour ({:.6} ETH/hour)",
-        total_rate,
+        "Total rate: {:.6} ETH/hour",
         total_rate.as_u128() as f64 / 1e18
     );
 
@@ -165,12 +164,35 @@ async fn approve_usdc(
     let market_address: Address = OYSTER_MARKET_ADDRESS.parse()?;
 
     let approve_call = usdc.approve(market_address, amount);
-    let tx = approve_call.send().await?;
+    let estimated_gas = approve_call.estimate_gas().await?;
+    let buffered_gas = estimated_gas + (estimated_gas / 5);
+
+    // Get current gas price and add 20% buffer
+    let gas_price = client.get_gas_price().await?;
+    let buffered_gas_price = gas_price + (gas_price / 5); // Add 20% to gas price
+
+    info!("Gas price: {} wei", gas_price);
+    info!("Buffered gas price: {} wei", buffered_gas_price);
+    info!("Total gas cost: {} wei", buffered_gas_price * estimated_gas);
+    info!(
+        "USDC approval gas estimate: {} wei ({:.6} ETH)",
+        estimated_gas,
+        estimated_gas.as_u128() as f64 / 1e18
+    );
+    info!(
+        "With 20% buffer: {} wei ({:.6} ETH)",
+        buffered_gas,
+        buffered_gas.as_u128() as f64 / 1e18
+    );
+
+    let tx_call = approve_call.gas(buffered_gas).gas_price(buffered_gas_price); // Use buffered gas price
+    let tx = tx_call.send().await?;
 
     info!("USDC approval transaction: {:?}", tx.tx_hash());
     tx.await?;
     Ok(())
 }
+
 async fn create_new_oyster_job(
     metadata: String,
     provider: Address,
@@ -182,24 +204,77 @@ async fn create_new_oyster_job(
 
     let method_call = OysterMarket::new(market_address, client.clone())
         .job_open(metadata, provider, rate, balance);
-    let pending_tx = method_call.send().await?;
+
+    let estimated_gas = method_call.estimate_gas().await?;
+    let buffered_gas = estimated_gas + (estimated_gas / 5);
+
+    let gas_price = client.get_gas_price().await?;
+    let buffered_gas_price = gas_price + (gas_price / 5);
+
+    info!("Gas price: {} wei", gas_price);
+    info!("Buffered gas price: {} wei", buffered_gas_price);
+    info!("Total gas cost: {} wei", buffered_gas_price * estimated_gas);
+    info!(
+        "Job creation gas estimate: {} wei ({:.6} ETH)",
+        estimated_gas,
+        estimated_gas.as_u128() as f64 / 1e18
+    );
+    info!(
+        "With 20% buffer: {} wei ({:.6} ETH)",
+        buffered_gas,
+        buffered_gas.as_u128() as f64 / 1e18
+    );
+
+    let tx_call = method_call.gas(buffered_gas).gas_price(buffered_gas_price);
+    let pending_tx = tx_call.send().await?;
 
     info!("Job creation transaction: {:?}", pending_tx.tx_hash());
+
+    // Wait for 3 minutes before checking for receipt
+    info!("Waiting 3 minutes for transaction confirmation...");
+    tokio::time::sleep(Duration::from_secs(180)).await;
+
     let receipt = pending_tx
         .await?
         .ok_or_else(|| anyhow!("No receipt found"))?;
 
-    let job_opened_event_signature =
-        "JobOpened(bytes32,string,address,address,uint256,uint256,uint256)";
-    let job_opened_event_hash = ethers::utils::keccak256(job_opened_event_signature.as_bytes());
+    // Add logging to check transaction status
+    if !receipt.status.unwrap_or_default().is_zero() {
+        info!("Transaction successful!");
+    } else {
+        return Err(anyhow!("Transaction failed - check contract interaction"));
+    }
 
-    let job_opened_event = receipt
-        .logs
-        .iter()
-        .find(|log| log.topics[0] == H256::from_slice(&job_opened_event_hash))
-        .ok_or_else(|| anyhow!("JobOpened event not found"))?;
+    // Log all events for debugging in more detail
+    info!("Transaction events:");
+    for (idx, log) in receipt.logs.iter().enumerate() {
+        info!("Log #{}", idx);
+        info!("  Address: {:?}", log.address);
+        info!("  Topics: {:?}", log.topics);
+        info!("  Data: 0x{}", hex::encode(&log.data));
+    }
 
-    Ok(job_opened_event.topics[1])
+    // Parse the JobOpened event to get the correct job ID
+    let job_opened_topic =
+        H256::from_str("caf4e46d4e6467895056ca2f41d879c0cd4f68875400a55b8e9b24c9904931b4")?;
+    for log in receipt.logs.iter() {
+        if log.topics[0] == job_opened_topic {
+            // This is the JobOpened event
+            info!("Found JobOpened event");
+            // The job ID is in topics[1]
+            return Ok(log.topics[1]);
+        }
+    }
+
+    // If we can't find the JobOpened event
+    info!("No JobOpened event found. All topics:");
+    for log in receipt.logs.iter() {
+        info!("Event topics: {:?}", log.topics);
+    }
+
+    Err(anyhow!(
+        "Could not find JobOpened event in transaction receipt"
+    ))
 }
 
 async fn fetch_operators(url: &str) -> Result<Vec<(String, Operator)>> {
@@ -213,10 +288,26 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
     let client = reqwest::Client::new();
     let response = client.get(url).send().await?;
     let json: serde_json::Value = response.json().await?;
-    json["ip"]
-        .as_str()
-        .ok_or_else(|| anyhow!("IP address not found in response"))
-        .map(String::from)
+
+    // Add debug logging
+    info!("Response from refresh endpoint: {:?}", json);
+
+    // More robust IP extraction
+    if let Some(job) = json.get("job") {
+        if let Some(ip) = job.get("ip").and_then(|ip| ip.as_str()) {
+            return Ok(ip.to_string());
+        }
+    }
+
+    // Try direct ip field if job.ip is not found
+    if let Some(ip) = json.get("ip").and_then(|ip| ip.as_str()) {
+        return Ok(ip.to_string());
+    }
+
+    Err(anyhow!(
+        "IP address not found in response. Response structure: {:?}",
+        json
+    ))
 }
 
 async fn ping_ip(ip: &str) -> bool {
@@ -320,7 +411,6 @@ async fn calculate_total_cost(
     let instance_hourly_rate_eth =
         U256::from_str_radix(instance_rate.min_rate.trim_start_matches("0x"), 16)?;
 
-    // todo convert_eth_to_usdc error handling
     let instance_hourly_rate_scaled = U256::from(
         retry_with_backoff(
             || async {
@@ -335,9 +425,9 @@ async fn calculate_total_cost(
             Duration::from_secs(BACKOFF_DURATION),
         )
         .await?,
-    ); // In 10**18 USDC denom
-    let instance_secondly_rate_scaled = instance_hourly_rate_scaled / 3600;
+    );
 
+    let instance_secondly_rate_scaled = instance_hourly_rate_scaled / 3600;
     let instance_cost_scaled = U256::from(duration) * instance_secondly_rate_scaled;
 
     let bandwidth_rate_region = get_bandwidth_rate_for_region(region);
@@ -347,8 +437,8 @@ async fn calculate_total_cost(
         bandwidth_rate_region,
         duration,
     ));
-    let bandwidth_rate_scaled = bandwidth_cost_scaled / duration;
 
+    let bandwidth_rate_scaled = bandwidth_cost_scaled / duration;
     let total_cost_scaled = (instance_cost_scaled + bandwidth_cost_scaled) / U256::exp10(12);
     let total_rate_scaled = instance_hourly_rate_eth + bandwidth_rate_scaled;
 
