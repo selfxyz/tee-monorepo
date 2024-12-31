@@ -157,6 +157,12 @@ contract SecretManager is
         _;
     }
 
+    modifier onlySecretStore() {
+        if (_msgSender() != address(SECRET_STORE))
+            revert SecretManagerNotSecretStore();
+        _;
+    }
+
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
             abi.encode(
@@ -247,6 +253,7 @@ contract SecretManager is
         uint256 indexed secretId
     );
 
+    error SecretManagerNotSecretStore();
     error SecretManagerInsufficientUsdcDeposit();
     error SecretManagerInvalidSizeLimit();
     error SecretManagerInvalidEndTimestamp();
@@ -546,7 +553,7 @@ contract SecretManager is
         if(_signTimestamp > endTimestamp) {
             SECRET_STORE.secretTerminationUpdate(_enclaveAddress, _sizeLimit, _secretId);
 
-            _updateUsdcDepositPostPayment(_secretId, enclaveIndex, _signTimestamp);
+            _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, _signTimestamp);
 
             _removeSelectedEnclave(_secretId, enclaveIndex);
 
@@ -601,42 +608,31 @@ contract SecretManager is
         // if(!userStorage[_secretId].selectedEnclaves[enclaveIndex].hasAcknowledgedStore || userStorage[_secretId].ackTimestamp == 0)
         //     return;
 
-        _updateUsdcDepositPostPayment(_secretId, enclaveIndex, _lastAliveTimestamp);
+        uint256 ackTimestamp = _getSecretStoreAckTimestamp(_secretId, enclaveIndex);
+        uint256 endTimestamp = userStorage[_secretId].endTimestamp;
+        _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, _lastAliveTimestamp);
 
         _replaceStore(_secretId, _enclaveAddress, enclaveIndex, true);
     }
 
     function _renounceSecrets(
         address _enclaveAddress,
-        address _owner
-    ) internal {
-        ( , address owner, , bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
-        if(!draining)
-            revert SecretManagerStoreNotDraining();
-        // can use signature verification as well
-        if(_owner != owner)
-            revert SecretManagerInvalidSecretOwner();
-
-        uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
-        SECRET_STORE.renounceSecretsPreUpdate(_enclaveAddress, MARK_ALIVE_TIMEOUT, STAKING_PAYMENT_POOL);
-
-        // TODO: how to handle the newly assigned unacknowledged secrets
-        uint256[] memory storeAckSecretIds = SECRET_STORE.getStoreAckSecretIds(_enclaveAddress);
-        uint256 len = storeAckSecretIds.length;
-        uint256 occupiedStorage;
+        address _owner,
+        uint256[] memory _storeAckSecretIds,
+        uint256 _lastAliveTimestamp
+    ) internal returns (uint256 occupiedStorage) {
+        uint256 len = _storeAckSecretIds.length;
         uint256 storageTimeUsage;
         for (uint256 index = 0; index < len; index++) {
-            uint256 secId = storeAckSecretIds[index];
+            uint256 secId = _storeAckSecretIds[index];
             uint256 sizeLimit = userStorage[secId].sizeLimit;
             occupiedStorage += userStorage[secId].sizeLimit;
 
-            storageTimeUsage += (_renounceSecret(_enclaveAddress, secId, lastAliveTimestamp) * sizeLimit);
+            storageTimeUsage += (_renounceSecret(_enclaveAddress, secId, _lastAliveTimestamp) * sizeLimit);
         }
 
         uint256 usdcPayment = storageTimeUsage * SECRET_STORE_FEE_RATE;
-        USDC_TOKEN.safeTransfer(owner, usdcPayment);
-
-        SECRET_STORE.renounceSecretsPostUpdate(_enclaveAddress, occupiedStorage);
+        USDC_TOKEN.safeTransfer(_owner, usdcPayment);
     }
 
     function _renounceSecret(
@@ -651,7 +647,7 @@ contract SecretManager is
         uint256 startTimestamp = ackTimestamp > _lastAliveTimestamp ? ackTimestamp : _lastAliveTimestamp;
         uint256 endTimestamp = userStorage[_secretId].endTimestamp;
 
-        _updateUsdcDepositPostPayment(_secretId, enclaveIndex, _lastAliveTimestamp);
+        _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, _lastAliveTimestamp);
 
         // secret terminated
         if(block.timestamp > endTimestamp) {
@@ -690,18 +686,16 @@ contract SecretManager is
      */
     function _updateUsdcDepositPostPayment(
         uint256 _secretId,
-        uint256 _enclaveIndex,
+        uint256 _ackTimestamp,
+        uint256 _endTimestamp,
         uint256 _latestAliveTimestamp
     ) internal {
-        uint256 endTimestamp = userStorage[_secretId].endTimestamp;
-        if(_latestAliveTimestamp < endTimestamp)
-            endTimestamp = _latestAliveTimestamp;
+        if(_latestAliveTimestamp < _endTimestamp)
+            _endTimestamp = _latestAliveTimestamp;
 
-        uint256 ackTimestamp = _getSecretStoreAckTimestamp(_secretId, _enclaveIndex);
-
-        if(endTimestamp <= ackTimestamp)
+        if(_endTimestamp <= _ackTimestamp)
             return;
-        uint256 storePayment = (endTimestamp - ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
+        uint256 storePayment = (_endTimestamp - _ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
         userStorage[_secretId].usdcDeposit -= storePayment;
     }
 
@@ -797,8 +791,10 @@ contract SecretManager is
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
+            uint256 ackTimestamp = _getSecretStoreAckTimestamp(_secretId, index);
+            uint256 endTimestamp = userStorage[_secretId].endTimestamp;
             uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
-            _updateUsdcDepositPostPayment(_secretId, index, lastAliveTimestamp);
+            _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, lastAliveTimestamp);
 
             SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[_secretId].sizeLimit, _secretId);
         }
@@ -857,9 +853,12 @@ contract SecretManager is
     }
 
     function renounceSecrets(
-        address _enclaveAddress
-    ) external {
-        _renounceSecrets(_enclaveAddress, _msgSender());
+        address _enclaveAddress,
+        address _owner,
+        uint256[] memory _storeAckSecretIds,
+        uint256 _lastAliveTimestamp
+    ) external onlySecretStore returns (uint256 /* occupiedStorage */) {
+        return _renounceSecrets(_enclaveAddress, _owner, _storeAckSecretIds, _lastAliveTimestamp);
     }
 
     function terminateSecret(

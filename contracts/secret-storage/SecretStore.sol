@@ -89,11 +89,11 @@ contract SecretStore is
     /// @notice enclave stake amount will be divided by 10^18 before adding to the tree
     uint256 public constant STAKE_ADJUSTMENT_FACTOR = 1e18;
 
-    bytes32 public constant SECRET_MANAGER_ROLE = keccak256("SECRET_MANAGER_ROLE");
-
     bytes32 public constant JOBS_ROLE = keccak256("JOBS_ROLE");
 
     uint256 public MIN_STAKE_AMOUNT;
+
+    SecretManager public SECRET_MANAGER;
 
     //-------------------------------- SecretStore start --------------------------------//
 
@@ -105,6 +105,16 @@ contract SecretStore is
     function _onlyTeeManager() internal view {
         if (_msgSender() != address(TEE_MANAGER))
             revert SecretStoreNotTeeManager();
+    }
+
+    modifier onlySecretManager() {
+        _onlySecretManager();
+        _;
+    }
+
+    function _onlySecretManager() internal view {
+        if (_msgSender() != address(SECRET_MANAGER))
+            revert SecretStoreNotSecretManager();
     }
 
     struct SecretStorage {
@@ -124,6 +134,8 @@ contract SecretStore is
     error SecretStoreEnclaveNotEmpty();
     /// @notice Thrown when the provided enclave owner does not match the stored owner.
     error SecretStoreNotTeeManager();
+    /// @notice Thrown when the caller is not the SecretManager contract.
+    error SecretStoreNotSecretManager();
     /// @notice Thrown when the provided execution environment is not supported globally.
     error SecretStoreUnsupportedEnv();
 
@@ -136,6 +148,14 @@ contract SecretStore is
         if (!isTreeInitialized(_env)) 
             revert SecretStoreUnsupportedEnv();
     }
+
+    //-------------------------------- Admin methods start --------------------------------//
+
+    function setSecretManager(address _secretManagerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        SECRET_MANAGER = SecretManager(_secretManagerAddress);
+    }
+
+    //-------------------------------- Admin methods start --------------------------------//
 
     //-------------------------------- JobsRole functions end ------------------------------------//
 
@@ -216,6 +236,23 @@ contract SecretStore is
             revert SecretStoreEnclaveNotEmpty();
     }
 
+    function _renounceSecrets(
+        address _enclaveAddress,
+        address _owner
+    ) internal {
+        uint256 lastAliveTimestamp = secretStores[_enclaveAddress].lastAliveTimestamp;
+        _renounceSecretsPreUpdate(_enclaveAddress, SECRET_MANAGER.MARK_ALIVE_TIMEOUT(), SECRET_MANAGER.STAKING_PAYMENT_POOL());
+
+        uint256 occupiedStorage = SECRET_MANAGER.renounceSecrets(
+            _enclaveAddress,
+            _owner,
+            secretStores[_enclaveAddress].ackSecretIds,
+            lastAliveTimestamp
+        );
+
+        _renounceSecretsPostUpdate(_enclaveAddress, occupiedStorage);
+    }
+
     //-------------------------------- internal functions end ----------------------------------//
 
     //-------------------------------- external functions start ----------------------------------//
@@ -250,9 +287,11 @@ contract SecretStore is
      */
     function drainSecretStore(
         address _enclaveAddress,
-        uint8 _env
+        uint8 _env,
+        address _owner
     ) external onlyTeeManager {
         _drainSecretStore(_enclaveAddress, _env);
+        _renounceSecrets(_enclaveAddress, _owner);
     }
 
     /**
@@ -482,7 +521,7 @@ contract SecretStore is
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit,
         address[] memory _selectedStoresToIgnore
-    ) external onlyRole(SECRET_MANAGER_ROLE) isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
+    ) external onlySecretManager isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
         return _selectNonAssignedSecretStore(_env, _noOfNodesToSelect, _sizeLimit, _selectedStoresToIgnore);
     }
 
@@ -490,14 +529,14 @@ contract SecretStore is
         uint8 _env,
         uint256 _noOfNodesToSelect,
         uint256 _sizeLimit
-    ) external onlyRole(SECRET_MANAGER_ROLE) isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
+    ) external onlySecretManager isValidEnv(_env) returns (SecretManager.SelectedEnclave[] memory) {
         return _selectStores(_env, _noOfNodesToSelect, _sizeLimit);
     }
 
     function releaseStore(
         address _enclaveAddress,
         uint256 _secretSize
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
+    ) external onlySecretManager {
         _releaseStore(_enclaveAddress, _secretSize);
     }
 
@@ -506,7 +545,7 @@ contract SecretStore is
         uint256 _currentCheckTimestamp,
         uint256 _markAliveTimeout,
         address _recipient
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
+    ) external onlySecretManager {
         _markAliveUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
     }
 
@@ -516,37 +555,22 @@ contract SecretStore is
         uint256 _markAliveTimeout,
         uint256 _storageOccupied,
         address _recipient
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
+    ) external onlySecretManager {
         _markDeadUpdate(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _storageOccupied, _recipient);
-    }
-
-    function renounceSecretsPreUpdate(
-        address _enclaveAddress,
-        uint256 _markAliveTimeout,
-        address _recipient
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _renounceSecretsPreUpdate(_enclaveAddress, _markAliveTimeout, _recipient);
-    }
-
-    function renounceSecretsPostUpdate(
-        address _enclaveAddress,
-        uint256 _storageOccupied
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
-        _renounceSecretsPostUpdate(_enclaveAddress, _storageOccupied);
     }
 
     function secretTerminationUpdate(
         address _enclaveAddress,
         uint256 _secretSize,
         uint256 _secretId
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
+    ) external onlySecretManager {
         _secretTerminationUpdate(_enclaveAddress, _secretSize, _secretId);
     }
 
     function addAckSecretIdToStore(
         address _enclaveAddress,
         uint256 _ackSecretId
-    ) external onlyRole(SECRET_MANAGER_ROLE) {
+    ) external onlySecretManager {
         secretStores[_enclaveAddress].ackSecretIds.push(_ackSecretId);
     }
 

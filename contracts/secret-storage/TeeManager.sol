@@ -331,7 +331,7 @@ contract TeeManager is
 
         uint8 env = teeNodes[_enclaveAddress].env;
         EXECUTORS.drainExecutor(_enclaveAddress, env);
-        SECRET_STORE.drainSecretStore(_enclaveAddress, env);
+        SECRET_STORE.drainSecretStore(_enclaveAddress, env, teeNodes[_enclaveAddress].owner);
 
         emit TeeNodeDrained(_enclaveAddress);
     }

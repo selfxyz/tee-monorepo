@@ -117,9 +117,10 @@ contract TeeManagerMock is Context {
 
     function drainSecretStore(
         address _enclaveAddress,
-        uint8 _env
+        uint8 _env,
+        address _owner
     ) external {
-        SECRET_STORE.drainSecretStore(_enclaveAddress, _env);
+        SECRET_STORE.drainSecretStore(_enclaveAddress, _env, _owner);
     }
 
     function reviveSecretStore(
