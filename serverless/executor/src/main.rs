@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{anyhow, Context, Result};
 use axum::routing::{get, post};
@@ -70,12 +69,12 @@ async fn main() -> Result<()> {
         execution_buffer_time: config.execution_buffer_time,
         common_chain_id: config.common_chain_id,
         http_rpc_url: config.http_rpc_url,
-        ws_rpc_url: config.web_socket_url,
+        ws_rpc_url: Arc::new(RwLock::new(config.web_socket_url)),
         executors_contract_addr: config.executors_contract_addr,
         jobs_contract_addr: config.jobs_contract_addr,
         code_contract_addr: config.code_contract_addr,
         num_selected_executors: config.num_selected_executors,
-        enclave_address: enclave_address,
+        enclave_address,
         enclave_signer: enclave_signer_key,
         immutable_params_injected: Arc::new(Mutex::new(false)),
         mutable_params_injected: Arc::new(Mutex::new(false)),

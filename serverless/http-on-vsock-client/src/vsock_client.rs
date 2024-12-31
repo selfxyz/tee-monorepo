@@ -1,7 +1,10 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use hyper::{client::connect::{Connected, Connection}, Uri};
+use hyper::{
+    client::connect::{Connected, Connection},
+    Uri,
+};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 pub struct VsockStream(tokio_vsock::VsockStream);

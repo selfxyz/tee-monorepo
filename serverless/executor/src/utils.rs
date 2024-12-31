@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -58,7 +58,7 @@ pub struct AppState {
     pub execution_buffer_time: u64,
     pub common_chain_id: u64,
     pub http_rpc_url: String,
-    pub ws_rpc_url: String,
+    pub ws_rpc_url: Arc<RwLock<String>>,
     pub executors_contract_addr: Address,
     pub jobs_contract_addr: Address,
     pub code_contract_addr: String,
@@ -85,6 +85,7 @@ pub struct ImmutableConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MutableConfig {
     pub gas_key_hex: String,
+    pub ws_api_key: String,
 }
 
 #[derive(Serialize)]
@@ -93,6 +94,7 @@ pub struct ExecutorConfig {
     pub enclave_public_key: String,
     pub owner_address: H160,
     pub gas_address: H160,
+    pub ws_rpc_url: String,
 }
 
 #[derive(Serialize)]

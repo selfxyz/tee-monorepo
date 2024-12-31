@@ -73,6 +73,20 @@ pub async fn inject_mutable_config(
     app_state: State<AppState>,
     Json(mutable_config): Json<MutableConfig>,
 ) -> Response {
+    // Validate the user provided web socket api key
+    if !mutable_config
+        .ws_api_key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            "API key contains invalid characters!\n",
+        )
+            .into_response();
+    }
+
+    // Validate the user provided gas wallet private key
     let bytes32_gas_key = hex::decode(
         &mutable_config
             .gas_key_hex
@@ -152,6 +166,11 @@ pub async fn inject_mutable_config(
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
     *app_state.nonce_to_send.lock().unwrap() = nonce_to_send;
     *app_state.http_rpc_client.lock().unwrap() = Some(http_rpc_client);
+    let mut ws_rpc_url = app_state.ws_rpc_url.write().unwrap();
+    // strip existing api key from the ws url by removing keys after last '/'
+    let pos = ws_rpc_url.rfind('/').unwrap_or(0);
+    let _ = ws_rpc_url.split_off(pos + 1);
+    ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
     *mutable_params_injected_guard = true;
 
     (StatusCode::OK, "Mutable params configured!\n").into_response()
@@ -183,7 +202,8 @@ pub async fn get_executor_details(app_state: State<AppState>) -> Response {
             )
         ),
         owner_address: *app_state.enclave_owner.lock().unwrap(),
-        gas_address: gas_address,
+        gas_address,
+        ws_rpc_url: app_state.ws_rpc_url.read().unwrap().clone(),
     };
     (StatusCode::OK, Json(details)).into_response()
 }

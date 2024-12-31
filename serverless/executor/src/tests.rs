@@ -13,7 +13,7 @@ pub mod serverless_executor_test {
     use std::pin::pin;
     use std::str::FromStr;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, RwLock};
 
     use axum::extract::State;
     use axum::routing::{get, post};
@@ -44,7 +44,7 @@ pub mod serverless_executor_test {
     // Testnet or Local blockchain (Hardhat) configurations
     const CHAIN_ID: u64 = 421614;
     const HTTP_RPC_URL: &str = "https://sepolia-rollup.arbitrum.io/rpc";
-    const WS_URL: &str = "wss://arb-sepolia.g.alchemy.com/v2/U8uYtmU3xK9j7HEZ74riWfj3C4ode7n1";
+    const WS_URL: &str = "wss://arb-sepolia.g.alchemy.com/v2/";
     const EXECUTORS_CONTRACT_ADDR: &str = "0xE35E287DBC371561E198bFaCBdbEc9cF78bDe930";
     const JOBS_CONTRACT_ADDR: &str = "0xd3b682f6F58323EC77dEaE730733C6A83a1561Fd";
     const CODE_CONTRACT_ADDR: &str = "0x44fe06d2940b8782a0a9a9ffd09c65852c0156b1";
@@ -61,7 +61,7 @@ pub mod serverless_executor_test {
             execution_buffer_time: 10,
             common_chain_id: CHAIN_ID,
             http_rpc_url: HTTP_RPC_URL.to_owned(),
-            ws_rpc_url: WS_URL.to_owned(),
+            ws_rpc_url: Arc::new(RwLock::new(WS_URL.to_owned())),
             executors_contract_addr: EXECUTORS_CONTRACT_ADDR.parse::<Address>().unwrap(),
             jobs_contract_addr: JOBS_CONTRACT_ADDR.parse::<Address>().unwrap(),
             code_contract_addr: CODE_CONTRACT_ADDR.to_owned(),
@@ -175,6 +175,7 @@ pub mod serverless_executor_test {
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "322557",
+                "ws_api_key": "ws_api_key",
             }))
             .await;
 
@@ -186,6 +187,7 @@ pub mod serverless_executor_test {
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "fffffffffffffffffzffffffffffffffffffffffffffffgfffffffffffffffff",
+                "ws_api_key": "ws_api_key",
             }))
             .await;
 
@@ -199,6 +201,7 @@ pub mod serverless_executor_test {
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "ws_api_key": "ws_api_key",
             }))
             .await;
 
@@ -207,6 +210,21 @@ pub mod serverless_executor_test {
             "Invalid gas private key provided: EcdsaError(signature::Error { source: None })\n",
         );
 
+        // Initialise gas wallet key
+        let gas_wallet_key = SigningKey::random(&mut OsRng);
+
+        // Inject invalid ws_api_key hex string with invalid character
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
+                "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
+                "ws_api_key": "&&&&",
+            }))
+            .await;
+
+        resp.assert_status_bad_request();
+        resp.assert_text("API key contains invalid characters!\n");
+
         // Inject valid mutable config params
         let gas_wallet_key = SigningKey::random(&mut OsRng);
 
@@ -214,6 +232,34 @@ pub mod serverless_executor_test {
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
+                "ws_api_key": "ws_api_key",
+            }))
+            .await;
+
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
+        assert_eq!(
+            app_state
+                .http_rpc_client
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap()
+                .address(),
+            public_key_to_address(gas_wallet_key.verifying_key())
+        );
+        assert_eq!(
+            app_state.ws_rpc_url.read().unwrap().as_str(),
+            WS_URL.to_owned() + "ws_api_key"
+        );
+
+        // Inject valid mutable config params again to test mutability
+        let gas_wallet_key = SigningKey::random(&mut OsRng);
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
+                "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
+                "ws_api_key": "ws_api_key_2",
             }))
             .await;
 
@@ -230,26 +276,9 @@ pub mod serverless_executor_test {
             public_key_to_address(gas_wallet_key.verifying_key())
         );
 
-        // Inject valid mutable config params again to test mutability
-        let gas_wallet_key = SigningKey::random(&mut OsRng);
-        let resp = server
-            .post("/mutable-config")
-            .json(&json!({
-                "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
-            }))
-            .await;
-
-        resp.assert_status_ok();
-        resp.assert_text("Mutable params configured!\n");
         assert_eq!(
-            app_state
-                .http_rpc_client
-                .lock()
-                .unwrap()
-                .clone()
-                .unwrap()
-                .address(),
-            public_key_to_address(gas_wallet_key.verifying_key())
+            app_state.ws_rpc_url.read().unwrap().as_str(),
+            WS_URL.to_owned() + "ws_api_key_2"
         );
     }
 
@@ -277,6 +306,7 @@ pub mod serverless_executor_test {
             ),
             "owner_address": H160::zero(),
             "gas_address": H160::zero(),
+            "ws_rpc_url": WS_URL,
         }));
 
         // Inject valid immutable config params
@@ -309,6 +339,7 @@ pub mod serverless_executor_test {
             ),
             "owner_address": valid_owner,
             "gas_address": H160::zero(),
+            "ws_rpc_url": WS_URL,
         }));
 
         // Inject valid mutable config params
@@ -317,6 +348,7 @@ pub mod serverless_executor_test {
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
+                "ws_api_key": "ws_api_key",
             }))
             .await;
 
@@ -331,6 +363,11 @@ pub mod serverless_executor_test {
                 .unwrap()
                 .address(),
             public_key_to_address(gas_wallet_key.verifying_key())
+        );
+
+        assert_eq!(
+            app_state.ws_rpc_url.read().unwrap().as_str(),
+            WS_URL.to_owned() + "ws_api_key"
         );
 
         // Get the executor details
@@ -350,6 +387,7 @@ pub mod serverless_executor_test {
             ),
             "owner_address": valid_owner,
             "gas_address": public_key_to_address(gas_wallet_key.verifying_key()),
+            "ws_rpc_url": WS_URL.to_owned() + "ws_api_key",
         }));
     }
 
@@ -401,6 +439,7 @@ pub mod serverless_executor_test {
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": hex::encode(gas_wallet_key.to_bytes()),
+                "ws_api_key": "ws_api_key",
             }))
             .await;
 
@@ -415,6 +454,11 @@ pub mod serverless_executor_test {
                 .unwrap()
                 .address(),
             public_key_to_address(gas_wallet_key.verifying_key())
+        );
+
+        assert_eq!(
+            app_state.ws_rpc_url.read().unwrap().as_str(),
+            WS_URL.to_owned() + "ws_api_key"
         );
 
         // Export the enclave registration details
