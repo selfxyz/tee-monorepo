@@ -13,7 +13,7 @@ pub enum TxnManagerSendError {
     #[error("Out of gas. Error: {0}")]
     OutOfGas(String),
     #[error("Not enough gas. Error: {0}")]
-    NotEnoughGas(String),
+    InsufficientBalance(String),
     #[error("Gas too high. Error: {0}")]
     GasTooHigh(String),
     #[error("Gas price low. Error: {0}")]
