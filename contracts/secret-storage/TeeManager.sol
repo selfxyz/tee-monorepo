@@ -524,6 +524,10 @@ contract TeeManager is
         return stakeAmounts;
     }
 
+    function getDrainingStatus(address _enclaveAddress) external view returns (bool) {
+        return teeNodes[_enclaveAddress].draining;
+    }
+
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- TeeManager functions end ----------------------------------//

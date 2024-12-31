@@ -1256,8 +1256,8 @@ describe("TeeManager - Slash Store/Executor", function () {
         await teeManager.setExecutors(executors.target);
         await teeManager.setSecretStore(secretStore.target);
 
-        await token.transfer(addrs[1], 100000);
-        await token.connect(signers[1]).approve(teeManager.target, 10000);
+        await token.transfer(addrs[1], 10n ** 20n);
+        await token.connect(signers[1]).approve(teeManager.target, 10n ** 20n);
         const timestamp = await time.latest() * 1000;
         let signTimestamp = await time.latest() - 540;
         let [attestationSign, attestation] = await createAttestation(
@@ -1269,7 +1269,7 @@ describe("TeeManager - Slash Store/Executor", function () {
 
         let jobCapacity = 20,
             storageCapacity = 1e9,
-            stakeAmount = 10;
+            stakeAmount = 10n ** 20n;
         let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
             wallets[15]);
 
@@ -1288,16 +1288,16 @@ describe("TeeManager - Slash Store/Executor", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can slash store", async function () {
-        let stakeAmount = 10,
-            missedEpochs = 2,
-            slashMaxBips = 10 ** 6,
-            slashPercentInBips = 10 ** 2;
-        
+        let stakeAmount = 10n ** 20n,
+            missedEpochs = 14n,
+            slashMaxBips = 10n ** 6n,
+            slashPercentInBips = 10n ** 2n;
+
         await teeManager.setSecretStore(addrs[0]);
         await expect(teeManager.slashStore(addrs[15], missedEpochs, addrs[2]))
             .to.be.not.reverted;
 
-        const remainingStakeAmount = Math.floor(stakeAmount * ((slashMaxBips - slashPercentInBips) ** missedEpochs) / (slashMaxBips ** missedEpochs));
+        const remainingStakeAmount = stakeAmount * ((slashMaxBips - slashPercentInBips) ** missedEpochs) / (slashMaxBips ** missedEpochs);
         const slashedAmount = stakeAmount - remainingStakeAmount;
 
         let teeNode = await teeManager.teeNodes(addrs[15]);
@@ -1316,8 +1316,8 @@ describe("TeeManager - Slash Store/Executor", function () {
         await expect(teeManager.slashExecutor(addrs[15], addrs[2]))
             .to.not.be.reverted;
 
-        let stakeAmount = 10;
-        let slashedAmount = Math.floor(stakeAmount * (10 ** 2) / (10 ** 6));
+        let stakeAmount = 10n ** 20n;
+        let slashedAmount = stakeAmount * (10n ** 2n) / (10n ** 6n);
 
         let teeNode = await teeManager.teeNodes(addrs[15]);
         expect(teeNode.stakeAmount).to.be.eq(stakeAmount - slashedAmount);
