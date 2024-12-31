@@ -159,7 +159,7 @@ contract SecretManager is
 
     modifier onlySecretStore() {
         if (_msgSender() != address(SECRET_STORE))
-            revert SecretManagerNotSecretStore();
+            revert SecretManagerCallerIsNotSecretStore();
         _;
     }
 
@@ -253,7 +253,7 @@ contract SecretManager is
         uint256 indexed secretId
     );
 
-    error SecretManagerNotSecretStore();
+    error SecretManagerCallerIsNotSecretStore();
     error SecretManagerInsufficientUsdcDeposit();
     error SecretManagerInvalidSizeLimit();
     error SecretManagerInvalidEndTimestamp();
@@ -626,7 +626,7 @@ contract SecretManager is
         for (uint256 index = 0; index < len; index++) {
             uint256 secId = _storeAckSecretIds[index];
             uint256 sizeLimit = userStorage[secId].sizeLimit;
-            occupiedStorage += userStorage[secId].sizeLimit;
+            occupiedStorage += sizeLimit;
 
             storageTimeUsage += (_renounceSecret(_enclaveAddress, secId, _lastAliveTimestamp) * sizeLimit);
         }

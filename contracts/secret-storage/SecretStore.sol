@@ -241,7 +241,11 @@ contract SecretStore is
         address _owner
     ) internal {
         uint256 lastAliveTimestamp = secretStores[_enclaveAddress].lastAliveTimestamp;
-        _renounceSecretsPreUpdate(_enclaveAddress, SECRET_MANAGER.MARK_ALIVE_TIMEOUT(), SECRET_MANAGER.STAKING_PAYMENT_POOL());
+        _renounceSecretsPreUpdate(
+            _enclaveAddress,
+            SECRET_MANAGER.MARK_ALIVE_TIMEOUT(),
+            SECRET_MANAGER.STAKING_PAYMENT_POOL()
+        );
 
         uint256 occupiedStorage = SECRET_MANAGER.renounceSecrets(
             _enclaveAddress,
