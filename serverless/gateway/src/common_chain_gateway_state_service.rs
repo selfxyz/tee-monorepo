@@ -17,7 +17,7 @@ use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::{
     COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT, COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT,
     COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN, WAIT_BEFORE_CHECKING_BLOCK,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, WAIT_BEFORE_HTTP_RPC_CALL,
 };
 use crate::contract_abi::GatewaysContract::{self, GatewaysContractInstance};
 use crate::model::{ContractsClient, GatewayData, Job};
@@ -276,7 +276,15 @@ pub async fn generate_gateway_epoch_state_for_cycle(
         ]);
 
     let logs;
+    let time_to_wait =
+        Instant::now() + Duration::from_secs(time_interval * GATEWAY_BLOCK_STATES_TO_MAINTAIN);
     loop {
+        if Instant::now() > time_to_wait {
+            return Err(anyhow::anyhow!(
+                "Failed to get logs for the gateway contract"
+            ));
+        }
+
         let res = provider.get_logs(&event_filter).await;
 
         if res.is_err() {
@@ -284,7 +292,7 @@ pub async fn generate_gateway_epoch_state_for_cycle(
                 "Failed to get logs for the gateway contract - Error: {:?}",
                 res.err().unwrap()
             );
-            sleep(Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
             continue;
         }
 

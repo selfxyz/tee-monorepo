@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time;
 
 use crate::constant::{
-    MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_CHECKING_BLOCK,
+    MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_HTTP_RPC_CALL,
 };
 use crate::error::ServerlessError;
 use crate::model::{Job, JobMode, RequestChainData};
@@ -84,7 +84,7 @@ pub async fn get_block_number_by_timestamp(
                 "Failed to fetch block number. Error: {:#?}",
                 get_block_number_result.err()
             );
-            time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
             continue;
         }
 
@@ -154,7 +154,7 @@ pub async fn get_block_number_by_timestamp(
                         // The next block does not exist.
                         // Wait for the next block to be created to be sure that
                         // the current block_number is the required block_number
-                        time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                        time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                         continue 'next_block_check;
                     }
                     Err(err) => {
@@ -439,7 +439,7 @@ pub async fn confirm_event(
                         log.removed = true;
                         break;
                     }
-                    time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                    time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                     continue;
                 }
             };
@@ -448,14 +448,14 @@ pub async fn confirm_event(
         if first_iteration {
             first_iteration = false;
         } else {
-            time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+            time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
         }
 
         let curr_block_number = match provider.get_block_number().await {
             Ok(block_number) => block_number,
             Err(err) => {
                 error!("Failed to fetch block number. Error: {:#?}", err);
-                time::sleep(time::Duration::from_millis(WAIT_BEFORE_CHECKING_BLOCK)).await;
+                time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                 continue;
             }
         };
