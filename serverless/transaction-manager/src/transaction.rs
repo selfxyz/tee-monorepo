@@ -328,6 +328,7 @@ impl TxnManager {
                         &provider,
                         &mut transaction,
                         transaction_request.clone(),
+                        false,
                     )
                     .await;
                 if res.is_err() {
@@ -709,7 +710,7 @@ impl TxnManager {
             };
 
             let res = self
-                ._estimate_gas_limit_and_price(&provider, &mut transaction, dummy_txn.clone())
+                ._estimate_gas_limit_and_price(&provider, &mut transaction, dummy_txn.clone(), true)
                 .await;
             if res.is_err() {
                 sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
@@ -889,10 +890,11 @@ impl TxnManager {
         provider: &HttpProvider,
         transaction: &mut Transaction,
         transaction_request: TransactionRequest,
+        ignore_timeout: bool,
     ) -> Result<(), TxnManagerSendError> {
         let mut gas_price: u128 = 0;
         let mut failure_reason = String::new();
-        while Instant::now() < transaction.timeout {
+        while Instant::now() < transaction.timeout || ignore_timeout {
             let gas_price_res = provider.get_gas_price().await;
             gas_price = match gas_price_res {
                 Ok(gas_price) => gas_price,
@@ -907,7 +909,7 @@ impl TxnManager {
         }
 
         let mut estimated_gas: u64 = 0;
-        while Instant::now() < transaction.timeout {
+        while Instant::now() < transaction.timeout || ignore_timeout {
             let estimated_gas_res = provider.estimate_gas(&transaction_request).await;
             estimated_gas = match estimated_gas_res {
                 Ok(estimated_gas) => estimated_gas,
