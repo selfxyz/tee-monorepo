@@ -579,18 +579,6 @@ impl<'a> JobState<'a> {
         res
     }
 
-    // implements the following:
-    // if instance launch scheduled
-    //     if healthy instance exists
-    //         proceed
-    //     else (unhealthy instance)
-    //         terminate the unhealthy instance and proceed
-    //
-    //     if instance still does not exist, launch one
-    //     run enclave
-    // else (termination scheduled)
-    //     terminate instance if not already teminated
-    //
     // on errors, return false, will be rescheduled after a short delay
     async fn change_infra_impl(&mut self, mut infra_provider: impl InfraProvider) -> bool {
         if self.infra_state {
