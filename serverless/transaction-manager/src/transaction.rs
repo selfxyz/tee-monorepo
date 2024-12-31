@@ -9,7 +9,7 @@ use alloy::transports::http::reqwest::{Client, Url};
 use alloy::transports::http::Http;
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
@@ -46,7 +46,9 @@ type HttpProvider = FillProvider<
 /// use alloy::signers::local::PrivateKeySigner;
 /// use crate::TxnManager;
 ///
-/// let private_key_signer = String::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+/// let private_key_signer = String::from(
+///         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+///     );
 /// let txn_manager = TxnManager::new(
 ///     "https://ethereum.rpc.url".to_string(),
 ///     421614, // chain_id
@@ -69,6 +71,7 @@ type HttpProvider = FillProvider<
 pub struct TxnManager {
     pub rpc_url: String,
     pub chain_id: u64,
+    pub(crate) manager_running: Arc<Mutex<bool>>,
     pub(crate) private_signer: Arc<RwLock<PrivateKeySigner>>,
     pub(crate) nonce_to_send: Arc<RwLock<u64>>,
     pub(crate) nonce_to_send_private_signer: Arc<RwLock<PrivateKeySigner>>,
@@ -93,7 +96,8 @@ impl TxnManager {
     /// * `garbage_removal_duration_sec` - Optional duration for garbage removal in seconds
     ///
     /// # Returns
-    /// * `Result<Arc<Self>, TxnManagerSendError>` - The transaction manager instance or an error
+    /// * `Result<Arc<Self>, TxnManagerSendError>` - The transaction manager instance or an
+    ///                                              error
     ///
     /// # Errors
     /// * `TxnManagerSendError::InvalidRpcUrl` - If the RPC URL is invalid.
@@ -124,9 +128,10 @@ impl TxnManager {
         Ok(Arc::new(Self {
             rpc_url,
             chain_id,
-            private_signer: private_signer,
+            manager_running: Arc::new(Mutex::new(false)),
+            private_signer,
             nonce_to_send: Arc::new(RwLock::new(0)),
-            nonce_to_send_private_signer: nonce_to_send_private_signer,
+            nonce_to_send_private_signer,
             transactions: Arc::new(RwLock::new(HashMap::new())),
             gas_price_increment_percent: gas_price_increment_percent
                 .unwrap_or(RESEND_GAS_PRICE_INCREMENT_PERCENT),
@@ -145,6 +150,12 @@ impl TxnManager {
     /// - One for processing transactions from the queue
     /// - One for garbage collecting old transactions
     pub async fn run(self: &Arc<Self>) {
+        let mut manager_running_guard = self.manager_running.lock().unwrap();
+
+        if *manager_running_guard {
+            return;
+        }
+
         let txn_manager_clone = self.clone();
         tokio::spawn(async move {
             let _ = txn_manager_clone._process_transaction().await;
@@ -154,11 +165,13 @@ impl TxnManager {
         tokio::spawn(async move {
             txn_manager_clone._garbage_collect_transactions().await;
         });
+        *manager_running_guard = true;
     }
 
     /// Calls a contract function by creating a Transaction object and calling it.
     ///
-    /// Nonce is fixed for a specific transaction unless the private signer is changed within the timeout.
+    /// Nonce is fixed for a specific transaction unless the private signer is changed within the
+    /// timeout.
     ///
     /// # Arguments
     /// * `contract_address` - The address of the contract to call
@@ -315,11 +328,17 @@ impl TxnManager {
                         &provider,
                         &mut transaction,
                         transaction_request.clone(),
+                        false,
                     )
                     .await;
                 if res.is_err() {
                     let err = res.err().unwrap();
                     match err {
+                        TxnManagerSendError::GasTooHigh(_)
+                        | TxnManagerSendError::ContractExecution(_) => {
+                            self._send_dummy_transaction(transaction.to_owned()).await;
+                            return Err(err);
+                        }
                         TxnManagerSendError::Timeout(err) => {
                             if !err.is_empty() {
                                 failure_reason = err;
@@ -368,14 +387,7 @@ impl TxnManager {
                         // Or the gas required is way high compared to block gas limit
                         TxnManagerSendError::GasTooHigh(_)
                         | TxnManagerSendError::ContractExecution(_) => {
-                            if is_internal_call {
-                                transaction.status = TxnStatus::Failed;
-                                transaction.last_monitored = Instant::now();
-                                self.transactions
-                                    .write()
-                                    .unwrap()
-                                    .insert(transaction.id.clone(), transaction.clone());
-                            }
+                            self._send_dummy_transaction(transaction.to_owned()).await;
                             return Err(txn_manager_err);
                         }
                         _ => {
@@ -404,14 +416,7 @@ impl TxnManager {
             return Ok(transaction.id.clone());
         }
 
-        if is_internal_call {
-            transaction.status = TxnStatus::Failed;
-            transaction.last_monitored = Instant::now();
-            self.transactions
-                .write()
-                .unwrap()
-                .insert(transaction.id.clone(), transaction.clone());
-        }
+        self._send_dummy_transaction(transaction.to_owned()).await;
         Err(TxnManagerSendError::Timeout(failure_reason))
     }
 
@@ -691,9 +696,7 @@ impl TxnManager {
             let dummy_txn = TransactionRequest::default()
                 .with_to(transaction.private_signer.address())
                 .with_value(U256::ZERO)
-                .with_nonce(transaction.nonce.unwrap())
-                .with_gas_limit(21000) // 21000 is the gas limit for a eth transfer
-                .with_gas_price(transaction.gas_price);
+                .with_nonce(transaction.nonce.unwrap());
 
             let provider = self._create_provider(&transaction, false);
             let provider = match provider {
@@ -706,12 +709,28 @@ impl TxnManager {
                 }
             };
 
+            let res = self
+                ._estimate_gas_limit_and_price(&provider, &mut transaction, dummy_txn.clone(), true)
+                .await;
+            if res.is_err() {
+                sleep(Duration::from_millis(HTTP_SLEEP_TIME_MS)).await;
+                continue;
+            }
+
+            let dummy_txn = dummy_txn
+                .with_gas_limit(transaction.estimated_gas)
+                .with_gas_price(transaction.gas_price);
+
             let pending_txn = provider.send_transaction(dummy_txn).await;
             let Ok(pending_txn) = pending_txn else {
                 let err = parse_send_error(pending_txn.err().unwrap().to_string());
                 match err {
                     TxnManagerSendError::NonceTooLow(_) => {
                         break;
+                    }
+                    TxnManagerSendError::OutOfGas(_) => {
+                        transaction.estimated_gas += self.gas_limit_increment_amount;
+                        continue;
                     }
                     TxnManagerSendError::GasPriceLow(_) => {
                         transaction.gas_price =
@@ -751,6 +770,11 @@ impl TxnManager {
     ///
     /// # Returns:
     /// * `Result<HttpProvider, TxnManagerSendError>` - The provider instance or an error
+    ///
+    /// # Errors
+    /// * `TxnManagerSendError::GasWalletChanged` - If the private signer of the transaction
+    ///                                             does not match the private signer of the
+    ///                                             TxnManager
     ///
     /// This method is used to create a provider for a transaction.
     /// If ignore_private_signer_check is false, the private signer of the transaction
@@ -821,15 +845,16 @@ impl TxnManager {
             let mut nonce_to_send_private_signer_guard =
                 self.nonce_to_send_private_signer.write().unwrap();
 
-            // If the private signer of the nonce to send is different from the provider's private signer,
-            // update the nonce to send.
+            // If the private signer of the nonce to send is different from the provider's private
+            // signer, update the nonce to send.
             if nonce_to_send_private_signer_guard.address() != transaction.private_signer.address()
             {
                 *nonce_to_send_private_signer_guard = transaction.private_signer.clone();
                 *nonce_to_send_guard = current_nonce;
             }
-            // If the private signer of the nonce to send is the same as the transaction private signer,
-            // update the nonce to send if the current nonce is greater than the nonce to send.
+            // If the private signer of the nonce to send is the same as the transaction private
+            // signer, update the nonce to send if the current nonce is greater than the nonce to
+            // send.
             else if current_nonce > *nonce_to_send_guard {
                 *nonce_to_send_guard = current_nonce;
             }
@@ -853,16 +878,23 @@ impl TxnManager {
     /// # Returns:
     /// * `Result<(), TxnManagerSendError>` - The result of the gas limit and price estimation
     ///
+    /// # Errors
+    /// * `TxnManagerSendError::Timeout` - If the gas limit and price is not estimated within the
+    ///                                    timeout along with the failure reason
+    /// * `TxnManagerSendError::GasTooHigh` - If the gas limit is too high
+    /// * `TxnManagerSendError::ContractExecution` - If the contract execution fails
+    ///
     /// This method is used to estimate the gas limit and price for a transaction.
     async fn _estimate_gas_limit_and_price(
         self: &Arc<Self>,
         provider: &HttpProvider,
         transaction: &mut Transaction,
         transaction_request: TransactionRequest,
+        ignore_timeout: bool,
     ) -> Result<(), TxnManagerSendError> {
         let mut gas_price: u128 = 0;
         let mut failure_reason = String::new();
-        while Instant::now() < transaction.timeout {
+        while Instant::now() < transaction.timeout || ignore_timeout {
             let gas_price_res = provider.get_gas_price().await;
             gas_price = match gas_price_res {
                 Ok(gas_price) => gas_price,
@@ -877,7 +909,7 @@ impl TxnManager {
         }
 
         let mut estimated_gas: u64 = 0;
-        while Instant::now() < transaction.timeout {
+        while Instant::now() < transaction.timeout || ignore_timeout {
             let estimated_gas_res = provider.estimate_gas(&transaction_request).await;
             estimated_gas = match estimated_gas_res {
                 Ok(estimated_gas) => estimated_gas,

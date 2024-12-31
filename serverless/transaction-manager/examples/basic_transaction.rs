@@ -66,6 +66,22 @@ async fn main() {
     // let provider = ProviderBuilder::new().on_http(Url::parse(rpc_url).unwrap());
     // let contract = Contract::new(contract_address, provider);
     // let data = contract.approve(address, amount).calldata().to_owned();
+    //
+    //
+    // You can also use the contract interface to get the data
+    //
+    // sol!(
+    //     #[allow(missing_docs)]
+    //     #[sol(rpc)]
+    //     Contract,
+    //     "./ContractAbi.json"
+    // );
+    // let data = Contract::approveCall {
+    //     to: address,
+    //     value: amount,
+    // }
+    // .abi_encode()
+    // .into();
 
     let res = txn_manager
         .call_contract_function(contract_address, data, timeout)

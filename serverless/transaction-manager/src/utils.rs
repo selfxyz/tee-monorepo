@@ -15,11 +15,15 @@ pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
         return TxnManagerSendError::NonceTooHigh(error);
     }
 
-    if error_lowercase.contains("out of gas")
-        || (error_lowercase.contains("transaction requires at least")
-            && error_lowercase.contains("gas but got"))
-    {
+    if error_lowercase.contains("out of gas") || error_lowercase.contains("gas too low") {
         return TxnManagerSendError::OutOfGas(error);
+    }
+
+    if (error_lowercase.contains("transaction requires at least")
+        && error_lowercase.contains("gas but got"))
+        || error_lowercase.contains("sender doesn't have enough funds to send")
+    {
+        return TxnManagerSendError::InsufficientBalance(error);
     }
 
     if error_lowercase.contains("gas limit too high")
@@ -30,6 +34,7 @@ pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
 
     if error_lowercase.contains("gas price too low")
         || error_lowercase.contains("transaction underpriced")
+        || error_lowercase.contains("max fee per gas less than block base fee")
     {
         return TxnManagerSendError::GasPriceLow(error);
     }
