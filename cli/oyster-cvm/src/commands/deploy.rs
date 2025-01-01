@@ -9,7 +9,6 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
@@ -29,6 +28,12 @@ const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Main
 const MAX_RETRIES: u32 = 10;
 const BACKOFF_DURATION: u64 = 120;
 
+// Add these constants at the top with other constants
+const IP_CHECK_RETRIES: u32 = 20;  // Total number of retries for IP check
+const IP_CHECK_INTERVAL: u64 = 15;  // Seconds between retries
+const ATTESTATION_RETRIES: u32 = 10;
+const ATTESTATION_INTERVAL: u64 = 30;
+
 // Generate type-safe contract bindings
 abigen!(
     ChainlinkPriceFeed, "./src/abis/chainlink_abi.json",
@@ -40,6 +45,19 @@ abigen!(
     OysterMarket, "./src/abis/oyster_market_abi.json",
     event_derives(serde::Serialize, serde::Deserialize)
 );
+
+#[derive(Debug)]
+pub struct DeploymentConfig {
+    pub cpu: u32,
+    pub memory: u32,
+    pub image_url: String,
+    pub region: String,
+    pub instance_type: String,
+    pub bandwidth: u32,
+    pub duration: u32,
+    pub platform: String,
+    pub job_name: String,
+}
 
 #[derive(Serialize, Deserialize)]
 struct Operator {
@@ -63,16 +81,9 @@ struct InstanceRate {
 }
 
 pub async fn deploy_oyster_instance(
-    cpu: u32,
-    memory: u32,
-    image_url: &str,
-    region: &str,
+    config: DeploymentConfig,
     wallet_private_key: &str,
     operator: &str,
-    instance_type: &str,
-    bandwidth: u32,
-    duration: u32,
-    platform: &str,
 ) -> Result<()> {
     tracing::info!("Starting deployment...");
 
@@ -85,30 +96,34 @@ pub async fn deploy_oyster_instance(
         .map(|(_, operator)| operator)
         .context("Error: Operator not found in operator list")?;
 
+    // Validate region is supported
+    if !selected_operator.allowed_regions.iter().any(|r| r == &config.region) {
+        return Err(anyhow!("Region '{}' not supported by operator", config.region));
+    }
+
     // Setup wallet and provider
     let wallet =
         LocalWallet::from_bytes(&hex::decode(wallet_private_key)?)?.with_chain_id(42161u64);
     let provider = Provider::<Http>::try_from(ARBITRUM_ONE_RPC_URL)?;
     let client = Arc::new(SignerMiddleware::new(provider.clone(), wallet.clone()));
 
-    // Fetch operator min rates
+    // Fetch operator min rates with early validation
     let min_rate = find_minimum_rate_instance(
         &selected_operator,
-        region,
-        instance_type,
-        cpu,
-        memory,
-        platform,
-    )
-    .context("failed to fetch operator min rate")?;
+        &config.region,
+        &config.instance_type,
+        config.cpu,
+        config.memory,
+        &config.platform,
+    ).context("Configuration not supported by operator")?;
 
     // Calculate costs
-    let duration_seconds = (duration as u64) * 60;
+    let duration_seconds = (config.duration as u64) * 60;
     let (total_cost, total_rate) = calculate_total_cost(
         &min_rate,
         duration_seconds,
-        bandwidth,
-        region,
+        config.bandwidth,
+        &config.region,
         provider.clone(),
         CHAINLINK_ETH_USD_FEED.parse()?,
     )
@@ -124,7 +139,14 @@ pub async fn deploy_oyster_instance(
     );
 
     // Create metadata
-    let metadata = create_metadata(instance_type, region, memory, cpu, image_url, "oyster_job");
+    let metadata = create_metadata(
+        &config.instance_type,
+        &config.region,
+        config.memory,
+        config.cpu,
+        &config.image_url,
+        &config.job_name,
+    );
 
     // Approve USDC and create job
     approve_usdc(total_cost, client.clone()).await?;
@@ -142,17 +164,22 @@ pub async fn deploy_oyster_instance(
     let url = format!("{}{:?}", JOB_REFRESH_ENDPOINT, job_id);
     info!("Waiting for enclave to start...");
 
-    loop {
-        let ip_address = wait_for_ip_address(&url).await?;
-        if ping_ip(&ip_address).await {
-            if check_attestation(&ip_address).await {
-                info!("Enclave is ready! IP address: {}", ip_address);
-                return Ok(());
-            }
-            info!("Waiting for attestation...");
-        }
-        tokio::time::sleep(StdDuration::from_secs(5)).await;
+    let ip_address = wait_for_ip_address(&url).await?;
+    info!("IP address obtained: {}", ip_address);
+
+    // First check basic connectivity
+    if !ping_ip(&ip_address).await {
+        return Err(anyhow!("Failed to establish TCP connection to the instance"));
     }
+    info!("TCP connection established successfully");
+
+    // Then check attestation
+    if !check_attestation(&ip_address).await {
+        return Err(anyhow!("Attestation check failed after maximum retries"));
+    }
+
+    info!("Enclave is ready! IP address: {}", ip_address);
+    Ok(())
 }
 
 async fn approve_usdc(
@@ -165,29 +192,14 @@ async fn approve_usdc(
 
     let approve_call = usdc.approve(market_address, amount);
     let estimated_gas = approve_call.estimate_gas().await?;
-    let buffered_gas = estimated_gas + (estimated_gas / 5);
+    let (buffered_gas, buffered_gas_price) = calculate_gas_parameters(estimated_gas, &client).await?;
 
-    // Get current gas price and add 20% buffer
-    let gas_price = client.get_gas_price().await?;
-    let buffered_gas_price = gas_price + (gas_price / 5); // Add 20% to gas price
-
-    info!("Gas price: {} wei", gas_price);
-    info!("Buffered gas price: {} wei", buffered_gas_price);
-    info!("Total gas cost: {} wei", buffered_gas_price * estimated_gas);
-    info!(
-        "USDC approval gas estimate: {} wei ({:.6} ETH)",
-        estimated_gas,
-        estimated_gas.as_u128() as f64 / 1e18
-    );
-    info!(
-        "With 20% buffer: {} wei ({:.6} ETH)",
-        buffered_gas,
-        buffered_gas.as_u128() as f64 / 1e18
-    );
-
-    let tx_call = approve_call.gas(buffered_gas).gas_price(buffered_gas_price); // Use buffered gas price
+    info!("Approving USDC spend...");
+    let tx_call = approve_call
+        .gas(buffered_gas)
+        .gas_price(buffered_gas_price);
     let tx = tx_call.send().await?;
-
+    
     info!("USDC approval transaction: {:?}", tx.tx_hash());
     tx.await?;
     Ok(())
@@ -225,27 +237,35 @@ async fn create_new_oyster_job(
         buffered_gas.as_u128() as f64 / 1e18
     );
 
+    info!("Creating job with gas price: {} wei", buffered_gas_price);
+    info!(
+        "Estimated gas cost: {} wei ({:.6} ETH)",
+        buffered_gas,
+        buffered_gas.as_u128() as f64 / 1e18
+    );
+
     let tx_call = method_call.gas(buffered_gas).gas_price(buffered_gas_price);
     let pending_tx = tx_call.send().await?;
 
     info!("Job creation transaction: {:?}", pending_tx.tx_hash());
 
-    // Wait for 3 minutes before checking for receipt
-    info!("Waiting 3 minutes for transaction confirmation...");
-    tokio::time::sleep(Duration::from_secs(180)).await;
-
     let receipt = pending_tx
         .await?
-        .ok_or_else(|| anyhow!("No receipt found"))?;
+        .context("No receipt found")?;
 
     // Add logging to check transaction status
     if !receipt.status.unwrap_or_default().is_zero() {
-        info!("Transaction successful!");
+        info!("Transaction successful! Waiting 3 minutes for job initialization...");
+        tokio::time::sleep(StdDuration::from_secs(180)).await;
     } else {
         return Err(anyhow!("Transaction failed - check contract interaction"));
     }
 
-    // Log all events for debugging in more detail
+    // Calculate event signature hash
+    let job_opened_signature = "JobOpened(bytes32,string,address,address,uint256,uint256,uint256)";
+    let job_opened_topic = ethers::utils::keccak256(job_opened_signature.as_bytes());
+
+    // Log all events for debugging
     info!("Transaction events:");
     for (idx, log) in receipt.logs.iter().enumerate() {
         info!("Log #{}", idx);
@@ -254,14 +274,10 @@ async fn create_new_oyster_job(
         info!("  Data: 0x{}", hex::encode(&log.data));
     }
 
-    // Parse the JobOpened event to get the correct job ID
-    let job_opened_topic =
-        H256::from_str("caf4e46d4e6467895056ca2f41d879c0cd4f68875400a55b8e9b24c9904931b4")?;
+    // Look for JobOpened event
     for log in receipt.logs.iter() {
-        if log.topics[0] == job_opened_topic {
-            // This is the JobOpened event
+        if log.topics[0] == H256::from_slice(&job_opened_topic) {
             info!("Found JobOpened event");
-            // The job ID is in topics[1]
             return Ok(log.topics[1]);
         }
     }
@@ -286,54 +302,90 @@ async fn fetch_operators(url: &str) -> Result<Vec<(String, Operator)>> {
 
 async fn wait_for_ip_address(url: &str) -> Result<String> {
     let client = reqwest::Client::new();
-    let response = client.get(url).send().await?;
-    let json: serde_json::Value = response.json().await?;
+    let mut last_response = String::new();
 
-    // Add debug logging
-    info!("Response from refresh endpoint: {:?}", json);
+    for attempt in 1..=IP_CHECK_RETRIES {
+        info!("Checking for IP address (attempt {}/{})", attempt, IP_CHECK_RETRIES);
+        
+        let response = client.get(url).send().await?;
+        let json: serde_json::Value = response.json().await?;
+        last_response = json.to_string();
+        
+        info!("Response from refresh endpoint: {}", last_response);
 
-    // More robust IP extraction
-    if let Some(job) = json.get("job") {
-        if let Some(ip) = job.get("ip").and_then(|ip| ip.as_str()) {
-            return Ok(ip.to_string());
+        // Check both possible IP locations in response
+        if let Some(ip) = json.get("job")
+            .and_then(|job| job.get("ip"))
+            .and_then(|ip| ip.as_str())
+            .or_else(|| json.get("ip").and_then(|ip| ip.as_str()))
+        {
+            if !ip.is_empty() {
+                info!("Found IP address: {}", ip);
+                return Ok(ip.to_string());
+            }
         }
-    }
 
-    // Try direct ip field if job.ip is not found
-    if let Some(ip) = json.get("ip").and_then(|ip| ip.as_str()) {
-        return Ok(ip.to_string());
+        info!("IP not found yet, waiting {} seconds...", IP_CHECK_INTERVAL);
+        tokio::time::sleep(StdDuration::from_secs(IP_CHECK_INTERVAL)).await;
     }
 
     Err(anyhow!(
-        "IP address not found in response. Response structure: {:?}",
-        json
+        "IP address not found after {} attempts. Last response: {}",
+        IP_CHECK_RETRIES,
+        last_response
     ))
 }
 
 async fn ping_ip(ip: &str) -> bool {
     let address = format!("{}:1300", ip);
-    for _ in 0..3 {
-        if tokio::time::timeout(StdDuration::from_secs(2), TcpStream::connect(&address))
-            .await
-            .is_ok()
-        {
-            return true;
+    for attempt in 1..=3 {
+        info!("Attempting TCP connection to {} (attempt {}/3)", address, attempt);
+        match tokio::time::timeout(StdDuration::from_secs(2), TcpStream::connect(&address)).await {
+            Ok(Ok(_)) => {
+                info!("TCP connection successful");
+                return true;
+            }
+            Ok(Err(e)) => info!("TCP connection failed: {}", e),
+            Err(_) => info!("TCP connection timed out"),
         }
         tokio::time::sleep(StdDuration::from_secs(2)).await;
     }
+    info!("All TCP connection attempts failed");
     false
 }
 
 async fn check_attestation(ip: &str) -> bool {
-    let response = reqwest::Client::new()
-        .get(format!("http://{}:1300/attestation/raw", ip))
-        .send()
-        .await;
+    let client = reqwest::Client::new();
+    let attestation_url = format!("http://{}:1300/attestation/raw", ip);
 
-    match response {
-        Ok(r) if r.status().is_success() => r.bytes().await.map_or(false, |b| !b.is_empty()),
-        _ => false,
+    for attempt in 1..=ATTESTATION_RETRIES {
+        info!(
+            "Checking attestation (attempt {}/{})",
+            attempt, ATTESTATION_RETRIES
+        );
+
+        match client.get(&attestation_url).send().await {
+            Ok(response) => {
+                info!("Attestation status code: {}", response.status());
+                if response.status().is_success() {
+                    match response.bytes().await {
+                        Ok(bytes) if !bytes.is_empty() => {
+                            info!("Attestation check successful");
+                            return true;
+                        }
+                        Ok(_) => info!("Empty attestation response"),
+                        Err(e) => info!("Error reading attestation response: {}", e),
+                    }
+                }
+            }
+            Err(e) => info!("Failed to connect to attestation endpoint: {}", e),
+        }
+
+        info!("Waiting {} seconds before next attestation check...", ATTESTATION_INTERVAL);
+        tokio::time::sleep(StdDuration::from_secs(ATTESTATION_INTERVAL)).await;
     }
+
+    false
 }
 
 fn create_metadata(
@@ -363,41 +415,41 @@ fn find_minimum_rate_instance(
     memory: u32,
     arch: &str,
 ) -> Result<InstanceRate> {
-    operator.min_rates.iter().find_map(|rate_card| {
-        if rate_card.region == region {
-            let matching_rates: Vec<InstanceRate> = rate_card
-                .rate_cards
-                .iter()
-                .filter(|instance_rate| {
-                    instance_rate.instance == instance
-                        && instance_rate.cpu == vcpu
-                        && instance_rate.memory == memory
-                        && instance_rate.arch == arch
-                })
-                .cloned()
-                .collect();
+    // First find the rate card for the specified region
+    let rate_card = operator.min_rates.iter().find(|rate_card| rate_card.region == region)
+        .ok_or_else(|| anyhow!("No rate card found for region: {}", region))?;
 
-            if !matching_rates.is_empty() {
-                return Some(
-                    matching_rates
-                        .into_iter()
-                        .min_by(|a, b| {
-                            let a_rate = U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16)
-                                .unwrap_or(U256::max_value());
-                            let b_rate = U256::from_str_radix(b.min_rate.trim_start_matches("0x"), 16)
-                                .unwrap_or(U256::max_value());
-                            a_rate.cmp(&b_rate)
-                        })
-                        .unwrap(),
-                );
-            }
-        }
-        None
-    })
-    .with_context(|| format!(
-        "No matching instance rate found for region: {}, instance: {}, vcpu: {}, memory: {}, arch: {}",
-        region, instance, vcpu, memory, arch
-    ))
+    // Find matching instance rates
+    let matching_rates: Vec<InstanceRate> = rate_card
+        .rate_cards
+        .iter()
+        .filter(|instance_rate| {
+            instance_rate.instance == instance
+                && instance_rate.cpu == vcpu
+                && instance_rate.memory == memory
+                && instance_rate.arch == arch
+        })
+        .cloned()
+        .collect();
+
+    if matching_rates.is_empty() {
+        return Err(anyhow!(
+            "No matching instance rate found for region: {}, instance: {}, vcpu: {}, memory: {}, arch: {}",
+            region, instance, vcpu, memory, arch
+        ));
+    }
+
+    // Find the minimum rate among matching instances
+    Ok(matching_rates
+        .into_iter()
+        .min_by(|a, b| {
+            let a_rate = U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16)
+                .unwrap_or(U256::max_value());
+            let b_rate = U256::from_str_radix(b.min_rate.trim_start_matches("0x"), 16)
+                .unwrap_or(U256::max_value());
+            a_rate.cmp(&b_rate)
+        })
+        .unwrap())
 }
 
 async fn calculate_total_cost(
@@ -493,4 +545,14 @@ where
             }
         }
     }
+}
+
+async fn calculate_gas_parameters(
+    estimated_gas: U256,
+    client: &SignerMiddleware<Provider<Http>, LocalWallet>,
+) -> Result<(U256, U256)> {
+    let buffered_gas = estimated_gas + (estimated_gas * 20 / 100);
+    let gas_price = client.get_gas_price().await?;
+    let buffered_gas_price = gas_price + (gas_price * 20 / 100);
+    Ok((buffered_gas, buffered_gas_price))
 }

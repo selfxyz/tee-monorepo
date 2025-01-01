@@ -3,6 +3,8 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod types;
 
+use crate::commands::deploy::DeploymentConfig;
+
 use tracing_subscriber::EnvFilter;
 
 fn setup_logging() {
@@ -132,6 +134,10 @@ enum Commands {
         /// Platform (amd64 or arm64)
         #[arg(long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
         platform: String,
+
+        /// Job name (default: "oyster-job")
+        #[arg(long, default_value = "oyster-job")]
+        job_name: String,
     },
 }
 
@@ -196,18 +202,23 @@ async fn main() -> Result<()> {
             bandwidth,
             duration,
             platform,
+            job_name,
         } => {
+            let config = DeploymentConfig {
+                cpu: *cpu,
+                memory: *memory,
+                image_url: image_url.clone(),
+                region: region.clone(),
+                instance_type: instance_type.clone(),
+                bandwidth: *bandwidth,
+                duration: *duration,
+                platform: platform.clone(),
+                job_name: job_name.clone(),
+            };
             commands::deploy::deploy_oyster_instance(
-                *cpu,
-                *memory,
-                image_url,
-                region,
+                config,
                 wallet_private_key,
                 operator,
-                instance_type,
-                *bandwidth,
-                *duration,
-                platform,
             )
             .await
         }
