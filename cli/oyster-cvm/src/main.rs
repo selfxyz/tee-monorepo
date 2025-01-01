@@ -215,12 +215,7 @@ async fn main() -> Result<()> {
                 platform: platform.clone(),
                 job_name: job_name.clone(),
             };
-            commands::deploy::deploy_oyster_instance(
-                config,
-                wallet_private_key,
-                operator,
-            )
-            .await
+            commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
         }
     };
 

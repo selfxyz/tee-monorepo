@@ -29,8 +29,8 @@ const MAX_RETRIES: u32 = 10;
 const BACKOFF_DURATION: u64 = 120;
 
 // Add these constants at the top with other constants
-const IP_CHECK_RETRIES: u32 = 20;  // Total number of retries for IP check
-const IP_CHECK_INTERVAL: u64 = 15;  // Seconds between retries
+const IP_CHECK_RETRIES: u32 = 20; // Total number of retries for IP check
+const IP_CHECK_INTERVAL: u64 = 15; // Seconds between retries
 const ATTESTATION_RETRIES: u32 = 10;
 const ATTESTATION_INTERVAL: u64 = 30;
 
@@ -97,8 +97,15 @@ pub async fn deploy_oyster_instance(
         .context("Error: Operator not found in operator list")?;
 
     // Validate region is supported
-    if !selected_operator.allowed_regions.iter().any(|r| r == &config.region) {
-        return Err(anyhow!("Region '{}' not supported by operator", config.region));
+    if !selected_operator
+        .allowed_regions
+        .iter()
+        .any(|r| r == &config.region)
+    {
+        return Err(anyhow!(
+            "Region '{}' not supported by operator",
+            config.region
+        ));
     }
 
     // Setup wallet and provider
@@ -115,7 +122,8 @@ pub async fn deploy_oyster_instance(
         config.cpu,
         config.memory,
         &config.platform,
-    ).context("Configuration not supported by operator")?;
+    )
+    .context("Configuration not supported by operator")?;
 
     // Calculate costs
     let duration_seconds = (config.duration as u64) * 60;
@@ -169,7 +177,9 @@ pub async fn deploy_oyster_instance(
 
     // First check basic connectivity
     if !ping_ip(&ip_address).await {
-        return Err(anyhow!("Failed to establish TCP connection to the instance"));
+        return Err(anyhow!(
+            "Failed to establish TCP connection to the instance"
+        ));
     }
     info!("TCP connection established successfully");
 
@@ -192,14 +202,13 @@ async fn approve_usdc(
 
     let approve_call = usdc.approve(market_address, amount);
     let estimated_gas = approve_call.estimate_gas().await?;
-    let (buffered_gas, buffered_gas_price) = calculate_gas_parameters(estimated_gas, &client).await?;
+    let (buffered_gas, buffered_gas_price) =
+        calculate_gas_parameters(estimated_gas, &client).await?;
 
     info!("Approving USDC spend...");
-    let tx_call = approve_call
-        .gas(buffered_gas)
-        .gas_price(buffered_gas_price);
+    let tx_call = approve_call.gas(buffered_gas).gas_price(buffered_gas_price);
     let tx = tx_call.send().await?;
-    
+
     info!("USDC approval transaction: {:?}", tx.tx_hash());
     tx.await?;
     Ok(())
@@ -249,9 +258,7 @@ async fn create_new_oyster_job(
 
     info!("Job creation transaction: {:?}", pending_tx.tx_hash());
 
-    let receipt = pending_tx
-        .await?
-        .context("No receipt found")?;
+    let receipt = pending_tx.await?.context("No receipt found")?;
 
     // Add logging to check transaction status
     if !receipt.status.unwrap_or_default().is_zero() {
@@ -305,16 +312,20 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
     let mut last_response = String::new();
 
     for attempt in 1..=IP_CHECK_RETRIES {
-        info!("Checking for IP address (attempt {}/{})", attempt, IP_CHECK_RETRIES);
-        
+        info!(
+            "Checking for IP address (attempt {}/{})",
+            attempt, IP_CHECK_RETRIES
+        );
+
         let response = client.get(url).send().await?;
         let json: serde_json::Value = response.json().await?;
         last_response = json.to_string();
-        
+
         info!("Response from refresh endpoint: {}", last_response);
 
         // Check both possible IP locations in response
-        if let Some(ip) = json.get("job")
+        if let Some(ip) = json
+            .get("job")
             .and_then(|job| job.get("ip"))
             .and_then(|ip| ip.as_str())
             .or_else(|| json.get("ip").and_then(|ip| ip.as_str()))
@@ -339,7 +350,10 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
 async fn ping_ip(ip: &str) -> bool {
     let address = format!("{}:1300", ip);
     for attempt in 1..=3 {
-        info!("Attempting TCP connection to {} (attempt {}/3)", address, attempt);
+        info!(
+            "Attempting TCP connection to {} (attempt {}/3)",
+            address, attempt
+        );
         match tokio::time::timeout(StdDuration::from_secs(2), TcpStream::connect(&address)).await {
             Ok(Ok(_)) => {
                 info!("TCP connection successful");
@@ -381,7 +395,10 @@ async fn check_attestation(ip: &str) -> bool {
             Err(e) => info!("Failed to connect to attestation endpoint: {}", e),
         }
 
-        info!("Waiting {} seconds before next attestation check...", ATTESTATION_INTERVAL);
+        info!(
+            "Waiting {} seconds before next attestation check...",
+            ATTESTATION_INTERVAL
+        );
         tokio::time::sleep(StdDuration::from_secs(ATTESTATION_INTERVAL)).await;
     }
 
@@ -416,7 +433,10 @@ fn find_minimum_rate_instance(
     arch: &str,
 ) -> Result<InstanceRate> {
     // First find the rate card for the specified region
-    let rate_card = operator.min_rates.iter().find(|rate_card| rate_card.region == region)
+    let rate_card = operator
+        .min_rates
+        .iter()
+        .find(|rate_card| rate_card.region == region)
         .ok_or_else(|| anyhow!("No rate card found for region: {}", region))?;
 
     // Find matching instance rates
