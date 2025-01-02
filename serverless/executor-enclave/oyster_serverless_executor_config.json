@@ -2,7 +2,7 @@
     "workerd_runtime_path": "/app/runtime/",
     "common_chain_id": 421614,
     "http_rpc_url": "https://sepolia-rollup.arbitrum.io/rpc",
-    "web_socket_url": "wss://arb-sepolia.g.alchemy.com/v2/U8uYtmU3xK9j7HEZ74riWfj3C4ode7n1",
+    "web_socket_url": "wss://arb-sepolia.g.alchemy.com/v2/",
     "executors_contract_addr": "0xa5F525145219D16763d24670DBF0E62fFbA19571",
     "jobs_contract_addr": "0xF14Ff55120210912Ffb32B7D48b926186168166C",
     "code_contract_addr": "0x44fe06d2940b8782a0a9a9ffd09c65852c0156b1",
