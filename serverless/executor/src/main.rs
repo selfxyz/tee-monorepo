@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{anyhow, Context, Result};
+use axum::http::Uri;
 use axum::routing::{get, post};
 use axum::Router;
 use clap::Parser;
@@ -60,6 +60,19 @@ async fn main() -> Result<()> {
     )
     .context("Invalid enclave signer key")?;
 
+    // Validate the format of the http_rpc_url and web_socket_url
+    let _ = config
+        .http_rpc_url
+        .parse::<Uri>()
+        .context("Invalid http_rpc_url format")?;
+    let _ = config
+        .web_socket_url
+        .parse::<Uri>()
+        .context("Invalid web_socket_url format")?;
+    if !config.web_socket_url.ends_with('/') {
+        return Err(anyhow!("web_socket_url should end with a '/'"));
+    }
+
     let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());
 
     // Initialize App data that will be shared across multiple threads and tasks
@@ -70,12 +83,12 @@ async fn main() -> Result<()> {
         execution_buffer_time: config.execution_buffer_time,
         common_chain_id: config.common_chain_id,
         http_rpc_url: config.http_rpc_url,
-        ws_rpc_url: config.web_socket_url,
+        ws_rpc_url: Arc::new(RwLock::new(config.web_socket_url)),
         executors_contract_addr: config.executors_contract_addr,
         jobs_contract_addr: config.jobs_contract_addr,
         code_contract_addr: config.code_contract_addr,
         num_selected_executors: config.num_selected_executors,
-        enclave_address: enclave_address,
+        enclave_address,
         enclave_signer: enclave_signer_key,
         immutable_params_injected: Arc::new(Mutex::new(false)),
         mutable_params_injected: Arc::new(Mutex::new(false)),

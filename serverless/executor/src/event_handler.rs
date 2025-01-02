@@ -29,17 +29,17 @@ pub async fn events_listener(app_state: State<AppState>, starting_block: U64) {
     }
     loop {
         // web socket connection
-        let web_socket_client =
-            match Provider::<Ws>::connect_with_reconnects(&app_state.ws_rpc_url, 0).await {
-                Ok(client) => client,
-                Err(err) => {
-                    eprintln!(
-                        "Failed to connect to the common chain websocket provider: {:?}",
-                        err
-                    );
-                    continue;
-                }
-            };
+        let ws_rpc_url = app_state.ws_rpc_url.read().unwrap().clone();
+        let web_socket_client = match Provider::<Ws>::connect_with_reconnects(ws_rpc_url, 0).await {
+            Ok(client) => client,
+            Err(err) => {
+                eprintln!(
+                    "Failed to connect to the common chain websocket provider: {:?}",
+                    err
+                );
+                continue;
+            }
+        };
 
         if !app_state.enclave_registered.load(Ordering::SeqCst) {
             // Create filter to listen to the 'ExecutorRegistered' event emitted by the Executors contract
