@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
         .parse::<Uri>()
         .context("Invalid web_socket_url format")?;
     if !config.web_socket_url.ends_with('/') {
-        return Err(anyhow!("web_socket_url should not end with a '/'"));
+        return Err(anyhow!("web_socket_url should end with a '/'"));
     }
 
     let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());
