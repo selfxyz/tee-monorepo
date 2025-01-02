@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -26,7 +26,7 @@ pub const GAS_LIMIT_BUFFER: u64 = 200000; // Fixed buffer to add to the estimate
 pub const TIMEOUT_TXN_RESEND_DEADLINE: u64 = 20; // Deadline (in secs) for resending pending/dropped execution timeout txns
 pub const RESEND_TXN_INTERVAL: u64 = 5; // Interval (in secs) in which to confirm/resend pending/dropped txns
 pub const RESEND_GAS_PRICE_INCREMENT_PERCENT: u64 = 10; // Gas price increment percent while resending pending/dropped txns
-pub const MAX_OUTPUT_BYTES_LENGTH: usize = 20 * 1024; // 20kB, Maximum allowed serverless output size 
+pub const MAX_OUTPUT_BYTES_LENGTH: usize = 20 * 1024; // 20kB, Maximum allowed serverless output size
 
 pub type HttpSignerProvider = SignerMiddleware<Provider<Http>, LocalWallet>;
 
@@ -58,7 +58,7 @@ pub struct AppState {
     pub execution_buffer_time: u64,
     pub common_chain_id: u64,
     pub http_rpc_url: String,
-    pub ws_rpc_url: String,
+    pub ws_rpc_url: Arc<RwLock<String>>,
     pub executors_contract_addr: Address,
     pub jobs_contract_addr: Address,
     pub code_contract_addr: String,
@@ -85,6 +85,7 @@ pub struct ImmutableConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MutableConfig {
     pub gas_key_hex: String,
+    pub ws_api_key: String,
 }
 
 #[derive(Serialize)]
@@ -92,7 +93,8 @@ pub struct ExecutorConfig {
     pub enclave_address: H160,
     pub enclave_public_key: String,
     pub owner_address: H160,
-    pub gas_address: H160
+    pub gas_address: H160,
+    pub ws_rpc_url: String,
 }
 
 #[derive(Serialize)]
@@ -284,7 +286,10 @@ pub fn parse_send_error(error: String) -> JobsTxnSendError {
         return JobsTxnSendError::GasTooHigh;
     }
 
-    if error.contains("gas price too low") || error.contains("transaction underpriced") {
+    if error.contains("gas price too low")
+        || error.contains("transaction underpriced")
+        || error.contains("max fee per gas less than block base fee")
+    {
         return JobsTxnSendError::GasPriceLow;
     }
 

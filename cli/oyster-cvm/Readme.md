@@ -44,12 +44,26 @@ Options:
 - `--output` (output directory, default: result)
 
 #### `upload`
-
 Uploads an enclave image to IPFS via Pinata.
+
+Options:
 --file (path to the enclave image file)
 
 Add env vars for Pinata:
-["PINATA_API_KEY", "PINATA_SECRET_KEY"]
+["PINATA_API_KEY", "PINATA_API_SECRET"]
+
+#### `verify-enclave`
+Verifies an Oyster enclave's attestation document.
+
+Options:
+- `--enclave-ip` (-e): Enclave IP address (required)
+- `--pcr0` (-0): PCR0 value (optional)
+- `--pcr1` (-1): PCR1 value (optional)
+- `--pcr2` (-2): PCR2 value (optional)
+- `--attestation-port` (-p): Attestation port (default: 1300)
+- `--max-age` (-a): Maximum age of attestation in milliseconds (default: 300000)
+- `--timestamp` (-t): Attestation timestamp in milliseconds (default: 0)
+- `--root-public-key` (-r): Root public key (optional, defaults to AWS root key)
 
 ### Example
 
@@ -73,6 +87,20 @@ Add env vars for Pinata:
 ./oyster-cvm upload --file ./result/image.eif
 # Sample output:
 [INFO] Successfully uploaded to Pinata: https://gateway.pinata.cloud/ipfs/Qm...
+
+# Verify an enclave
+./oyster-cvm verify-enclave \
+  --enclave-ip 192.168.1.100 \
+  --pcr0 pcr0_value \
+  --pcr1 pcr1_value \
+  --pcr2 pcr2_value \
+
+# Sample output:
+[INFO] Connecting to attestation endpoint: http://192.168.1.100:1300/attestation/raw
+[INFO] Successfully fetched attestation document
+[INFO] Root public key: <hex-encoded-key>
+[INFO] Enclave public key: <hex-encoded-key>
+[INFO] Verification successful ✓
 ```
 
 ## License

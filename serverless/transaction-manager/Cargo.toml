@@ -3,6 +3,7 @@ name = "multi-block-txns"
 version = "0.1.0"
 authors = ["arnav-deep <arnavd4@gmail.com>"]
 edition = "2021"
+license = "AGPL-3.0-or-later"
 
 [[example]]
 name = "basic_transaction"

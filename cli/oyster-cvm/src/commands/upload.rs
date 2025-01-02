@@ -1,11 +1,11 @@
+use crate::types::StorageProvider;
 use anyhow::{Context, Result};
-use tracing::info;
 use reqwest::Client;
 use serde_json::Value;
 use std::{env, fs, time::Duration};
-use crate::types::StorageProvider;
+use tracing::info;
 
-pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -> Result<String> {
+pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -> Result<()> {
     info!("Uploading enclave image with:");
     info!("  File path: {}", file_path);
     info!("  Provider: {}", provider.as_str());
@@ -19,12 +19,18 @@ pub async fn upload_enclave_image(file_path: &str, provider: &StorageProvider) -
 
     let (api_key, secret_key) = (
         env::var("PINATA_API_KEY").context("PINATA_API_KEY not set in environment")?,
-        env::var("PINATA_SECRET_KEY").context("PINATA_SECRET_KEY not set in environment")?
+        env::var("PINATA_API_SECRET").context("PINATA_API_SECRET not set in environment")?,
     );
-    upload_to_pinata(&file_content, file_name, &api_key, &secret_key).await
+    upload_to_pinata(&file_content, file_name, &api_key, &secret_key).await?;
+    Ok(())
 }
 
-async fn upload_to_pinata(content: &[u8], filename: &str, api_key: &str, secret_key: &str) -> Result<String> {
+async fn upload_to_pinata(
+    content: &[u8],
+    filename: &str,
+    api_key: &str,
+    secret_key: &str,
+) -> Result<String> {
     let form = reqwest::multipart::Form::new().part(
         "file",
         reqwest::multipart::Part::bytes(content.to_vec()).file_name(filename.to_string()),
@@ -45,7 +51,10 @@ async fn upload_to_pinata(content: &[u8], filename: &str, api_key: &str, secret_
         .context("Failed to send request to Pinata")?;
 
     if response.status().is_success() {
-        let json: Value = response.json().await.context("Failed to parse Pinata response")?;
+        let json: Value = response
+            .json()
+            .await
+            .context("Failed to parse Pinata response")?;
         let hash = json["IpfsHash"]
             .as_str()
             .context("Failed to get IPFS hash from response")?;

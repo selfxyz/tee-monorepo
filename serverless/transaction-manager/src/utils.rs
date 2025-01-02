@@ -23,7 +23,7 @@ pub(crate) fn parse_send_error(error: String) -> TxnManagerSendError {
         && error_lowercase.contains("gas but got"))
         || error_lowercase.contains("sender doesn't have enough funds to send")
     {
-        return TxnManagerSendError::NotEnoughGas(error);
+        return TxnManagerSendError::InsufficientBalance(error);
     }
 
     if error_lowercase.contains("gas limit too high")
