@@ -130,7 +130,9 @@ impl ContractsClient {
             let ws_api_key = self.ws_api_key.read().unwrap().clone();
             tokio::spawn(async move {
                 'socket_loop: loop {
-                    let ws_connect = WsConnect::new(request_chain_data_clone.ws_rpc_url.clone() + ws_api_key.as_str());
+                    let ws_connect = WsConnect::new(
+                        request_chain_data_clone.ws_rpc_url.clone() + ws_api_key.as_str(),
+                    );
                     let request_chain_ws_provider =
                         match ProviderBuilder::new().on_ws(ws_connect).await {
                             Ok(request_chain_ws_provider) => request_chain_ws_provider,
@@ -342,7 +344,9 @@ impl ContractsClient {
         loop {
             let ws_api_key = self.ws_api_key.read().unwrap().clone();
             let req_chain_ws_client = match ProviderBuilder::new()
-                .on_ws(WsConnect::new(request_chain_data.ws_rpc_url.clone() + ws_api_key.as_str()))
+                .on_ws(WsConnect::new(
+                    request_chain_data.ws_rpc_url.clone() + ws_api_key.as_str(),
+                ))
                 .await
             {
                 Ok(req_chain_ws_client) => req_chain_ws_client,
@@ -861,7 +865,9 @@ impl ContractsClient {
         loop {
             let ws_api_key = self.ws_api_key.read().unwrap().clone();
             let common_chain_ws_provider = match ProviderBuilder::new()
-                .on_ws(WsConnect::new(self.common_chain_ws_url.clone() + ws_api_key.as_str()))
+                .on_ws(WsConnect::new(
+                    self.common_chain_ws_url.clone() + ws_api_key.as_str(),
+                ))
                 .await
             {
                 Ok(common_chain_ws_provider) => common_chain_ws_provider,

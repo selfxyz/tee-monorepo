@@ -68,6 +68,8 @@ pub const CODE_HASH: Lazy<FixedBytes<32>> = Lazy::new(|| {
     arr.copy_from_slice(&bytes);
     FixedBytes::from(arr)
 });
+#[cfg(test)]
+pub const WS_API_KEY: &str = "abcdef_RbVpNrezyxZEvO6AnnCuO-kxt";
 
 #[cfg(test)]
 pub fn new_app(app_state: AppState) -> Router<()> {
@@ -110,6 +112,7 @@ pub async fn generate_app_state() -> AppState {
         immutable_params_injected: Arc::new(Mutex::new(false)),
         mutable_params_injected: Arc::new(AtomicBool::new(false)),
         contracts_client: Arc::new(Mutex::new(None)),
+        ws_api_key: Arc::new(RwLock::new(String::new())),
     }
 }
 
@@ -129,7 +132,8 @@ pub async fn generate_contracts_client() -> Arc<ContractsClient> {
     let _resp = server
         .post("/mutable-config")
         .json(&json!({
-            "gas_key_hex": GAS_WALLET_KEY
+            "gas_key_hex": GAS_WALLET_KEY,
+            "ws_api_key": WS_API_KEY,
         }))
         .await;
     // Get signature with valid data points

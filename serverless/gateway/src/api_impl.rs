@@ -111,50 +111,44 @@ pub async fn inject_mutable_config(
 
     let contracts_client_guard = app_state.contracts_client.lock().unwrap();
 
-    let mut wallet_guard = app_state.wallet.write().unwrap();
-    if *wallet_guard == mutable_config.gas_key_hex {
-        return (
-            StatusCode::NOT_ACCEPTABLE,
-            String::from("The same wallet address already set.\n"),
-        )
-            .into_response();
-    }
-
-    *wallet_guard = mutable_config.gas_key_hex.clone();
-
     *app_state.ws_api_key.write().unwrap() = mutable_config.ws_api_key.clone();
 
-    if contracts_client_guard.is_some() {
-        let res = contracts_client_guard
-            .as_ref()
-            .unwrap()
-            .common_chain_txn_manager
-            .update_private_signer(mutable_config.gas_key_hex.clone());
-        if let Err(e) = res {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to update the private signer for the common chain txn manager: {}\n",
-                    e
-                ),
-            )
-                .into_response();
-        }
+    let mut wallet_guard = app_state.wallet.write().unwrap();
 
-        let mut request_chains_data = contracts_client_guard
-            .as_ref()
-            .unwrap()
-            .request_chains_data
-            .write()
-            .unwrap();
-        for request_chain_data in request_chains_data.values_mut() {
-            let res = request_chain_data
-                .request_chain_txn_manager
+    if *wallet_guard != mutable_config.gas_key_hex {
+        *wallet_guard = mutable_config.gas_key_hex.clone();
+        if contracts_client_guard.is_some() {
+            let res = contracts_client_guard
+                .as_ref()
+                .unwrap()
+                .common_chain_txn_manager
                 .update_private_signer(mutable_config.gas_key_hex.clone());
             if let Err(e) = res {
-                return (StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to update the private signer for the request chain txn manager: {}\n", e)
-                ).into_response();
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "Failed to update the private signer for the common chain txn manager: {}\n",
+                        e
+                    ),
+                )
+                    .into_response();
+            }
+
+            let mut request_chains_data = contracts_client_guard
+                .as_ref()
+                .unwrap()
+                .request_chains_data
+                .write()
+                .unwrap();
+            for request_chain_data in request_chains_data.values_mut() {
+                let res = request_chain_data
+                    .request_chain_txn_manager
+                    .update_private_signer(mutable_config.gas_key_hex.clone());
+                if let Err(e) = res {
+                    return (StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to update the private signer for the request chain txn manager: {}\n", e)
+                    ).into_response();
+                }
             }
         }
     }
@@ -630,7 +624,7 @@ mod api_impl_tests {
 
     use crate::test_util::{
         generate_app_state, new_app, CHAIN_ID, GAS_WALLET_KEY, GAS_WALLET_PUBLIC_ADDRESS,
-        OWNER_ADDRESS,
+        OWNER_ADDRESS, WS_API_KEY,
     };
 
     // Test the response for the 'index' endpoint
@@ -712,10 +706,29 @@ mod api_impl_tests {
         let app_state = generate_app_state().await;
         let server = TestServer::new(new_app(app_state.clone())).unwrap();
 
+        // Inject invalid ws api key
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY,
+                "ws_api_key": "&&",
+            }))
+            .await;
+
+        resp.assert_status_bad_request();
+        resp.assert_text("Invalid ws api key provided!\n");
+        assert!(!*app_state.immutable_params_injected.lock().unwrap());
+        assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
+        assert_eq!(*app_state.wallet.read().unwrap(), String::new());
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), String::new());
+
         // Inject invalid hex private key string
         let resp = server
             .post("/mutable-config")
-            .json(&json!({"gas_key_hex": "0x32255"}))
+            .json(&json!({
+                "gas_key_hex": "0x32255",
+                "ws_api_key": WS_API_KEY,
+            }))
             .await;
 
         resp.assert_status_bad_request();
@@ -723,12 +736,14 @@ mod api_impl_tests {
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), String::new());
 
         // Inject invalid private(signing) key
         let resp = server
             .post("/mutable-config")
             .json(&json!({
                 "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "ws_api_key": WS_API_KEY,
             }))
             .await;
 
@@ -739,22 +754,30 @@ mod api_impl_tests {
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), String::new());
 
         // Inject invalid gas private key hex string (not ecdsa valid key)
         let resp = server
             .post("/mutable-config")
-            .json(&json!({"gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}))
+            .json(&json!({
+                "gas_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "ws_api_key": WS_API_KEY,
+            }))
             .await;
         resp.assert_status_bad_request();
         resp.assert_text("Failed to parse the gas private key into a private key signer: EcdsaError(signature::Error { source: None })\n");
         assert!(!*app_state.immutable_params_injected.lock().unwrap());
         assert!(!app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), String::new());
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), String::new());
 
         // Inject a valid private key for gas wallet
         let resp = server
             .post("/mutable-config")
-            .json(&json!({"gas_key_hex": GAS_WALLET_KEY}))
+            .json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY,
+                "ws_api_key": WS_API_KEY,
+            }))
             .await;
         resp.assert_status_ok();
         resp.assert_text("Mutable params configured!\n");
@@ -767,6 +790,7 @@ mod api_impl_tests {
             .registration_events_listener_active
             .lock()
             .unwrap());
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), WS_API_KEY);
 
         // Build contracts client to verify the contracts client public address
         let resp = server
@@ -799,16 +823,32 @@ mod api_impl_tests {
             GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
         );
 
+        assert_eq!(
+            *app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .ws_api_key
+                .read()
+                .unwrap(),
+            WS_API_KEY
+        );
         // Inject the same valid private key for gas wallet again
         let resp = server
             .post("/mutable-config")
-            .json(&json!({"gas_key_hex": GAS_WALLET_KEY}))
+            .json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY,
+                "ws_api_key": WS_API_KEY,
+            }))
             .await;
-        resp.assert_status(StatusCode::NOT_ACCEPTABLE);
-        resp.assert_text("The same wallet address already set.\n");
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY);
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), WS_API_KEY);
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -824,6 +864,19 @@ mod api_impl_tests {
             GAS_WALLET_PUBLIC_ADDRESS.parse::<Address>().unwrap()
         );
 
+        assert_eq!(
+            *app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .ws_api_key
+                .read()
+                .unwrap(),
+            WS_API_KEY
+        );
+
         const GAS_WALLET_KEY_2: &str =
             "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
         const GAS_WALLET_PUBLIC_ADDRESS_2: &str = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
@@ -831,13 +884,17 @@ mod api_impl_tests {
         // Inject another valid private key for gas wallet
         let resp = server
             .post("/mutable-config")
-            .json(&json!({"gas_key_hex": GAS_WALLET_KEY_2}))
+            .json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY_2,
+                "ws_api_key": WS_API_KEY,
+            }))
             .await;
         resp.assert_status_ok();
         resp.assert_text("Mutable params configured!\n");
         assert!(*app_state.immutable_params_injected.lock().unwrap());
         assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
         assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY_2);
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), WS_API_KEY);
         let gas_wallet_address = app_state
             .contracts_client
             .lock()
@@ -851,6 +908,61 @@ mod api_impl_tests {
         assert_eq!(
             gas_wallet_address,
             GAS_WALLET_PUBLIC_ADDRESS_2.parse::<Address>().unwrap()
+        );
+        assert_eq!(
+            *app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .ws_api_key
+                .read()
+                .unwrap(),
+            WS_API_KEY
+        );
+
+        // Test update api key
+        const WS_API_KEY_2: &str = "new_ws_api_key";
+        let resp = server
+            .post("/mutable-config")
+            .json(&json!({
+                "gas_key_hex": GAS_WALLET_KEY_2,
+                "ws_api_key": WS_API_KEY_2,
+            }))
+            .await;
+
+        resp.assert_status_ok();
+        resp.assert_text("Mutable params configured!\n");
+        assert!(*app_state.immutable_params_injected.lock().unwrap());
+        assert!(app_state.mutable_params_injected.load(Ordering::SeqCst));
+        assert_eq!(*app_state.wallet.read().unwrap(), GAS_WALLET_KEY_2);
+        assert_eq!(*app_state.ws_api_key.read().unwrap(), WS_API_KEY_2);
+        let gas_wallet_address = app_state
+            .contracts_client
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .common_chain_txn_manager
+            .clone()
+            .get_private_signer()
+            .address();
+        assert_eq!(
+            gas_wallet_address,
+            GAS_WALLET_PUBLIC_ADDRESS_2.parse::<Address>().unwrap()
+        );
+        assert_eq!(
+            *app_state
+                .contracts_client
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .ws_api_key
+                .read()
+                .unwrap(),
+            WS_API_KEY_2
         );
     }
 
@@ -1028,7 +1140,8 @@ mod api_impl_tests {
         let resp = server
             .post("/mutable-config")
             .json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
+                "gas_key_hex": GAS_WALLET_KEY,
+                "ws_api_key": WS_API_KEY,
             }))
             .await;
         resp.assert_status_ok();
@@ -1221,7 +1334,8 @@ mod api_impl_tests {
         let resp = server
             .post("/mutable-config")
             .json(&json!({
-                "gas_key_hex": GAS_WALLET_KEY
+                "gas_key_hex": GAS_WALLET_KEY,
+                "ws_api_key": WS_API_KEY,
             }))
             .await;
         resp.assert_status_ok();
@@ -1256,6 +1370,7 @@ mod api_impl_tests {
             enclave_address: app_state.enclave_address,
             owner_address: *app_state.enclave_owner.lock().unwrap(),
             gas_address,
+            ws_api_key: WS_API_KEY.to_string(),
         };
         assert_eq!(
             response.enclave_public_key,
@@ -1264,5 +1379,6 @@ mod api_impl_tests {
         assert_eq!(response.enclave_address, expected_response.enclave_address);
         assert_eq!(response.owner_address, expected_response.owner_address);
         assert_eq!(response.gas_address, expected_response.gas_address);
+        assert_eq!(response.ws_api_key, expected_response.ws_api_key);
     }
 }
