@@ -1,4 +1,3 @@
-pub mod bandwidth;
 pub mod build;
 pub mod deploy;
 pub mod doctor;

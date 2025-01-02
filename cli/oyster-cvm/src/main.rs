@@ -1,10 +1,11 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+
 mod commands;
 mod types;
+mod utils;
 
 use crate::commands::deploy::DeploymentConfig;
-
 use tracing_subscriber::EnvFilter;
 
 fn setup_logging() {
@@ -129,7 +130,7 @@ enum Commands {
 
         /// Duration in minutes
         #[arg(long, required = true)]
-        duration: u32,
+        duration_in_minutes: u32,
 
         /// Platform (amd64 or arm64)
         #[arg(long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
@@ -200,7 +201,7 @@ async fn main() -> Result<()> {
             operator,
             instance_type,
             bandwidth,
-            duration,
+            duration_in_minutes,
             platform,
             job_name,
         } => {
@@ -211,7 +212,7 @@ async fn main() -> Result<()> {
                 region: region.clone(),
                 instance_type: instance_type.clone(),
                 bandwidth: *bandwidth,
-                duration: *duration,
+                duration: *duration_in_minutes,
                 platform: platform.clone(),
                 job_name: job_name.clone(),
             };

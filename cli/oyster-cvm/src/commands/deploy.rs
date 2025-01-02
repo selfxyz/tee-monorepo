@@ -1,4 +1,4 @@
-use crate::commands::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
+use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
 use anyhow::{anyhow, Context, Result};
 use ethers::contract::abigen;
 use ethers::prelude::*;
@@ -231,27 +231,6 @@ async fn create_new_oyster_job(
 
     let gas_price = client.get_gas_price().await?;
     let buffered_gas_price = gas_price + (gas_price / 5);
-
-    info!("Gas price: {} wei", gas_price);
-    info!("Buffered gas price: {} wei", buffered_gas_price);
-    info!("Total gas cost: {} wei", buffered_gas_price * estimated_gas);
-    info!(
-        "Job creation gas estimate: {} wei ({:.6} ETH)",
-        estimated_gas,
-        estimated_gas.as_u128() as f64 / 1e18
-    );
-    info!(
-        "With 20% buffer: {} wei ({:.6} ETH)",
-        buffered_gas,
-        buffered_gas.as_u128() as f64 / 1e18
-    );
-
-    info!("Creating job with gas price: {} wei", buffered_gas_price);
-    info!(
-        "Estimated gas cost: {} wei ({:.6} ETH)",
-        buffered_gas,
-        buffered_gas.as_u128() as f64 / 1e18
-    );
 
     let tx_call = method_call.gas(buffered_gas).gas_price(buffered_gas_price);
     let pending_tx = tx_call.send().await?;
