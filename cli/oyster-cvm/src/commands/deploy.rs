@@ -1,15 +1,17 @@
 use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
+use alloy::{
+    network::{Ethereum, EthereumWallet},
+    primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
+    providers::{Provider, ProviderBuilder},
+    signers::local::PrivateKeySigner,
+    sol,
+    transports::http::Http,
+};
 use anyhow::{anyhow, Context, Result};
-use ethers::contract::abigen;
-use ethers::prelude::*;
-use ethers::providers::{Http, Provider};
-use ethers::signers::LocalWallet;
-use ethers::types::{Address, H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tokio::time::Duration;
@@ -35,15 +37,25 @@ const ATTESTATION_RETRIES: u32 = 10;
 const ATTESTATION_INTERVAL: u64 = 30;
 
 // Generate type-safe contract bindings
-abigen!(
-    ChainlinkPriceFeed, "./src/abis/chainlink_abi.json",
-    event_derives(serde::Serialize, serde::Deserialize);
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    USDC,
+    "src/abis/token_abi.json"
+);
 
-    USDC, "./src/abis/token_abi.json",
-    event_derives(serde::Serialize, serde::Deserialize);
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    OysterMarket,
+    "src/abis/oyster_market_abi.json"
+);
 
-    OysterMarket, "./src/abis/oyster_market_abi.json",
-    event_derives(serde::Serialize, serde::Deserialize)
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    ChainlinkPriceFeed,
+    "src/abis/chainlink_abi.json"
 );
 
 #[derive(Debug)]
@@ -109,10 +121,17 @@ pub async fn deploy_oyster_instance(
     }
 
     // Setup wallet and provider
-    let wallet =
-        LocalWallet::from_bytes(&hex::decode(wallet_private_key)?)?.with_chain_id(42161u64);
-    let provider = Provider::<Http>::try_from(ARBITRUM_ONE_RPC_URL)?;
-    let client = Arc::new(SignerMiddleware::new(provider.clone(), wallet.clone()));
+    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
+    let signer = PrivateKeySigner::from_bytes(&private_key)?;
+    let wallet = EthereumWallet::from(signer);
+
+    let provider = ProviderBuilder::new()
+        .with_recommended_fillers()
+        .wallet(wallet.clone())
+        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
+
+    let provider_for_costs = provider.clone();
+    let provider_for_market = provider.clone();
 
     // Fetch operator min rates with early validation
     let min_rate = find_minimum_rate_instance(
@@ -132,18 +151,18 @@ pub async fn deploy_oyster_instance(
         duration_seconds,
         config.bandwidth,
         &config.region,
-        provider.clone(),
+        provider_for_costs,
         CHAINLINK_ETH_USD_FEED.parse()?,
     )
     .await?;
 
     info!(
         "Total cost: {:.6} USDC",
-        total_cost.as_u128() as f64 / 1_000_000.0
+        total_cost.to::<u128>() as f64 / 1_000_000.0
     );
     info!(
         "Total rate: {:.6} ETH/hour",
-        total_rate.as_u128() as f64 / 1e18
+        total_rate.to::<u128>() as f64 / 1e18
     );
 
     // Create metadata
@@ -157,13 +176,15 @@ pub async fn deploy_oyster_instance(
     );
 
     // Approve USDC and create job
-    approve_usdc(total_cost, client.clone()).await?;
+    approve_usdc(total_cost, provider_for_market.clone()).await?;
+
+    // Create job
     let job_id = create_new_oyster_job(
         metadata,
-        operator.parse::<Address>()?,
+        operator.parse()?,
         total_rate,
         total_cost,
-        client.clone(),
+        provider_for_market.clone(),
     )
     .await?;
 
@@ -181,7 +202,6 @@ pub async fn deploy_oyster_instance(
             "Failed to establish TCP connection to the instance"
         ));
     }
-    info!("TCP connection established successfully");
 
     // Then check attestation
     if !check_attestation(&ip_address).await {
@@ -192,55 +212,51 @@ pub async fn deploy_oyster_instance(
     Ok(())
 }
 
-async fn approve_usdc(
-    amount: U256,
-    client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
-) -> Result<()> {
+async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Ethereum>) -> Result<()> {
     let usdc_address: Address = USDC_ADDRESS.parse()?;
-    let usdc = USDC::new(usdc_address, client.clone());
     let market_address: Address = OYSTER_MARKET_ADDRESS.parse()?;
 
-    let approve_call = usdc.approve(market_address, amount);
-    let estimated_gas = approve_call.estimate_gas().await?;
-    let (buffered_gas, buffered_gas_price) =
-        calculate_gas_parameters(estimated_gas, &client).await?;
+    let usdc = USDC::new(usdc_address, provider);
+    let tx_hash = usdc
+        .approve(market_address, amount)
+        .send()
+        .await?
+        .watch()
+        .await?;
 
-    info!("Approving USDC spend...");
-    let tx_call = approve_call.gas(buffered_gas).gas_price(buffered_gas_price);
-    let tx = tx_call.send().await?;
-
-    info!("USDC approval transaction: {:?}", tx.tx_hash());
-    tx.await?;
+    info!("USDC approval transaction: {:?}", tx_hash);
     Ok(())
 }
 
 async fn create_new_oyster_job(
     metadata: String,
-    provider: Address,
+    provider_addr: Address,
     rate: U256,
     balance: U256,
-    client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
+    provider: impl Provider<Http<Client>, Ethereum> + Clone,
 ) -> Result<H256> {
     let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
 
-    let method_call = OysterMarket::new(market_address, client.clone())
-        .job_open(metadata, provider, rate, balance);
+    // Load OysterMarket contract using Alloy
+    let provider_clone = provider.clone();
+    let market = OysterMarket::new(market_address, provider_clone);
 
-    let estimated_gas = method_call.estimate_gas().await?;
-    let buffered_gas = estimated_gas + (estimated_gas / 5);
+    // Create job_open call
+    let tx_hash = market
+        .jobOpen(metadata, provider_addr, rate, balance)
+        .send()
+        .await?
+        .watch()
+        .await?;
+    info!("Job creation transaction: {:?}", tx_hash);
 
-    let gas_price = client.get_gas_price().await?;
-    let buffered_gas_price = gas_price + (gas_price / 5);
-
-    let tx_call = method_call.gas(buffered_gas).gas_price(buffered_gas_price);
-    let pending_tx = tx_call.send().await?;
-
-    info!("Job creation transaction: {:?}", pending_tx.tx_hash());
-
-    let receipt = pending_tx.await?.context("No receipt found")?;
+    let receipt = provider
+        .get_transaction_receipt(tx_hash)
+        .await?
+        .ok_or_else(|| anyhow!("Transaction receipt not found"))?;
 
     // Add logging to check transaction status
-    if !receipt.status.unwrap_or_default().is_zero() {
+    if receipt.status() {
         info!("Transaction successful! Waiting 3 minutes for job initialization...");
         tokio::time::sleep(StdDuration::from_secs(180)).await;
     } else {
@@ -249,29 +265,20 @@ async fn create_new_oyster_job(
 
     // Calculate event signature hash
     let job_opened_signature = "JobOpened(bytes32,string,address,address,uint256,uint256,uint256)";
-    let job_opened_topic = ethers::utils::keccak256(job_opened_signature.as_bytes());
-
-    // Log all events for debugging
-    info!("Transaction events:");
-    for (idx, log) in receipt.logs.iter().enumerate() {
-        info!("Log #{}", idx);
-        info!("  Address: {:?}", log.address);
-        info!("  Topics: {:?}", log.topics);
-        info!("  Data: 0x{}", hex::encode(&log.data));
-    }
+    let job_opened_topic = keccak256(job_opened_signature.as_bytes());
 
     // Look for JobOpened event
-    for log in receipt.logs.iter() {
-        if log.topics[0] == H256::from_slice(&job_opened_topic) {
+    for log in receipt.inner.logs().iter() {
+        if log.topics()[0] == job_opened_topic {
             info!("Found JobOpened event");
-            return Ok(log.topics[1]);
+            return Ok(log.topics()[1]);
         }
     }
 
     // If we can't find the JobOpened event
     info!("No JobOpened event found. All topics:");
-    for log in receipt.logs.iter() {
-        info!("Event topics: {:?}", log.topics);
+    for log in receipt.inner.logs().iter() {
+        info!("Event topics: {:?}", log.topics());
     }
 
     Err(anyhow!(
@@ -412,44 +419,31 @@ fn find_minimum_rate_instance(
     memory: u32,
     arch: &str,
 ) -> Result<InstanceRate> {
-    // First find the rate card for the specified region
-    let rate_card = operator
+    operator
         .min_rates
         .iter()
         .find(|rate_card| rate_card.region == region)
-        .ok_or_else(|| anyhow!("No rate card found for region: {}", region))?;
-
-    // Find matching instance rates
-    let matching_rates: Vec<InstanceRate> = rate_card
+        .ok_or_else(|| anyhow!("No rate card found for region: {}", region))?
         .rate_cards
         .iter()
-        .filter(|instance_rate| {
-            instance_rate.instance == instance
-                && instance_rate.cpu == vcpu
-                && instance_rate.memory == memory
-                && instance_rate.arch == arch
+        .filter(|rate| {
+            rate.instance == instance
+            && rate.cpu == vcpu
+            && rate.memory == memory
+            && rate.arch == arch
         })
-        .cloned()
-        .collect();
-
-    if matching_rates.is_empty() {
-        return Err(anyhow!(
-            "No matching instance rate found for region: {}, instance: {}, vcpu: {}, memory: {}, arch: {}",
-            region, instance, vcpu, memory, arch
-        ));
-    }
-
-    // Find the minimum rate among matching instances
-    Ok(matching_rates
-        .into_iter()
         .min_by(|a, b| {
             let a_rate = U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16)
-                .unwrap_or(U256::max_value());
+                .unwrap_or(U256::MAX);
             let b_rate = U256::from_str_radix(b.min_rate.trim_start_matches("0x"), 16)
-                .unwrap_or(U256::max_value());
+                .unwrap_or(U256::MAX);
             a_rate.cmp(&b_rate)
         })
-        .unwrap())
+        .cloned()
+        .ok_or_else(|| anyhow!(
+            "No matching instance rate found for region: {}, instance: {}, vcpu: {}, memory: {}, arch: {}",
+            region, instance, vcpu, memory, arch
+        ))
 }
 
 async fn calculate_total_cost(
@@ -457,7 +451,7 @@ async fn calculate_total_cost(
     duration: u64,
     bandwidth: u32,
     region: &str,
-    provider: Provider<Http>,
+    provider: impl Provider<Http<Client>, Ethereum> + Clone,
     price_feed_address: Address,
 ) -> Result<(U256, U256)> {
     let instance_hourly_rate_eth =
@@ -469,7 +463,7 @@ async fn calculate_total_cost(
                 convert_eth_to_usdc(
                     provider.clone(),
                     price_feed_address,
-                    instance_hourly_rate_eth.as_u64(),
+                    instance_hourly_rate_eth.to::<u64>(),
                 )
                 .await
             },
@@ -479,7 +473,7 @@ async fn calculate_total_cost(
         .await?,
     );
 
-    let instance_secondly_rate_scaled = instance_hourly_rate_scaled / 3600;
+    let instance_secondly_rate_scaled = instance_hourly_rate_scaled / U256::from(3600);
     let instance_cost_scaled = U256::from(duration) * instance_secondly_rate_scaled;
 
     let bandwidth_rate_region = get_bandwidth_rate_for_region(region);
@@ -490,32 +484,27 @@ async fn calculate_total_cost(
         duration,
     ));
 
-    let bandwidth_rate_scaled = bandwidth_cost_scaled / duration;
-    let total_cost_scaled = (instance_cost_scaled + bandwidth_cost_scaled) / U256::exp10(12);
+    let bandwidth_rate_scaled = bandwidth_cost_scaled / U256::from(duration);
+    let total_cost_scaled = (instance_cost_scaled + bandwidth_cost_scaled) / U256::from(1e12);
     let total_rate_scaled = instance_hourly_rate_eth + bandwidth_rate_scaled;
 
     Ok((total_cost_scaled, total_rate_scaled))
 }
 
 async fn convert_eth_to_usdc(
-    provider: Provider<Http>,
+    provider: impl Provider<Http<Client>, Ethereum>,
     price_feed_address: Address,
     amount_eth: u64,
 ) -> Result<u64> {
-    let client = Arc::new(provider);
-    let price_feed_abi = include_bytes!("../abis/chainlink_abi.json");
-    let price_feed_abi = ethers::abi::Abi::load(price_feed_abi.as_ref())?;
-    let price_feed_contract = Contract::new(price_feed_address, price_feed_abi, client.clone());
+    let price_feed_contract = ChainlinkPriceFeed::new(price_feed_address, provider);
 
-    let (_, price, _, _, _) = price_feed_contract
-        .method::<_, (u8, I256, U256, U256, u8)>("latestRoundData", ())?
-        .call()
-        .await?;
+    let ChainlinkPriceFeed::latestRoundDataReturn { answer: price, .. } =
+        price_feed_contract.latestRoundData().call().await?;
     let price_usd = U256::from(price.as_u64());
     let amount_eth = U256::from(amount_eth);
-    let amount_usdc = (amount_eth * price_usd) / U256::exp10(8);
+    let amount_usdc = (amount_eth * price_usd) / U256::from(1e8);
 
-    Ok(amount_usdc.as_u64())
+    Ok(amount_usdc.to::<u64>())
 }
 
 async fn retry_with_backoff<T, Fut, F>(
@@ -545,14 +534,4 @@ where
             }
         }
     }
-}
-
-async fn calculate_gas_parameters(
-    estimated_gas: U256,
-    client: &SignerMiddleware<Provider<Http>, LocalWallet>,
-) -> Result<(U256, U256)> {
-    let buffered_gas = estimated_gas + (estimated_gas * 20 / 100);
-    let gas_price = client.get_gas_price().await?;
-    let buffered_gas_price = gas_price + (gas_price * 20 / 100);
-    Ok((buffered_gas, buffered_gas_price))
 }
