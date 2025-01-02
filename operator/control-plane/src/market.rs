@@ -323,7 +323,7 @@ async fn new_jobs(
 
     // get logs up to cutoff
     let old_logs = client
-        .get_logs(&event_filter.select(0..cutoff))
+        .get_logs(&event_filter.select(0..=cutoff))
         .await
         .context("failed to query old logs")?;
 
@@ -1195,7 +1195,7 @@ async fn job_logs(
 
     // get logs up to cutoff
     let old_logs = client
-        .get_logs(&event_filter.select(0..cutoff))
+        .get_logs(&event_filter.select(0..=cutoff))
         .await
         .context("failed to query old logs")?;
 
