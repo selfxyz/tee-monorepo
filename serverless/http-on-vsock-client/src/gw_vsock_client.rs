@@ -41,33 +41,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
         return Err(err.into());
-    };
+    }
 
     // prepare the post request
     let body = json!({
         "owner_address_hex": cli.owner_address.clone(),
-    }).to_string();
-    let request = Request::post(cli.url.clone()+"immutable-config")
+    })
+    .to_string();
+    let request = Request::post(cli.url.clone() + "immutable-config")
         .header("Content-Type", "application/json")
         .body(Body::from(body))?;
     let mut resp = client.request(request).await?;
     println!("{:?}", resp.status());
-    println!("{:?}", String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?);
+    println!(
+        "{:?}",
+        String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?
+    );
 
     // set mutable config
     let body = json!({
         "gas_key_hex": cli.gas_key.clone(),
-    }).to_string();
-    let request = Request::post(cli.url.clone()+"mutable-config")
+    })
+    .to_string();
+    let request = Request::post(cli.url.clone() + "mutable-config")
         .header("Content-Type", "application/json")
         .body(Body::from(body))?;
     resp = client.request(request).await?;
     println!("{:?}", resp.status());
-    println!("{:?}", String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?);
-
+    println!(
+        "{:?}",
+        String::from_utf8(hyper::body::to_bytes(resp.into_body()).await?.to_vec())?
+    );
 
     // Get the config
-    resp = client.get((cli.url.clone() + "gateway-details").try_into()?).await?;
+    resp = client
+        .get((cli.url.clone() + "gateway-details").try_into()?)
+        .await?;
     let body_bytes = hyper::body::to_bytes(resp.into_body()).await?;
     let body_str = String::from_utf8(body_bytes.to_vec())?;
     let json: serde_json::Value = serde_json::from_str(&body_str)?;
@@ -76,7 +85,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start the executor
     let body = json!({
         "chain_ids": cli.chain_ids.clone(),
-    }).to_string();
+    })
+    .to_string();
     println!("{:?}", body);
     let request = Request::post(cli.url.clone() + "signed-registration-message")
         .header("Content-Type", "application/json")
