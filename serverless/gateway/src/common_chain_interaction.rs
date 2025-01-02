@@ -65,7 +65,10 @@ impl ContractsClient {
         let self_clone = Arc::clone(&self);
         tokio::spawn(async move {
             'socket_loop: loop {
-                let ws_connect = WsConnect::new(&self_clone.common_chain_ws_url);
+                let ws_connect = WsConnect::new(
+                    self_clone.common_chain_ws_url.clone()
+                        + self_clone.ws_api_key.read().unwrap().as_str(),
+                );
                 let common_chain_ws_provider = match ProviderBuilder::new().on_ws(ws_connect).await
                 {
                     Ok(common_chain_ws_provider) => common_chain_ws_provider,
@@ -124,9 +127,10 @@ impl ContractsClient {
 
             let tx_clone = tx.clone();
             let request_chain_data_clone = request_chain_data.clone();
+            let ws_api_key = self.ws_api_key.read().unwrap().clone();
             tokio::spawn(async move {
                 'socket_loop: loop {
-                    let ws_connect = WsConnect::new(&request_chain_data_clone.ws_rpc_url);
+                    let ws_connect = WsConnect::new(request_chain_data_clone.ws_rpc_url.clone() + ws_api_key.as_str());
                     let request_chain_ws_provider =
                         match ProviderBuilder::new().on_ws(ws_connect).await {
                             Ok(request_chain_ws_provider) => request_chain_ws_provider,
@@ -336,8 +340,9 @@ impl ContractsClient {
         job_subscription_tx: Sender<JobSubscriptionChannelType>,
     ) {
         loop {
+            let ws_api_key = self.ws_api_key.read().unwrap().clone();
             let req_chain_ws_client = match ProviderBuilder::new()
-                .on_ws(WsConnect::new(request_chain_data.ws_rpc_url.clone()))
+                .on_ws(WsConnect::new(request_chain_data.ws_rpc_url.clone() + ws_api_key.as_str()))
                 .await
             {
                 Ok(req_chain_ws_client) => req_chain_ws_client,
@@ -854,8 +859,9 @@ impl ContractsClient {
         req_chain_tx: Sender<Job>,
     ) {
         loop {
+            let ws_api_key = self.ws_api_key.read().unwrap().clone();
             let common_chain_ws_provider = match ProviderBuilder::new()
-                .on_ws(WsConnect::new(&self.common_chain_ws_url))
+                .on_ws(WsConnect::new(self.common_chain_ws_url.clone() + ws_api_key.as_str()))
                 .await
             {
                 Ok(common_chain_ws_provider) => common_chain_ws_provider,

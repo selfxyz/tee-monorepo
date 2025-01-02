@@ -70,6 +70,20 @@ pub async fn inject_mutable_config(
     app_state: State<AppState>,
     Json(mutable_config): Json<MutableConfig>,
 ) -> Response {
+    // Validate the user provided api key
+    if !mutable_config
+        .ws_api_key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Invalid ws api key provided!\n"),
+        )
+            .into_response();
+    }
+
+    // Validate the user provided gas wallet private key
     let mut bytes32_gas_key = [0u8; 32];
     if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
         return (
@@ -107,6 +121,8 @@ pub async fn inject_mutable_config(
     }
 
     *wallet_guard = mutable_config.gas_key_hex.clone();
+
+    *app_state.ws_api_key.write().unwrap() = mutable_config.ws_api_key.clone();
 
     if contracts_client_guard.is_some() {
         let res = contracts_client_guard
@@ -424,13 +440,17 @@ pub async fn export_signed_registration_message(
                 .into_response();
         };
 
+        let mut ws_rpc_url = request_chain_info.wsRpcUrl.to_string().clone();
+        if !ws_rpc_url.ends_with('/') {
+            ws_rpc_url.push('/');
+        }
         request_chains_data.insert(
             chain_id,
             RequestChainData {
                 chain_id,
                 relay_address: request_chain_info.relayAddress.clone(),
                 relay_subscriptions_address: request_chain_info.relaySubscriptionsAddress.clone(),
-                ws_rpc_url: request_chain_info.wsRpcUrl.to_string().clone(),
+                ws_rpc_url,
                 http_rpc_url: request_chain_info.httpRpcUrl.to_string().clone(),
                 request_chain_start_block_number: block_number,
                 confirmation_blocks: 5,
@@ -528,6 +548,7 @@ pub async fn export_signed_registration_message(
             common_chain_start_block_number: Arc::new(Mutex::new(common_chain_block_number)),
             subscription_job_instance_heap,
             subscription_jobs,
+            ws_api_key: app_state.ws_api_key.clone(),
         });
 
         *contracts_client_guard = Some(Arc::clone(&contracts_client));
@@ -590,6 +611,7 @@ pub async fn get_gateway_details(app_state: State<AppState>) -> Response {
         enclave_address: app_state.enclave_address,
         owner_address: *app_state.enclave_owner.lock().unwrap(),
         gas_address: wallet.address(),
+        ws_api_key: app_state.ws_api_key.read().unwrap().clone(),
     };
 
     (StatusCode::OK, Json(response)).into_response()
