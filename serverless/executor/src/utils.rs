@@ -135,6 +135,7 @@ pub struct JobsTxnMetadata {
     pub txn_type: JobsTxnType,
     pub job_id: U256,
     pub job_output: Option<JobOutput>,
+    pub gas_estimate_block: Option<u64>,
     pub retry_deadline: Instant,
 }
 
@@ -215,6 +216,7 @@ pub fn generate_txn(
 pub async fn estimate_gas_and_price(
     http_rpc_client: HttpSignerProvider,
     txn: &TypedTransaction,
+    mut gas_estimate_block: Option<u64>,
     deadline: Instant,
 ) -> Option<(U256, U256)> {
     let mut gas_price = U256::zero();
@@ -240,9 +242,23 @@ pub async fn estimate_gas_and_price(
         return None;
     }
 
+    if gas_estimate_block.is_none() {
+        while Instant::now() < deadline {
+            let current_block = http_rpc_client.get_block_number().await;
+            let Ok(current_block) = current_block else {
+                eprintln!("Failed to fetch the latest block number from the rpc for estimating gas of a 'Jobs' transaction: {:?}", current_block.unwrap_err());
+                continue;
+            };
+            gas_estimate_block = Some(current_block.as_u64());
+            break;
+        }
+    }
+
     while Instant::now() < deadline {
         // Estimate the gas required for the TransactionRequest from the rpc, retry otherwise
-        let estimated_gas = http_rpc_client.estimate_gas(txn, None).await;
+        let estimated_gas = http_rpc_client
+            .estimate_gas(txn, gas_estimate_block.map(|block_num| block_num.into()))
+            .await;
         let Ok(estimated_gas) = estimated_gas else {
             let error_string = format!("{:?}", estimated_gas.unwrap_err());
             eprintln!(

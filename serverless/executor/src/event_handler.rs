@@ -204,8 +204,13 @@ async fn send_execution_output(
         // Initialize retry metadata like gas price, gas limit and the need to update the nonce from the rpc
         let mut update_nonce = false;
         let http_rpc_client = app_state.http_rpc_client.lock().unwrap().clone().unwrap();
-        let Some((mut gas_limit, mut gas_price)) =
-            estimate_gas_and_price(http_rpc_client, &jobs_txn, job_response.retry_deadline).await
+        let Some((mut gas_limit, mut gas_price)) = estimate_gas_and_price(
+            http_rpc_client,
+            &jobs_txn,
+            job_response.gas_estimate_block,
+            job_response.retry_deadline,
+        )
+        .await
         else {
             // If failed to retrieve gas limit and price for the txn under the deadline, then skip this txn
             continue;
@@ -442,6 +447,7 @@ pub async fn handle_event_logs(
                             code_hash,
                             code_inputs.into(),
                             user_deadline.as_u64(),
+                            current_block.as_u64(),
                             app_state_clone,
                             tx_clone,
                         )

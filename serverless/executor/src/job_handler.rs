@@ -32,6 +32,7 @@ pub async fn handle_job(
     code_hash: String,
     code_inputs: Bytes,
     user_deadline: u64, // time in millis
+    job_create_block: u64,
     app_state: State<AppState>,
     tx: Sender<JobsTxnMetadata>,
 ) {
@@ -93,6 +94,7 @@ pub async fn handle_job(
                 sign_timestamp: sign_timestamp,
                 signature: signature.into(),
             }),
+            gas_estimate_block: Some(job_create_block),
             // The submit output transaction will be invalidated after this deadline by the 'Jobs' contract
             retry_deadline: Instant::now()
                 + Duration::from_secs(
