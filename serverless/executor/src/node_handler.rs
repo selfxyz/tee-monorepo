@@ -168,8 +168,8 @@ pub async fn inject_mutable_config(
     *app_state.http_rpc_client.lock().unwrap() = Some(http_rpc_client);
     let mut ws_rpc_url = app_state.ws_rpc_url.write().unwrap();
     // strip existing api key from the ws url by removing keys after last '/'
-    let pos = ws_rpc_url.rfind('/').unwrap_or(0);
-    let _ = ws_rpc_url.split_off(pos + 1);
+    let pos = ws_rpc_url.rfind('/').unwrap();
+    ws_rpc_url.truncate(pos + 1);
     ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
     *mutable_params_injected_guard = true;
 

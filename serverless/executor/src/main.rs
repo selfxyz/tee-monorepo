@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{anyhow, Context, Result};
+use axum::http::Uri;
 use axum::routing::{get, post};
 use axum::Router;
 use clap::Parser;
@@ -58,6 +59,19 @@ async fn main() -> Result<()> {
             .as_slice(),
     )
     .context("Invalid enclave signer key")?;
+
+    // Validate the format of the http_rpc_url and web_socket_url
+    let _ = config
+        .http_rpc_url
+        .parse::<Uri>()
+        .context("Invalid http_rpc_url format")?;
+    let _ = config
+        .web_socket_url
+        .parse::<Uri>()
+        .context("Invalid web_socket_url format")?;
+    if !config.web_socket_url.ends_with('/') {
+        return Err(anyhow!("web_socket_url should not end with a '/'"));
+    }
 
     let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());
 
