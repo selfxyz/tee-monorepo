@@ -398,7 +398,8 @@ fn create_metadata(
         "memory": memory,
         "vcpu": vcpu,
         "url": url,
-        "name": name
+        "name": name,
+        "family": "tuna"
     })
     .to_string()
 }
