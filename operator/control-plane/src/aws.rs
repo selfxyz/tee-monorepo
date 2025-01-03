@@ -342,7 +342,7 @@ impl Aws {
 
         let (_, stderr) = Self::ssh_exec(
             sess,
-            "sudo systemctl restart nitro-enclaves-allocator.service",
+            "sudo systemctl daemon-reload && sudo systemctl restart nitro-enclaves-allocator.service",
         )
         .context("Failed to restart allocator service")?;
         if !stderr.is_empty() {
