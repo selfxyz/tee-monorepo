@@ -1491,17 +1491,18 @@ impl InfraProvider for Aws {
         Err(anyhow!("Instance is still initializing"))
     }
 
-    async fn check_enclave_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
-        let res = self
-            .get_instance_state(instance_id, region)
+    async fn check_enclave_running(&mut self, job: &JobId, region: &str) -> Result<bool> {
+        let (exists, instance_id, state) = self
+            .get_job_instance_id(job, region)
             .await
-            .context("could not get current instance state")?;
-        if res != "running" && res != "pending" {
+            .context("could not get instance id for job")?;
+
+        if !exists || (state != "running" && state != "pending") {
             return Ok(false);
         }
 
         let res = self
-            .get_enclave_state(instance_id, region)
+            .get_enclave_state(&instance_id, region)
             .await
             .context("could not get current enclace state")?;
         // There can be 2 states - RUNNING or TERMINATING

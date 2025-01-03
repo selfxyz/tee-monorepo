@@ -67,7 +67,7 @@ pub trait InfraProvider {
 
     fn check_enclave_running(
         &mut self,
-        instance_id: &str,
+        job: &JobId,
         region: &str,
     ) -> impl Future<Output = Result<bool>> + Send;
 }
@@ -111,8 +111,8 @@ where
         (**self).get_job_ip(job, region).await
     }
 
-    async fn check_enclave_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
-        (**self).check_enclave_running(instance_id, region).await
+    async fn check_enclave_running(&mut self, job: &JobId, region: &str) -> Result<bool> {
+        (**self).check_enclave_running(job, region).await
     }
 }
 
@@ -527,7 +527,7 @@ impl<'a> JobState<'a> {
 
     async fn heartbeat_check(&mut self, mut infra_provider: impl InfraProvider) {
         let Ok(is_enclave_running) = infra_provider
-            .check_enclave_running(&self.instance_id, &self.region)
+            .check_enclave_running(&self.job_id, &self.region)
             .await
             .inspect_err(|err| error!(?err, "Failed to retrieve enclave state"))
         else {
