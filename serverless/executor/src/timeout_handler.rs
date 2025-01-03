@@ -35,6 +35,7 @@ pub async fn handle_timeout(
             txn_type: JobsTxnType::TIMEOUT,
             job_id: job_id,
             job_output: None,
+            gas_estimate_block: None,
             retry_deadline: Instant::now() + Duration::from_secs(TIMEOUT_TXN_RESEND_DEADLINE),
         })
         .await
