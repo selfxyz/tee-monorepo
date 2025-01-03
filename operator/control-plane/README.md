@@ -12,7 +12,7 @@ The control plane manages EC2 instances and Elastic IPs. All resources are tagge
 - `chainID`, set to the chain ID of the `rpc` cli parameter
 - `contractAddress`, set to the `contract` cli parameter
 
-Be careful using one or more of the same tags for any other instances running in the account, it might interfere with proper operation of the contol plane.
+Be careful using one or more of the same tags for any other instances running in the account, it might interfere with proper operation of the control plane.
  
 ## Build
 
