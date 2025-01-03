@@ -33,6 +33,7 @@ pub fn build_oyster_image(
         .args([
             "build",
             "--impure",
+            "--accept-flake-config",
             "--system",
             platform.nix_arch(),
             "--expr",
