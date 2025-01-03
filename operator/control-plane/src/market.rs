@@ -455,7 +455,6 @@ struct JobState<'a> {
     last_settled: Duration,
     rate: U256,
     original_rate: U256,
-    instance_id: String,
     family: String,
     min_rate: U256,
     bandwidth: u64,
@@ -492,7 +491,6 @@ impl<'a> JobState<'a> {
             last_settled: context.now_timestamp(),
             rate: U256::from(1),
             original_rate: U256::from(1),
-            instance_id: String::new(),
             // salmon is the default for jobs (usually old) without any family specified
             family: "salmon".to_owned(),
             min_rate: U256::MAX,
