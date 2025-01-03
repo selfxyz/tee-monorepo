@@ -589,9 +589,19 @@ impl Aws {
         if debug {
             // check if logger is running
             let (stdout, _) = Self::ssh_exec(sess, "sudo supervisorctl status logger")
-                .context("Failed to start logger")?;
+                .context("Failed to get logger status")?;
             if stdout.contains("RUNNING") {
                 // logger is already running
+                return Ok(());
+            }
+
+            if stdout.contains("STOPPED") {
+                // logger is stopped, just start
+                let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl start logger")
+                    .context("Failed to start logger")?;
+                if !stderr.is_empty() {
+                    return Err(anyhow!(stderr)).context("Failed to start logger");
+                }
                 return Ok(());
             }
 
