@@ -588,7 +588,7 @@ impl Aws {
     fn run_fragment_logger(sess: &Session, debug: bool) -> Result<()> {
         if debug {
             // set up logger if debug flag is set
-            let (_, stderr) = Self::ssh_exec(sess, "curl -fsS https://artifacts.marlin.org/oyster/binaries/nitro-logger_v1.0.0_linux_`uname -m | sed 's/x86_64/amd64/g; s/aarch64/arm64/g'` -o nitro-logger && chmod +x nitro-logger")
+            let (_, stderr) = Self::ssh_exec(sess, "curl -fsS https://artifacts.marlin.org/oyster/binaries/nitro-logger_v1.0.0_linux_`uname -m | sed 's/x86_64/amd64/g; s/aarch64/arm64/g'` -o /home/ubuntu/nitro-logger && chmod +x /home/ubuntu/nitro-logger")
                 .context("Failed to download logger")?;
             if !stderr.is_empty() {
                 return Err(anyhow!(stderr)).context("Failed to download logger");
