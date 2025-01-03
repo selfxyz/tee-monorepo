@@ -595,6 +595,7 @@ impl Aws {
                 return Ok(());
             }
 
+            // check if logger is stopped
             if stdout.contains("STOPPED") {
                 // logger is stopped, just start
                 let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl start logger")
