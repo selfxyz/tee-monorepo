@@ -28,6 +28,7 @@ The repository is organized into projects:
 - [sdks/go](./sdks/go/): Oyster SDK written in Go.
 - [sdks/docker-enclave](./sdks/docker-enclave/): Enclave that allows docker compose based deployment.
 - [serverless/executor](./serverless/executor/): Oyster serverless executor to execute serverless requests.
+- [serverless/executor-enclave](./serverless/executor-enclave) : Enclave that packages the Serverless Executor and supporting applications.
 - [serverless/gateway](./serverless/gateway/): Oyster serverless gateway to relay serverless requests and responses between request and common chains.
 - [serverless/gateway-enclave](./serverless/gateway-enclave/): Enclave that packages the Serverless Gateway and supporting applications.
 - [serverless/http-on-vsock-client](./serverless/http-on-vsock-client/): Client for HTTP over vsock connections.
