@@ -587,6 +587,14 @@ impl Aws {
     // if debug is false, stops the logger if it is running
     fn run_fragment_logger(sess: &Session, debug: bool) -> Result<()> {
         if debug {
+            // check if logger is running
+            let (stdout, _) = Self::ssh_exec(sess, "sudo supervisorctl status logger")
+                .context("Failed to start logger")?;
+            if stdout.contains("RUNNING") {
+                // logger is already running
+                return Ok(());
+            }
+
             // set up logger if debug flag is set
             let (_, stderr) = Self::ssh_exec(sess, "curl -fsS https://artifacts.marlin.org/oyster/binaries/nitro-logger_v1.0.0_linux_`uname -m | sed 's/x86_64/amd64/g; s/aarch64/arm64/g'` -o /home/ubuntu/nitro-logger && chmod +x /home/ubuntu/nitro-logger")
                 .context("Failed to download logger")?;
@@ -619,9 +627,9 @@ EOF
             }
         } else {
             // check if logger is running
-            let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl status logger")
+            let (stdout, _) = Self::ssh_exec(sess, "sudo supervisorctl status logger")
                 .context("Failed to start logger")?;
-            if !stderr.is_empty() {
+            if !stdout.contains("RUNNING") {
                 // logger is not running
                 return Ok(());
             }
