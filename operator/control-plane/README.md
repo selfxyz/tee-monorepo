@@ -2,7 +2,7 @@
 
 # Control Plane
 
-The control plane listens to Market contract events and automatically manages infrastructure for Oyster enclaves. A server and a properly set up AWS account is required to run the control plane, see the [provider documentation](https://docs.marlin.org/run-your-own-node/oyster/quickstart/) for more information on the prerequisites and where it fits in the broader picture.
+The control plane listens to Market contract events and automatically manages infrastructure for Oyster enclaves. A server and a properly set up AWS account is required to run the control plane, see the [operator documentation](https://docs.marlin.org/oyster/join/cvm/) for more information on the prerequisites and where it fits in the broader picture.
 
 The control plane manages EC2 instances and Elastic IPs. All resources are tagged with the following fields to make them easy to identify and manage without conflicts:
 - `managedBy`, set to `marlin`
@@ -22,25 +22,20 @@ cargo build --release
 
 ### Reproducible builds
 
-Reproducible builds can be done using a Rust Docker image to standardize the build environment:
+Reproducible builds can be done using Nix. The monorepo provides a Nix flake which includes this project and can be used to trigger builds:
 
 ```bash
-# For amd64
-docker run --rm -v `pwd`:/code rust@sha256:ed7795c6eaccae53be35939e883e8c3de0197b21e8eddbd9f04b0c4bc757c094 /code/build-amd64.sh
-
-# For arm64
-docker run --rm -v `pwd`:/code rust@sha256:c428882ff081342a9661fb13a1d059ecdc0b6e979ffec64b80371cf20a2088b0 /code/build-arm64.sh
+nix build -v .#<flavor>.operator.control-plane.<output>
 ```
 
-Expected sha256 checksums are available along with the links to the prebuilt binaries.
+Supported flavors:
+- `gnu`
+- `musl`
 
-## Prebuilt binaries
-
-amd64: https://artifacts.marlin.org/oyster/binaries/control-plane_v2.4.0_linux_amd64 \
-checksum: 51934d1b4124c79dbc09bbcb409957d10a1d5f52e12e5dbdf56a9e6ada065b7b
-
-arm64: https://artifacts.marlin.org/oyster/binaries/control-plane_v2.4.0_linux_arm64 \
-checksum: 819d09e91ccb8a7ef2d0717cc08759b428ff655378dcc264eb7703ab9cf92ab1
+Supported outputs:
+- `default`, same as `compressed`
+- `uncompressed`
+- `compressed`, using `upx`
 
 ## Usage
 
