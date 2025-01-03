@@ -18,6 +18,10 @@ struct Cli {
     #[clap(short, long, value_parser)]
     gas_key: String,
 
+    /// ws api key
+    #[clap(short, long, value_parser)]
+    ws_api_key: String,
+
     /// list of chain ids
     #[clap(short, long, value_parser)]
     chain_ids: Vec<u64>,
@@ -61,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // set mutable config
     let body = json!({
         "gas_key_hex": cli.gas_key.clone(),
+        "ws_api_key": cli.ws_api_key.clone(),
     })
     .to_string();
     let request = Request::post(cli.url.clone() + "mutable-config")

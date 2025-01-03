@@ -2593,6 +2593,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "oyster-serverless-gateway"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "axum",
+ "axum-test",
+ "clap",
+ "config",
+ "env_logger",
+ "futures-core",
+ "futures-util",
+ "http-on-vsock-server",
+ "log",
+ "multi-block-txns",
+ "once_cell",
+ "openssl",
+ "rand",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-vsock",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "3.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3369,33 +3396,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "serverless-gateway"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "axum",
- "axum-test",
- "clap",
- "config",
- "env_logger",
- "futures-core",
- "futures-util",
- "http-on-vsock-server",
- "log",
- "multi-block-txns",
- "once_cell",
- "openssl",
- "rand",
- "serde",
- "serde_derive",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tokio-vsock",
 ]
 
 [[package]]

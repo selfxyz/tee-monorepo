@@ -26,6 +26,7 @@ pub struct AppState {
     pub mutable_params_injected: Arc<AtomicBool>,
     pub registration_events_listener_active: Arc<Mutex<bool>>,
     pub contracts_client: Arc<Mutex<Option<Arc<ContractsClient>>>>,
+    pub ws_api_key: Arc<RwLock<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,6 +37,7 @@ pub struct ImmutableConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MutableConfig {
     pub gas_key_hex: String,
+    pub ws_api_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,6 +60,7 @@ pub struct GatewayDetailsResponse {
     pub enclave_address: Address,
     pub owner_address: Address,
     pub gas_address: Address,
+    pub ws_api_key: String,
 }
 
 pub enum RegisterType {
@@ -118,6 +121,7 @@ pub struct ContractsClient {
     pub common_chain_start_block_number: Arc<Mutex<u64>>,
     pub subscription_job_instance_heap: Arc<RwLock<BinaryHeap<SubscriptionJobInstanceHeap>>>,
     pub subscription_jobs: Arc<RwLock<HashMap<U256, SubscriptionJob>>>,
+    pub ws_api_key: Arc<RwLock<String>>,
 }
 
 #[derive(Debug, Clone)]

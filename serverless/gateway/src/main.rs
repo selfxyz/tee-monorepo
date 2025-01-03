@@ -55,7 +55,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     // Load the configuration file
     let args = Cli::parse();
     let config_manager = ConfigManager::new(&args.config_file);
-    let config = config_manager.load_config().unwrap();
+    let mut config = config_manager.load_config().unwrap();
 
     match Url::parse(&config.common_chain_http_url) {
         Ok(_) => (),
@@ -71,6 +71,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("Invalid common chain ws url: {}", err);
             return Err(err.into());
         }
+    }
+
+    if !config.common_chain_ws_url.ends_with('/') {
+        config.common_chain_ws_url.push('/');
     }
 
     let enclave_signer_key: SigningKey = SigningKey::from_slice(
@@ -103,6 +107,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         mutable_params_injected: Arc::new(AtomicBool::new(false)),
         registration_events_listener_active: Arc::new(Mutex::new(false)),
         contracts_client: Arc::new(Mutex::new(None)),
+        ws_api_key: Arc::new(RwLock::new(String::new())),
     };
 
     // Create App using Router
