@@ -247,6 +247,8 @@ pub async fn estimate_gas_and_price(
             let current_block = http_rpc_client.get_block_number().await;
             let Ok(current_block) = current_block else {
                 eprintln!("Failed to fetch the latest block number from the rpc for estimating gas of a 'Jobs' transaction: {:?}", current_block.unwrap_err());
+
+                sleep(Duration::from_millis(HTTP_CALL_RETRY_DELAY)).await;
                 continue;
             };
             gas_estimate_block = Some(current_block.as_u64());

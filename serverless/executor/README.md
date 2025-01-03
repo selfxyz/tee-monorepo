@@ -133,7 +133,7 @@ $ curl <executor_node_ip:executor_node_port>/signed-registration-message
 
 Before running the tests, generate the cgroups (if not already) and enable the below flag:
 ```
-sudo ./cgroupv2_setup.sh
+sudo ../executor-enclave/cgroupv2_setup.sh
 export RUSTFLAGS="--cfg tokio_unstable"
 ```
 The tests need root privileges internally. They should work as long as the shell has sudo cached, a simple `sudo echo` will ensure that.
