@@ -57,56 +57,19 @@ pub trait InfraProvider {
         req_mem: i64,
         req_vcpu: i32,
         bandwidth: u64,
-    ) -> impl Future<Output = Result<String>> + Send;
-
-    fn spin_down(
-        &mut self,
-        instance_id: &str,
-        job: &JobId,
-        region: &str,
-    ) -> impl Future<Output = Result<()>> + Send;
-
-    fn get_job_instance(
-        &self,
-        job: &JobId,
-        region: &str,
-    ) -> impl Future<Output = Result<(bool, String, String)>> + Send;
-
-    fn get_job_ip(&self, job: &JobId, region: &str) -> impl Future<Output = Result<String>> + Send;
-
-    fn check_instance_running(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-    ) -> impl Future<Output = Result<bool>> + Send;
-
-    fn check_enclave_running(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-    ) -> impl Future<Output = Result<bool>> + Send;
-
-    fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
         image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
         debug: bool,
     ) -> impl Future<Output = Result<()>> + Send;
 
-    fn update_enclave_image(
+    fn spin_down(&mut self, job: &JobId, region: &str) -> impl Future<Output = Result<()>> + Send;
+
+    fn get_job_ip(&self, job: &JobId, region: &str) -> impl Future<Output = Result<String>> + Send;
+
+    fn check_enclave_running(
         &mut self,
-        instance_id: &str,
+        job: &JobId,
         region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> impl Future<Output = Result<()>> + Send;
+    ) -> impl Future<Output = Result<bool>> + Send;
 }
 
 impl<'a, T> InfraProvider for &'a mut T
@@ -122,7 +85,9 @@ where
         req_mem: i64,
         req_vcpu: i32,
         bandwidth: u64,
-    ) -> Result<String> {
+        image_url: &str,
+        debug: bool,
+    ) -> Result<()> {
         (**self)
             .spin_up(
                 job,
@@ -132,68 +97,22 @@ where
                 req_mem,
                 req_vcpu,
                 bandwidth,
+                image_url,
+                debug,
             )
             .await
     }
 
-    async fn spin_down(&mut self, instance_id: &str, job: &JobId, region: &str) -> Result<()> {
-        (**self).spin_down(instance_id, job, region).await
-    }
-
-    async fn get_job_instance(&self, job: &JobId, region: &str) -> Result<(bool, String, String)> {
-        (**self).get_job_instance(job, region).await
+    async fn spin_down(&mut self, job: &JobId, region: &str) -> Result<()> {
+        (**self).spin_down(job, region).await
     }
 
     async fn get_job_ip(&self, job: &JobId, region: &str) -> Result<String> {
         (**self).get_job_ip(job, region).await
     }
 
-    async fn check_instance_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
-        (**self).check_instance_running(instance_id, region).await
-    }
-
-    async fn check_enclave_running(&mut self, instance_id: &str, region: &str) -> Result<bool> {
-        (**self).check_enclave_running(instance_id, region).await
-    }
-
-    async fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        (**self)
-            .run_enclave(
-                job,
-                instance_id,
-                family,
-                region,
-                image_url,
-                req_vcpu,
-                req_mem,
-                bandwidth,
-                debug,
-            )
-            .await
-    }
-
-    async fn update_enclave_image(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> Result<()> {
-        (**self)
-            .update_enclave_image(instance_id, region, eif_url, req_vcpu, req_mem)
-            .await
+    async fn check_enclave_running(&mut self, job: &JobId, region: &str) -> Result<bool> {
+        (**self).check_enclave_running(job, region).await
     }
 }
 
@@ -404,7 +323,7 @@ async fn new_jobs(
 
     // get logs up to cutoff
     let old_logs = client
-        .get_logs(&event_filter.select(0..cutoff))
+        .get_logs(&event_filter.select(0..=cutoff))
         .await
         .context("failed to query old logs")?;
 
@@ -481,7 +400,7 @@ async fn job_manager(
         )
         .await;
 
-        if res == -2 || res == 0 {
+        if res != JobResult::Retry {
             // full exit
             break;
         }
@@ -536,7 +455,6 @@ struct JobState<'a> {
     last_settled: Duration,
     rate: U256,
     original_rate: U256,
-    instance_id: String,
     family: String,
     min_rate: U256,
     bandwidth: u64,
@@ -553,8 +471,6 @@ struct JobState<'a> {
     infra_change_time: Instant,
     // whether to schedule change
     infra_change_scheduled: bool,
-    // whether to just update the eif
-    eif_update: bool,
 }
 
 impl<'a> JobState<'a> {
@@ -575,7 +491,6 @@ impl<'a> JobState<'a> {
             last_settled: context.now_timestamp(),
             rate: U256::from(1),
             original_rate: U256::from(1),
-            instance_id: String::new(),
             // salmon is the default for jobs (usually old) without any family specified
             family: "salmon".to_owned(),
             min_rate: U256::MAX,
@@ -585,11 +500,10 @@ impl<'a> JobState<'a> {
             region: "ap-south-1".to_string(),
             req_vcpus: 2,
             req_mem: 4096,
+            debug: false,
             infra_state: false,
             infra_change_time: Instant::now(),
             infra_change_scheduled: false,
-            eif_update: false,
-            debug: false,
         }
     }
 
@@ -610,56 +524,20 @@ impl<'a> JobState<'a> {
     }
 
     async fn heartbeat_check(&mut self, mut infra_provider: impl InfraProvider) {
-        let is_running = infra_provider
-            .check_instance_running(&self.instance_id, &self.region)
-            .await;
-        match is_running {
-            Err(err) => {
-                error!(?err, "Failed to retrieve instance state");
-            }
-            Ok(is_running) => {
-                if is_running {
-                    let is_enclave_running = infra_provider
-                        .check_enclave_running(&self.instance_id, &self.region)
-                        .await;
+        let Ok(is_enclave_running) = infra_provider
+            .check_enclave_running(&self.job_id, &self.region)
+            .await
+            .inspect_err(|err| error!(?err, "Failed to retrieve enclave state"))
+        else {
+            return;
+        };
 
-                    match is_enclave_running {
-                        Ok(is_enclave_running) => {
-                            if !is_enclave_running {
-                                info!("Enclave not running on the instance, running the enclave");
-                                let res = infra_provider
-                                    .run_enclave(
-                                        &self.job_id,
-                                        &self.instance_id,
-                                        &self.family,
-                                        &self.region,
-                                        &self.eif_url,
-                                        self.req_vcpus,
-                                        self.req_mem,
-                                        self.bandwidth,
-                                        self.debug,
-                                    )
-                                    .await;
-                                match res {
-                                    Ok(_) => {
-                                        info!("Enclave successfully ran on the instance");
-                                    }
-                                    Err(err) => {
-                                        error!(?err, "Failed to run enclave");
-                                    }
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            error!(?err, "Failed to retrieve enclave state");
-                        }
-                    }
-                } else if !is_running && self.rate >= self.min_rate {
-                    info!("Instance not running, scheduling new launch");
-                    self.schedule_launch(0);
-                }
-            }
+        if is_enclave_running {
+            return;
         }
+
+        info!("Enclave not running, scheduling new launch");
+        self.schedule_launch(0);
     }
 
     fn handle_insolvency(&mut self) {
@@ -685,6 +563,7 @@ impl<'a> JobState<'a> {
         info!("Instance termination scheduled");
     }
 
+    // exists to implement rescheduling of infra changes on errors
     async fn change_infra(&mut self, infra_provider: impl InfraProvider) -> bool {
         let res = self.change_infra_impl(infra_provider).await;
         if res {
@@ -698,62 +577,10 @@ impl<'a> JobState<'a> {
         res
     }
 
+    // on errors, return false, will be rescheduled after a short delay
     async fn change_infra_impl(&mut self, mut infra_provider: impl InfraProvider) -> bool {
-        let res = infra_provider
-            .get_job_instance(&self.job_id, &self.region)
-            .await;
-
-        if let Err(err) = res {
-            error!(?err, "Failed to get job instance");
-            return false;
-        }
-        let (exist, instance, state) = res.unwrap();
-
         if self.infra_state {
             // launch mode
-            if exist {
-                // instance exists already
-                if state == "pending" || state == "running" {
-                    // instance exists and is already running, we are done
-                    info!(instance, "Found existing healthy instance");
-                    self.instance_id = instance;
-                    if self.eif_update {
-                        // update eif
-                        let res = infra_provider
-                            .update_enclave_image(
-                                &self.instance_id,
-                                &self.region,
-                                &self.eif_url,
-                                self.req_vcpus,
-                                self.req_mem,
-                            )
-                            .await;
-                        if let Err(err) = res {
-                            error!(?err, "Failed to update eif");
-                            return false;
-                        }
-                        self.eif_update = false;
-                    }
-                    return true;
-                }
-
-                if state == "stopping" || state == "stopped" {
-                    // instance unhealthy, terminate
-                    info!(instance, "Found existing unhealthy instance");
-                    let res = infra_provider
-                        .spin_down(&instance, &self.job_id, &self.region)
-                        .await;
-                    if let Err(err) = res {
-                        error!(?err, "Failed to terminate instance");
-                        return false;
-                    }
-                }
-
-                // state is shutting-down or terminated at this point
-            }
-
-            // either no old instance or old instance was not enough, launch new one
-            info!("Launching new instance");
             let res = infra_provider
                 .spin_up(
                     &self.job_id,
@@ -763,60 +590,34 @@ impl<'a> JobState<'a> {
                     self.req_mem,
                     self.req_vcpus,
                     self.bandwidth,
+                    &self.eif_url,
+                    self.debug,
                 )
                 .await;
             if let Err(err) = res {
                 error!(?err, "Instance launch failed");
                 return false;
             }
-            self.instance_id = res.unwrap();
-            info!(self.instance_id, "Instance launched");
 
-            // try to run the enclave, ignore errors
-            let res = infra_provider
-                .run_enclave(
-                    &self.job_id,
-                    &self.instance_id,
-                    &self.family,
-                    &self.region,
-                    &self.eif_url,
-                    self.req_vcpus,
-                    self.req_mem,
-                    self.bandwidth,
-                    self.debug,
-                )
-                .await;
-            if let Err(err) = res {
-                error!(?err, "Enclave launch failed");
-                // NOTE: return true here and let heartbeat check pick up from the errors
-                return true;
-            }
+            true
         } else {
             // terminate mode
-            if !exist || state == "shutting-down" || state == "terminated" {
-                // instance does not really exist anyway, we are done
-                info!("Instance does not exist or is already terminated");
-                return true;
-            }
-
-            // terminate instance
-            info!(instance, "Terminating existing instance");
-            let res = infra_provider
-                .spin_down(&instance, &self.job_id, &self.region)
-                .await;
+            let res = infra_provider.spin_down(&self.job_id, &self.region).await;
             if let Err(err) = res {
                 error!(?err, "Failed to terminate instance");
                 return false;
             }
-        }
 
-        true
+            true
+        }
     }
 
-    // return 0 on success
-    // -1 on recoverable errors (can retry)
-    // -2 on unrecoverable errors (no point retrying)
-    // -3 when blacklist/whitelist check fails
+    // return
+    // JobResult::Success on successful processing of a log
+    // JobResult::Done on successful processing of a log which ends a job
+    // JobResult::Retry on recoverable errors, usually networking
+    // JobResult::Failed on unrecoverable errors
+    // JobResult::Internal on internal errors, usually bugs
     fn process_log(
         &mut self,
         log: Option<Log>,
@@ -824,13 +625,11 @@ impl<'a> JobState<'a> {
         gb_rates: &[GBRateCard],
         address_whitelist: &[String],
         address_blacklist: &[String],
-    ) -> i8 {
-        if log.is_none() {
+    ) -> JobResult {
+        let Some(log) = log else {
             // error in the stream, can retry with new conn
-            return -1;
-        }
-
-        let log = log.unwrap();
+            return JobResult::Retry;
+        };
         info!(topic = ?log.topics()[0], data = ?log.data(), "New log");
 
         // events
@@ -865,7 +664,7 @@ impl<'a> JobState<'a> {
                 <(String, U256, U256, U256)>::abi_decode_sequence(&log.data().data, true)
                     .inspect_err(|err| error!(?err, data = ?log.data(), "OPENED: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -886,45 +685,45 @@ impl<'a> JobState<'a> {
             let Ok(v) = serde_json::from_str::<Value>(&metadata)
                 .inspect_err(|err| error!(?err, "Error reading metadata"))
             else {
-                return -2;
+                return JobResult::Failed;
             };
 
             let Some(t) = v["instance"].as_str() else {
                 error!("Instance type not set");
-                return -2;
+                return JobResult::Failed;
             };
             self.instance_type = t.to_string();
             info!(self.instance_type, "Instance type set");
 
             let Some(t) = v["region"].as_str() else {
                 error!("Job region not set");
-                return -2;
+                return JobResult::Failed;
             };
             self.region = t.to_string();
             info!(self.region, "Job region set");
 
             if !self.allowed_regions.contains(&self.region) {
                 error!(self.region, "Region not suppported, exiting job");
-                return -2;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["memory"].as_i64() else {
                 error!("Memory not set");
-                return -2;
+                return JobResult::Failed;
             };
             self.req_mem = t;
             info!(self.req_mem, "Required memory");
 
             let Some(t) = v["vcpu"].as_i64() else {
                 error!("vcpu not set");
-                return -2;
+                return JobResult::Failed;
             };
             self.req_vcpus = t.try_into().unwrap_or(i32::MAX);
             info!(self.req_vcpus, "Required vcpu");
 
             let Some(url) = v["url"].as_str() else {
                 error!("EIF url not found! Exiting job");
-                return -2;
+                return JobResult::Failed;
             };
             self.eif_url = url.to_string();
 
@@ -941,8 +740,7 @@ impl<'a> JobState<'a> {
                 whitelist_blacklist_check(log.clone(), address_whitelist, address_blacklist);
             if !allowed {
                 // blacklisted or not whitelisted address
-                self.schedule_termination(0);
-                return -3;
+                return JobResult::Done;
             }
 
             let mut supported = false;
@@ -961,7 +759,7 @@ impl<'a> JobState<'a> {
 
             if !supported {
                 error!(self.instance_type, "Instance type not supported",);
-                return -2;
+                return JobResult::Failed;
             }
 
             info!(
@@ -984,8 +782,9 @@ impl<'a> JobState<'a> {
                     }
                 }
                 self.schedule_launch(self.launch_delay);
+                JobResult::Success
             } else {
-                self.schedule_termination(0);
+                JobResult::Done
             }
         } else if log.topics()[0] == JOB_SETTLED {
             // decode
@@ -993,7 +792,7 @@ impl<'a> JobState<'a> {
                 <(U256, U256)>::abi_decode_sequence(&log.data().data, true)
                     .inspect_err(|err| error!(?err, data = ?log.data(), "SETTLED: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1013,8 +812,10 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "SETTLED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_CLOSED {
-            self.schedule_termination(0);
+            return JobResult::Done;
         } else if log.topics()[0] == JOB_DEPOSITED {
             // decode
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
@@ -1022,7 +823,7 @@ impl<'a> JobState<'a> {
             let Ok(amount) = U256::abi_decode(&log.data().data, true)
                 .inspect_err(|err| error!(?err, data = ?log.data(), "DEPOSITED: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1041,6 +842,8 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "DEPOSITED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_WITHDREW {
             // decode
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
@@ -1048,7 +851,7 @@ impl<'a> JobState<'a> {
             let Ok(amount) = U256::abi_decode(&log.data().data, true)
                 .inspect_err(|err| error!(?err, data = ?log.data(), "WITHDREW: Decode failure"))
             else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1067,13 +870,15 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "WITHDREW",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_REVISE_RATE_INITIATED {
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
             // if this is changed in the future
             let Ok(new_rate) = U256::abi_decode(&log.data().data, true).inspect_err(
                 |err| error!(?err, data = ?log.data(), "JOB_REVISE_RATE_INTIATED: Decode failure"),
             ) else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1086,8 +891,8 @@ impl<'a> JobState<'a> {
             self.original_rate = self.rate;
             self.rate = new_rate;
             if self.rate < self.min_rate {
-                self.schedule_termination(0);
                 info!("Revised job rate below min rate, shut down");
+                return JobResult::Done;
             }
             info!(
                 self.original_rate = self.original_rate.to_string(),
@@ -1096,6 +901,8 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "JOB_REVISE_RATE_INTIATED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_REVISE_RATE_CANCELLED {
             info!(
                 rate = self.rate.to_string(),
@@ -1110,13 +917,15 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "JOB_REVISE_RATE_CANCELLED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == JOB_REVISE_RATE_FINALIZED {
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
             // if this is changed in the future
             let Ok(new_rate) = U256::abi_decode(&log.data().data, true).inspect_err(
                 |err| error!(?err, data = ?log.data(), "JOB_REVISE_RATE_FINALIZED: Decode failure"),
             ) else {
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(
@@ -1128,7 +937,7 @@ impl<'a> JobState<'a> {
             );
             if self.rate != new_rate {
                 error!("Something went wrong, finalized rate not same as initiated rate");
-                return -2;
+                return JobResult::Internal;
             }
             self.original_rate = new_rate;
             info!(
@@ -1138,14 +947,15 @@ impl<'a> JobState<'a> {
                 last_settled = self.last_settled.as_secs(),
                 "JOB_REVISE_RATE_FINALIZED",
             );
+
+            return JobResult::Success;
         } else if log.topics()[0] == METADATA_UPDATED {
             // IMPORTANT: Tuples have to be decoded using abi_decode_sequence
             // if this is changed in the future
             let Ok(metadata) = String::abi_decode(&log.data().data, true).inspect_err(
                 |err| error!(?err, data = ?log.data(), "METADATA_UPDATED: Decode failure"),
             ) else {
-                error!(data = ?log.data(), "METADATA_UPDATED: Decode failure");
-                return -2;
+                return JobResult::Internal;
             };
 
             info!(metadata, "METADATA_UPDATED");
@@ -1153,90 +963,86 @@ impl<'a> JobState<'a> {
             let Ok(v) = serde_json::from_str::<Value>(&metadata)
                 .inspect_err(|err| error!(?err, "Error reading metadata"))
             else {
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             };
 
             let Some(t) = v["instance"].as_str() else {
                 error!("Instance type not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             };
             if self.instance_type != t {
                 error!("Instance type change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["region"].as_str() else {
                 error!("Job region not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             };
             if self.region != t {
                 error!("Region change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["memory"].as_i64() else {
                 error!("Memory not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             };
             if self.req_mem != t {
                 error!("Memory change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             }
 
             let Some(t) = v["vcpu"].as_i64() else {
                 error!("vcpu not set");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             };
             if self.req_vcpus != t.try_into().unwrap_or(2) {
                 error!("vcpu change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             }
 
             let family = v["family"].as_str();
             if family.is_some() && self.family != family.unwrap() {
                 error!("Family change not allowed");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             }
 
-            let debug = v["debug"].as_bool();
-            if self.debug != debug.unwrap_or(false) {
-                error!("Debug change not allowed");
-                self.schedule_termination(0);
-                return -2;
-            }
+            let debug = v["debug"].as_bool().unwrap_or(false);
+            self.debug = debug;
 
             let Some(url) = v["url"].as_str() else {
                 error!("EIF url not found! Exiting job");
-                self.schedule_termination(0);
-                return -2;
+                return JobResult::Failed;
             };
-            if self.eif_url == url {
-                error!("No url change for EIF update event");
-                self.schedule_termination(0);
-                return -2;
-            }
+
             self.eif_url = url.to_string();
-            self.eif_update = true;
-            // WARN: this effectively delays the launch
-            // should revisit and see if it is desirable
-            self.schedule_launch(self.launch_delay);
+
+            // schedule change immediately if not already scheduled
+            if !self.infra_change_scheduled {
+                self.schedule_launch(0);
+            }
+
+            return JobResult::Success;
         } else {
             error!(topic = ?log.topics()[0], "Unknown event");
-            return -2;
+            return JobResult::Failed;
         }
-
-        0
     }
+}
+
+#[derive(PartialEq, Debug)]
+enum JobResult {
+    // success
+    Success,
+    // done, should still terminate instance, if any
+    Done,
+    // error, can retry with a new conn
+    Retry,
+    // error, should terminate instance, if any
+    Failed,
+    // error, likely internal bug, exit but do not terminate instance
+    Internal,
 }
 
 // manage the complete lifecycle of a job
@@ -1252,10 +1058,22 @@ async fn job_manager_once(
     gb_rates: &[GBRateCard],
     address_whitelist: &[String],
     address_blacklist: &[String],
-) -> i8 {
+) -> JobResult {
     let mut state = JobState::new(&context, job_id, aws_delay_duration, allowed_regions);
 
-    let res = 'event: loop {
+    // usually tracks the result of the last log processed
+    let mut job_result = JobResult::Success;
+
+    // The processing loop follows this:
+    // Keep processing events till you hit an unsuccessful processing
+    // If result is Retry or Internal, these are likely RPC issues and bugs
+    // Hence just break out, the parent function handles retrying
+    // If result is Done, the job is naturally "done", schedule termination
+    // If result is Failed, the job ran into a user error, schedule termination
+    // If job is insolvent, schedule termination
+    // Once job is successfully terminated, break out
+    // Insolvency and heartbeats only matter when job is not already scheduled for termination
+    'event: loop {
         // compute time to insolvency
         let insolvency_duration = state.insolvency_duration();
         info!(duration = insolvency_duration.as_secs(), "Insolvency after");
@@ -1268,25 +1086,42 @@ async fn job_manager_once(
         // extract as much stuff as possible outside it
         tokio::select! {
             // order matters
+            // first process all logs because they might end up closing the job
+            // then process insolvency because it might end up closing the job
+            // then infra changes
+            // then heartbeat
+            // this ensures that any log which results in a job getting closed or insolvent
+            // is given priority and the job is terminated even if other infra changes are
+            // scheduled
             biased;
 
-            log = job_stream.next() => {
-                let res = state.process_log(log, rates, gb_rates, address_whitelist, address_blacklist);
-                if res == -2 || res == -1 {
-                    break 'event res;
-                }
-            }
-
-            // running instance heartbeat check
-            // should only happen if instance id is available
-            () = sleep(Duration::from_secs(5)), if !state.instance_id.is_empty() => {
-                state.heartbeat_check(&mut infra_provider).await;
+            // keep processing logs till the processing is successful
+            log = job_stream.next(), if job_result == JobResult::Success => {
+                use JobResult::*;
+                job_result = state.process_log(log, rates, gb_rates, address_whitelist, address_blacklist);
+                match job_result {
+                    // just proceed
+                    Success => {},
+                    // terminate
+                    Done => {
+                        state.schedule_termination(0);
+                    },
+                    // break and eventually retry
+                    Retry => break 'event,
+                    // terminate
+                    Failed => {
+                        state.schedule_termination(0);
+                    },
+                    // break
+                    Internal => break 'event,
+                };
             }
 
             // insolvency check
-            // enable when termination is not already scheduled
-            () = sleep(insolvency_duration), if !state.infra_change_scheduled || state.infra_state => {
+            // enable when processing is successful
+            () = sleep(insolvency_duration), if job_result == JobResult::Success => {
                 state.handle_insolvency();
+                job_result = JobResult::Done;
             }
 
             // aws delayed spin up check
@@ -1295,19 +1130,19 @@ async fn job_manager_once(
                 let res = state.change_infra(&mut infra_provider).await;
                 if res && !state.infra_state {
                     // successful termination, exit
-                    break 'event 0;
+                    break 'event;
                 }
             }
-        }
-    };
 
-    if res == 0 {
-        info!(res, "Job stream ended");
-    } else {
-        error!(res, "Job stream ended");
+            // running instance heartbeat check
+            // should only happen if infra change is not scheduled
+            () = sleep(Duration::from_secs(5)), if !state.infra_change_scheduled => {
+                state.heartbeat_check(&mut infra_provider).await;
+            }
+        }
     }
 
-    res
+    job_result
 }
 
 async fn job_logs(
@@ -1358,7 +1193,7 @@ async fn job_logs(
 
     // get logs up to cutoff
     let old_logs = client
-        .get_logs(&event_filter.select(0..cutoff))
+        .get_logs(&event_filter.select(0..=cutoff))
         .await
         .context("failed to query old logs")?;
 
@@ -1389,7 +1224,7 @@ mod tests {
         self, compute_address_word, compute_instance_id, Action, TestAws, TestAwsOutcome,
     };
 
-    use super::SystemContext;
+    use super::{JobResult, SystemContext};
 
     struct TestSystemContext {
         start: Instant,
@@ -1409,7 +1244,7 @@ mod tests {
     }
 
     struct TestResults {
-        res: i8,
+        res: JobResult,
         outcomes: Vec<TestAwsOutcome>,
     }
 
@@ -1480,7 +1315,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1491,26 +1326,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(301),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1542,7 +1366,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1553,26 +1377,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: true,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: true,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(301),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1604,7 +1417,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1615,26 +1428,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "tuna".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(301),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1669,7 +1471,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1680,26 +1482,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1735,7 +1526,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -1746,26 +1537,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -1797,8 +1577,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Failed,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-east-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1827,8 +1611,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Failed,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1857,8 +1645,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Failed,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1887,8 +1679,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Failed,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1917,8 +1713,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Failed,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1947,8 +1747,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
-            outcomes: vec![],
+            res: JobResult::Done,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -1977,8 +1781,12 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
-            outcomes: vec![],
+            res: JobResult::Done,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2010,7 +1818,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2021,26 +1829,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(350),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2075,7 +1872,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2086,26 +1883,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(350),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2140,7 +1926,7 @@ mod tests {
         // expected to deploy
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2151,26 +1937,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(500),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2205,8 +1980,12 @@ mod tests {
         // expected to not deploy
 
         let test_results = TestResults {
-            res: 0,
-            outcomes: vec![],
+            res: JobResult::Done,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2238,8 +2017,12 @@ mod tests {
         // expected to not deploy
 
         let test_results = TestResults {
-            res: 0,
-            outcomes: vec![],
+            res: JobResult::Done,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(0),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2271,7 +2054,7 @@ mod tests {
         // expected to deploy
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2282,26 +2065,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(300),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(500),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2509,7 +2281,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_eif_update_after_spin_up() {
+    async fn test_eif_update_before_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
 
@@ -2532,10 +2304,10 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: 0,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
-                    time: start_time + Duration::from_secs(400),
+                    time: start_time + Duration::from_secs(300),
                     job: job_id.clone(),
                     instance_type: "c6a.xlarge".into(),
                     family: "salmon".into(),
@@ -2543,26 +2315,15 @@ mod tests {
                     req_mem: 4096,
                     req_vcpu: 2,
                     bandwidth: 76,
+                    image_url: "https://example.com/updated-enclave.eif".into(),
+                    debug: false,
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::RunEnclave(test::RunEnclaveOutcome {
-                    time: start_time + Duration::from_secs(400),
-                    job: job_id.clone(),
-                    family: "salmon".into(),
-                    region: "ap-south-1".into(),
-                    req_mem: 4096,
-                    req_vcpu: 2,
-                    bandwidth: 76,
-                    instance_id: compute_instance_id(0),
-                    eif_url: "https://example.com/updated-enclave.eif".into(),
-                    debug: false,
-                }),
                 TestAwsOutcome::SpinDown(test::SpinDownOutcome {
                     time: start_time + Duration::from_secs(505),
                     job: job_id,
-                    instance_id: compute_instance_id(0),
                     region: "ap-south-1".into(),
                 }),
             ],
@@ -2572,7 +2333,59 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_other_metadata_update_after_spin_up() {
+    async fn test_debug_update_before_spin_up() {
+        let start_time = Instant::now();
+        let job_id = format!("{:064x}", 1);
+
+        let logs = vec![
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"debug\":true}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            (100, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string().abi_encode()),
+            (505, Action::Close, [].into()),
+        ];
+
+        let job_manager_params = JobManagerParams {
+            job_id: market::JobId {
+                id: job_id.clone(),
+                operator: "abc".into(),
+                contract: "xyz".into(),
+                chain: "123".into(),
+            },
+            allowed_regions: vec!["ap-south-1".to_owned()],
+            address_whitelist: vec![],
+            address_blacklist: vec![],
+        };
+
+        let test_results = TestResults {
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
+        };
+
+        run_test(start_time, logs, job_manager_params, test_results).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_other_metadata_update_before_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
 
@@ -2596,16 +2409,19 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Failed,
+            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                time: start_time + Duration::from_secs(100),
+                job: job_id,
+                region: "ap-south-1".into(),
+            })],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
     }
 
-    // TODO: Should this work like this?
     #[tokio::test(start_paused = true)]
-    async fn test_metadata_update_event_with_no_updates_after_spin_up() {
+    async fn test_metadata_update_event_with_no_updates_before_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
 
@@ -2628,8 +2444,283 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: -2,
-            outcomes: vec![],
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
+        };
+
+        run_test(start_time, logs, job_manager_params, test_results).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_eif_update_after_spin_up() {
+        let start_time = Instant::now();
+        let job_id = format!("{:064x}", 1);
+
+        let logs = vec![
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            (400, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/updated-enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string().abi_encode()),
+            (505, Action::Close, [].into()),
+        ];
+
+        let job_manager_params = JobManagerParams {
+            job_id: market::JobId {
+                id: job_id.clone(),
+                operator: "abc".into(),
+                contract: "xyz".into(),
+                chain: "123".into(),
+            },
+            allowed_regions: vec!["ap-south-1".to_owned()],
+            address_whitelist: vec![],
+            address_blacklist: vec![],
+        };
+
+        let test_results = TestResults {
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(400),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/updated-enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
+        };
+
+        run_test(start_time, logs, job_manager_params, test_results).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_debug_update_after_spin_up() {
+        let start_time = Instant::now();
+        let job_id = format!("{:064x}", 1);
+
+        let logs = vec![
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"debug\":true}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            (400, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string().abi_encode()),
+            (505, Action::Close, [].into()),
+        ];
+
+        let job_manager_params = JobManagerParams {
+            job_id: market::JobId {
+                id: job_id.clone(),
+                operator: "abc".into(),
+                contract: "xyz".into(),
+                chain: "123".into(),
+            },
+            allowed_regions: vec!["ap-south-1".to_owned()],
+            address_whitelist: vec![],
+            address_blacklist: vec![],
+        };
+
+        let test_results = TestResults {
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: true,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(400),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
+        };
+
+        run_test(start_time, logs, job_manager_params, test_results).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_other_metadata_update_after_spin_up() {
+        let start_time = Instant::now();
+        let job_id = format!("{:064x}", 1);
+
+        let logs = vec![
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            // instance type has also been updated in the metadata. should fail this job.
+            (400, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/updated-enclave.eif\",\"instance\":\"c6a.large\",\"memory\":4096,\"vcpu\":2}".to_string().abi_encode()),
+            (505, Action::Close, [].into()),
+        ];
+
+        let job_manager_params = JobManagerParams {
+            job_id: market::JobId {
+                id: job_id.clone(),
+                operator: "abc".into(),
+                contract: "xyz".into(),
+                chain: "123".into(),
+            },
+            allowed_regions: vec!["ap-south-1".to_owned()],
+            address_whitelist: vec![],
+            address_blacklist: vec![],
+        };
+
+        let test_results = TestResults {
+            res: JobResult::Failed,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(400),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
+        };
+
+        run_test(start_time, logs, job_manager_params, test_results).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_metadata_update_event_with_no_updates_after_spin_up() {
+        let start_time = Instant::now();
+        let job_id = format!("{:064x}", 1);
+
+        let logs = vec![
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            (400, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string().abi_encode()),
+            (505, Action::Close, [].into()),
+        ];
+
+        let job_manager_params = JobManagerParams {
+            job_id: market::JobId {
+                id: job_id.clone(),
+                operator: "abc".into(),
+                contract: "xyz".into(),
+                chain: "123".into(),
+            },
+            allowed_regions: vec!["ap-south-1".to_owned()],
+            address_whitelist: vec![],
+            address_blacklist: vec![],
+        };
+
+        let test_results = TestResults {
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(400),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;

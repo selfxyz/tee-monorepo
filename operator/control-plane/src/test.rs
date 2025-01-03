@@ -23,6 +23,8 @@ pub struct SpinUpOutcome {
     pub req_mem: i64,
     pub req_vcpu: i32,
     pub bandwidth: u64,
+    pub image_url: String,
+    pub debug: bool,
     pub contract_address: String,
     pub chain_id: String,
     pub instance_id: String,
@@ -33,34 +35,7 @@ pub struct SpinUpOutcome {
 pub struct SpinDownOutcome {
     pub time: Instant,
     pub job: String,
-    pub instance_id: String,
     pub region: String,
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct RunEnclaveOutcome {
-    pub time: Instant,
-    pub job: String,
-    pub instance_id: String,
-    pub family: String,
-    pub region: String,
-    pub eif_url: String,
-    pub req_mem: i64,
-    pub req_vcpu: i32,
-    pub bandwidth: u64,
-    pub debug: bool,
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct UpdateEnclaveImageOutcome {
-    pub time: Instant,
-    pub instance_id: String,
-    pub region: String,
-    pub eif_url: String,
-    pub req_mem: i64,
-    pub req_vcpu: i32,
 }
 
 #[cfg(test)]
@@ -68,8 +43,6 @@ pub struct UpdateEnclaveImageOutcome {
 pub enum TestAwsOutcome {
     SpinUp(SpinUpOutcome),
     SpinDown(SpinDownOutcome),
-    RunEnclave(RunEnclaveOutcome),
-    UpdateEnclaveImage(UpdateEnclaveImageOutcome),
 }
 
 pub fn compute_instance_id(counter: u64) -> String {
@@ -148,7 +121,9 @@ impl InfraProvider for TestAws {
         req_mem: i64,
         req_vcpu: i32,
         bandwidth: u64,
-    ) -> Result<String> {
+        image_url: &str,
+        debug: bool,
+    ) -> Result<()> {
         let res = self.instances.get_key_value(&job.id);
         if let Some(x) = res {
             self.outcomes.push(TestAwsOutcome::SpinUp(SpinUpOutcome {
@@ -160,12 +135,14 @@ impl InfraProvider for TestAws {
                 req_mem,
                 req_vcpu,
                 bandwidth,
+                image_url: image_url.to_owned(),
+                debug,
                 contract_address: job.contract.clone(),
                 chain_id: job.chain.clone(),
                 instance_id: x.1.instance_id.clone(),
             }));
 
-            return Ok(x.1.instance_id.clone());
+            return Ok(());
         }
 
         let instance_metadata: InstanceMetadata = InstanceMetadata::new(self.counter).await;
@@ -183,35 +160,27 @@ impl InfraProvider for TestAws {
             req_mem,
             req_vcpu,
             bandwidth,
+            image_url: image_url.to_owned(),
+            debug,
             contract_address: job.contract.clone(),
             chain_id: job.chain.clone(),
             instance_id: instance_metadata.instance_id.clone(),
         }));
 
-        Ok(instance_metadata.instance_id)
+        Ok(())
     }
 
-    async fn spin_down(&mut self, instance_id: &str, job: &JobId, region: &str) -> Result<()> {
+    async fn spin_down(&mut self, job: &JobId, region: &str) -> Result<()> {
         self.outcomes
             .push(TestAwsOutcome::SpinDown(SpinDownOutcome {
                 time: Instant::now(),
                 job: job.id.clone(),
-                instance_id: instance_id.to_owned(),
                 region: region.to_owned(),
             }));
 
         self.instances.remove(&job.id);
 
         Ok(())
-    }
-
-    async fn get_job_instance(&self, job: &JobId, _region: &str) -> Result<(bool, String, String)> {
-        let res = self.instances.get_key_value(&job.id);
-        if let Some(x) = res {
-            return Ok((true, x.1.instance_id.clone(), "running".to_owned()));
-        }
-
-        Ok((false, String::new(), String::new()))
     }
 
     async fn get_job_ip(&self, job: &JobId, _region: &str) -> Result<String> {
@@ -221,64 +190,8 @@ impl InfraProvider for TestAws {
             .ok_or(anyhow!("Instance not found for job - {}", job.id))
     }
 
-    async fn check_instance_running(&mut self, _instance_id: &str, _region: &str) -> Result<bool> {
-        // println!("TEST: check_instance_running | instance_id: {}, region: {}", instance_id, region);
+    async fn check_enclave_running(&mut self, _job: &JobId, _region: &str) -> Result<bool> {
         Ok(true)
-    }
-
-    async fn check_enclave_running(&mut self, _instance_id: &str, _region: &str) -> Result<bool> {
-        Ok(true)
-    }
-
-    async fn run_enclave(
-        &mut self,
-        job: &JobId,
-        instance_id: &str,
-        family: &str,
-        region: &str,
-        image_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-        bandwidth: u64,
-        debug: bool,
-    ) -> Result<()> {
-        self.outcomes
-            .push(TestAwsOutcome::RunEnclave(RunEnclaveOutcome {
-                time: Instant::now(),
-                job: job.id.clone(),
-                instance_id: instance_id.to_owned(),
-                family: family.to_owned(),
-                region: region.to_owned(),
-                eif_url: image_url.to_owned(),
-                req_mem,
-                req_vcpu,
-                bandwidth,
-                debug,
-            }));
-
-        Ok(())
-    }
-
-    async fn update_enclave_image(
-        &mut self,
-        instance_id: &str,
-        region: &str,
-        eif_url: &str,
-        req_vcpu: i32,
-        req_mem: i64,
-    ) -> Result<()> {
-        self.outcomes.push(TestAwsOutcome::UpdateEnclaveImage(
-            UpdateEnclaveImageOutcome {
-                time: Instant::now(),
-                instance_id: instance_id.to_owned(),
-                region: region.to_owned(),
-                eif_url: eif_url.to_owned(),
-                req_mem,
-                req_vcpu,
-            },
-        ));
-
-        Ok(())
     }
 }
 
@@ -319,14 +232,14 @@ impl LogsProvider for TestLogger {
 #[cfg(test)]
 #[derive(Clone)]
 pub enum Action {
-    Open,                // metadata(region, url, instance), rate, balance, timestamp
-    Close,               //
-    Settle,              // amount, timestamp
-    Deposit,             // amount
-    Withdraw,            // amount
-    ReviseRateInitiated, // new_rate
-    ReviseRateCancelled, //
-    ReviseRateFinalized, //
+    Open,
+    Close,
+    Settle,
+    Deposit,
+    Withdraw,
+    ReviseRateInitiated,
+    ReviseRateCancelled,
+    ReviseRateFinalized,
     MetadataUpdated,
 }
 
