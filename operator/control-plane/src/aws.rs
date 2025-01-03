@@ -696,7 +696,7 @@ EOF
                 // different enclave, kill it
                 let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
 
-                if !stderr.is_empty() {
+                if !stderr.is_empty() && !stderr.contains("Successfully terminated enclave") {
                     return Err(anyhow!(stderr)).context("Error terminating enclave");
                 }
             }
