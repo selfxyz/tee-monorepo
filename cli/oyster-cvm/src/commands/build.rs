@@ -22,7 +22,7 @@ pub fn build_oyster_image(
     }
 
     let nix_expr = format!(
-        r#"((builtins.getFlake "github:marlinprotocol/oyster-monorepo?rev={}").packages.{}.musl.sdks.docker-enclave.override {{compose={};dockerImages=[{}];}}).default"#,
+        r#"((builtins.getFlake "github:marlinprotocol/oyster-monorepo/{}").packages.{}.musl.sdks.docker-enclave.override {{compose={};dockerImages=[{}];}}).default"#,
         commit_ref,
         platform.nix_arch(),
         docker_compose,
