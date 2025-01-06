@@ -96,7 +96,7 @@ Example command to run the executor locally:
 sudo ./target/x86_64-unknown-linux-musl/release/oyster-serverless-executor --vsock-addr 1:6000 --config-file ./oyster_serverless_executor_config.json
 ```
 
-<b> Initialize executor with owner address, gas wallet private key, web socket api key and generation the registration signatures </b>
+<b> Initialize executor with owner address, gas wallet private key, web socket api key and generate the registration signatures </b>
 
 For generating `executor-vsock-client`, follow the [README](../http-on-vsock-client/README.md)
 ```shell
