@@ -11,24 +11,19 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::future::Future;
+use std::str::FromStr;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
-use tokio::time::Duration;
 use tracing::info;
 
 // Network Configuration Constants
 const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
 const JOB_REFRESH_ENDPOINT: &str = "https://sk.arb1.marlin.org/operators/jobs/refresh/ArbOne/";
-const CHAINLINK_ETH_USD_FEED: &str = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612";
 const MAINNET_OPERATOR_LIST_URL: &str = "https://sk.arb1.marlin.org/operators/spec/ArbOne";
 
 // Contract Addresses
 const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
 const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
-
-const MAX_RETRIES: u32 = 10;
-const BACKOFF_DURATION: u64 = 120;
 
 // Add these constants at the top with other constants
 const IP_CHECK_RETRIES: u32 = 20; // Total number of retries for IP check
@@ -130,8 +125,12 @@ pub async fn deploy_oyster_instance(
         .wallet(wallet.clone())
         .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
 
-    let provider_for_costs = provider.clone();
     let provider_for_market = provider.clone();
+
+    let cp_url = get_operator_cp(operator, provider_for_market.clone())
+        .await
+        .context("Failed to get CP URL")?;
+    info!("CP URL for operator: {}", cp_url);
 
     // Fetch operator min rates with early validation
     let min_rate = find_minimum_rate_instance(
@@ -151,18 +150,17 @@ pub async fn deploy_oyster_instance(
         duration_seconds,
         config.bandwidth,
         &config.region,
-        provider_for_costs,
-        CHAINLINK_ETH_USD_FEED.parse()?,
+        &cp_url,
     )
     .await?;
 
     info!(
         "Total cost: {:.6} USDC",
-        total_cost.to::<u128>() as f64 / 1_000_000.0
+        total_cost.to::<u128>() as f64 / 1e6
     );
     info!(
-        "Total rate: {:.6} ETH/hour",
-        total_rate.to::<u128>() as f64 / 1e18
+        "Total rate: {:.6} USDC/hour",
+        total_rate.to::<u128>() as f64 / 1e6
     );
 
     // Create metadata
@@ -451,87 +449,43 @@ async fn calculate_total_cost(
     duration: u64,
     bandwidth: u32,
     region: &str,
-    provider: impl Provider<Http<Client>, Ethereum> + Clone,
-    price_feed_address: Address,
+    cp_url: &str,
 ) -> Result<(U256, U256)> {
-    let instance_hourly_rate_eth =
+    let instance_secondly_rate_usdc =
         U256::from_str_radix(instance_rate.min_rate.trim_start_matches("0x"), 16)?;
 
-    let instance_hourly_rate_scaled = U256::from(
-        retry_with_backoff(
-            || async {
-                convert_eth_to_usdc(
-                    provider.clone(),
-                    price_feed_address,
-                    instance_hourly_rate_eth.to::<u64>(),
-                )
-                .await
-            },
-            MAX_RETRIES,
-            Duration::from_secs(BACKOFF_DURATION),
-        )
-        .await?,
-    );
-
-    let instance_secondly_rate_scaled = instance_hourly_rate_scaled / U256::from(3600);
+    let instance_secondly_rate_scaled = instance_secondly_rate_usdc / U256::from(1e12);
     let instance_cost_scaled = U256::from(duration) * instance_secondly_rate_scaled;
 
-    let bandwidth_rate_region = get_bandwidth_rate_for_region(region);
+    let bandwidth_rate_region = get_bandwidth_rate_for_region(region, cp_url).await?;
+    let bandwidth_rate_scaled = U256::from(bandwidth_rate_region) / U256::from(1e12);
     let bandwidth_cost_scaled = U256::from(calculate_bandwidth_cost(
         &bandwidth.to_string(),
         "kbps",
-        bandwidth_rate_region,
+        bandwidth_rate_scaled.try_into().unwrap(),
         duration,
     ));
 
     let bandwidth_rate_scaled = bandwidth_cost_scaled / U256::from(duration);
-    let total_cost_scaled = (instance_cost_scaled + bandwidth_cost_scaled) / U256::from(1e12);
-    let total_rate_scaled = instance_hourly_rate_eth + bandwidth_rate_scaled;
+    let total_cost_scaled = instance_cost_scaled + bandwidth_cost_scaled;
+    let total_rate_scaled =
+        (instance_secondly_rate_scaled + bandwidth_rate_scaled) * U256::from(3600);
 
     Ok((total_cost_scaled, total_rate_scaled))
 }
 
-async fn convert_eth_to_usdc(
+async fn get_operator_cp(
+    provider_address: &str,
     provider: impl Provider<Http<Client>, Ethereum>,
-    price_feed_address: Address,
-    amount_eth: u64,
-) -> Result<u64> {
-    let price_feed_contract = ChainlinkPriceFeed::new(price_feed_address, provider);
+) -> Result<String> {
+    let market_address = Address::from_str(OYSTER_MARKET_ADDRESS)?;
+    let provider_address = Address::from_str(provider_address)?;
 
-    let ChainlinkPriceFeed::latestRoundDataReturn { answer: price, .. } =
-        price_feed_contract.latestRoundData().call().await?;
-    let price_usd = U256::from(price.as_u64());
-    let amount_eth = U256::from(amount_eth);
-    let amount_usdc = (amount_eth * price_usd) / U256::from(1e8);
+    // Create contract instance
+    let market = OysterMarket::new(market_address, provider);
 
-    Ok(amount_usdc.to::<u64>())
-}
+    // Call providers function to get CP URL
+    let cp_url = market.providers(provider_address).call().await?.cp;
 
-async fn retry_with_backoff<T, Fut, F>(
-    mut operation: F,
-    max_retries: u32,
-    sleep_duration: Duration,
-) -> Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T>>,
-{
-    let mut retry_count = 0;
-    loop {
-        match operation().await {
-            Ok(result) => return Ok(result),
-            Err(e) => {
-                retry_count += 1;
-                if retry_count >= max_retries {
-                    println!("Maximum retries reached. Exiting...");
-                    return Err(e);
-                }
-                println!(
-                    "Operation failed: {}. Retrying in {:?}... (Attempt {} of {})",
-                    e, sleep_duration, retry_count, max_retries
-                );
-                tokio::time::sleep(sleep_duration).await;
-            }
-        }
-    }
+    Ok(cp_url)
 }

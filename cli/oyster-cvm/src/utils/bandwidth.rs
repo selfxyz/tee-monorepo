@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 pub struct BandwidthUnit {
     pub id: &'static str,
     pub value: u64,
@@ -18,134 +20,28 @@ pub const OYSTER_BANDWIDTH_UNITS_LIST: [BandwidthUnit; 3] = [
     },
 ];
 
-pub struct BandwidthRate {
-    pub region_code: &'static str,
-    pub rate: u64,
-}
+pub async fn get_bandwidth_rate_for_region(region_code: &str, cp_url: &str) -> Result<u64> {
+    let client = reqwest::Client::new();
+    let response = client.get(format!("{}/bandwidth", cp_url)).send().await?;
+    let bandwidth_data: serde_json::Value = response.json().await?;
 
-fn create_bandwidth_rates() -> [BandwidthRate; 27] {
-    [
-        BandwidthRate {
-            region_code: "us-east-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "us-east-2",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "us-west-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "us-west-2",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ca-central-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "sa-east-1",
-            rate: 150_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-north-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-west-3",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-west-2",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-west-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-central-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-central-2",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-south-1",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "eu-south-2",
-            rate: 90_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "me-south-1",
-            rate: 117_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "me-central-1",
-            rate: 110_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "af-south-1",
-            rate: 154_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-south-1",
-            rate: 109_300_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-south-2",
-            rate: 109_300_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-northeast-1",
-            rate: 114_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-northeast-2",
-            rate: 126_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-northeast-3",
-            rate: 114_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-southeast-1",
-            rate: 120_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-southeast-2",
-            rate: 114_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-southeast-3",
-            rate: 132_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-southeast-4",
-            rate: 114_000_000_000_000_000,
-        },
-        BandwidthRate {
-            region_code: "ap-east-1",
-            rate: 120_000_000_000_000_000,
-        },
-    ]
-}
+    // Extract rates array from response
+    if let Some(rates) = bandwidth_data.get("rates").and_then(|r| r.as_array()) {
+        // Find matching region and parse its rate
+        for rate in rates {
+            if let (Some(code), Some(rate_str)) = (
+                rate.get("region_code").and_then(|c| c.as_str()),
+                rate.get("rate").and_then(|r| r.as_str()),
+            ) {
+                if code == region_code {
+                    // Parse hex rate string (removing "0x" prefix) to u64
+                    return Ok(u64::from_str_radix(&rate_str[2..], 16).unwrap_or(0));
+                }
+            }
+        }
+    }
 
-lazy_static::lazy_static! {
-    pub static ref BANDWIDTH_RATES: [BandwidthRate; 27] = create_bandwidth_rates();
-}
-
-pub fn get_bandwidth_rate_for_region(region_code: &str) -> u64 {
-    BANDWIDTH_RATES
-        .iter()
-        .find(|&rate| rate.region_code == region_code)
-        .map(|rate| rate.rate)
-        .unwrap_or(0)
+    Err(anyhow::anyhow!("Region not found or parsing failed"))
 }
 
 pub fn calculate_bandwidth_cost(

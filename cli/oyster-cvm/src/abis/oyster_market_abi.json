@@ -436,6 +436,13 @@
 		"outputs": [],
 		"stateMutability": "payable",
 		"type": "function"
+	},
+	{
+		"inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+		"name": "providers",
+		"outputs": [{ "internalType": "string", "name": "cp", "type": "string" }],
+		"stateMutability": "view",
+		"type": "function"
 	}
 ]
 	
