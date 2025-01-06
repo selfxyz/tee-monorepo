@@ -47,7 +47,7 @@ sha256: ff5c58ab5b09e3cd05ffc3d5d6ce65da07aa7529c6868d48a1adb3d301a63e2c
 arm64: https://artifacts.marlin.org/oyster/binaries/control-plane_v3.0.0_linux_arm64
 sha256: 76ce84122aef6963e595621daa84dff0d354fcfe42fc381cfc70cbd1f4e6d752
 
-Built using nix on the `control-plane-v3.0.0` tag.
+Built using Nix on the `control-plane-v3.0.0` tag.
 
 ## Usage
 
