@@ -58,7 +58,7 @@ To check whether the cgroups were successfully created or not on your system, ve
 <b>Signer file setup</b>
 
 A signer secret is required to run the serverless executor applicaton. It'll also be the identity of the executor enclave on chain i.e, the enclave address will be derived from the corresponding public key. The signer must be a `secp256k1` binary secret.
-The <a href="https://github.com/marlinprotocol/keygen">Keygen repo</a> can be used to generate this.
+The <a href="https://github.com/marlinprotocol/oyster-monorepo/tree/master/initialization/keygen">Keygen repo</a> can be used to generate this.
 
 <b> RPC and smart contracts configuration</b>
 
@@ -68,13 +68,11 @@ To run the serverless executor, details related to RPC like the HTTP and WebSock
 
 ```
 ./target/x86_64-unknown-linux-musl/release/oyster-serverless-executor --help
-Usage: oyster-serverless-executor [OPTIONS]
+Usage: oyster-serverless-executor [OPTIONS] --vsock-addr <VSOCK_ADDR>
 
 Options:
-      --port <PORT>                [default: 6001]
-        Server port
+  -v, --vsock-addr <VSOCK_ADDR>    vsock address to listen on <cid:port>
       --config-file <CONFIG_FILE>  [default: ./oyster_serverless_executor_config.json]
-        Path to the executor configuration parameters file
   -h, --help                       Print help
   -V, --version                    Print version
 ```
@@ -95,39 +93,18 @@ Configuration file parameters required for running an executor node:
 ```
 Example command to run the executor locally:
 ```
-sudo ./target/x86_64-unknown-linux-musl/release/oyster-serverless-executor --port 6001 --config-file ./oyster_serverless_executor_config.json
+sudo ./target/x86_64-unknown-linux-musl/release/oyster-serverless-executor --vsock-addr 1:6000 --config-file ./oyster_serverless_executor_config.json
 ```
 
-<b> Inject immutable configuration parameters into the application: </b>
+<b> Initialize executor with owner address, gas wallet private key, web socket api key and generate the registration signatures </b>
 
-Currently there is only one such parameter and it is the address of the executor enclave owner.
+For generating `executor-vsock-client`, follow the [README](../http-on-vsock-client/README.md)
+```shell
+./executor-vsock-client --url vsock://1:6000/ --owner-address 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --gas-key 7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6 --ws-api-key ""
 ```
-$ curl -X POST -H "Content-Type: application/json" -d '{"owner_address_hex": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}' <executor_node_ip:executor_node_port>/immutable-config
-Immutable params configured!
-```
+This will also start the listening of registration event notifications on the common chain inside the enclave node.
 
-<b> Inject mutable configuration parameters into the application: </b>
-
-Currently there is only one such parameter and it is the gas private key used by the executor enclave to send transactions to the common chain.
-```
-$ curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"}' <executor_node_ip:executor_node_port>/mutable-config
-Mutable params configured!
-```
-<b> The owner can use the below endpoint to get details about the state of the executor node: </b>
-```
-$ curl <executor_node_ip:executor_node_port>/executor-details
-{"enclave_address":"0x2e5e17c117efeb0727765988b230c4d95f8e8c9c","enclave_public_key":"0x2772e3e5d5dfb8e583feb6f4d251f4bda32ef692aad0831055a663d9be3edb4591cc0109d9e8d0672f8576160cf81ed4909b0a0a163951341f74aec44018ea49","gas_address":"0x90f79bf6eb2c4f870365e785982e1f101e93b906","owner_address":"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"}
-```
-
-<b> Exporting registration details from the executor node: </b>
-
-The owner can hit the below endpoint to get the registration details required to register the executor enclave on the common chain **Executors** contract. The endpoint will also start the listening of such event notifications on the common chain inside the enclave node.
-```
-$ curl <executor_node_ip:executor_node_port>/signed-registration-message
-{"job_capacity":20,"owner":"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266","sign_timestamp":1721388963,"signature":"19902ff8f70d7bba8d0001f619eb5c67bf1a97f8ed0b45fdba1b64a5a25dac5c1e253b533a06f477f7e7673a8ad1875dd415ed01640813a0a5f88723bbb2d8e51b"}
-```
-
-**Note:** After the owner will register the executor enclave on the common chain, the node will listen to that event and start the listening of job requests created by the **Jobs** contract on the common chain and execute them acordingly.
+**Note:** After the owner will register the executor enclave on the common chain, the node will listen to that event and start the listening of job requests created by the **Jobs** contract on the common chain and execute them accordingly.
 
 ## Tests
 

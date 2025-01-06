@@ -35,7 +35,7 @@ Supported outputs:
   ```
 - Run the binary -
   ```
-  ./target/x86_64-unknown-linux-musl/release/serverless-gateway
+  ./target/x86_64-unknown-linux-musl/release/serverless-gateway --vsock-addr 1:6000
   ```
 - Update the config with the contract addresses -
   ```json
@@ -53,26 +53,13 @@ Supported outputs:
 
 # Dev Run
 
-- Add Owner Address
+- Initialize the gateway with owner address, gas wallet private key, web socket api key, list of request chain ID and generate the signatures for registration. For generating `gateway-vsock-client`, follow the [README](../http-on-vsock-client/README.md)
   ```shell
-  curl -X POST -H "Content-Type: application/json" -d '{"owner_address_hex": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}' http://localhost:6001/immutable-config -v
+  ./gateway-vsock-client --url vsock://1:6000/ --owner-address 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --gas-key 5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a --ws-api-key "" -c 31337
   ```
-- Add Gas Address
-  ```shell
-  curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"}' http://localhost:6001/mutable-config -v
-  ```
-- Get signature
-  ```shell
-  curl -X GET -H "Content-Type: application/json" -d '{"chain_ids": [31337]}' http://localhost:6001/signed-registration-message -v
-  ```
-- Use the signature from the above endpoint to register on the commmon chain.
+- Use the signature from the above output to register on the commmon chain and request chain
 
-# Verifying Config
-
-- Verify the Addresses on the gateway
-  ```shell
-  curl -X GET http://localhost:6001/gateway-details -v
-  ```
+- Verify the addresses on the gateway by checking the output of above command
 
 # Running Tests
 
