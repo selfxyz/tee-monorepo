@@ -22,17 +22,25 @@ pub fn build_oyster_image(
     }
 
     let nix_expr = format!(
-        r#"((builtins.getFlake "github:marlinprotocol/oyster-monorepo?rev={}").packages.{}.musl.sdks.docker-enclave.override {{compose={};dockerImages=[{}];}}).default"#,
+        r#"((builtins.getFlake "github:marlinprotocol/oyster-monorepo/{}").packages.{}.musl.sdks.docker-enclave.override {{compose={};dockerImages=[{}];}}).default"#,
         commit_ref,
         platform.nix_arch(),
         docker_compose,
         docker_images_list
     );
 
+    // TODO: Have to explicitly fill in the cache here to make it work
+    // See if there is a better way
     let mut cmd = Command::new("nix")
         .args([
             "build",
             "--impure",
+            "--option",
+            "substituters",
+            "https://cache.nixos.org https://oyster.cachix.org",
+            "--option",
+            "trusted-public-keys",
+            "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= oyster.cachix.org-1:QEXLEQvMA7jPLn4VZWVk9vbtypkXhwZknX+kFgDpYQY=",
             "--system",
             platform.nix_arch(),
             "--expr",
