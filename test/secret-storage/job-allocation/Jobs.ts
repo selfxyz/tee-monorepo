@@ -658,7 +658,7 @@ describe("Jobs - Create", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    attestationVerifier.target,
+                    staking_token.target,
                     usdc_token.target,
                     100,
                     100,
@@ -751,9 +751,9 @@ describe("Jobs - Create", function () {
             },
         ) as unknown as SecretManager;
 
-        await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("SECRET_MANAGER_ROLE")), secretManager.target);
         await usdc_token.approve(secretManager.target, parseUnits("10000", 6));
         await jobs.setSecretManager(secretManager.target);
+        await secretStore.setSecretManager(secretManager.target);
 
         // CREATE SECRET
         let sizeLimit = 1000,
