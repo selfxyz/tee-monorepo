@@ -53,7 +53,7 @@ Supported outputs:
 
 # Dev Run
 
-- Initialize the gateway with owner address, gas wallet private key and generate the signatures for registration. For generating `gateway-vsock-cli`, follow the [README](../http-on-vsock-client/README.md)
+- Initialize the gateway with owner address, gas wallet private key and generate the signatures for registration. For generating `gateway-vsock-client`, follow the [README](../http-on-vsock-client/README.md)
   ```shell
   ./gateway-vsock-client --url vsock://1:6000/ --owner-address 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --gas-key 5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a --ws-api-key "" -c 31337
   ```
