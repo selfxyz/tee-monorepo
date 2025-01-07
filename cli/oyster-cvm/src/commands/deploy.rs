@@ -171,25 +171,17 @@ pub async fn deploy_oyster_instance(
         provider_for_market.clone(),
     )
     .await?;
-
-    // Wait for IP and attestation
     info!("Job created with ID: {:?}", job_id);
-    let url = format!("{}{:?}", JOB_REFRESH_ENDPOINT, job_id);
-    info!("Waiting for enclave to start...");
 
+    info!("Waiting for 3 minutes for enclave to start...");
+    tokio::time::sleep(StdDuration::from_secs(180)).await;
+
+    let url = format!("{}{:?}", JOB_REFRESH_ENDPOINT, job_id);
     let ip_address = wait_for_ip_address(&url).await?;
     info!("IP address obtained: {}", ip_address);
 
-    // First check basic connectivity
-    if !ping_ip(&ip_address).await {
-        return Err(anyhow!(
-            "Failed to establish TCP connection to the instance"
-        ));
-    }
-
-    // Then check attestation
-    if !check_attestation(&ip_address).await {
-        return Err(anyhow!("Attestation check failed after maximum retries"));
+    if !check_reachability(&ip_address).await {
+        return Err(anyhow!("Reachability check failed after maximum retries"));
     }
 
     info!("Enclave is ready! IP address: {}", ip_address);
@@ -240,10 +232,7 @@ async fn create_new_oyster_job(
         .ok_or_else(|| anyhow!("Transaction receipt not found"))?;
 
     // Add logging to check transaction status
-    if receipt.status() {
-        info!("Transaction successful! Waiting 3 minutes for job initialization...");
-        tokio::time::sleep(StdDuration::from_secs(180)).await;
-    } else {
+    if !receipt.status() {
         return Err(anyhow!("Transaction failed - check contract interaction"));
     }
 
@@ -336,23 +325,28 @@ async fn ping_ip(ip: &str) -> bool {
     false
 }
 
-async fn check_attestation(ip: &str) -> bool {
+async fn check_reachability(ip: &str) -> bool {
+    // First check basic connectivity
+    if !ping_ip(ip).await {
+        tracing::error!("Failed to establish TCP connection to the instance");
+        return false;
+    }
+
     let client = reqwest::Client::new();
     let attestation_url = format!("http://{}:1300/attestation/raw", ip);
 
     for attempt in 1..=ATTESTATION_RETRIES {
         info!(
-            "Checking attestation (attempt {}/{})",
+            "Checking reachability (attempt {}/{})",
             attempt, ATTESTATION_RETRIES
         );
 
         match client.get(&attestation_url).send().await {
             Ok(response) => {
-                info!("Attestation status code: {}", response.status());
                 if response.status().is_success() {
                     match response.bytes().await {
                         Ok(bytes) if !bytes.is_empty() => {
-                            info!("Attestation check successful");
+                            info!("Reachability check successful");
                             return true;
                         }
                         Ok(_) => info!("Empty attestation response"),
@@ -364,7 +358,7 @@ async fn check_attestation(ip: &str) -> bool {
         }
 
         info!(
-            "Waiting {} seconds before next attestation check...",
+            "Waiting {} seconds before next reachability check...",
             ATTESTATION_INTERVAL
         );
         tokio::time::sleep(StdDuration::from_secs(ATTESTATION_INTERVAL)).await;
