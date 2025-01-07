@@ -48,15 +48,13 @@ sol!(
 
 #[derive(Debug)]
 pub struct DeploymentConfig {
-    pub cpu: u32,
-    pub memory: u32,
     pub image_url: String,
     pub region: String,
     pub instance_type: String,
     pub bandwidth: u32,
     pub duration: u32,
-    pub platform: String,
     pub job_name: String,
+    pub debug: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -126,20 +124,17 @@ pub async fn deploy_oyster_instance(
     info!("CP URL for operator: {}", cp_url);
 
     // Fetch operator min rates with early validation
-    let min_rate = find_minimum_rate_instance(
+    let selected_instance = find_minimum_rate_instance(
         &selected_operator,
         &config.region,
         &config.instance_type,
-        config.cpu,
-        config.memory,
-        &config.platform,
     )
     .context("Configuration not supported by operator")?;
 
     // Calculate costs
     let duration_seconds = (config.duration as u64) * 60;
     let (total_cost, total_rate) = calculate_total_cost(
-        &min_rate,
+        &selected_instance,
         duration_seconds,
         config.bandwidth,
         &config.region,
@@ -158,12 +153,13 @@ pub async fn deploy_oyster_instance(
 
     // Create metadata
     let metadata = create_metadata(
-        &config.instance_type,
+        &selected_instance.instance,
         &config.region,
-        config.memory,
-        config.cpu,
+        selected_instance.memory,
+        selected_instance.cpu,
         &config.image_url,
         &config.job_name,
+        config.debug,
     );
 
     // Approve USDC and create job
@@ -387,6 +383,7 @@ fn create_metadata(
     vcpu: u32,
     url: &str,
     name: &str,
+    debug: bool,
 ) -> String {
     serde_json::json!({
         "instance": instance,
@@ -395,7 +392,8 @@ fn create_metadata(
         "vcpu": vcpu,
         "url": url,
         "name": name,
-        "family": "tuna"
+        "family": "tuna",
+        "debug": debug
     })
     .to_string()
 }
@@ -404,9 +402,6 @@ fn find_minimum_rate_instance(
     operator: &Operator,
     region: &str,
     instance: &str,
-    vcpu: u32,
-    memory: u32,
-    arch: &str,
 ) -> Result<InstanceRate> {
     operator
         .min_rates
@@ -415,12 +410,7 @@ fn find_minimum_rate_instance(
         .ok_or_else(|| anyhow!("No rate card found for region: {}", region))?
         .rate_cards
         .iter()
-        .filter(|rate| {
-            rate.instance == instance
-            && rate.cpu == vcpu
-            && rate.memory == memory
-            && rate.arch == arch
-        })
+        .filter(|rate| rate.instance == instance)
         .min_by(|a, b| {
             let a_rate = U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16)
                 .unwrap_or(U256::MAX);
@@ -430,8 +420,8 @@ fn find_minimum_rate_instance(
         })
         .cloned()
         .ok_or_else(|| anyhow!(
-            "No matching instance rate found for region: {}, instance: {}, vcpu: {}, memory: {}, arch: {}",
-            region, instance, vcpu, memory, arch
+            "No matching instance rate found for region: {}, instance: {}",
+            region, instance
         ))
 }
 

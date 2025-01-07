@@ -96,14 +96,6 @@ enum Commands {
     },
     /// Deploy an Oyster CVM instance
     Deploy {
-        /// Number of vCPUs required
-        #[arg(long, required = true)]
-        cpu: u32,
-
-        /// Memory in GB required
-        #[arg(long, required = true)]
-        memory: u32,
-
         /// URL of the enclave image
         #[arg(long, required = true)]
         image_url: String,
@@ -132,13 +124,13 @@ enum Commands {
         #[arg(long, required = true)]
         duration_in_minutes: u32,
 
-        /// Platform (amd64 or arm64)
-        #[arg(long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
-        platform: String,
-
         /// Job name (default: "oyster-job")
-        #[arg(long, default_value = "oyster-job")]
+        #[arg(long, required = true)]
         job_name: String,
+
+        /// Enable debug mode
+        #[arg(long)]
+        debug: bool,
     },
 }
 
@@ -193,8 +185,6 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Deploy {
-            cpu,
-            memory,
             image_url,
             region,
             wallet_private_key,
@@ -202,19 +192,17 @@ async fn main() -> Result<()> {
             instance_type,
             bandwidth,
             duration_in_minutes,
-            platform,
             job_name,
+            debug,
         } => {
             let config = DeploymentConfig {
-                cpu: *cpu,
-                memory: *memory,
                 image_url: image_url.clone(),
                 region: region.clone(),
                 instance_type: instance_type.clone(),
                 bandwidth: *bandwidth,
                 duration: *duration_in_minutes,
-                platform: platform.clone(),
                 job_name: job_name.clone(),
+                debug: *debug,
             };
             commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
         }
