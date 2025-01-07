@@ -17,7 +17,7 @@ use crate::chain_util::get_block_number_by_timestamp;
 use crate::constant::{
     COMMON_CHAIN_GATEWAY_CHAIN_ADDED_EVENT, COMMON_CHAIN_GATEWAY_CHAIN_REMOVED_EVENT,
     COMMON_CHAIN_GATEWAY_DEREGISTERED_EVENT, COMMON_CHAIN_GATEWAY_REGISTERED_EVENT,
-    GATEWAY_BLOCK_STATES_TO_MAINTAIN, WAIT_BEFORE_HTTP_RPC_CALL,
+    GATEWAY_BLOCK_STATES_TO_MAINTAIN, MAX_RETRY_ON_PROVIDER_ERROR, WAIT_BEFORE_HTTP_RPC_CALL,
 };
 use crate::contract_abi::GatewaysContract::{self, GatewaysContractInstance};
 use crate::model::{ContractsClient, GatewayData, Job};
@@ -319,26 +319,35 @@ pub async fn generate_gateway_epoch_state_for_cycle(
     let gateway_addresses: Vec<Address> = current_cycle_state_epoch.keys().cloned().collect();
 
     for address in gateway_addresses {
-        let gateways_info = com_chain_gateway_contract
-            .gateways(address)
-            .block(BlockId::from(to_block_number))
-            .call()
-            .await;
+        for _ in 0..MAX_RETRY_ON_PROVIDER_ERROR {
+            let gateways_info;
 
-        if gateways_info.is_err() {
-            error!(
-                "Failed to get gateway info for address {} - Error: {:?}",
-                address,
-                gateways_info.err().unwrap()
-            );
-            continue;
+            let info_result = com_chain_gateway_contract
+                .gateways(address)
+                .block(BlockId::from(to_block_number))
+                .call()
+                .await;
+
+            match info_result {
+                Ok(info) => {
+                    gateways_info = info;
+                }
+                Err(err) => {
+                    error!(
+                        "Failed to get gateway info for address {} - Error: {:?}",
+                        address, err
+                    );
+                    sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
+                    continue;
+                }
+            }
+
+            let current_cycle_gateway_data = current_cycle_state_epoch.get_mut(&address).unwrap();
+
+            current_cycle_gateway_data.stake_amount = gateways_info.stakeAmount;
+            current_cycle_gateway_data.draining = gateways_info.draining;
+            break;
         }
-        let gateways_info = gateways_info.unwrap();
-
-        let current_cycle_gateway_data = current_cycle_state_epoch.get_mut(&address).unwrap();
-
-        current_cycle_gateway_data.stake_amount = gateways_info.stakeAmount;
-        current_cycle_gateway_data.draining = gateways_info.draining;
     }
 
     // Write current cycle state to the gateway epoch state
