@@ -116,7 +116,7 @@ enum Commands {
         #[arg(long, required = true)]
         instance_type: String,
 
-        /// Optional bandwidth in Kbps (default: 100)
+        /// Optional bandwidth in KBps (default: 10)
         #[arg(long, default_value = "10")]
         bandwidth: u32,
 
@@ -124,8 +124,8 @@ enum Commands {
         #[arg(long, required = true)]
         duration_in_minutes: u32,
 
-        /// Job name (default: "oyster-job")
-        #[arg(long, required = true)]
+        /// Job name
+        #[arg(long)]
         job_name: String,
 
         /// Enable debug mode

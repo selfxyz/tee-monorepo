@@ -124,12 +124,9 @@ pub async fn deploy_oyster_instance(
     info!("CP URL for operator: {}", cp_url);
 
     // Fetch operator min rates with early validation
-    let selected_instance = find_minimum_rate_instance(
-        &selected_operator,
-        &config.region,
-        &config.instance_type,
-    )
-    .context("Configuration not supported by operator")?;
+    let selected_instance =
+        find_minimum_rate_instance(&selected_operator, &config.region, &config.instance_type)
+            .context("Configuration not supported by operator")?;
 
     // Calculate costs
     let duration_seconds = (config.duration as u64) * 60;
@@ -412,17 +409,20 @@ fn find_minimum_rate_instance(
         .iter()
         .filter(|rate| rate.instance == instance)
         .min_by(|a, b| {
-            let a_rate = U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16)
-                .unwrap_or(U256::MAX);
-            let b_rate = U256::from_str_radix(b.min_rate.trim_start_matches("0x"), 16)
-                .unwrap_or(U256::MAX);
+            let a_rate =
+                U256::from_str_radix(a.min_rate.trim_start_matches("0x"), 16).unwrap_or(U256::MAX);
+            let b_rate =
+                U256::from_str_radix(b.min_rate.trim_start_matches("0x"), 16).unwrap_or(U256::MAX);
             a_rate.cmp(&b_rate)
         })
         .cloned()
-        .ok_or_else(|| anyhow!(
-            "No matching instance rate found for region: {}, instance: {}",
-            region, instance
-        ))
+        .ok_or_else(|| {
+            anyhow!(
+                "No matching instance rate found for region: {}, instance: {}",
+                region,
+                instance
+            )
+        })
 }
 
 async fn calculate_total_cost(
@@ -443,7 +443,7 @@ async fn calculate_total_cost(
     let bandwidth_cost_scaled = U256::from(
         calculate_bandwidth_cost(
             &bandwidth.to_string(),
-            "kbps",
+            "KBps",
             bandwidth_rate_region,
             duration,
         )

@@ -1,5 +1,5 @@
 use crate::types::StorageProvider;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::Value;
 use std::{env, fs, time::Duration};
@@ -50,21 +50,21 @@ async fn upload_to_pinata(
         .await
         .context("Failed to send request to Pinata")?;
 
-    if response.status().is_success() {
-        let json: Value = response
-            .json()
-            .await
-            .context("Failed to parse Pinata response")?;
-        let hash = json["IpfsHash"]
-            .as_str()
-            .context("Failed to get IPFS hash from response")?;
-        let url = format!("https://gateway.pinata.cloud/ipfs/{}", hash);
-        info!("Successfully uploaded to Pinata: {}", url);
-        Ok(url)
-    } else {
-        Err(anyhow::anyhow!(
+    if !response.status().is_success() {
+        return Err(anyhow!(
             "Upload failed: {}",
             response.text().await.unwrap_or_default()
-        ))
+        ));
     }
+
+    let json: Value = response
+        .json()
+        .await
+        .context("Failed to parse Pinata response")?;
+    let hash = json["IpfsHash"]
+        .as_str()
+        .context("Failed to get IPFS hash from response")?;
+    let url = format!("https://gateway.pinata.cloud/ipfs/{}", hash);
+    info!("Successfully uploaded to Pinata: {}", url);
+    Ok(url)
 }

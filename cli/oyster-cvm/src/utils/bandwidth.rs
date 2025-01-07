@@ -1,26 +1,27 @@
+use alloy::primitives::U256;
 use anyhow::{Context, Result};
 
 pub struct BandwidthUnit {
     pub id: &'static str,
-    pub value: u64,
+    pub value: U256,
 }
 
 pub const OYSTER_BANDWIDTH_UNITS_LIST: [BandwidthUnit; 3] = [
     BandwidthUnit {
-        id: "kbps",
-        value: 1024 * 1024,
+        id: "KBps",
+        value: U256::from_limbs([1024 * 1024, 0, 0, 0]),
     },
     BandwidthUnit {
-        id: "mbps",
-        value: 1024,
+        id: "MBps",
+        value: U256::from_limbs([1024, 0, 0, 0]),
     },
     BandwidthUnit {
-        id: "gbps",
-        value: 1,
+        id: "GBps",
+        value: U256::from_limbs([1, 0, 0, 0]),
     },
 ];
 
-pub async fn get_bandwidth_rate_for_region(region_code: &str, cp_url: &str) -> Result<u64> {
+pub async fn get_bandwidth_rate_for_region(region_code: &str, cp_url: &str) -> Result<U256> {
     let client = reqwest::Client::new();
     let response = client.get(format!("{}/bandwidth", cp_url)).send().await?;
     let bandwidth_data: serde_json::Value = response.json().await?;
@@ -34,8 +35,10 @@ pub async fn get_bandwidth_rate_for_region(region_code: &str, cp_url: &str) -> R
                 rate.get("rate").and_then(|r| r.as_str()),
             ) {
                 if code == region_code {
-                    // Parse hex rate string (removing "0x" prefix) to u64
-                    return Ok(u64::from_str_radix(&rate_str[2..], 16).unwrap_or(0));
+                    // Parse hex rate string (removing "0x" prefix) to u256
+                    let rate_u256 = U256::from_str_radix(&rate_str[2..], 16)
+                        .context("Failed to parse bandwidth rate")?;
+                    return Ok(rate_u256);
                 }
             }
         }
@@ -47,22 +50,24 @@ pub async fn get_bandwidth_rate_for_region(region_code: &str, cp_url: &str) -> R
 pub fn calculate_bandwidth_cost(
     bandwidth: &str,
     bandwidth_unit: &str,
-    bandwidth_rate_for_region_scaled: u64,
+    bandwidth_rate_for_region_scaled: U256,
     duration: u64,
-) -> Result<u128> {
+) -> Result<U256> {
     let unit_conversion_divisor = OYSTER_BANDWIDTH_UNITS_LIST
         .iter()
         .find(|unit| unit.id == bandwidth_unit)
         .map(|unit| unit.value)
-        .unwrap_or(1);
+        .context("Failed to find bandwidth unit")?;
 
-    let bandwidth_u64 = bandwidth.parse::<u128>().unwrap();
+    let bandwidth_u256 = bandwidth
+        .parse::<U256>()
+        .context("Failed to parse bandwidth as U256")?;
 
-    Ok((bandwidth_u64 as u128)
-        .checked_mul(bandwidth_rate_for_region_scaled as u128)
+    (bandwidth_u256)
+        .checked_mul(bandwidth_rate_for_region_scaled)
         .context("Failed to multiply bandwidth and bandwidth rate")?
-        .checked_mul(duration as u128)
+        .checked_mul(U256::from(duration))
         .context("Failed to multiply duration and bandwidth rate")?
-        .checked_div(unit_conversion_divisor as u128)
-        .context("Failed to divide by unit conversion divisor")?)
+        .checked_div(unit_conversion_divisor)
+        .context("Failed to divide by unit conversion divisor")
 }

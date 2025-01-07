@@ -69,19 +69,17 @@ Options:
 Deploys an Oyster CVM instance.
 
 Required Options:
-- `--cpu`: Number of vCPUs required
-- `--memory`: Memory in GB required
 - `--image-url`: URL of the enclave image
 - `--region`: Region for deployment
 - `--wallet-private-key`: Wallet private key for transaction signing
 - `--operator`: Operator address
 - `--instance-type`: Instance type (e.g. "m5a.2xlarge")
 - `--duration-in-minutes`: Duration in minutes
-- `--platform`: Platform (amd64 or arm64)
 
 Optional Options:
-- `--bandwidth`: Optional bandwidth in Kbps (default: 100)
-- `--job-name`: Job name (default: "oyster-job")
+- `--bandwidth`: Optional bandwidth in KBps (default: 10)
+- `--job-name`: Job name
+- `--debug `: Start enclave in debug mode
 
 ### Example
 
@@ -109,17 +107,15 @@ Optional Options:
 
 # Deploy an encalve
 ./oyster-cvm deploy \
---cpu 2 \
---memory 4 \
---image-url "ipfs://Qm..." \
---region "us-east-1" \
---wallet-private-key "your-private-key" \
---operator "0x..." \
---instance-type "m5a.2xlarge" \
---duration-in-minutes 60 \
---platform amd64 \
---bandwidth 200 \
---job-name "my-oyster-job"
+  --image-url "ipfs://Qm..." \
+  --region "us-east-1" \
+  --wallet-private-key "your-private-key" \
+  --operator "0x..." \
+  --instance-type "m5a.2xlarge" \
+  --duration-in-minutes 60 \
+  --bandwidth 200 \
+  --job-name "my-oyster-job" \
+  --debug
 
 # Sample output:
 [INFO] Starting deployment...
