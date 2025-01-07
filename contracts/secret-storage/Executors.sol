@@ -120,7 +120,7 @@ contract Executors is
     error ExecutorsNotTeeManager();
     /// @notice Thrown when the provided execution environment is not supported globally.
     error ExecutorsUnsupportedEnv();
-    error ExecutorsUnavailableResources();
+    error ExecutorsUnavailableStores();
 
     modifier isValidEnv(uint8 _env) {
         _isValidEnv(_env);
@@ -290,28 +290,11 @@ contract Executors is
         uint256 storesCount = topNStores.length;
 
         uint256 noOfExecutorsToSelect = _noOfNodesToSelect > storesCount ? _noOfNodesToSelect - storesCount : 0;
-        address[] memory selectedNodes;
-        if(noOfExecutorsToSelect > 0) {
-            selectedNodes = new address[](_noOfNodesToSelect);
-            for (uint256 i = 0; i < storesCount; i++) {
-                selectedNodes[i] = topNStores[i];
-            }
+        // TODO: not selecting from the executors until selection algo issue is fixed
+        if(noOfExecutorsToSelect > 0)
+            revert ExecutorsUnavailableStores();
 
-            // remove the already selected stores from the tree so they are not selected back again as duplicates
-            _deleteTreeNodes(_env, selectedStores);
-            address[] memory selectedExecutors = _selectExecutors(_env, noOfExecutorsToSelect);
-            // add back the removed stores to the tree
-            _addTreeNodes(_env, selectedStores);
-
-            // if reqd executors aren't available, then revert
-            if (selectedExecutors.length < noOfExecutorsToSelect)
-                revert ExecutorsUnavailableResources();
-
-            for (uint256 i = 0; i < noOfExecutorsToSelect; i++)
-                selectedNodes[storesCount + i] = selectedExecutors[i];
-        }
-
-        return noOfExecutorsToSelect > 0 ? selectedNodes : topNStores;
+        return topNStores;
     }
 
     function _selectExecutors(
