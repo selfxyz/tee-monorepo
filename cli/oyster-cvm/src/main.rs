@@ -125,7 +125,7 @@ enum Commands {
         duration_in_minutes: u32,
 
         /// Job name
-        #[arg(long)]
+        #[arg(long, default_value = "")]
         job_name: String,
 
         /// Enable debug mode
