@@ -15,7 +15,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::time;
+use tokio::time::{sleep, Duration};
 
 use crate::constant::{
     MAX_RETRY_ON_PROVIDER_ERROR, MAX_TX_RECEIPT_RETRIES, WAIT_BEFORE_HTTP_RPC_CALL,
@@ -84,7 +84,7 @@ pub async fn get_block_number_by_timestamp(
                 "Failed to fetch block number. Error: {:#?}",
                 get_block_number_result.err()
             );
-            time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
+            sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
             continue;
         }
 
@@ -113,10 +113,12 @@ pub async fn get_block_number_by_timestamp(
                 block_number,
                 block.err()
             );
+            sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
             continue;
         }
         let block = block.unwrap();
         if block.is_none() {
+            sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
             continue;
         }
         let block = block.unwrap();
@@ -148,13 +150,14 @@ pub async fn get_block_number_by_timestamp(
                             block_number = earliest_block_number_after_target_ts - 1;
                             earliest_block_number_after_target_ts -= 1;
                         }
+                        sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                         continue 'less_than_block_number;
                     }
                     Ok(None) => {
                         // The next block does not exist.
                         // Wait for the next block to be created to be sure that
                         // the current block_number is the required block_number
-                        time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
+                        sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                         continue 'next_block_check;
                     }
                     Err(err) => {
@@ -164,6 +167,7 @@ pub async fn get_block_number_by_timestamp(
                         );
                         retry_on_error += 1;
                         if retry_on_error <= MAX_RETRY_ON_PROVIDER_ERROR {
+                            sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                             continue 'next_block_check;
                         }
                         return None;
@@ -439,7 +443,7 @@ pub async fn confirm_event(
                         log.removed = true;
                         break;
                     }
-                    time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
+                    sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                     continue;
                 }
             };
@@ -448,14 +452,14 @@ pub async fn confirm_event(
         if first_iteration {
             first_iteration = false;
         } else {
-            time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
+            sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
         }
 
         let curr_block_number = match provider.get_block_number().await {
             Ok(block_number) => block_number,
             Err(err) => {
                 error!("Failed to fetch block number. Error: {:#?}", err);
-                time::sleep(time::Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
+                sleep(Duration::from_millis(WAIT_BEFORE_HTTP_RPC_CALL)).await;
                 continue;
             }
         };
