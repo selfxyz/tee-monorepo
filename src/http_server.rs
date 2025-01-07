@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context};
 use serde_json::json;
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
-    sync::Mutex,
 };
 use warp::{http::Method, Filter};
 
@@ -51,7 +51,7 @@ pub async fn fetch_logs_with_offset(
 pub fn create_routes(
     enclave_log_file_path: String,
     sse_tx: tokio::sync::broadcast::Sender<String>,
-    log_counter: Arc<Mutex<u64>>,
+    log_counter: Arc<AtomicU64>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let logs_file = enclave_log_file_path.clone();
     let log_counter1 = log_counter.clone();
@@ -68,8 +68,8 @@ pub fn create_routes(
         .and_then(move || {
             let log_counter = log_counter1.clone();
             async move {
-                let latest_log_id = log_counter.lock().await;
-                Ok::<_, Infallible>(warp::reply::json(&json!({"log_id": *latest_log_id})))
+                let latest_log_id = log_counter.load(Ordering::SeqCst);
+                Ok::<_, Infallible>(warp::reply::json(&json!({"log_id": latest_log_id})))
             }
         });
 
@@ -80,11 +80,11 @@ pub fn create_routes(
             let logs_file = logs_file.clone();
             let log_counter = log_counter2.clone();
             async move {
-                let latest_log_id = log_counter.lock().await;
+                let latest_log_id = log_counter.load(Ordering::SeqCst);
                 let log_id = params
                     .get("log_id")
                     .and_then(|id| id.parse::<u64>().ok())
-                    .unwrap_or(*latest_log_id);
+                    .unwrap_or(latest_log_id);
 
                 let offset = params
                     .get("offset")

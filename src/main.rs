@@ -3,6 +3,7 @@ mod enclave_monitor;
 mod http_server;
 mod logging;
 
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -10,12 +11,12 @@ use args::Args;
 use clap::Parser;
 use enclave_monitor::monitor_and_capture_logs;
 use logging::{clear_log_file, log_message};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let log_counter: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    let log_counter = Arc::new(AtomicU64::new(0));
 
     clear_log_file(&args.enclave_log_file_path)
         .await

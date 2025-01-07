@@ -1,18 +1,25 @@
 use crate::logging::log_message;
 use anyhow::{bail, Context};
 use serde_json::Value;
-use std::process::Stdio;
-use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::{broadcast, Mutex};
+use std::{
+    process::Stdio,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+    sync::broadcast,
+};
 
 pub async fn monitor_and_capture_logs(
     sse_tx: &broadcast::Sender<String>,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
     target_cid: u64,
-    log_counter: Arc<Mutex<u64>>,
+    log_counter: Arc<AtomicU64>,
 ) -> anyhow::Result<()> {
     loop {
         let enclave_id = wait_for_enclave_with_cid(target_cid)
@@ -80,7 +87,7 @@ async fn capture_logs(
     enclave_id: &str,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
-    log_counter: Arc<Mutex<u64>>,
+    log_counter: Arc<AtomicU64>,
 ) -> anyhow::Result<()> {
     let mut child = Command::new("nitro-cli")
         .args(["console", "--enclave-id", enclave_id])
@@ -100,8 +107,8 @@ async fn capture_logs(
     let mut reader = BufReader::new(stdout).lines();
 
     while let Some(line) = reader.next_line().await? {
-        let mut log_counter = log_counter.lock().await;
-        let log_entry = format!("[{}] {}", *log_counter, line);
+        let current_count = log_counter.load(Ordering::SeqCst);
+        let log_entry = format!("[{}] {}", current_count, line);
 
         {
             file.write_all(log_entry.as_bytes()).await?;
@@ -113,7 +120,7 @@ async fn capture_logs(
             println!("No active SSE subscribers, skipping log transmission.");
         }
 
-        *log_counter += 1;
+        log_counter.fetch_add(1, Ordering::SeqCst);
     }
 
     let status = child.wait().await?;
