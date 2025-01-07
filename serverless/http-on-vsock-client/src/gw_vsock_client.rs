@@ -100,8 +100,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:?}", resp);
     let body_bytes = hyper::body::to_bytes(resp.into_body()).await?;
     let body_str = String::from_utf8(body_bytes.to_vec())?;
-    let json: serde_json::Value = serde_json::from_str(&body_str)?;
-    println!("{:?}", json);
+
+    if resp.status().is_success() {
+        let json: serde_json::Value = serde_json::from_str(&body_str)?;
+        println!("{:?}", json);
+    } else {
+        println!("{:?}", body_str);
+    }
 
     Ok(())
 }
