@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub struct BandwidthUnit {
     pub id: &'static str,
@@ -49,15 +49,20 @@ pub fn calculate_bandwidth_cost(
     bandwidth_unit: &str,
     bandwidth_rate_for_region_scaled: u64,
     duration: u64,
-) -> u64 {
+) -> Result<u128> {
     let unit_conversion_divisor = OYSTER_BANDWIDTH_UNITS_LIST
         .iter()
         .find(|unit| unit.id == bandwidth_unit)
         .map(|unit| unit.value)
         .unwrap_or(1);
 
-    let bandwidth_u64 = bandwidth.parse::<u64>().unwrap();
+    let bandwidth_u64 = bandwidth.parse::<u128>().unwrap();
 
-    ((bandwidth_u64 as u128) * (bandwidth_rate_for_region_scaled as u128) * (duration as u128)
-        / (unit_conversion_divisor as u128)) as u64
+    Ok((bandwidth_u64 as u128)
+        .checked_mul(bandwidth_rate_for_region_scaled as u128)
+        .context("Failed to multiply bandwidth and bandwidth rate")?
+        .checked_mul(duration as u128)
+        .context("Failed to multiply duration and bandwidth rate")?
+        .checked_div(unit_conversion_divisor as u128)
+        .context("Failed to divide by unit conversion divisor")?)
 }

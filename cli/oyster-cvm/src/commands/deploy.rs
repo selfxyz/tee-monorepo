@@ -46,13 +46,6 @@ sol!(
     "src/abis/oyster_market_abi.json"
 );
 
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    ChainlinkPriceFeed,
-    "src/abis/chainlink_abi.json"
-);
-
 #[derive(Debug)]
 pub struct DeploymentConfig {
     pub cpu: u32,
@@ -160,7 +153,7 @@ pub async fn deploy_oyster_instance(
     );
     info!(
         "Total rate: {:.6} USDC/hour",
-        total_rate.to::<u128>() as f64 / 1e6
+        (total_rate.to::<u128>() * 3600) as f64 / 1e18
     );
 
     // Create metadata
@@ -315,7 +308,6 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
             .or_else(|| json.get("ip").and_then(|ip| ip.as_str()))
         {
             if !ip.is_empty() {
-                info!("Found IP address: {}", ip);
                 return Ok(ip.to_string());
             }
         }
@@ -340,7 +332,6 @@ async fn ping_ip(ip: &str) -> bool {
         );
         match tokio::time::timeout(StdDuration::from_secs(2), TcpStream::connect(&address)).await {
             Ok(Ok(_)) => {
-                info!("TCP connection successful");
                 return true;
             }
             Ok(Err(e)) => info!("TCP connection failed: {}", e),
@@ -454,22 +445,32 @@ async fn calculate_total_cost(
     let instance_secondly_rate_usdc =
         U256::from_str_radix(instance_rate.min_rate.trim_start_matches("0x"), 16)?;
 
-    let instance_secondly_rate_scaled = instance_secondly_rate_usdc / U256::from(1e12);
-    let instance_cost_scaled = U256::from(duration) * instance_secondly_rate_scaled;
+    let instance_cost_scaled = U256::from(duration)
+        .checked_mul(instance_secondly_rate_usdc)
+        .context("Failed to multiply duration and instance rate")?;
 
     let bandwidth_rate_region = get_bandwidth_rate_for_region(region, cp_url).await?;
-    let bandwidth_rate_scaled = U256::from(bandwidth_rate_region) / U256::from(1e12);
-    let bandwidth_cost_scaled = U256::from(calculate_bandwidth_cost(
-        &bandwidth.to_string(),
-        "kbps",
-        bandwidth_rate_scaled.try_into().unwrap(),
-        duration,
-    ));
+    let bandwidth_cost_scaled = U256::from(
+        calculate_bandwidth_cost(
+            &bandwidth.to_string(),
+            "kbps",
+            bandwidth_rate_region,
+            duration,
+        )
+        .context("Failed to calculate bandwidth cost")?,
+    );
 
-    let bandwidth_rate_scaled = bandwidth_cost_scaled / U256::from(duration);
-    let total_cost_scaled = instance_cost_scaled + bandwidth_cost_scaled;
-    let total_rate_scaled =
-        (instance_secondly_rate_scaled + bandwidth_rate_scaled) * U256::from(3600);
+    let bandwidth_rate_scaled = bandwidth_cost_scaled
+        .checked_div(U256::from(duration))
+        .context("Failed to divide bandwidth cost by duration")?;
+    let total_cost_scaled = (instance_cost_scaled
+        .checked_add(bandwidth_cost_scaled)
+        .context("Failed to add instance and bandwidth costs")?
+        .checked_div(U256::from(1e12)))
+    .context("Failed to divide total cost by 1e12")?;
+    let total_rate_scaled = instance_secondly_rate_usdc
+        .checked_add(bandwidth_rate_scaled)
+        .context("Failed to add instance and bandwidth rates")?;
 
     Ok((total_cost_scaled, total_rate_scaled))
 }
