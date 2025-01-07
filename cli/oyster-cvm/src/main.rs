@@ -117,7 +117,7 @@ enum Commands {
         instance_type: String,
 
         /// Optional bandwidth in Kbps (default: 100)
-        #[arg(long, default_value = "100")]
+        #[arg(long, default_value = "10")]
         bandwidth: u32,
 
         /// Duration in minutes
