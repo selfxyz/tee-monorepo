@@ -2793,7 +2793,6 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
- "lazy_static",
  "log",
  "openssl",
  "oyster-sdk",
