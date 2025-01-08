@@ -1,8 +1,11 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+
 mod commands;
 mod types;
+mod utils;
 
+use crate::commands::deploy::DeploymentConfig;
 use tracing_subscriber::EnvFilter;
 
 fn setup_logging() {
@@ -91,6 +94,44 @@ enum Commands {
         #[arg(short = 'r', long, default_value = "")]
         root_public_key: String,
     },
+    /// Deploy an Oyster CVM instance
+    Deploy {
+        /// URL of the enclave image
+        #[arg(long, required = true)]
+        image_url: String,
+
+        /// Region for deployment
+        #[arg(long, required = true)]
+        region: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+
+        /// Optional operator address
+        #[arg(long, required = true)]
+        operator: String,
+
+        /// Instance type (e.g. "m5a.2xlarge")
+        #[arg(long, required = true)]
+        instance_type: String,
+
+        /// Optional bandwidth in KBps (default: 10)
+        #[arg(long, default_value = "10")]
+        bandwidth: u32,
+
+        /// Duration in minutes
+        #[arg(long, required = true)]
+        duration_in_minutes: u32,
+
+        /// Job name
+        #[arg(long, default_value = "")]
+        job_name: String,
+
+        /// Enable debug mode
+        #[arg(long)]
+        debug: bool,
+    },
 }
 
 #[tokio::main]
@@ -142,6 +183,28 @@ async fn main() -> Result<()> {
                 timestamp,
             )
             .await
+        }
+        Commands::Deploy {
+            image_url,
+            region,
+            wallet_private_key,
+            operator,
+            instance_type,
+            bandwidth,
+            duration_in_minutes,
+            job_name,
+            debug,
+        } => {
+            let config = DeploymentConfig {
+                image_url: image_url.clone(),
+                region: region.clone(),
+                instance_type: instance_type.clone(),
+                bandwidth: *bandwidth,
+                duration: *duration_in_minutes,
+                job_name: job_name.clone(),
+                debug: *debug,
+            };
+            commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
         }
     };
 
