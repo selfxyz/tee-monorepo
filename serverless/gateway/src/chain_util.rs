@@ -97,7 +97,6 @@ pub async fn get_block_number_by_timestamp(
         return None;
     }
 
-    // A conservative estimate of the block rate per second before it is actually calculated below.
     let mut block_rate_per_second: f64;
     let mut first_block_number = 0;
     let mut first_block_timestamp = 0;
@@ -148,11 +147,17 @@ pub async fn get_block_number_by_timestamp(
                             return Some(block_number);
                         }
 
-                        if block.header.timestamp != first_block_timestamp
+                        if block.header.timestamp != first_block_number
                             && block.header.timestamp + 1 < target_timestamp
                         {
-                            block_rate_per_second = (first_block_number - next_block_number) as f64
-                                / (first_block_timestamp - block.header.timestamp) as f64;
+                            if block.header.timestamp < first_block_timestamp {
+                                block_rate_per_second = (first_block_number - next_block_number)
+                                    as f64
+                                    / (first_block_timestamp - block.header.timestamp) as f64;
+                            } else {
+                                block_rate_per_second = (next_block_number - block_number) as f64
+                                    / (block.header.timestamp - first_block_timestamp) as f64;
+                            }
                             info!("Block rate per second: {}", block_rate_per_second);
                             block_number = block_number
                                 + ((target_timestamp - block.header.timestamp) as f64
