@@ -34,7 +34,7 @@ oyster-cvm --help
 
 Checks if Docker and Nix are installed.
 
-#### `build-image`
+#### `build`
 Builds an oyster-cvm image.
 
 Options:
@@ -52,7 +52,7 @@ Options:
 Add env vars for Pinata:
 ["PINATA_API_KEY", "PINATA_API_SECRET"]
 
-#### `verify-enclave`
+#### `verify`
 Verifies an Oyster enclave's attestation document.
 
 Options:
@@ -91,7 +91,7 @@ Optional Options:
 [INFO] Nix is installed ✓
 
 # Build an oyster cvm image
-./oyster-cvm build-image \
+./oyster-cvm build \
   --platform amd64 \
   --docker-compose ./docker-compose.yml \
   --docker-images ./image1.tar ./image2.tar \
@@ -135,7 +135,7 @@ Optional Options:
 [INFO] Enclave is ready! IP address: 192.168.1.100
 
 # Verify an enclave
-./oyster-cvm verify-enclave \
+./oyster-cvm verify \
   --enclave-ip 192.168.1.100 \
   --pcr0 pcr0_value \
   --pcr1 pcr1_value \
