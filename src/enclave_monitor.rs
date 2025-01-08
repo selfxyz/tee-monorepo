@@ -107,7 +107,7 @@ async fn capture_logs(
     let mut reader = BufReader::new(stdout).lines();
 
     while let Some(line) = reader.next_line().await? {
-        let current_count = log_counter.load(Ordering::SeqCst);
+        let current_count = log_counter.load(Ordering::Relaxed);
         let log_entry = format!("[{}] {}", current_count, line);
 
         {
@@ -120,7 +120,7 @@ async fn capture_logs(
             println!("No active SSE subscribers, skipping log transmission.");
         }
 
-        log_counter.fetch_add(1, Ordering::SeqCst);
+        log_counter.fetch_add(1, Ordering::Relaxed);
     }
 
     let status = child.wait().await?;

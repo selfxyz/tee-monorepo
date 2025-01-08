@@ -68,7 +68,7 @@ pub fn create_routes(
         .and_then(move || {
             let log_counter = log_counter1.clone();
             async move {
-                let latest_log_id = log_counter.load(Ordering::SeqCst);
+                let latest_log_id = log_counter.load(Ordering::Relaxed);
                 Ok::<_, Infallible>(warp::reply::json(&json!({"log_id": latest_log_id})))
             }
         });
@@ -80,7 +80,7 @@ pub fn create_routes(
             let logs_file = logs_file.clone();
             let log_counter = log_counter2.clone();
             async move {
-                let latest_log_id = log_counter.load(Ordering::SeqCst);
+                let latest_log_id = log_counter.load(Ordering::Relaxed);
                 let log_id = params
                     .get("log_id")
                     .and_then(|id| id.parse::<u64>().ok())
