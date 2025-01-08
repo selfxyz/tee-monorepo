@@ -3,8 +3,9 @@
 A simple and efficient logging server designed to run inside the host machine to stream logs from the AWS Nitro Enclave.
 
 1. GET `logs/stream` -- Creates an SSE connection which can be listened by the client to access realtime logs
-2. GET `/logs/history?log_id=50&offset=10` -- Responds with the logs starting with `offset` number of logs starting from log id = `log_id-1`
-3. GET `/logs` -- Server html file in response to both stream and view log history out of the box
+2. GET `/logs/history?log_id=50&offset=10` -- Responds with the logs starting with `offset` number of logs starting from log id = `log_id-1`. Omitting log_id param will provide latest produced offset number of logs.
+3. GET `logs/tail-log-id` -- Responds with the id of the last received log
+4. GET `/logs` -- Renders html page to both stream logs realtime and retrieve existing logs. 
 
 ### Building the Server
 

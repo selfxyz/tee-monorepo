@@ -29,20 +29,22 @@
         line-height: 2em;
       "
     >
-      <div
+      <li
         id="loader"
         style="display: none; text-align: center; margin-top: 20px"
       >
         Loading...
-      </div>
+      </li>
     </ul>
   </body>
   <script defer>
     const PORT = 516;
     const LOG_OFFSET = 10;
+    const NUMBERS = "0123456789";
     const logs = document.getElementById("logs");
     const loader = document.getElementById("loader");
-    let isHistoryView = false;
+    let autoScrollToBottom = true;
+    let lastScrollTop = 0;
 
     const stripLogPrefix = (log) => {
       const parts = log.split("] ");
@@ -53,29 +55,39 @@
     };
 
     const historyLogs = (url, logId) => {
-      fetch(`${url}/logs/history?log_id=${logId}&offset=${LOG_OFFSET}`)
+      // If there is a logId, then fetch the logs from that logId
+      const params = logId
+        ? new URLSearchParams({ log_id: logId, offset: LOG_OFFSET })
+        : new URLSearchParams({ offset: LOG_OFFSET });
+      fetch(`${url}/logs/history?${params}`)
         .then((response) => response.json())
         .then((data) => {
           const logData = data.reverse();
           logData.forEach((log, index) => {
             let newLog = stripLogPrefix(log);
-            let newLogId = Number(logId) - (index + 1);
             let messageElement = document.createElement("li");
-            messageElement.id = newLogId;
+            messageElement.id = Number(newLog?.id || generateRandomString());
             messageElement.textContent = newLog.message;
             logs.prepend(messageElement);
           });
-          // After adding history logs, scroll to the top to prevent jumping to the bottom
-          logs.scrollTop = 0;
-          isHistoryView = true;
+          logs.scrollTop = 20;
         });
     };
 
+    function generateRandomString(length = 6) {
+      let result = "";
+      for (let i = 0; i < length; i++) {
+        result += NUMBERS.charAt(Math.floor(Math.random() * NUMBERS.length));
+      }
+      return result;
+    }
+
     const startLogs = (url) => {
+      historyLogs(url);
       let eventSource = new EventSource(`${url}/logs/stream`);
 
       eventSource.onmessage = async (event) => {
-        if(loader){
+        if (loader) {
           loader.remove();
         }
         let log = stripLogPrefix(event.data);
@@ -84,9 +96,8 @@
         messageElement.id = log.id;
         messageElement.textContent = message;
         logs.appendChild(messageElement);
-        // Scroll to the bottom after adding new logs to ensure the user sees the latest logs
-        if(!isHistoryView){
-          logs.scrollTop += messageElement.offsetHeight;
+        if (autoScrollToBottom) {
+          logs.scrollTop = logs.scrollHeight;
         }
       };
 
@@ -94,18 +105,36 @@
         console.error("EventSource failed:", error);
         eventSource.close();
         logs.removeChild(loader);
-        if(loader){
-          loader.remove()
+        if (loader) {
+          loader.remove();
         }
       };
     };
 
     logs.addEventListener("scroll", () => {
-      if (logs.scrollTop === 0) {
+      const scrollTop = logs.scrollTop;
+      const scrollHeight = logs.scrollHeight;
+      const clientHeight = logs.clientHeight;
+
+      // Check if scrolling upwards then stop auto scroll to bottom
+      if (scrollTop < lastScrollTop) {
+        autoScrollToBottom = false;
+      }
+
+      // Check if at the top
+      if (scrollTop === 0) {
         let firstLog = document.getElementById("logs").firstElementChild;
         let firstLogId = firstLog.id;
+        autoScrollToBottom = false;
         historyLogs(`http://${window.location.hostname}:${PORT}`, firstLogId);
       }
+
+      // Check if at the bottom then start auto scroll to bottom
+      if (scrollTop + clientHeight >= scrollHeight) {
+        autoScrollToBottom = true;
+      }
+
+      lastScrollTop = scrollTop;
     });
 
     startLogs(`http://${window.location.hostname}:${PORT}`);

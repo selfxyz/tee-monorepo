@@ -3,6 +3,9 @@ mod enclave_monitor;
 mod http_server;
 mod logging;
 
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+
 use anyhow::Context;
 use args::Args;
 use clap::Parser;
@@ -13,6 +16,7 @@ use tokio::sync::broadcast;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    let log_counter = Arc::new(AtomicU64::new(0));
 
     clear_log_file(&args.enclave_log_file_path)
         .await
@@ -30,11 +34,17 @@ async fn main() -> anyhow::Result<()> {
         let script_log_file = args.script_log_file_path.clone();
         let enclave_log_file = args.enclave_log_file_path.clone();
         let target_cid = args.target_cid;
+        let log_counter = Arc::clone(&log_counter);
 
         tokio::task::spawn(async move {
-            if let Err(e) =
-                monitor_and_capture_logs(&sse_tx, &enclave_log_file, &script_log_file, target_cid)
-                    .await
+            if let Err(e) = monitor_and_capture_logs(
+                &sse_tx,
+                &enclave_log_file,
+                &script_log_file,
+                target_cid,
+                log_counter,
+            )
+            .await
             {
                 // Ensure you await the async function
                 let _ = log_message(
@@ -46,7 +56,11 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let routes = http_server::create_routes(args.enclave_log_file_path.clone(), sse_tx.clone());
+    let routes = http_server::create_routes(
+        args.enclave_log_file_path.clone(),
+        sse_tx.clone(),
+        log_counter,
+    );
 
     log_message(
         &args.script_log_file_path,
