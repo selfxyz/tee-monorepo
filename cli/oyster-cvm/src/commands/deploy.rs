@@ -16,22 +16,20 @@ use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tracing::info;
 
-// Network Configuration Constants
 const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
 const JOB_REFRESH_ENDPOINT: &str = "https://sk.arb1.marlin.org/operators/jobs/refresh/ArbOne/";
 const MAINNET_OPERATOR_LIST_URL: &str = "https://sk.arb1.marlin.org/operators/spec/ArbOne";
 
-// Contract Addresses
 const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
 const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
 
-// Add these constants at the top with other constants
-const IP_CHECK_RETRIES: u32 = 20; // Total number of retries for IP check
-const IP_CHECK_INTERVAL: u64 = 15; // Seconds between retries
-const ATTESTATION_RETRIES: u32 = 10;
-const ATTESTATION_INTERVAL: u64 = 30;
+const IP_CHECK_RETRIES: u32 = 20;
+const IP_CHECK_INTERVAL: u64 = 15;
+const ATTESTATION_RETRIES: u32 = 20;
+const ATTESTATION_INTERVAL: u64 = 15;
+const TCP_CHECK_RETRIES: u32 = 20;
+const TCP_CHECK_INTERVAL: u64 = 15;
 
-// Generate type-safe contract bindings
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
@@ -307,10 +305,10 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
 
 async fn ping_ip(ip: &str) -> bool {
     let address = format!("{}:1300", ip);
-    for attempt in 1..=3 {
+    for attempt in 1..=TCP_CHECK_RETRIES {
         info!(
-            "Attempting TCP connection to {} (attempt {}/3)",
-            address, attempt
+            "Attempting TCP connection to {} (attempt {}/{})",
+            address, attempt, TCP_CHECK_RETRIES
         );
         match tokio::time::timeout(StdDuration::from_secs(2), TcpStream::connect(&address)).await {
             Ok(Ok(_)) => {
@@ -319,7 +317,7 @@ async fn ping_ip(ip: &str) -> bool {
             Ok(Err(e)) => info!("TCP connection failed: {}", e),
             Err(_) => info!("TCP connection timed out"),
         }
-        tokio::time::sleep(StdDuration::from_secs(2)).await;
+        tokio::time::sleep(StdDuration::from_secs(TCP_CHECK_INTERVAL)).await;
     }
     info!("All TCP connection attempts failed");
     false
