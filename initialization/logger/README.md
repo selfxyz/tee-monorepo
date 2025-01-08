@@ -12,13 +12,13 @@ A simple and efficient logging server designed to run inside the host machine to
 1. Clone the repository:
 
     ```bash
-    git clone https://github.com/your-repo/nitro-enclave-logger.git
+    git clone https://github.com/marlinprotocol/oyster-monorepo.git
     ```
 
 2. Navigate to the project directory:
 
     ```bash
-    cd nitro-enclave-logger
+    cd initialization/logger
     ```
 
 3. Build the project in release mode:
@@ -30,8 +30,6 @@ A simple and efficient logging server designed to run inside the host machine to
 ### Running the Server
 
 Before running the server, you need to grant it permission to bind to server port (default = 516). This is required because ports below 1024 are privileged, and binding to them normally requires root access.
-
-#### Notes:
 
 1. Since the program by default uses port 516, run the command below to allow the program to bind to this privileged port:
 
