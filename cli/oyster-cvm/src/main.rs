@@ -54,6 +54,44 @@ enum Commands {
         )]
         commit_ref: String,
     },
+    /// Deploy an Oyster CVM instance
+    Deploy {
+        /// URL of the enclave image
+        #[arg(long, required = true)]
+        image_url: String,
+
+        /// Region for deployment
+        #[arg(long, required = true)]
+        region: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+
+        /// Optional operator address
+        #[arg(long, required = true)]
+        operator: String,
+
+        /// Instance type (e.g. "m5a.2xlarge")
+        #[arg(long, required = true)]
+        instance_type: String,
+
+        /// Optional bandwidth in KBps (default: 10)
+        #[arg(long, default_value = "10")]
+        bandwidth: u32,
+
+        /// Duration in minutes
+        #[arg(long, required = true)]
+        duration_in_minutes: u32,
+
+        /// Job name
+        #[arg(long, default_value = "")]
+        job_name: String,
+
+        /// Enable debug mode
+        #[arg(long)]
+        debug: bool,
+    },
     /// Upload Enclave Image to IPFS
     Upload {
         /// Path to enclave image file
@@ -93,44 +131,6 @@ enum Commands {
         /// Root public key
         #[arg(short = 'r', long, default_value = "")]
         root_public_key: String,
-    },
-    /// Deploy an Oyster CVM instance
-    Deploy {
-        /// URL of the enclave image
-        #[arg(long, required = true)]
-        image_url: String,
-
-        /// Region for deployment
-        #[arg(long, required = true)]
-        region: String,
-
-        /// Wallet private key for transaction signing
-        #[arg(long, required = true)]
-        wallet_private_key: String,
-
-        /// Optional operator address
-        #[arg(long, required = true)]
-        operator: String,
-
-        /// Instance type (e.g. "m5a.2xlarge")
-        #[arg(long, required = true)]
-        instance_type: String,
-
-        /// Optional bandwidth in KBps (default: 10)
-        #[arg(long, default_value = "10")]
-        bandwidth: u32,
-
-        /// Duration in minutes
-        #[arg(long, required = true)]
-        duration_in_minutes: u32,
-
-        /// Job name
-        #[arg(long, default_value = "")]
-        job_name: String,
-
-        /// Enable debug mode
-        #[arg(long)]
-        debug: bool,
     },
 }
 
