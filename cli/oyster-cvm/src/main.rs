@@ -61,7 +61,7 @@ enum Commands {
         file: String,
     },
     /// Verify Oyster Enclave Attestation
-    VerifyEnclave {
+    Verify {
         /// Enclave IP
         #[arg(short = 'e', long, required = true)]
         enclave_ip: String,
@@ -162,7 +162,7 @@ async fn main() -> Result<()> {
             let default_provider = types::StorageProvider::Pinata;
             commands::upload::upload_enclave_image(file, &default_provider).await
         }
-        Commands::VerifyEnclave {
+        Commands::Verify {
             pcr0,
             pcr1,
             pcr2,

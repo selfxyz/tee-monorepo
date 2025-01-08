@@ -52,7 +52,7 @@ Options:
 Add env vars for Pinata:
 ["PINATA_API_KEY", "PINATA_API_SECRET"]
 
-#### `verify-enclave`
+#### `verify`
 Verifies an Oyster enclave's attestation document.
 
 Options:
@@ -135,7 +135,7 @@ Optional Options:
 [INFO] Enclave is ready! IP address: 192.168.1.100
 
 # Verify an enclave
-./oyster-cvm verify-enclave \
+./oyster-cvm verify \
   --enclave-ip 192.168.1.100 \
   --pcr0 pcr0_value \
   --pcr1 pcr1_value \
