@@ -147,7 +147,7 @@ pub async fn get_block_number_by_timestamp(
                             return Some(block_number);
                         }
 
-                        if block.header.timestamp != first_block_number
+                        if block.header.timestamp != first_block_timestamp
                             && block.header.timestamp + 1 < target_timestamp
                         {
                             if block.header.timestamp < first_block_timestamp {
