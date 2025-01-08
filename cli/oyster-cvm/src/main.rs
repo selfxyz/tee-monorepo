@@ -29,7 +29,7 @@ enum Commands {
     /// Check environment dependencies including Docker & Nix
     Doctor,
     /// Build Oyster CVM Image
-    BuildImage {
+    Build {
         /// Platform (amd64 or arm64)
         #[arg(short, long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
         platform: String,
@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
 
     let result = match &cli.command {
         Commands::Doctor => commands::doctor::run_doctor(),
-        Commands::BuildImage {
+        Commands::Build {
             platform,
             docker_compose,
             docker_images,

@@ -34,7 +34,7 @@ oyster-cvm --help
 
 Checks if Docker and Nix are installed.
 
-#### `build-image`
+#### `build`
 Builds an oyster-cvm image.
 
 Options:
@@ -91,7 +91,7 @@ Optional Options:
 [INFO] Nix is installed ✓
 
 # Build an oyster cvm image
-./oyster-cvm build-image \
+./oyster-cvm build \
   --platform amd64 \
   --docker-compose ./docker-compose.yml \
   --docker-images ./image1.tar ./image2.tar \
