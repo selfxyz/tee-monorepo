@@ -2793,7 +2793,6 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
- "log",
  "openssl",
  "oyster-sdk",
  "reqwest",

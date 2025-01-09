@@ -54,6 +54,12 @@ enum Commands {
         )]
         commit_ref: String,
     },
+    /// Upload Enclave Image to IPFS
+    Upload {
+        /// Path to enclave image file
+        #[arg(short, long)]
+        file: String,
+    },
     /// Deploy an Oyster CVM instance
     Deploy {
         /// URL of the enclave image
@@ -92,12 +98,6 @@ enum Commands {
         #[arg(long)]
         debug: bool,
     },
-    /// Upload Enclave Image to IPFS
-    Upload {
-        /// Path to enclave image file
-        #[arg(short, long)]
-        file: String,
-    },
     /// Verify Oyster Enclave Attestation
     Verify {
         /// Enclave IP
@@ -131,6 +131,24 @@ enum Commands {
         /// Root public key
         #[arg(short = 'r', long, default_value = "")]
         root_public_key: String,
+    },
+    /// Update existing deployments
+    Update {
+        /// Job ID
+        #[arg(short, long)]
+        job_id: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long)]
+        wallet_private_key: String,
+
+        /// New URL of the enclave image
+        #[arg(short, long)]
+        image_url: Option<String>,
+
+        /// New debug mode
+        #[arg(short, long)]
+        debug: Option<bool>,
     },
 }
 
@@ -205,6 +223,20 @@ async fn main() -> Result<()> {
                 debug: *debug,
             };
             commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
+        }
+        Commands::Update {
+            job_id,
+            wallet_private_key,
+            image_url,
+            debug,
+        } => {
+            commands::update::update_job(
+                job_id,
+                wallet_private_key,
+                image_url.as_ref().map(|x| x.as_str()),
+                debug.to_owned(),
+            )
+            .await
         }
     };
 
