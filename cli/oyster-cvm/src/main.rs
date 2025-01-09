@@ -132,6 +132,24 @@ enum Commands {
         #[arg(short = 'r', long, default_value = "")]
         root_public_key: String,
     },
+    /// Update existing deployments
+    Update {
+        /// Job ID
+        #[arg(short, long)]
+        job_id: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long)]
+        wallet_private_key: String,
+
+        /// New URL of the enclave image
+        #[arg(short, long)]
+        image_url: Option<String>,
+
+        /// New debug mode
+        #[arg(short, long)]
+        debug: Option<bool>,
+    },
 }
 
 #[tokio::main]
@@ -205,6 +223,20 @@ async fn main() -> Result<()> {
                 debug: *debug,
             };
             commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
+        }
+        Commands::Update {
+            job_id,
+            wallet_private_key,
+            image_url,
+            debug,
+        } => {
+            commands::update::update_job(
+                job_id,
+                wallet_private_key,
+                image_url.as_ref().map(|x| x.as_str()),
+                debug.to_owned(),
+            )
+            .await
         }
     };
 
