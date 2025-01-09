@@ -2,7 +2,7 @@ use alloy::{
     network::EthereumWallet, primitives::FixedBytes, providers::ProviderBuilder,
     signers::local::PrivateKeySigner, sol,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
