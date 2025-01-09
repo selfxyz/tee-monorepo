@@ -96,6 +96,8 @@ iptables -vL
 /app/keygen-ed25519 --secret /app/id.sec --public /app/id.pub
 /app/keygen-secp256k1 --secret /app/ecdsa.sec --public /app/ecdsa.pub
 
+echo "nameserver 172.17.0.1" > /app/resolv.conf
+
 # your custom setup goes here
 
 # starting supervisord
