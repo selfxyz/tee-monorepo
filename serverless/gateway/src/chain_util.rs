@@ -159,10 +159,15 @@ pub async fn get_block_number_by_timestamp(
                                     / (block.header.timestamp - first_block_timestamp) as f64;
                             }
                             info!("Block rate per second: {}", block_rate_per_second);
-                            block_number = block_number
+                            let new_block_number = block_number
                                 + ((target_timestamp - block.header.timestamp) as f64
                                     * block_rate_per_second)
                                     as u64;
+                            if new_block_number == block_number {
+                                block_number = block_number + 1;
+                            } else {
+                                block_number = new_block_number;
+                            }
                         } else {
                             block_number = block_number + 1;
                         }
