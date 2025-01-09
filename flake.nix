@@ -53,6 +53,9 @@
       initialization.vet = import ./initialization/vet {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      initialization.logger = import ./initialization/logger {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       kernels.vanilla = import ./kernels/vanilla.nix {
         inherit nixpkgs systemConfig;
       };
