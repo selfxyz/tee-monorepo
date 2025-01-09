@@ -54,6 +54,12 @@ enum Commands {
         )]
         commit_ref: String,
     },
+    /// Upload Enclave Image to IPFS
+    Upload {
+        /// Path to enclave image file
+        #[arg(short, long)]
+        file: String,
+    },
     /// Deploy an Oyster CVM instance
     Deploy {
         /// URL of the enclave image
@@ -91,12 +97,6 @@ enum Commands {
         /// Enable debug mode
         #[arg(long)]
         debug: bool,
-    },
-    /// Upload Enclave Image to IPFS
-    Upload {
-        /// Path to enclave image file
-        #[arg(short, long)]
-        file: String,
     },
     /// Verify Oyster Enclave Attestation
     Verify {
