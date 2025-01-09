@@ -49,11 +49,11 @@ pub async fn fetch_logs_with_offset(
 }
 
 pub fn create_routes(
-    enclave_log_file_path: String,
-    sse_tx: tokio::sync::broadcast::Sender<String>,
+    enclave_logs: String,
+    script_logs: String,
     log_counter: Arc<AtomicU64>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    let logs_file = enclave_log_file_path.clone();
+    let logs_file = enclave_logs.clone();
     let log_counter1 = log_counter.clone();
     let log_counter2 = log_counter.clone();
     let home_html = include_str!("../assets/logs.html");
@@ -111,13 +111,65 @@ pub fn create_routes(
 
     let sse_route = warp::path("logs")
         .and(warp::path("stream"))
+        .and(warp::query::<HashMap<String, String>>())
         .and(warp::get())
-        .map(move || {
-            let sse_rx = sse_tx.subscribe();
+        .map(move |params: HashMap<String, String>| {
+            let logs_file = enclave_logs.to_string();
+            let script_logs = script_logs.to_string();
+            let log_counter = log_counter.clone();
+
+            let start_from = params
+                .get("start_from")
+                .and_then(|id| id.parse::<u64>().ok())
+                .unwrap_or_else(|| log_counter.load(Ordering::Relaxed));
+
             let stream = async_stream::stream! {
-                let mut sse_rx = sse_rx;
-                while let Ok(msg) = sse_rx.recv().await {
-                    yield Ok::<_, warp::Error>(warp::sse::Event::default().data(msg));
+                loop {  // Outer loop for retrying on errors
+                    match File::open(&logs_file).await {
+                        Ok(file) => {
+                            let mut reader = BufReader::new(file);
+                            let mut line = String::new();
+
+                            // Skip to start_from line if needed
+                            let mut current_line = 1;
+                            while current_line < start_from {
+                                match reader.read_line(&mut line).await {
+                                    Ok(0) => break,  // EOF
+                                    Ok(_) => {
+                                        current_line += 1;
+                                        line.clear();
+                                    },
+                                    Err(e) => {
+                                        let _ = log_message(&script_logs, &format!("Error skipping lines: {}", e)).await;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Stream from the current position
+                            loop {
+                                match reader.read_line(&mut line).await {
+                                    Ok(0) => {
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                    }
+                                    Ok(_) => {
+                                        if !line.is_empty() {
+                                            yield Ok::<_, warp::Error>(warp::sse::Event::default().data(line.clone()));
+                                            line.clear();
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = log_message(&script_logs, &format!("Error reading line: {}", e)).await;
+                                        break;  // Break inner loop to retry
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let _ = log_message(&script_logs, &format!("Error opening log file: {}", e)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;  // Wait before retry
+                        }
+                    }
                 }
             };
             warp::sse::reply(warp::sse::keep_alive().stream(stream))
@@ -125,24 +177,8 @@ pub fn create_routes(
 
     let cors = warp::cors()
         .allow_any_origin()
-        .allow_headers(vec![
-            "Access-Control-Allow-Headers",
-            "Access-Control-Request-Method",
-            "Access-Control-Request-Headers",
-            "Origin",
-            "Accept",
-            "X-Requested-With",
-            "Content-Type",
-        ])
-        .allow_methods(&[
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::PATCH,
-            Method::DELETE,
-            Method::OPTIONS,
-            Method::HEAD,
-        ]);
+        .allow_headers(vec!["*"])
+        .allow_methods(vec![Method::GET]);
 
     history_route
         .or(tail_log_route)

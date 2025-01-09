@@ -3,62 +3,50 @@ mod enclave_monitor;
 mod http_server;
 mod logging;
 
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
-
 use anyhow::Context;
 use args::Args;
 use clap::Parser;
 use enclave_monitor::monitor_and_capture_logs;
 use logging::{clear_log_file, log_message};
-use tokio::sync::broadcast;
+use std::sync::{atomic::AtomicU64, Arc};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let log_counter = Arc::new(AtomicU64::new(0));
+    let log_counter = Arc::new(AtomicU64::new(1));
 
-    clear_log_file(&args.enclave_log_file_path)
-        .await
-        .context("failed to clear enclave log file at startup")?;
-    clear_log_file(&args.script_log_file_path)
-        .await
-        .context("failed to clear debug log file at startup")?;
-
-    let (sse_tx, _) = broadcast::channel(100);
+    // Clear log files at startup
+    for path in [&args.enclave_log_file_path, &args.script_log_file_path] {
+        clear_log_file(path)
+            .await
+            .with_context(|| format!("failed to clear log file: {}", path))?;
+    }
 
     log_message(&args.script_log_file_path, "Starting script...").await?;
 
-    {
-        let sse_tx = sse_tx.clone();
-        let script_log_file = args.script_log_file_path.clone();
-        let enclave_log_file = args.enclave_log_file_path.clone();
-        let target_cid = args.target_cid;
-        let log_counter = Arc::clone(&log_counter);
+    // Spawn log monitoring task
+    tokio::task::spawn({
+        let script_log = args.script_log_file_path.clone();
+        let enclave_log = args.enclave_log_file_path.clone();
+        let counter = Arc::clone(&log_counter);
 
-        tokio::task::spawn(async move {
-            if let Err(e) = monitor_and_capture_logs(
-                &sse_tx,
-                &enclave_log_file,
-                &script_log_file,
-                target_cid,
-                log_counter,
-            )
-            .await
+        async move {
+            if let Err(e) =
+                monitor_and_capture_logs(&enclave_log, &script_log, args.target_cid, counter).await
             {
-                // Ensure you await the async function
                 let _ = log_message(
-                    &script_log_file,
+                    &script_log,
                     &format!("Error in monitor_and_capture_logs: {}. Retrying...", e),
                 )
                 .await;
             }
-        });
-    }
+        }
+    });
 
+    // Start HTTP server
     let routes = http_server::create_routes(
-        args.enclave_log_file_path.clone(),
-        sse_tx.clone(),
+        args.enclave_log_file_path.to_owned(),
+        args.script_log_file_path.to_owned(),
         log_counter,
     );
 
