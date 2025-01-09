@@ -3,7 +3,7 @@
 set -e
 
 # Start the Docker daemon in the background
-/bin/dockerd --iptables=false &
+/bin/dockerd --iptables=false --dns=172.17.0.1 -D &
 
 # Wait for Docker daemon to be ready
 until docker info >/dev/null 2>&1; do
