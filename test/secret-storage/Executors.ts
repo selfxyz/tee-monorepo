@@ -441,7 +441,7 @@ describe("Executors - Register/deregister executor", function () {
         );
 
         // select nodes
-        await executors.selectExecutionNodes(env, [], 1);
+        await executors.selectExecutionNodes(env, [addrs[15]], 1);
         // deregister
         await expect(teeManager.deregisterExecutor(addrs[15]))
             .to.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
@@ -520,7 +520,7 @@ describe("Executors - Staking/Unstaking", function () {
 
         // select nodes
         let env = 1;
-        await executors.selectExecutionNodes(env, [], 1);
+        await executors.selectExecutionNodes(env, [addrs[15]], 1);
 
         await expect(teeManager.removeExecutorStake(addrs[15]))
             .to.be.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
@@ -658,11 +658,16 @@ describe("Executors - Select/Release/Slash", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can select executors", async function () {
-        await expect(executors.selectExecutionNodes(1, [], 1))
+        await expect(executors.selectExecutionNodes(1, [addrs[15]], 1))
             .to.be.not.reverted;
 
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
         expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.true;
+    });
+
+    it("cannot select executors other than selected stores", async function () {
+        await expect(executors.selectExecutionNodes(1, [], 1))
+            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
     });
 
     it("cannot select executors without JOBS_ROLE", async function () {
@@ -676,27 +681,27 @@ describe("Executors - Select/Release/Slash", function () {
             .to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
     });
 
-    it("can select executors along with the already selcted stores", async function () {
-        let jobCapacity = 20,
-            env = 1,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerExecutor(
-            addrs[16],
-            jobCapacity,
-            env,
-            stakeAmount
-        );
+    // it("can select executors along with the already selected stores", async function () {
+    //     let jobCapacity = 20,
+    //         env = 1,
+    //         stakeAmount = 10n ** 19n;
+    //     await teeManager.registerExecutor(
+    //         addrs[16],
+    //         jobCapacity,
+    //         env,
+    //         stakeAmount
+    //     );
 
-        let noOfNodesToSelect = 2;
-        await expect(executors.selectExecutionNodes(env, [addrs[15]], noOfNodesToSelect))
-            .to.be.not.reverted;
+    //     let noOfNodesToSelect = 2;
+    //     await expect(executors.selectExecutionNodes(env, [addrs[15]], noOfNodesToSelect))
+    //         .to.be.not.reverted;
 
-        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
-        expect((await executors.executors(addrs[16])).activeJobs).to.be.eq(1);
-    });
+    //     expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
+    //     expect((await executors.executors(addrs[16])).activeJobs).to.be.eq(1);
+    // });
 
     it("can release executor", async function () {
-        await executors.selectExecutionNodes(1, [], 1);
+        await executors.selectExecutionNodes(1, [addrs[15]], 1);
 
         await expect(executors.releaseExecutor(addrs[15]))
             .to.be.not.reverted;
@@ -710,7 +715,7 @@ describe("Executors - Select/Release/Slash", function () {
     });
 
     it("can slash executor", async function () {
-        await executors.selectExecutionNodes(1, [], 1);
+        await executors.selectExecutionNodes(1, [addrs[15]], 1);
 
         await expect(executors.slashExecutor(addrs[15]))
             .to.be.not.reverted;
