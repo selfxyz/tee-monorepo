@@ -3,7 +3,7 @@
 set -e
 
 # Start the Docker daemon in the background
-/bin/dockerd --iptables=false --dns=172.17.0.1 -D &
+/bin/dockerd --iptables=false &
 
 # Wait for Docker daemon to be ready
 until docker info >/dev/null 2>&1; do
@@ -95,8 +95,6 @@ iptables -vL
 # generate identity key
 /app/keygen-ed25519 --secret /app/id.sec --public /app/id.pub
 /app/keygen-secp256k1 --secret /app/ecdsa.sec --public /app/ecdsa.pub
-
-echo "nameserver 172.17.0.1" > /app/resolv.conf
 
 # your custom setup goes here
 
