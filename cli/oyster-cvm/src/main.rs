@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use oyster::attestation::AWS_ROOT_KEY;
 
 mod commands;
 mod types;
@@ -129,7 +130,7 @@ enum Commands {
         timestamp: usize,
 
         /// Root public key
-        #[arg(short = 'r', long, default_value = "")]
+        #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
         root_public_key: String,
     },
     /// Update existing deployments

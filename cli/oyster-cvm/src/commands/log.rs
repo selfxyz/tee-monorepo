@@ -2,11 +2,9 @@ use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use reqwest::Client;
 use std::time::Duration;
-use tokio::process::Command;
 use tokio::time::timeout;
 use tracing::info;
 
-const PING_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub async fn stream_logs(
