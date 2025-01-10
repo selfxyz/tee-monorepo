@@ -2794,7 +2794,6 @@ dependencies = [
  "clap",
  "futures-util",
  "hex",
- "log",
  "openssl",
  "oyster-sdk",
  "reqwest",
