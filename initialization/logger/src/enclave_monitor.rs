@@ -11,11 +11,9 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
-    sync::broadcast,
 };
 
 pub async fn monitor_and_capture_logs(
-    sse_tx: &broadcast::Sender<String>,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
     target_cid: u64,
@@ -35,7 +33,6 @@ pub async fn monitor_and_capture_logs(
         )
         .await?;
         if let Err(e) = capture_logs(
-            sse_tx,
             &enclave_id,
             enclave_log_file_path,
             script_log_file_path,
@@ -83,7 +80,6 @@ async fn wait_for_enclave_with_cid(target_cid: u64) -> anyhow::Result<String> {
 }
 
 async fn capture_logs(
-    sse_tx: &broadcast::Sender<String>,
     enclave_id: &str,
     enclave_log_file_path: &str,
     script_log_file_path: &str,
@@ -114,10 +110,6 @@ async fn capture_logs(
             file.write_all(log_entry.as_bytes()).await?;
             file.write_all(b"\n").await?;
             file.flush().await?;
-        }
-
-        if sse_tx.send(log_entry).is_err() {
-            println!("No active SSE subscribers, skipping log transmission.");
         }
 
         log_counter.fetch_add(1, Ordering::Relaxed);
