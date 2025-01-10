@@ -94,6 +94,7 @@ iptables -vL
 
 # generate identity key
 /app/keygen-ed25519 --secret /app/id.sec --public /app/id.pub
+/app/keygen-secp256k1 --secret /app/ecdsa.sec --public /app/ecdsa.pub
 
 # your custom setup goes here
 
