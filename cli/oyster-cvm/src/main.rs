@@ -143,7 +143,7 @@ enum Commands {
         start_from: Option<String>,
 
         /// Include log ID prefix in output
-        #[arg(long, default_value_t = false)]
+        #[arg(short, long, default_value_t = false)]
         with_log_id: bool,
 
         /// Suppress connection status message

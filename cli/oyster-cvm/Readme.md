@@ -37,38 +37,42 @@ Checks if Docker and Nix are installed.
 #### `build`
 Builds an oyster-cvm image.
 
-Options:
+Required args:
 - `--platform` (amd64 or arm64)
 - `--docker-compose` (path to docker-compose.yml)
+
+Optional args:
 - `--docker-images` (list of Docker .tar files to be loaded)
 - `--output` (output directory, default: result)
 
 #### `upload`
 Uploads an enclave image to IPFS via Pinata.
 
-Options:
+Required args:
 - `--file` (path to the enclave image file)
 
-Add env vars for Pinata:
+Required env vars:
 ["PINATA_API_KEY", "PINATA_API_SECRET"]
 
 #### `verify`
 Verifies an Oyster enclave's attestation document.
 
-Options:
-- `--enclave-ip` (-e): Enclave IP address (required)
-- `--pcr0` (-0): PCR0 value (optional)
-- `--pcr1` (-1): PCR1 value (optional)
-- `--pcr2` (-2): PCR2 value (optional)
+Required args:
+- `--enclave-ip` (-e): Enclave IP address
+
+Optional args:
+- `--pcr0` (-0): PCR0 value
+- `--pcr1` (-1): PCR1 value
+- `--pcr2` (-2): PCR2 value
 - `--attestation-port` (-p): Attestation port (default: 1300)
 - `--max-age` (-a): Maximum age of attestation in milliseconds (default: 300000)
 - `--timestamp` (-t): Attestation timestamp in milliseconds (default: 0)
-- `--root-public-key` (-r): Root public key (optional, defaults to AWS root key)
+- `--root-public-key` (-r): Root public key (defaults to AWS root key)
 
 #### `deploy`
 Deploys an Oyster CVM instance.
 
-Required Options:
+Required args:
 - `--image-url`: URL of the enclave image
 - `--region`: Region for deployment
 - `--wallet-private-key`: Wallet private key for transaction signing
@@ -76,10 +80,21 @@ Required Options:
 - `--instance-type`: Instance type (e.g. "m5a.2xlarge")
 - `--duration-in-minutes`: Duration in minutes
 
-Optional Options:
-- `--bandwidth`: Optional bandwidth in KBps (default: 10)
+Optional args:
+- `--bandwidth`: Bandwidth in KBps (default: 10)
 - `--job-name`: Job name
-- `--debug `: Start enclave in debug mode
+- `--debug`: Start enclave in debug mode
+
+#### `console`
+Streams logs from an Oyster CVM instance.
+
+Required args:
+- `--ip` (-i): IP address of the instance (required)
+
+Optional args:
+- `--start-from` (-s): Optional log ID to start streaming from
+- `--with-log-id`(-w): Include log ID prefix in output (default: false)
+- `--quiet` (-q): Suppress connection status message (default: false)
 
 ### Example
 
@@ -147,6 +162,16 @@ Optional Options:
 [INFO] Root public key: <hex-encoded-key>
 [INFO] Enclave public key: <hex-encoded-key>
 [INFO] Verification successful ✓
+
+# Stream logs from an enclave
+./oyster-cvm console --ip 192.168.1.100
+
+# Stream logs with additional options
+./oyster-cvm console \
+  --ip 192.168.1.100 \
+  --start-from abc123 \
+  --with-log-id \
+  --quiet
 ```
 
 ## License
