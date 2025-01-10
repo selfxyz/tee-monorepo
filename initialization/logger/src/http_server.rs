@@ -154,7 +154,8 @@ pub fn create_routes(
                                     }
                                     Ok(_) => {
                                         if !line.is_empty() {
-                                            yield Ok::<_, warp::Error>(warp::sse::Event::default().data(line.clone()));
+                                            let trimmed_line = line.trim_end();
+                                            yield Ok::<_, warp::Error>(warp::sse::Event::default().data(trimmed_line));
                                             line.clear();
                                         }
                                     }

@@ -132,6 +132,24 @@ enum Commands {
         #[arg(short = 'r', long, default_value = "")]
         root_public_key: String,
     },
+    /// Stream logs from an Oyster CVM instance
+    Console {
+        /// IP address of the instance
+        #[arg(short, long, required = true)]
+        ip: String,
+
+        /// Optional log ID to start streaming from
+        #[arg(short, long)]
+        start_from: Option<String>,
+
+        /// Include log ID prefix in output
+        #[arg(long, default_value_t = false)]
+        with_log_id: bool,
+
+        /// Suppress connection status message
+        #[arg(short, long, default_value_t = false)]
+        quiet: bool,
+    },
 }
 
 #[tokio::main]
@@ -205,6 +223,9 @@ async fn main() -> Result<()> {
                 debug: *debug,
             };
             commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
+        }
+        Commands::Console { ip, start_from, with_log_id, quiet } => {
+            commands::log::stream_logs(&ip, start_from.as_deref(), *with_log_id, *quiet).await
         }
     };
 
