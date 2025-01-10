@@ -63,8 +63,7 @@ pub async fn stream_logs(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.context("Failed to read log stream")?;
         if let Ok(msg) = String::from_utf8(chunk.to_vec()) {
-            if msg.starts_with("data:") {
-                let log = &msg[5..];
+            if let Some(log) = msg.strip_prefix("data:") {
                 if log.trim().is_empty() {
                     continue;
                 }

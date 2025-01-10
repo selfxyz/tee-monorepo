@@ -229,7 +229,7 @@ async fn main() -> Result<()> {
             start_from,
             with_log_id,
             quiet,
-        } => commands::log::stream_logs(&ip, start_from.as_deref(), *with_log_id, *quiet).await,
+        } => commands::log::stream_logs(ip, start_from.as_deref(), *with_log_id, *quiet).await,
     };
 
     if let Err(err) = &result {
