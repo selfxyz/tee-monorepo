@@ -9,36 +9,12 @@ use tracing::info;
 const PING_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn ping_check(ip: &str) -> Result<()> {
-    match timeout(
-        PING_TIMEOUT,
-        Command::new("ping")
-            .arg("-c")
-            .arg("1")
-            .arg(ip)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status(),
-    )
-    .await
-    {
-        Ok(Ok(status)) if status.success() => Ok(()),
-        _ => anyhow::bail!(
-            "Failed to ping {} (timeout after {} seconds)",
-            ip,
-            PING_TIMEOUT.as_secs()
-        ),
-    }
-}
-
 pub async fn stream_logs(
     ip: &str,
     start_from: Option<&str>,
     with_log_id: bool,
     quiet: bool,
 ) -> Result<()> {
-    ping_check(ip).await?;
-
     let mut url = format!("http://{}:516/logs/stream", ip);
     if let Some(start_id) = start_from {
         url.push_str(&format!("?start_from={}", start_id));
