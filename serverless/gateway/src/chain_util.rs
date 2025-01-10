@@ -160,9 +160,10 @@ pub async fn get_block_number_by_timestamp(
                                     / (block.header.timestamp - first_block_timestamp) as f64;
                             }
                             info!("Block rate per second: {}", block_rate_per_second);
+                            // take ceil of block_rate * time_delta in case of fractional block
                             block_number = block_number
                                 + ((target_timestamp - block.header.timestamp) as f64
-                                    * block_rate_per_second)
+                                    * block_rate_per_second).ceil()
                                     as u64;
                         } else {
                             block_number = block_number + 1;
