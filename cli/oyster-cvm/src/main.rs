@@ -133,7 +133,7 @@ enum Commands {
         root_public_key: String,
     },
     /// Stream logs from an Oyster CVM instance
-    Console {
+    Logs {
         /// IP address of the instance
         #[arg(short, long, required = true)]
         ip: String,
@@ -224,9 +224,12 @@ async fn main() -> Result<()> {
             };
             commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
         }
-        Commands::Console { ip, start_from, with_log_id, quiet } => {
-            commands::log::stream_logs(&ip, start_from.as_deref(), *with_log_id, *quiet).await
-        }
+        Commands::Logs {
+            ip,
+            start_from,
+            with_log_id,
+            quiet,
+        } => commands::log::stream_logs(&ip, start_from.as_deref(), *with_log_id, *quiet).await,
     };
 
     if let Err(err) = &result {

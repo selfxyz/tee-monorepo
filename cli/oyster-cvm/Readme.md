@@ -85,7 +85,7 @@ Optional args:
 - `--job-name`: Job name
 - `--debug`: Start enclave in debug mode
 
-#### `console`
+#### `logs`
 Streams logs from an Oyster CVM instance.
 
 Required args:
@@ -164,10 +164,10 @@ Optional args:
 [INFO] Verification successful ✓
 
 # Stream logs from an enclave
-./oyster-cvm console --ip 192.168.1.100
+./oyster-cvm logs --ip 192.168.1.100
 
 # Stream logs with additional options
-./oyster-cvm console \
+./oyster-cvm logs \
   --ip 192.168.1.100 \
   --start-from abc123 \
   --with-log-id \
