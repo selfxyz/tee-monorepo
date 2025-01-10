@@ -51,7 +51,7 @@ enum Commands {
         #[arg(
             short = 'r',
             long,
-            default_value = "3e6dbc844b42281462e65d7742d9436d4205fcfd" // To be updated when nix configs are changed
+            default_value = "2d7507501049f3c685f0859aa92e57397e490e88" // To be updated when nix configs are changed
         )]
         commit_ref: String,
     },
