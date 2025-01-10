@@ -3,7 +3,7 @@ use hex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
-use oyster::attestation::{get, verify, AttestationExpectations, AWS_ROOT_KEY};
+use oyster::attestation::{get, verify, AttestationExpectations};
 
 pub async fn verify_enclave(
     pcr0: &str,
@@ -29,11 +29,9 @@ pub async fn verify_enclave(
     let attestation_expectations = AttestationExpectations {
         age: Some((*max_age, now)),
         pcrs: get_pcrs(pcr0, pcr1, pcr2)?,
-        root_public_key: Some(if root_public_key.is_empty() {
-            AWS_ROOT_KEY.to_vec()
-        } else {
-            root_public_key.as_bytes().to_vec()
-        }),
+        root_public_key: Some(
+            hex::decode(root_public_key).context("Failed to decode root public key hex string")?,
+        ),
         timestamp: (!timestamp.eq(&0)).then_some(*timestamp),
     };
 
