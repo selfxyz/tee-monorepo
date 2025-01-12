@@ -4,6 +4,7 @@ use alloy::signers::local::PrivateKeySigner;
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
+use nucypher_core::{ferveo::api::DkgPublicKey, Conditions};
 use tokio::{fs::read, net::TcpListener};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -26,6 +27,10 @@ struct Args {
     /// Condition string for the key
     #[arg(short, long)]
     condition: String,
+
+    /// DKG public key in hex form
+    #[arg(short, long)]
+    dkg_public_key: String,
 }
 
 #[derive(Clone)]
@@ -33,7 +38,8 @@ struct AppState {
     randomness: Arc<Mutex<Option<Box<[u8]>>>>,
     encrypted: Arc<Mutex<String>>,
     signer: PrivateKeySigner,
-    condition: String,
+    conditions: Conditions,
+    dkg_public_key: DkgPublicKey,
 }
 
 #[tokio::main]
@@ -53,7 +59,11 @@ async fn main() -> Result<()> {
         signer,
         randomness: Default::default(),
         encrypted: Default::default(),
-        condition: args.condition,
+        conditions: Conditions::new(&args.condition),
+        dkg_public_key: DkgPublicKey::from_bytes(
+            &hex::decode(args.dkg_public_key).context("failed to decode dkg public key")?,
+        )
+        .context("failed to create dkg public key")?,
     };
 
     let app = Router::new()
