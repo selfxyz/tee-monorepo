@@ -2,7 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use alloy::signers::local::PrivateKeySigner;
 use anyhow::{Context, Result};
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use clap::Parser;
 use nucypher_core::{ferveo::api::DkgPublicKey, Conditions};
 use tokio::{fs::read, net::TcpListener};
@@ -67,8 +70,8 @@ async fn main() -> Result<()> {
     };
 
     let app = Router::new()
-        .route("/generate", get(generate::generate))
-        .route("/import", get(import::import))
+        .route("/generate", post(generate::generate))
+        .route("/import", post(import::import))
         .route("/derive", get(derive::derive))
         .with_state(app_state);
 
