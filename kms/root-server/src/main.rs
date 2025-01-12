@@ -13,6 +13,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod derive;
+mod export;
 mod generate;
 mod import;
 
@@ -72,6 +73,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/generate", post(generate::generate))
         .route("/import", post(import::import))
+        .route("/export", get(export::export))
         .route("/derive", get(derive::derive))
         .with_state(app_state);
 
