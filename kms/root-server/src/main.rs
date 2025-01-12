@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use axum::{http::StatusCode, routing::get, Router};
+use axum::{routing::get, Router};
 use clap::Parser;
 use tokio::net::TcpListener;
 use tracing::info;
@@ -37,10 +37,6 @@ async fn main() -> Result<()> {
         .context("failed to serve")?;
 
     Ok(())
-}
-
-async fn hello() -> (StatusCode, String) {
-    (StatusCode::OK, "Hello, World!".to_owned())
 }
 
 fn setup_logging() {
