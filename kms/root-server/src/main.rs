@@ -5,6 +5,10 @@ use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod derive;
+mod generate;
+mod import;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -18,7 +22,10 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let app = Router::new().route("/", get(hello));
+    let app = Router::new()
+        .route("/generate", get(generate::generate))
+        .route("/import", get(import::import))
+        .route("/derive", get(derive::derive));
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
