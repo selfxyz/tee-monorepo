@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
@@ -16,16 +18,24 @@ struct Args {
     listen_addr: String,
 }
 
+#[derive(Default, Clone)]
+struct AppState {
+    root_key: Arc<Mutex<Option<Box<[u8]>>>>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logging();
 
     let args = Args::parse();
 
+    let app_state = AppState::default();
+
     let app = Router::new()
         .route("/generate", get(generate::generate))
         .route("/import", get(import::import))
-        .route("/derive", get(derive::derive));
+        .route("/derive", get(derive::derive))
+        .with_state(app_state);
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
