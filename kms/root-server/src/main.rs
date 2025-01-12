@@ -39,6 +39,9 @@ struct Args {
 
 #[derive(Clone)]
 struct AppState {
+    // lock hierarchy:
+    // randomness
+    // encrypted
     randomness: Arc<Mutex<Option<Box<[u8]>>>>,
     encrypted: Arc<Mutex<String>>,
     signer: PrivateKeySigner,
