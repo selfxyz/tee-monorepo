@@ -20,7 +20,8 @@ struct Args {
 
 #[derive(Default, Clone)]
 struct AppState {
-    root_key: Arc<Mutex<Option<Box<[u8]>>>>,
+    randomness: Arc<Mutex<Option<Box<[u8]>>>>,
+    encrypted: Arc<Mutex<Box<[u8]>>>,
 }
 
 #[tokio::main]
