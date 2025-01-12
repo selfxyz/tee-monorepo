@@ -26,7 +26,7 @@ pub async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
     // set randomness and encrypted
     let mut randomness_guard = state.randomness.lock().unwrap();
     let mut encrypted_guard = state.encrypted.lock().unwrap();
-    randomness_guard.replace(randomness);
+    *randomness_guard = Some(randomness);
     *encrypted_guard = encrypted;
     drop(encrypted_guard);
     drop(randomness_guard);
