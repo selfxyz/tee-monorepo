@@ -22,13 +22,18 @@ struct Args {
     /// Path to file with private key signer
     #[arg(short, long, default_value = "/app/secp256k1.sec")]
     signer: String,
+
+    /// Condition string for the key
+    #[arg(short, long)]
+    condition: String,
 }
 
 #[derive(Clone)]
 struct AppState {
-    signer: PrivateKeySigner,
     randomness: Arc<Mutex<Option<Box<[u8]>>>>,
-    encrypted: Arc<Mutex<Box<[u8]>>>,
+    encrypted: Arc<Mutex<String>>,
+    signer: PrivateKeySigner,
+    condition: String,
 }
 
 #[tokio::main]
@@ -48,6 +53,7 @@ async fn main() -> Result<()> {
         signer,
         randomness: Default::default(),
         encrypted: Default::default(),
+        condition: args.condition,
     };
 
     let app = Router::new()
