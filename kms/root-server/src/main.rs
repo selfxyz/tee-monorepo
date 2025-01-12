@@ -1,20 +1,30 @@
 use anyhow::{Context, Result};
 use axum::{http::StatusCode, routing::get, Router};
+use clap::Parser;
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value = "0.0.0.0:1100")]
+    listen_addr: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logging();
 
+    let args = Args::parse();
+
     let app = Router::new().route("/", get(hello));
 
-    let listener = TcpListener::bind("0.0.0.0:1100")
+    let listener = TcpListener::bind(&args.listen_addr)
         .await
         .context("failed to bind listener")?;
 
-    info!("Listening on {}", "0.0.0.0:1100");
+    info!("Listening on {}", args.listen_addr);
     axum::serve(listener, app)
         .await
         .context("failed to serve")?;
