@@ -32,6 +32,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+async fn hello() -> (StatusCode, String) {
+    (StatusCode::OK, "Hello, World!".to_owned())
+}
+
 fn setup_logging() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -39,8 +43,4 @@ fn setup_logging() {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
-}
-
-async fn hello() -> (StatusCode, String) {
-    (StatusCode::OK, "Hello, World!".to_owned())
 }
