@@ -1146,6 +1146,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "hex",
  "nucypher-core",
  "rand 0.8.5",
  "thiserror 2.0.11",
