@@ -10,7 +10,6 @@ use alloy::{
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
@@ -18,7 +17,6 @@ use tracing::info;
 
 const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
 const JOB_REFRESH_ENDPOINT: &str = "https://sk.arb1.marlin.org/operators/jobs/refresh/ArbOne/";
-const MAINNET_OPERATOR_LIST_URL: &str = "https://sk.arb1.marlin.org/operators/spec/ArbOne";
 
 const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
 const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
@@ -83,17 +81,30 @@ pub async fn deploy_oyster_instance(
 ) -> Result<()> {
     tracing::info!("Starting deployment...");
 
-    let operators = fetch_operators(MAINNET_OPERATOR_LIST_URL)
+    // Setup wallet and provider with signer
+    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
+    let signer = PrivateKeySigner::from_bytes(&private_key)?;
+    let wallet = EthereumWallet::from(signer);
+
+    let provider = ProviderBuilder::new()
+        .with_recommended_fillers()
+        .wallet(wallet.clone())
+        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
+
+    // Get CP URL using the configured provider
+    let cp_url = get_operator_cp(operator, provider.clone())
         .await
-        .context("Failed to fetch operator list")?;
-    let selected_operator = operators
-        .into_iter()
-        .find(|(addr, _)| addr.to_lowercase() == operator.to_lowercase())
-        .map(|(_, operator)| operator)
-        .context("Error: Operator not found in operator list")?;
+        .context("Failed to get CP URL")?;
+    info!("CP URL for operator: {}", cp_url);
+
+    // Fetch operator specs from CP URL
+    let spec_url = format!("{}/spec", cp_url);
+    let operator_spec = fetch_operator_spec(&spec_url)
+        .await
+        .context("Failed to fetch operator spec")?;
 
     // Validate region is supported
-    if !selected_operator
+    if !operator_spec
         .allowed_regions
         .iter()
         .any(|r| r == &config.region)
@@ -104,26 +115,9 @@ pub async fn deploy_oyster_instance(
         ));
     }
 
-    // Setup wallet and provider
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
-    let wallet = EthereumWallet::from(signer);
-
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
-
-    let provider_for_market = provider.clone();
-
-    let cp_url = get_operator_cp(operator, provider_for_market.clone())
-        .await
-        .context("Failed to get CP URL")?;
-    info!("CP URL for operator: {}", cp_url);
-
     // Fetch operator min rates with early validation
     let selected_instance =
-        find_minimum_rate_instance(&selected_operator, &config.region, &config.instance_type)
+        find_minimum_rate_instance(&operator_spec, &config.region, &config.instance_type)
             .context("Configuration not supported by operator")?;
 
     // Calculate costs
@@ -158,7 +152,7 @@ pub async fn deploy_oyster_instance(
     );
 
     // Approve USDC and create job
-    approve_usdc(total_cost, provider_for_market.clone()).await?;
+    approve_usdc(total_cost, provider.clone()).await?;
 
     // Create job
     let job_id = create_new_oyster_job(
@@ -166,7 +160,7 @@ pub async fn deploy_oyster_instance(
         operator.parse()?,
         total_rate,
         total_cost,
-        provider_for_market.clone(),
+        provider.clone(),
     )
     .await?;
     info!("Job created with ID: {:?}", job_id);
@@ -257,11 +251,11 @@ async fn create_new_oyster_job(
     ))
 }
 
-async fn fetch_operators(url: &str) -> Result<Vec<(String, Operator)>> {
-    let client: Client = Client::new();
+async fn fetch_operator_spec(url: &str) -> Result<Operator> {
+    let client = Client::new();
     let response = client.get(url).send().await?;
-    let operators_map: HashMap<String, Operator> = response.json().await?;
-    Ok(operators_map.into_iter().collect())
+    let operator: Operator = response.json().await?;
+    Ok(operator)
 }
 
 async fn wait_for_ip_address(url: &str) -> Result<String> {
