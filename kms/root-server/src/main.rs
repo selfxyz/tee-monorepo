@@ -21,20 +21,32 @@ mod import;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Listening address
-    #[arg(short, long, default_value = "0.0.0.0:1100")]
+    #[arg(long, default_value = "0.0.0.0:1100")]
     listen_addr: String,
 
     /// Path to file with private key signer
-    #[arg(short, long, default_value = "/app/secp256k1.sec")]
+    #[arg(long, default_value = "/app/secp256k1.sec")]
     signer: String,
 
     /// Condition string for the key
-    #[arg(short, long)]
+    #[arg(long)]
     condition: String,
 
     /// DKG public key in hex form
-    #[arg(short, long)]
+    #[arg(long)]
     dkg_public_key: String,
+
+    /// Porter URI
+    #[arg(long)]
+    porter: String,
+
+    /// Ritual id
+    #[arg(long)]
+    ritual: String,
+
+    /// Coordinator address
+    #[arg(long)]
+    coordinator: String,
 }
 
 #[derive(Clone)]
