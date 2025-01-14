@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::repeat, ops::Mul};
+use std::{collections::HashMap, ops::Mul};
 
 use anyhow::Result;
 use aws_config::{BehaviorVersion, Region};
@@ -67,10 +67,7 @@ async fn run() -> Result<()> {
     let regional_rate_cards = tokio_stream::iter(
         REGIONS
             .iter()
-            .map(|v| v.to_string())
-            .zip(repeat(args.profile))
-            .zip(repeat(args.premium))
-            .map(|((x, y), z)| (x, y, z)),
+            .map(|v| (v.to_string(), &args.profile, args.premium)),
     )
     .then(run_region)
     .collect::<Vec<_>>()
@@ -106,13 +103,13 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-async fn run_region((region, profile, premium): (String, String, usize)) -> Vec<RateCard> {
+async fn run_region((region, profile, premium): (String, &String, usize)) -> Vec<RateCard> {
     info!("Processing {region}");
 
     let ec2_client = aws_sdk_ec2::Client::new(
         &aws_config::defaults(BehaviorVersion::latest())
-            .profile_name(&profile)
-            .region(Region::new(region))
+            .profile_name(profile)
+            .region(Region::new(region.clone()))
             .load()
             .await,
     );
@@ -156,11 +153,12 @@ async fn run_region((region, profile, premium): (String, String, usize)) -> Vec<
         .collect::<Vec<_>>();
 
     async fn fetch_rate_card(
-        (instance_type, arch, pricing_client, premium): (
+        (instance_type, arch, pricing_client, premium, region): (
             &String,
             &String,
             &aws_sdk_pricing::Client,
             usize,
+            &String,
         ),
     ) -> RateCard {
         info!("Processing {instance_type}");
@@ -180,7 +178,7 @@ async fn run_region((region, profile, premium): (String, String, usize)) -> Vec<
                 Filter::builder()
                     .r#type(FilterType::TermMatch)
                     .field("regionCode")
-                    .value(pricing_client.config().region().unwrap().to_string())
+                    .value(region)
                     .build()
                     .unwrap(),
             )
@@ -242,7 +240,6 @@ async fn run_region((region, profile, premium): (String, String, usize)) -> Vec<
 
                 Some(RateCard {
                     instance: instance_type.into(),
-                    // X% premium
                     min_rate: (price * (100 + premium as u128) * 10u128.pow(12) / 360000)
                         .to_string(),
                     cpu: v["product"]["attributes"]["vcpu"]
@@ -275,10 +272,7 @@ async fn run_region((region, profile, premium): (String, String, usize)) -> Vec<
     let mut rates = tokio_stream::iter(
         instance_types
             .iter()
-            .zip(repeat(&pricing_client))
-            .map(|((a, b), z)| (a, b, z))
-            .zip(repeat(premium))
-            .map(|((a, b, c), z)| (a, b, c, z)),
+            .map(|(a, b)| (a, b, &pricing_client, premium, &region)),
     )
     .then(fetch_rate_card)
     .collect::<Vec<_>>()
