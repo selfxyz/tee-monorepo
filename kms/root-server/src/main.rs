@@ -5,9 +5,10 @@ use std::{
 
 use alloy::{
     primitives::{Address, U256},
-    providers::ProviderBuilder,
+    providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
     sol,
+    sol_types::SolValue,
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -40,10 +41,6 @@ struct Args {
     #[arg(long)]
     condition: String,
 
-    /// DKG public key in hex form
-    #[arg(long)]
-    dkg_public_key: String,
-
     /// Porter URI
     #[arg(long)]
     porter: String,
@@ -75,6 +72,7 @@ struct AppState {
     taco_nodes: HashMap<Address, SessionStaticKey>,
     threshold: u16,
     porter: String,
+    chain_id: u64,
 }
 
 #[tokio::main]
@@ -90,23 +88,27 @@ async fn main() -> Result<()> {
     )
     .context("failed to create signer")?;
 
-    let (taco_nodes, threshold) = get_taco_nodes(&args)
+    let (taco_nodes, threshold, dkg_public_key) = get_taco_nodes(&args)
         .await
         .context("failed to fetch taco nodes")?;
+
+    let chain_id = ProviderBuilder::new()
+        .on_http(args.rpc.parse().context("failed to parse rpc url")?)
+        .get_chain_id()
+        .await
+        .context("failed to get chain id")?;
 
     let app_state = AppState {
         signer,
         randomness: Default::default(),
         encrypted: Default::default(),
         conditions: Conditions::new(&args.condition),
-        dkg_public_key: DkgPublicKey::from_bytes(
-            &hex::decode(args.dkg_public_key).context("failed to decode dkg public key")?,
-        )
-        .context("failed to create dkg public key")?,
+        dkg_public_key,
         ritual: args.ritual,
         taco_nodes,
         threshold,
         porter: args.porter,
+        chain_id,
     };
 
     let app = Router::new()
@@ -177,7 +179,9 @@ sol! {
     }
 }
 
-async fn get_taco_nodes(args: &Args) -> Result<(HashMap<Address, SessionStaticKey>, u16)> {
+async fn get_taco_nodes(
+    args: &Args,
+) -> Result<(HashMap<Address, SessionStaticKey>, u16, DkgPublicKey)> {
     let provider =
         ProviderBuilder::new().on_http(args.rpc.parse().context("failed to parse rpc url")?);
     let contract = Coordinator::new(
@@ -199,6 +203,9 @@ async fn get_taco_nodes(args: &Args) -> Result<(HashMap<Address, SessionStaticKe
         .await
         .context("failed to get participants")?;
 
+    let dkg_public_key = DkgPublicKey::from_bytes(&ritual.publicKey.abi_encode_packed())
+        .context("failed to parse dkg public key")?;
+
     Ok((
         HashMap::from_iter(participants._0.into_iter().filter_map(|p| {
             Some((
@@ -207,6 +214,7 @@ async fn get_taco_nodes(args: &Args) -> Result<(HashMap<Address, SessionStaticKe
             ))
         })),
         ritual.threshold,
+        dkg_public_key,
     ))
 }
 
