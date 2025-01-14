@@ -8,3 +8,4 @@ name = "compute_rates"
 path = "src/compute_rates.rs"
 
 [dependencies]
+tokio = { version = "1.43.0", features = ["full"] }
