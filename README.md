@@ -33,6 +33,7 @@ The repository is organized into projects:
 - [serverless/gateway-enclave](./serverless/gateway-enclave/): Enclave that packages the Serverless Gateway and supporting applications.
 - [serverless/http-on-vsock-client](./serverless/http-on-vsock-client/): Client for HTTP over vsock connections.
 - [serverless/http-on-vsock-server](./serverless/http-on-vsock-server/): Server library for HTTP over vsock connections.
+- [serverless/secret-store](./serverless/secret-store/) : Oyster secret store to securely store and manage user secrets 
 - [serverless/transaction-manager](./serverless/transaction-manager/): Oyster library for sending transaction and confirmation management
 
 

@@ -1,17 +1,50 @@
-# Oyster-secret-store
+![Marlin Oyster Logo](./logo.svg)
+
+# Secret store
 
 Oyster Secret Store is a platform designed to securely store user secrets in a highly controlled environment. It is a part of the Oyster web3 ecosystem used to store secret data the users might want to use to run their code on Serverless network. Secret store node is meant to run inside on-chain verified (Oyster-verification protocol) enclave ensuring that any message signed by it will be treated as truth and smart contracts can execute based on that signed message. The owners provide computation services and manage the lifecycle of multiple secret store enclaves, like registration, deregistration, stakes etc. Built using the Rust, Actix Web framework and alloy library - Oyster secret store leverages the power and security of AWS Nitro Enclaves to provide unparalleled isolation and protection for the stored secrets and RPCs to interact with the smart contracts.
 
-## Tools and setup required for building secret store locally 
+## Build
 
 <b>Install the following packages : </b>
 
-* build-essential 
+* build-essential
 * libc++1
 * libssl-dev
 * musl-tools
 * make
 * pkg-config
+
+<b> Build the secret store binary </b>
+
+Build the binary executable:
+```
+cargo build --release
+```
+OR (for custom targets)
+```
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+```
+
+### Reproducible builds
+
+Reproducible builds can be done using Nix. The monorepo provides a Nix flake which includes this project and can be used to trigger builds:
+
+```bash
+nix build -v .#<flavor>.serverless.secret-store.<output>
+```
+
+Supported flavors:
+- `gnu`
+- `musl`
+
+Supported outputs:
+- `default`, same as `compressed`
+- `uncompressed`
+- `compressed`, using `upx`
+
+## Usage
 
 <b>Signer file setup</b>
 
@@ -21,23 +54,6 @@ The <a href="https://github.com/marlinprotocol/oyster-monorepo/tree/master/initi
 <b> RPC and smart contracts configuration</b>
 
 To run the secret store, details related to RPC like the HTTP and WebSocket URLs will be needed through which the store will communicate with the common chain. Also the addresses of the relevant smart contracts deployed there like **SecretStore** and **SecretManager** will be needed.
-
-<b> Build the secret store binary </b>
-
-Default build target is `x86_64-unknown-linux-musl`. Can be changed in the `.cargo/config.toml` file or in the build command itself. Add the required build target first like: 
-```
-rustup target add x86_64-unknown-linux-musl
-```
-Build the binary executable: 
-```
-cargo build --release
-```
-OR (for custom targets)
-```
-cargo build --release --target x86_64-unknown-linux-musl
-```
-
-## Running secret store application
 
 <b>Run the secret store application :</b>
 
@@ -67,7 +83,7 @@ Configuration file parameters required for running a secret store node:
     "mark_alive_timeout": // Secret Store mark alive timeout as configured on common chain (in seconds),
     "num_selected_stores": // Number of stores selected to store an user secret as configured on common chain
 }
-``` 
+```
 Example command to run the secret store locally:
 ```
 sudo ./target/x86_64-unknown-linux-musl/release/oyster-secret-store --port 6002 --config-file ./oyster_secret_store_config.json
@@ -77,7 +93,7 @@ sudo ./target/x86_64-unknown-linux-musl/release/oyster-secret-store --port 6002 
 
 Currently there is only one such parameter and it is the address of the secret store enclave owner.
 ```
-$ curl -X POST -H "Content-Type: application/json" -d '{"owner_address_hex": "{OWNER_ADDRESS_HEX}"}' <secret_store_node_ip:secret_store_node_port>/immutable-config 
+$ curl -X POST -H "Content-Type: application/json" -d '{"owner_address_hex": "{OWNER_ADDRESS_HEX}"}' <secret_store_node_ip:secret_store_node_port>/immutable-config
 Immutable params configured!
 ```
 
@@ -85,10 +101,11 @@ Immutable params configured!
 
 Currently there is only one such parameter and it is the gas private key used by the secret store enclave to send transactions to the common chain.
 ```
-$ curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "{GAS_PRIVATE_KEY_HEX}"}' <secret_store_node_ip:secret_store_node_port>/mutable-config 
+$ curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "{GAS_PRIVATE_KEY_HEX}"}' <secret_store_node_ip:secret_store_node_port>/mutable-config
 Mutable params configured!
 ```
-**The owner can use the below endpoint to get details about the state of the secret store node**:-
+
+<b> The owner can use the below endpoint to get details about the state of the secret store node: </b>
 ```
 $ curl <secret_store_node_ip:secret_store_node_port>/store-details
 {"enclave_address":"{ENCLAVE_ADDRESS}","enclave_public_key":"{ENCLAVE_PUBLIC_KEY_HEX}","gas_address":"{ENCLAVE_GAS_ADDRESS}","owner_address":"{ENCLAVE_OWNER_ADDRESS}"}
@@ -103,8 +120,6 @@ $ curl <secret_store_node_ip:secret_store_node_port>/signed-registration-message
 ```
 
 **Note:** After the owner will register the secret store enclave on the common chain, the node will listen to that event and start the listening of user secret requests created by the **SecretManager** contract on the common chain and store/modify them accordingly.
-
-## User interaction with the secret store
 
 <b> Injecting secret data into the secret store node: </b>
 
@@ -124,3 +139,7 @@ Secret ID: {SECRET_ID_PROVIDED}
 Encrypted secret: {ENCRYPTED_SECRET_DATA_BYTES_HEX}
 Signature: {USER_SIGNATURE_OF_SECRET_ID_AND_ENCRYPTED_DATA}
 ```
+
+## License
+
+This project is licensed under the GNU AGPLv3 or any later version. See [LICENSE.txt](./LICENSE.txt).
