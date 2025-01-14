@@ -4,3 +4,6 @@
 [submodule "contracts/contracts-foundry/lib/risc0-ethereum"]
 	path = contracts/contracts-foundry/lib/risc0-ethereum
 	url = https://github.com/risc0/risc0-ethereum
+[submodule "contracts/contracts-foundry/lib/openzeppelin-contracts"]
+	path = contracts/contracts-foundry/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
