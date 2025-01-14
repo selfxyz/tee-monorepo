@@ -1459,6 +1459,7 @@ dependencies = [
  "aws-sdk-ec2",
  "aws-sdk-pricing",
  "clap",
+ "serde",
  "tokio",
  "tokio-stream",
  "tracing",
