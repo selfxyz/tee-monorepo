@@ -16,7 +16,7 @@ contract KmsRoot is Ownable {
     mapping(address => bool) public isVerified;
 
     error KmsRootTooOld();
-    error KmsRootPubkeyLengthInvalid();
+    error KmsRootLengthInvalid();
 
     event KmsRootVerifierUpdated(
         IRiscZeroVerifier indexed verifier,
@@ -67,7 +67,7 @@ contract KmsRoot is Ownable {
             _timestampInMilliseconds > (block.timestamp - MAX_AGE) * 1000,
             KmsRootTooOld()
         );
-        require(_signerPubkey.length < 256, KmsRootPubkeyLengthInvalid());
+        require(_signerPubkey.length < 256, KmsRootLengthInvalid());
         bytes32 _journalDigest = sha256(
             abi.encodePacked(
                 _timestampInMilliseconds,
@@ -109,7 +109,7 @@ contract KmsRoot is Ownable {
     function _pubkeyToAddress(
         bytes calldata _pubkey
     ) internal pure returns (address) {
-        require(_pubkey.length == 64, KmsRootPubkeyLengthInvalid());
+        require(_pubkey.length == 64, KmsRootLengthInvalid());
 
         bytes32 _hash = keccak256(_pubkey);
         return address(uint160(uint256(_hash)));
