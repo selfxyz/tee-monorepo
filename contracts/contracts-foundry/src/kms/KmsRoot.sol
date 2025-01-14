@@ -15,26 +15,26 @@ contract KmsRoot is Ownable {
 
     mapping(address => bool) public isVerified;
 
-    error RootKmsTooOld();
-    error RootKmsPubkeyLengthInvalid();
+    error KmsRootTooOld();
+    error KmsRootPubkeyLengthInvalid();
 
-    event RootKmsVerifierUpdated(
+    event KmsRootVerifierUpdated(
         IRiscZeroVerifier indexed verifier,
         IRiscZeroVerifier indexed old
     );
-    event RootKmsImageIdUpdated(bytes32 indexed imageId, bytes32 indexed old);
-    event RootKmsPcrsUpdated(bytes indexed pcrs, bytes indexed old);
-    event RootKmsRootKeyUpdated(bytes indexed rootKey, bytes indexed old);
-    event RootKmsVerified(address indexed addr);
+    event KmsRootImageIdUpdated(bytes32 indexed imageId, bytes32 indexed old);
+    event KmsRootPcrsUpdated(bytes indexed pcrs, bytes indexed old);
+    event KmsRootRootKeyUpdated(bytes indexed rootKey, bytes indexed old);
+    event KmsRootVerified(address indexed addr);
 
     constructor(
         address _owner,
         IRiscZeroVerifier _verifier,
         bytes32 _imageId,
         bytes memory _pcrs,
-        uint256 maxAge
+        uint256 _maxAge
     ) Ownable(_owner) {
-        MAX_AGE = maxAge;
+        MAX_AGE = _maxAge;
 
         _updateVerifier(_verifier);
         _updateImageId(_imageId);
@@ -65,9 +65,9 @@ contract KmsRoot is Ownable {
     ) external {
         require(
             _timestampInMilliseconds > (block.timestamp - MAX_AGE) * 1000,
-            RootKmsTooOld()
+            KmsRootTooOld()
         );
-        require(_signerPubkey.length < 256, RootKmsPubkeyLengthInvalid());
+        require(_signerPubkey.length < 256, KmsRootPubkeyLengthInvalid());
         bytes32 _journalDigest = sha256(
             abi.encodePacked(
                 _timestampInMilliseconds,
@@ -80,38 +80,38 @@ contract KmsRoot is Ownable {
         );
         verifier.verify(_seal, imageId, _journalDigest);
 
-        address addr = _pubkeyToAddress(_signerPubkey);
-        isVerified[addr] = true;
+        address _addr = _pubkeyToAddress(_signerPubkey);
+        isVerified[_addr] = true;
 
-        emit RootKmsVerified(addr);
+        emit KmsRootVerified(_addr);
     }
 
     function _updateVerifier(IRiscZeroVerifier _verifier) internal {
-        emit RootKmsVerifierUpdated(_verifier, verifier);
+        emit KmsRootVerifierUpdated(_verifier, verifier);
         verifier = _verifier;
     }
 
     function _updateImageId(bytes32 _imageId) internal {
-        emit RootKmsImageIdUpdated(_imageId, imageId);
+        emit KmsRootImageIdUpdated(_imageId, imageId);
         imageId = _imageId;
     }
 
     function _updatePcrs(bytes memory _pcrs) internal {
-        emit RootKmsPcrsUpdated(_pcrs, pcrs);
+        emit KmsRootPcrsUpdated(_pcrs, pcrs);
         pcrs = _pcrs;
     }
 
     function _updateRootKey(bytes calldata _rootKey) internal {
-        emit RootKmsRootKeyUpdated(_rootKey, rootKey);
+        emit KmsRootRootKeyUpdated(_rootKey, rootKey);
         rootKey = _rootKey;
     }
 
     function _pubkeyToAddress(
         bytes calldata _pubkey
     ) internal pure returns (address) {
-        require(_pubkey.length == 64, RootKmsPubkeyLengthInvalid());
+        require(_pubkey.length == 64, KmsRootPubkeyLengthInvalid());
 
-        bytes32 hash = keccak256(_pubkey);
-        return address(uint160(uint256(hash)));
+        bytes32 _hash = keccak256(_pubkey);
+        return address(uint160(uint256(_hash)));
     }
 }
