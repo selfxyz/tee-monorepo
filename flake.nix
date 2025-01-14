@@ -146,6 +146,9 @@
       serverless.http-on-vsock-client = import ./serverless/http-on-vsock-client {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      serverless.secret-store = import ./serverless/secret-store {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       serverless.workerd = ./. + "/serverless/executor/runtime/workerd";
     };
   in {
