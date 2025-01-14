@@ -3,4 +3,8 @@ name = "setup-aws"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "compute_rates"
+path = "src/compute_rates.rs"
+
 [dependencies]
