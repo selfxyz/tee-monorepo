@@ -97,6 +97,14 @@ contract TreeMapUpgradeable is Initializable {
         return true;
     }
 
+    function getNodeValue(uint8 _env, address _addr) public view returns (uint256) {
+        TreeMapStorage storage $ = _getTreeMapStorage();
+
+        uint256 index = $.envTree[_env].addressToIndexMap[_addr];
+
+        return $.envTree[_env].nodes[index].value;
+    }
+
     // assumes index is not 0
     function _add_unchecked(uint8 _env, uint256 _index, uint64 _value) internal {
         TreeMapStorage storage $ = _getTreeMapStorage();

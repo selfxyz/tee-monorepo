@@ -2,7 +2,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { BytesLike, keccak256, parseUnits, Signer, solidityPacked, Wallet, ZeroAddress } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Pond, SecretManager, SecretStore, TeeManager, USDCoin } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Pond, SecretManager, SecretStore, SecretStoreMock, TeeManager, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from "../helpers/erc165";
 
@@ -2246,7 +2246,7 @@ describe("SecretManager - Other functions", function () {
 
     it('can set allowed addresses for a secret', async function () {
         await expect(secretManager.setSecretAllowedAddresses(1, [addrs[1], addrs[2]]))
-            .to.be.fulfilled;
+            .to.be.not.reverted;
 
         expect(await secretManager.hasSecretAllowedAddress(1, addrs[1])).to.be.true;
         expect(await secretManager.hasSecretAllowedAddress(1, addrs[2])).to.be.true;
@@ -2264,6 +2264,228 @@ describe("SecretManager - Other functions", function () {
 
         await expect(secretManager.verifyUserAndGetSelectedStores(1, addrs[1]))
             .to.be.revertedWithCustomError(secretManager, "SecretManagerUserNotAllowed");
+    });
+});
+
+describe("SecretManager - Renounce secrets", function () {
+    let signers: Signer[];
+    let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
+    let usdcToken: USDCoin;
+    let teeManager: TeeManager;
+    let executors: Executors;
+    let secretStore: SecretStoreMock;
+    let secretManager: SecretManager;
+
+    before(async function () {
+        signers = await ethers.getSigners();
+        addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+        const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+        const attestationVerifier = await upgrades.deployProxy(
+            AttestationVerifier,
+            [[image1], [pubkeys[14]], addrs[0]],
+            { kind: "uups" },
+        ) as unknown as AttestationVerifier;
+
+        const Pond = await ethers.getContractFactory("Pond");
+        const stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        }) as unknown as Pond;
+
+        const USDCoin = await ethers.getContractFactory("USDCoin");
+        usdcToken = await upgrades.deployProxy(
+            USDCoin,
+            [addrs[0]],
+            {
+                kind: "uups",
+            }
+        ) as unknown as USDCoin;
+
+        const TeeManager = await ethers.getContractFactory("TeeManager");
+        teeManager = await upgrades.deployProxy(
+            TeeManager,
+            [addrs[0], [image2, image3]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    attestationVerifier.target,
+                    600,
+                    stakingToken.target,
+                    10,
+                    10 ** 2,
+                    10 ** 6
+                ]
+            },
+        ) as unknown as TeeManager;
+
+        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+        executors = await upgrades.deployProxy(
+            Executors,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
+        ) as unknown as Executors;
+
+        const SecretStore = await ethers.getContractFactory("SecretStoreMock");
+        secretStore = await SecretStore.deploy() as unknown as SecretStoreMock;
+
+        let env = 1;
+        await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
+        // await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
+
+        await executors.initTree(1);
+        // await secretStore.initTree(1);
+
+        await teeManager.setExecutors(executors.target);
+        await teeManager.setSecretStore(secretStore.target);
+
+        let noOfNodesToSelect = 3,
+            globalMaxStoreSize = 1e6,
+            globalMinStoreDuration = 10,
+            globalMaxStoreDuration = 1e6,
+            acknowledgementTimeout = 120,
+            markAliveTimeout = 900,
+            secretStoreFeeRate = 10,
+            stakingPaymentPool = addrs[2];
+
+        const SecretManager = await ethers.getContractFactory("SecretManager");
+        secretManager = await upgrades.deployProxy(
+            SecretManager,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    usdcToken.target,
+                    noOfNodesToSelect,
+                    globalMaxStoreSize,
+                    globalMinStoreDuration,
+                    globalMaxStoreDuration,
+                    acknowledgementTimeout,
+                    markAliveTimeout,
+                    secretStoreFeeRate,
+                    stakingPaymentPool,
+                    teeManager.target,
+                    executors.target,
+                    secretStore.target
+                ]
+            },
+        ) as unknown as SecretManager;
+
+        await secretStore.setSecretManager(secretManager.target);
+        await usdcToken.approve(secretManager.target, parseUnits("10000", 6));
+
+        await stakingToken.transfer(addrs[1], 10n ** 20n);
+        await stakingToken.connect(signers[1]).approve(teeManager.target, 10n ** 20n);
+
+        // REGISTER SECRET STORE ENCLAVES
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest();
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = parseUnits("10");	// 10 POND
+        for (let index = 0; index < 3; index++) {
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[17 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+
+            let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
+                wallets[17 + index]);
+
+            await teeManager.connect(signers[1]).registerTeeNode(
+                attestationSign,
+                attestation,
+                jobCapacity,
+                storageCapacity,
+                env,
+                signTimestamp,
+                signedDigest,
+                stakeAmount
+            );
+        }
+
+        await secretStore.setStoresToSelect([addrs[17], addrs[18], addrs[19]]);
+        // CREATE SECRET
+        let sizeLimit = 1000,
+            endTimestamp = await time.latest() + 800,
+            usdcDeposit = parseUnits("30", 6);
+        await secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, []);
+
+        let secretId = 1;
+        for (let index = 0; index < 3; index++) {
+            let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17 + index]);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        }
+    });
+
+    takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+    it("can renounce secrets", async function () {
+        await expect(secretStore.renounceSecrets(addrs[17], addrs[0]))
+            .to.be.not.reverted;
+
+        let selectedStores = await secretManager.getSelectedEnclaves(1);
+        let selectedStoresAddresses = selectedStores.map(store => store.enclaveAddress);
+        expect(selectedStoresAddresses).to.deep.eq(["0x1", addrs[18], addrs[19]]);
+    });
+
+    it("can renounce secrets after alive check", async function () {
+        await time.increase(100);
+        let signTimestamp = await time.latest(),
+            signedDigest = await createAliveSignature(signTimestamp, wallets[17]);
+        await secretManager.markStoreAlive(signTimestamp, signedDigest);
+
+        await expect(secretStore.renounceSecrets(addrs[17], addrs[0]))
+            .to.be.not.reverted;
+    });
+
+    it("cannot renounce secrets without secret store contract", async function () {
+        await expect(secretManager.renounceSecrets(addrs[17], addrs[0], [1], 100))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerCallerIsNotSecretStore");
+    });
+
+    it("can renounce secrets after termination", async function () {
+        await time.increase(810);
+        let secretId = 1;
+        // renounce secret from 1st selected store
+        await expect(secretStore.renounceSecrets(addrs[17], addrs[0]))
+            .to.be.not.reverted;
+
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        let selectedStoresAddresses = selectedStores.map(store => store.enclaveAddress);
+        expect(selectedStoresAddresses).to.deep.eq([addrs[19], addrs[18]]);
+
+        // renounce secret from 2nd selected store
+        await expect(secretStore.renounceSecrets(addrs[18], addrs[0]))
+            .to.be.not.reverted;
+
+        selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        selectedStoresAddresses = selectedStores.map(store => store.enclaveAddress);
+        expect(selectedStoresAddresses).to.deep.eq([addrs[19]]);
+
+        // renounce secret from 3rd selected store
+        await expect(secretStore.renounceSecrets(addrs[19], addrs[0]))
+            .to.be.not.reverted;
+
+        selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        selectedStoresAddresses = selectedStores.map(store => store.enclaveAddress);    
+        expect(selectedStoresAddresses).to.deep.eq([]);
+
+        // secret data will be deleted after last selected enclave renounces the secret
+        expect((await secretManager.userStorage(secretId)).owner).to.eq(ZeroAddress);        
     });
 });
 

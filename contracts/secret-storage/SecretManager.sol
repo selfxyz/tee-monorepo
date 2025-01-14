@@ -647,7 +647,7 @@ contract SecretManager is
         uint256 startTimestamp = ackTimestamp > _lastAliveTimestamp ? ackTimestamp : _lastAliveTimestamp;
         uint256 endTimestamp = userStorage[_secretId].endTimestamp;
 
-        _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, _lastAliveTimestamp);
+        _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, block.timestamp);
 
         // secret terminated
         if(block.timestamp > endTimestamp) {
@@ -695,6 +695,7 @@ contract SecretManager is
 
         if(_endTimestamp <= _ackTimestamp)
             return;
+
         uint256 storePayment = (_endTimestamp - _ackTimestamp) * userStorage[_secretId].sizeLimit * SECRET_STORE_FEE_RATE;
         userStorage[_secretId].usdcDeposit -= storePayment;
     }

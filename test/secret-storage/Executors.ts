@@ -56,7 +56,7 @@ describe("Executors - Init", function () {
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -143,7 +143,7 @@ describe("Executors - Init", function () {
         );
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        let teeManager2 = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        let teeManager2 = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         await upgrades.upgradeProxy(
             executors.target,
@@ -190,7 +190,7 @@ testERC165(
     "Executors - ERC165",
     async function (_signers: Signer[], addrs: string[]) {
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        const teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        const teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         const executors = await upgrades.deployProxy(
@@ -220,15 +220,19 @@ testERC165(
 describe("Executors - TreeMap functions", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         executors = await upgrades.deployProxy(
@@ -251,7 +255,7 @@ describe("Executors - TreeMap functions", function () {
 
     it("can initialize tree", async function () {
         let env = 1;
-        await expect(executors.initTree(env)).to.be.fulfilled;
+        await expect(executors.initTree(env)).to.be.not.reverted;
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).that.eq(0);
     });
@@ -274,7 +278,7 @@ describe("Executors - TreeMap functions", function () {
         let env = 1;
         await executors.initTree(env);
 
-        await expect(executors.removeTree(env)).to.be.fulfilled;
+        await expect(executors.removeTree(env)).to.be.not.reverted;
         expect(await executors.isTreeInitialized(env)).to.be.false;
     });
 
@@ -299,13 +303,26 @@ describe("Executors - TreeMap functions", function () {
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).that.eq(0);
 
-        let jobCapacity = 20,
-            stakeAmount = 10n ** 19n;
+        let storageCapacity = 1e9,
+            jobCapacity = 20,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
         for (let index = 0; index < 2; index++) {
-            await teeManager.registerExecutor(
-                addrs[15 + index],
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[15 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+            await teeManager.registerTeeNode(
+                attestationSign,
+                attestation,
                 jobCapacity,
+                storageCapacity,
                 env,
+                signTimestamp,
+                "0x",
                 stakeAmount
             );
         }
@@ -317,10 +334,20 @@ describe("Executors - TreeMap functions", function () {
         expect(await executors.nodesInTree(env)).that.eq(0);
 
         for (let index = 0; index < 3; index++) {
-            await teeManager.registerExecutor(
-                addrs[15 + index],
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[15 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+            await teeManager.registerTeeNode(
+                attestationSign,
+                attestation,
                 jobCapacity,
+                storageCapacity,
                 env,
+                signTimestamp,
+                "0x",
                 stakeAmount
             );
         }
@@ -340,15 +367,19 @@ describe("Executors - TreeMap functions", function () {
 describe("Executors - Register/deregister executor", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
-        
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         executors = await upgrades.deployProxy(
@@ -374,12 +405,25 @@ describe("Executors - Register/deregister executor", function () {
 
     it("can register executor", async function () {
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10;
-        await expect(teeManager.registerExecutor(
-            addrs[15],
+            stakeAmount = 10,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await expect(teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         )).to.be.not.reverted;
 
@@ -400,28 +444,54 @@ describe("Executors - Register/deregister executor", function () {
 
     it("cannot register executor with unsupported execution env", async function () {
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 2,
-            stakeAmount = 10;
-        await expect(teeManager.registerExecutor(
-            addrs[15],
+            stakeAmount = 10,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await expect(teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         )).to.be.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
     });
 
     it('can deregister executor without active jobs', async function () {
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10;
-        await teeManager.registerExecutor(
-            addrs[15],
+            stakeAmount = 10,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
-        await expect(teeManager.deregisterExecutor(addrs[15]))
+        await expect(teeManager.deregisterTeeNode(addrs[15]))
             .to.be.not.reverted;
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(0);
     });
@@ -430,20 +500,33 @@ describe("Executors - Register/deregister executor", function () {
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
 
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10n ** 19n;
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
         // register a enclave
-        await teeManager.registerExecutor(
-            addrs[15],
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
         // select nodes
         await executors.selectExecutionNodes(env, [addrs[15]], 1);
         // deregister
-        await expect(teeManager.deregisterExecutor(addrs[15]))
+        await expect(teeManager.deregisterTeeNode(addrs[15]))
             .to.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
     });
 
@@ -457,15 +540,20 @@ describe("Executors - Register/deregister executor", function () {
 describe("Executors - Staking/Unstaking", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
+    let STAKE_ADJUSTMENT_FACTOR: bigint;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
-        
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         executors = await upgrades.deployProxy(
@@ -479,6 +567,7 @@ describe("Executors - Staking/Unstaking", function () {
                 ]
             },
         ) as unknown as Executors;
+        STAKE_ADJUSTMENT_FACTOR = await executors.STAKE_ADJUSTMENT_FACTOR();
 
         await teeManager.setExecutors(executors.target);
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
@@ -486,12 +575,25 @@ describe("Executors - Staking/Unstaking", function () {
         let env = 1;
         await executors.initTree(env);
 
-        let jobCapacity = 20,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerExecutor(
-            addrs[15],
+        let jobCapacity = 1,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
     });
@@ -499,9 +601,17 @@ describe("Executors - Staking/Unstaking", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can stake", async function () {
-        let amount = 20;
-        await expect(teeManager.addExecutorStake(addrs[15], 1, amount))
-            .to.be.fulfilled;
+        let env = 1,
+            amount = 2n * (10n ** 19n);
+        await expect(teeManager.addTeeNodeStake(addrs[15], amount))
+            .to.be.not.reverted;
+        expect(await executors.getNodeValue(env, addrs[15])).to.eq((10n ** 19n + amount) / STAKE_ADJUSTMENT_FACTOR);
+
+        // case when max job capacity is reached
+        await executors.selectExecutionNodes(1, [addrs[15]], 1);
+        await expect(teeManager.addTeeNodeStake(addrs[15], amount))
+            .to.be.not.reverted;
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.false;
     });
 
     it("cannot stake without tee manager contract", async function () {
@@ -511,18 +621,18 @@ describe("Executors - Staking/Unstaking", function () {
     });
 
     it("can unstake if no active jobs", async function () {
-        await expect(teeManager.removeExecutorStake(addrs[15]))
-            .to.be.fulfilled;
+        let amount = 100n;
+        await expect(teeManager.removeTeeNodeStake(addrs[15], amount))
+            .to.be.not.reverted;
+        expect(await executors.getNodeValue(1, addrs[15])).to.eq((10n ** 19n + amount) / STAKE_ADJUSTMENT_FACTOR);
     });
 
     it('cannot unstake with active jobs', async function () {
-        await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
-
         // select nodes
         let env = 1;
         await executors.selectExecutionNodes(env, [addrs[15]], 1);
 
-        await expect(teeManager.removeExecutorStake(addrs[15]))
+        await expect(teeManager.removeTeeNodeStake(addrs[15], 100))
             .to.be.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
 
     });
@@ -536,15 +646,19 @@ describe("Executors - Staking/Unstaking", function () {
 describe("Executors - Drain/Revive executor", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         executors = await upgrades.deployProxy(
@@ -565,12 +679,25 @@ describe("Executors - Drain/Revive executor", function () {
         let env = 1;
         await executors.initTree(env);
 
-        let jobCapacity = 20,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerExecutor(
-            addrs[15],
+        let jobCapacity = 1,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
     });
@@ -578,10 +705,10 @@ describe("Executors - Drain/Revive executor", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it('can drain executor', async function () {
-        let env = 1;
-        await expect(teeManager.drainExecutor(addrs[15], env))
+        await expect(teeManager.drainTeeNode(addrs[15]))
             .to.be.not.reverted;
 
+        let env = 1;
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.false;
     });
 
@@ -590,19 +717,23 @@ describe("Executors - Drain/Revive executor", function () {
             .to.be.revertedWithCustomError(executors, "ExecutorsNotTeeManager");
     });
 
-    it('cannot drain executor twice consecutively', async function () {
+    it("can revive secret store", async function () {
+        await teeManager.drainTeeNode(addrs[15]);
+        await expect(teeManager.reviveTeeNode(addrs[15]))
+            .to.be.not.reverted;
+
         let env = 1;
-        await teeManager.drainExecutor(addrs[15], env);
-        await expect(executors.connect(signers[1]).drainExecutor(addrs[15], env))
-            .to.be.reverted;
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
     });
 
-    it("can revive secret store", async function () {
-        let env = 1,
-            stakeAmount = 10;
-        await teeManager.drainExecutor(addrs[15], env);
-        await expect(teeManager.reviveExecutor(addrs[15], env, stakeAmount))
+    it("can revive secret store with max job capacity reached", async function () {
+        let env = 1;
+        await executors.selectExecutionNodes(env, [addrs[15]], 1);
+        await teeManager.drainTeeNode(addrs[15]);
+
+        await expect(teeManager.reviveTeeNode(addrs[15]))
             .to.be.not.reverted;
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.false;
     });
 
     it("cannot revive secret store without tee manager contract", async function () {
@@ -616,15 +747,19 @@ describe("Executors - Drain/Revive executor", function () {
 describe("Executors - Select/Release/Slash", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         executors = await upgrades.deployProxy(
@@ -645,28 +780,70 @@ describe("Executors - Select/Release/Slash", function () {
         let env = 1;
         await executors.initTree(env);
 
+        // REGISTER NODES
         let jobCapacity = 20,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerExecutor(
-            addrs[15],
-            jobCapacity,
-            env,
-            stakeAmount
-        );
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        for (let index = 0; index < 3; index++) {
+            // stake for 1st node is different than the other 2 nodes
+            if (index != 0)
+                stakeAmount = 10n ** 20n;
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[15 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+            await teeManager.registerTeeNode(
+                attestationSign,
+                attestation,
+                jobCapacity,
+                storageCapacity,
+                env,
+                signTimestamp,
+                "0x",
+                stakeAmount
+            );
+        }
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can select executors", async function () {
-        await expect(executors.selectExecutionNodes(1, [addrs[15]], 1))
+        let env = 1;
+        // can select 1 node
+        await expect(executors.selectExecutionNodes(env, [addrs[15]], 1))
+            .to.be.not.reverted;
+        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
+
+        // can select multiple nodes
+        await expect(executors.selectExecutionNodes(env, [addrs[15], addrs[16]], 2))
+            .to.be.not.reverted;
+        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(2);
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
+        expect((await executors.executors(addrs[16])).activeJobs).to.be.eq(1);
+        expect(await executors.isNodePresentInTree(env, addrs[16])).to.be.true;
+
+        // can select topN nodes out of multiple nodes (here 16th and 17th nodes will be selcted as they have higher stakes)
+        await expect(executors.selectExecutionNodes(env, [addrs[15], addrs[16], addrs[17]], 2))
             .to.be.not.reverted;
 
-        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
-        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.true;
+        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(2);
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
+        expect((await executors.executors(addrs[16])).activeJobs).to.be.eq(2);
+        expect(await executors.isNodePresentInTree(env, addrs[16])).to.be.true;
+        expect((await executors.executors(addrs[17])).activeJobs).to.be.eq(1);
+        expect(await executors.isNodePresentInTree(env, addrs[17])).to.be.true;
     });
 
     it("cannot select executors other than selected stores", async function () {
         await expect(executors.selectExecutionNodes(1, [], 1))
+            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
+
+        await expect(executors.selectExecutionNodes(1, [addrs[15]], 2))
             .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
     });
 
@@ -681,6 +858,7 @@ describe("Executors - Select/Release/Slash", function () {
             .to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
     });
 
+    // TODO: will be required once we enable executor selection along with secret stores
     // it("can select executors along with the already selected stores", async function () {
     //     let jobCapacity = 20,
     //         env = 1,
@@ -707,6 +885,22 @@ describe("Executors - Select/Release/Slash", function () {
             .to.be.not.reverted;
 
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(0);
+
+        // case 2: release executor post draining
+        await executors.selectExecutionNodes(1, [addrs[15]], 1);
+        await teeManager.drainTeeNode(addrs[15]);
+        await expect(executors.releaseExecutor(addrs[15]))
+            .to.be.not.reverted;
+        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(0);
+
+        // case 3: release executor post stake removal
+        await teeManager.reviveTeeNode(addrs[15]);
+        await teeManager.removeTeeNodeStake(addrs[15], 10n ** 19n);
+        await executors.selectExecutionNodes(1, [addrs[15]], 1);
+        await expect(executors.releaseExecutor(addrs[15]))
+            .to.be.not.reverted;
+        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(0);
+        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.false;
     });
 
     it("cannot release executors without JOBS_ROLE", async function () {
@@ -734,15 +928,19 @@ describe("Executors - Select/Release/Slash", function () {
 describe("Executors - Reputation functions", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         executors = await upgrades.deployProxy(
@@ -764,11 +962,24 @@ describe("Executors - Reputation functions", function () {
         await executors.initTree(env);
 
         let jobCapacity = 20,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerExecutor(
-            addrs[15],
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
             jobCapacity,
+            storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
     });

@@ -3,8 +3,10 @@ pragma solidity ^0.8.0;
 import "../secret-storage/SecretStore.sol";
 import "../secret-storage/Executors.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
+import "../interfaces/IAttestationVerifier.sol";
+import "../AttestationAuther.sol";
 
-contract TeeManagerMock is Context {
+contract TeeManagerMock is Context, AttestationAuther {
 
     Executors public EXECUTORS;
     SecretStore public SECRET_STORE;
@@ -20,9 +22,14 @@ contract TeeManagerMock is Context {
     // enclaveAddress => TEE node details
     mapping(address => TeeNode) public teeNodes;
 
+    event TeeManagerMockExecutorSlashed();
+    event TeeManagerMockStoreSlashed();
+
     constructor(
+        IAttestationVerifier attestationVerifier,
+        uint256 maxAge,
         uint256 _minStakeAmount
-    ) {
+    ) AttestationAuther(attestationVerifier, maxAge) {
         MIN_STAKE_AMOUNT = _minStakeAmount;
     }
 
@@ -34,58 +41,84 @@ contract TeeManagerMock is Context {
         SECRET_STORE = _secretStore;
     }
 
-    // --------------------------------- Executors functions start ---------------------------------
-
-    function registerExecutor(
-        address _enclaveAddress,
+    function registerTeeNode(
+        bytes memory _attestationSignature,
+        IAttestationVerifier.Attestation memory _attestation,
         uint256 _jobCapacity,
+        uint256 _storageCapacity,
         uint8 _env,
+        uint256 _signTimestamp,
+        bytes memory _signature,
         uint256 _stakeAmount
     ) external {
-        teeNodes[_enclaveAddress].env = _env;
-        teeNodes[_enclaveAddress].owner = _msgSender();
-        teeNodes[_enclaveAddress].stakeAmount = _stakeAmount;
+        address enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
+        teeNodes[enclaveAddress].env = _env;
+        teeNodes[enclaveAddress].owner = _msgSender();
+        teeNodes[enclaveAddress].stakeAmount = _stakeAmount;
 
-        EXECUTORS.registerExecutor(_enclaveAddress, _jobCapacity, _env, _stakeAmount);
+        if(address(EXECUTORS) != address(0))
+            EXECUTORS.registerExecutor(enclaveAddress, _jobCapacity, _env, _stakeAmount);
+        else if(address(SECRET_STORE) != address(0))
+            SECRET_STORE.registerSecretStore(enclaveAddress, _storageCapacity, _env, _stakeAmount);
     }
 
-    function deregisterExecutor(address _enclaveAddress) external {
-        EXECUTORS.deregisterExecutor(_enclaveAddress);
+    function deregisterTeeNode(address _enclaveAddress) external {
+        if(address(EXECUTORS) != address(0))
+            EXECUTORS.deregisterExecutor(_enclaveAddress);
+        else if(address(SECRET_STORE) != address(0))
+            SECRET_STORE.deregisterSecretStore(_enclaveAddress);
+        delete teeNodes[_enclaveAddress];
     }
 
-    function drainExecutor(
+    function drainTeeNode(address _enclaveAddress) external {
+        teeNodes[_enclaveAddress].draining = true;
+        uint8 env = teeNodes[_enclaveAddress].env;
+        if(address(EXECUTORS) != address(0))
+            EXECUTORS.drainExecutor(_enclaveAddress, env);
+        else if(address(SECRET_STORE) != address(0))
+            SECRET_STORE.drainSecretStore(_enclaveAddress, env, teeNodes[_enclaveAddress].owner);
+    }
+
+    function reviveTeeNode(address _enclaveAddress) external {
+        teeNodes[_enclaveAddress].draining = false;
+        TeeNode memory teeNode = teeNodes[_enclaveAddress];
+        if(address(EXECUTORS) != address(0))
+            EXECUTORS.reviveExecutor(_enclaveAddress, teeNode.env, teeNode.stakeAmount);
+        else if(address(SECRET_STORE) != address(0))
+            SECRET_STORE.reviveSecretStore(_enclaveAddress, teeNode.env, teeNode.stakeAmount);
+    }
+
+    function addTeeNodeStake(
         address _enclaveAddress,
-        uint8 _env
+        uint256 _amount
     ) external {
-        EXECUTORS.drainExecutor(_enclaveAddress, _env);
+        TeeNode memory teeNode = teeNodes[_enclaveAddress];
+        uint256 updatedStake = teeNode.stakeAmount + _amount;
+        teeNodes[_enclaveAddress].stakeAmount = updatedStake;
+        if(address(EXECUTORS) != address(0))
+            EXECUTORS.addExecutorStake(_enclaveAddress, teeNode.env, updatedStake);
+        else if(address(SECRET_STORE) != address(0))
+            SECRET_STORE.addSecretStoreStake(_enclaveAddress, teeNode.env, updatedStake);
     }
 
-    function reviveExecutor(
+    function removeTeeNodeStake(
         address _enclaveAddress,
-        uint8 _env,
-        uint256 _stakeAmount
+        uint256 _amount
     ) external {
-        EXECUTORS.reviveExecutor(_enclaveAddress, _env, _stakeAmount);
+        teeNodes[_enclaveAddress].stakeAmount -= _amount;
+        if(address(EXECUTORS) != address(0))
+            EXECUTORS.removeExecutorStake(_enclaveAddress);
+        else if(address(SECRET_STORE) != address(0))
+            SECRET_STORE.removeSecretStoreStake(_enclaveAddress);
     }
 
-    function addExecutorStake(
-        address _enclaveAddress,
-        uint8 _env,
-        uint256 _stake
-    ) external {
-        EXECUTORS.addExecutorStake(_enclaveAddress, _env, _stake);
-    }
-
-    function removeExecutorStake(
-        address _enclaveAddress
-    ) external view {
-        EXECUTORS.removeExecutorStake(_enclaveAddress);
-    }
+    // --------------------------------- Executors functions start ---------------------------------
 
     function slashExecutor(
         address _enclaveAddress,
         address _recipient
     ) external returns (uint256) {
+        emit TeeManagerMockExecutorSlashed();
         return 0;
     }
 
@@ -93,63 +126,13 @@ contract TeeManagerMock is Context {
 
     // --------------------------------- Secret Store functions start ---------------------------------
 
-    function registerSecretStore(
-        address _enclaveAddress,
-        uint256 _storageCapacity,
-        uint8 _env,
-        uint256 _stakeAmount
-    ) external {
-        teeNodes[_enclaveAddress].env = _env;
-        teeNodes[_enclaveAddress].owner = _msgSender();
-        teeNodes[_enclaveAddress].stakeAmount = _stakeAmount;
-
-        SECRET_STORE.registerSecretStore(
-            _enclaveAddress,
-            _storageCapacity,
-            _env,
-            _stakeAmount
-        );
-    }
-
-    function deregisterSecretStore(address _enclaveAddress) external {
-        SECRET_STORE.deregisterSecretStore(_enclaveAddress);
-    }
-
-    function drainSecretStore(
-        address _enclaveAddress,
-        uint8 _env,
-        address _owner
-    ) external {
-        SECRET_STORE.drainSecretStore(_enclaveAddress, _env, _owner);
-    }
-
-    function reviveSecretStore(
-        address _enclaveAddress,
-        uint8 _env,
-        uint256 _stakeAmount
-    ) external {
-        SECRET_STORE.reviveSecretStore(_enclaveAddress, _env, _stakeAmount);
-    }
-
-    function addSecretStoreStake(
-        address _enclaveAddress,
-        uint8 _env,
-        uint256 _stake
-    ) external {
-        SECRET_STORE.addSecretStoreStake(_enclaveAddress, _env, _stake);
-    }
-
-    function removeSecretStoreStake(
-        address _enclaveAddress
-    ) external view {
-        SECRET_STORE.removeSecretStoreStake(_enclaveAddress);
-    }
-
     function slashStore(
         address _enclaveAddress,
         uint256 _missedEpochsCount,
         address _recipient
-    ) external {}
+    ) external {
+        emit TeeManagerMockStoreSlashed();
+    }
 
     // --------------------------------- Secret Store functions end ---------------------------------
 

@@ -355,7 +355,7 @@ testERC165(
     },
 );
 
-describe("TeeManager - Whitelist/Revoke enclave images", function () {
+describe("TeeManager - Whitelist/Revoke enclave images and other setter functions", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -425,6 +425,28 @@ describe("TeeManager - Whitelist/Revoke enclave images", function () {
         await expect(teeManager.connect(signers[1]).revokeEnclaveImage(getImageId(image2)))
             .to.be.revertedWithCustomError(teeManager, "AccessControlUnauthorizedAccount");
     });
+
+    it('can set executors with DEFAULT_ADMIN_ROLE', async function () {
+        await expect(teeManager.setExecutors(addrs[2])).to.be.not.reverted;
+
+        expect(await teeManager.EXECUTORS()).to.eq(addrs[2]);
+    });
+
+    it('cannot set executors without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(teeManager.connect(signers[1]).setExecutors(addrs[2]))
+            .to.be.revertedWithCustomError(teeManager, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set secret store with DEFAULT_ADMIN_ROLE', async function () {
+        await expect(teeManager.setSecretStore(addrs[2])).to.be.not.reverted;
+
+        expect(await teeManager.SECRET_STORE()).to.eq(addrs[2]);
+    });
+
+    it('cannot set secret store without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(teeManager.connect(signers[1]).setSecretStore(addrs[2]))
+            .to.be.revertedWithCustomError(teeManager, "AccessControlUnauthorizedAccount");
+    });
 });
 
 describe("TeeManager - Register/Deregister tee node", function () {
@@ -451,15 +473,6 @@ describe("TeeManager - Register/Deregister tee node", function () {
             [[image1], [pubkeys[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-
-        const USDCoin = await ethers.getContractFactory("USDCoin");
-        let usdcToken = await upgrades.deployProxy(
-            USDCoin,
-            [addrs[0]],
-            {
-                kind: "uups",
-            }
-        ) as unknown as USDCoin;
 
         const Pond = await ethers.getContractFactory("Pond");
         token = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
@@ -655,7 +668,7 @@ describe("TeeManager - Register/Deregister tee node", function () {
     });
 
     // drain then deregister with no occupied storage
-    it('can deregister tee node without occupied storage', async function () {
+    it('can deregister tee node without occupied storage and assigned jobs', async function () {
         const timestamp = await time.latest() * 1000;
         let signTimestamp = await time.latest() - 540;
         let [attestationSign, attestation] = await createAttestation(
@@ -722,7 +735,7 @@ describe("TeeManager - Register/Deregister tee node", function () {
             .to.revertedWithCustomError(teeManager, "TeeManagerEnclaveNotDraining");
     });
 
-    // drain then deregister failed with active jobs != 0
+    // drain then deregister failed with occupied storage != 0
     it('cannot deregister secret store with occupied storage', async function () {
         await token.transfer(addrs[1], 10n ** 19n);
         await token.connect(signers[1]).approve(teeManager.target, 10n ** 19n);
@@ -761,6 +774,47 @@ describe("TeeManager - Register/Deregister tee node", function () {
         // deregister
         await expect(teeManager.connect(signers[1]).deregisterTeeNode(addrs[15]))
             .to.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
+    });
+
+    // drain then deregister failed with active jobs != 0
+    it('cannot deregister secret store with active jobs', async function () {
+        await token.transfer(addrs[1], 10n ** 19n);
+        await token.connect(signers[1]).approve(teeManager.target, 10n ** 19n);
+
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            env = 1;
+        let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
+            wallets[15]);
+
+        // register a enclave
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            10n ** 19n
+        )
+
+        // select nodes
+        await executors.selectExecutionNodes(env, [addrs[15]], 1);
+        // drain
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
+        // deregister
+        await expect(teeManager.connect(signers[1]).deregisterTeeNode(addrs[15]))
+            .to.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
     });
 
     it('cannot deregister tee node without the owner account', async function () {
@@ -926,6 +980,7 @@ describe("TeeManager - Staking/Unstaking", function () {
         expect(teeNode.stakeAmount).to.be.eq(30);
         expect(await token.balanceOf(teeManager.target)).to.be.eq(30);
         expect(await token.balanceOf(addrs[1])).to.be.eq(99970);
+        expect(await teeManager.getTeeNodesStake([addrs[15]])).to.deep.eq([30n]);
     });
 
     it("can stake if draining", async function () {
@@ -972,8 +1027,6 @@ describe("TeeManager - Staking/Unstaking", function () {
     });
 
     it('cannot unstake with occupied storage after draining started', async function () {
-        await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("SECRET_MANAGER_ROLE")), addrs[0]);
-
         await token.transfer(addrs[1], 10n ** 19n);
         await token.connect(signers[1]).approve(teeManager.target, 10n ** 19n);
 
@@ -987,6 +1040,23 @@ describe("TeeManager - Staking/Unstaking", function () {
         let amount = 5;
         await expect(teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], amount))
             .to.be.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
+
+    });
+
+    it('cannot unstake with active jobs after draining started', async function () {
+        await token.transfer(addrs[1], 10n ** 19n);
+        await token.connect(signers[1]).approve(teeManager.target, 10n ** 19n);
+
+        // add stake to get node added to tree
+        await teeManager.connect(signers[1]).addTeeNodeStake(addrs[15], 10n ** 19n);
+        // select nodes
+        await executors.selectExecutionNodes(1, [addrs[15]], 1);
+        // drain
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
+
+        let amount = 5;
+        await expect(teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], amount))
+            .to.be.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
 
     });
 });
@@ -1159,7 +1229,7 @@ describe("TeeManager - Drain/Revive secret store", function () {
             timestamp - 540000
         );
         let jobCapacity = 20,
-            storageCapacity = 100,
+            storageCapacity = 2100,
             stakeAmount = 10n ** 19n;
         let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
             wallets[15]);
@@ -1205,6 +1275,8 @@ describe("TeeManager - Drain/Revive secret store", function () {
             .to.emit(teeManager, "TeeNodeDrained").withArgs(addrs[15]);
 
         expect((await teeManager.teeNodes(addrs[15])).draining).to.be.eq(true);
+        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.false;
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.false;
     });
 
     it("cannot drain without tee node owner", async function () {
@@ -1224,79 +1296,26 @@ describe("TeeManager - Drain/Revive secret store", function () {
 
         await expect(teeManager.connect(signers[1]).reviveTeeNode(addrs[15]))
             .to.emit(teeManager, "TeeNodeRevived").withArgs(addrs[15]);
+
+        expect((await teeManager.teeNodes(addrs[15])).draining).to.be.eq(false);
+        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.true;
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.true;
     });
 
-    // it("can revive tee node after draining", async function () {
-    //     // Drain tee node
-    //     await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
+    it("can revive tee node after draining with stake < minStake", async function () {
+        // Drain tee node
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
 
-    //     // // Try to select one enclave
-    //     // let env = 1,
-    //     //     secretId = 1,
-    //     //     codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-    //     //     codeInputs = solidityPacked(["string"], ["codeInput"]),
-    //     //     deadline = 10000;
-    //     // await jobs.connect(signers[3]).createJob(env, secretId, codeHash, codeInputs, deadline);
-    //     // // await secretStore.selectStores(1, 1, 100);
+        // Remove stake
+        await teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], 10n ** 19n);
 
-    //     // // No enclave should be selected
-    //     // expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
-    //     // expect((await teeManager.teeNodes(addrs[15])).draining).to.be.true;
+        await expect(teeManager.connect(signers[1]).reviveTeeNode(addrs[15]))
+            .to.emit(teeManager, "TeeNodeRevived").withArgs(addrs[15]);
 
-    //     // Case 1: Enclave should get selected for job after revival because it has capacity available and
-    //     // minimum stake
-    //     await expect(teeManager.connect(signers[1]).reviveTeeNode(addrs[15]))
-    //         .to.emit(teeManager, "TeeNodeRevived").withArgs(addrs[15]);
-
-    //     // // check enclave can be selected again
-    //     // await jobs.connect(signers[3]).createJob(env, secretId, codeHash, codeInputs, deadline);
-    //     // // await secretStore.selectStores(1, 1, 100);
-    //     // expect((await teeManager.teeNodes(addrs[15])).draining).to.be.false;
-    //     // expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(100);
-
-    //     // // drain enclave again
-    //     // await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
-
-    //     // // Case 2: Enclave should not get selected for job after revival because it has no capacity available
-    //     // // Revive enclave
-    //     // await teeManager.connect(signers[1]).reviveTeeNode(addrs[15]);
-
-    //     // // select one enclave
-    //     // await secretStore.selectStores(1, 1, 100);
-
-    //     // // No enclave should be selected
-    //     // expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(100);
-
-    //     // // release enclave
-    //     // await secretStore.releaseStore(addrs[15], 100);
-
-    //     // // check occupied storage to be 0
-    //     // expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
-
-    //     // // Drain enclave
-    //     // await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
-
-    //     // // Remove stake
-    //     // await teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], 10n ** 19n);
-
-    //     // // Case 3: Enclave should not get selected for job after revival because it has no minimum stake
-    //     // // Revive enclave
-    //     // await teeManager.connect(signers[1]).reviveTeeNode(addrs[15]);
-
-    //     // // // enclave should not be added to the tree because it dosent have minimum stake
-    //     // // // select one enclave
-    //     // // await secretStore.selectStores(1, 1, 100);
-    //     // // CREATE SECRET
-    //     // let env = 1,
-    //     //     sizeLimit = 1000,
-    //     //     endTimestamp = await time.latest() + 800,
-    //     //     usdcDeposit = parseUnits("30", 6);
-    //     // await expect(secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, [addrs[3]]))
-    //     //     .to.be.revertedWithCustomError(secretManager, "SecretManagerUnavailableResources");
-
-    //     // // No enclave should be selected
-    //     // expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
-    // });
+        expect((await teeManager.teeNodes(addrs[15])).draining).to.be.eq(false);
+        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.false;
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.false;
+    });
 
     it("cannot revive tee node without draining", async function () {
         await expect(teeManager.connect(signers[1]).reviveTeeNode(addrs[15]))
@@ -1392,8 +1411,8 @@ describe("TeeManager - Slash Store/Executor", function () {
         await teeManager.setExecutors(executors.target);
         await teeManager.setSecretStore(secretStore.target);
 
-        await token.transfer(addrs[1], 10n ** 20n);
-        await token.connect(signers[1]).approve(teeManager.target, 10n ** 20n);
+        await token.transfer(addrs[1], 10n ** 28n);
+        await token.connect(signers[1]).approve(teeManager.target, 10n ** 28n);
         const timestamp = await time.latest() * 1000;
         let signTimestamp = await time.latest() - 540;
         let [attestationSign, attestation] = await createAttestation(
@@ -1405,7 +1424,7 @@ describe("TeeManager - Slash Store/Executor", function () {
 
         let jobCapacity = 20,
             storageCapacity = 1e9,
-            stakeAmount = 10n ** 20n;
+            stakeAmount = 10n ** 28n;
         let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
             wallets[15]);
 
@@ -1424,7 +1443,7 @@ describe("TeeManager - Slash Store/Executor", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can slash store", async function () {
-        let stakeAmount = 10n ** 20n,
+        let stakeAmount = 10n ** 28n,
             missedEpochs = 14n,
             slashMaxBips = 10n ** 6n,
             slashPercentInBips = 10n ** 2n;
@@ -1440,6 +1459,12 @@ describe("TeeManager - Slash Store/Executor", function () {
         expect(teeNode.stakeAmount).to.be.eq(remainingStakeAmount);
         expect(await token.balanceOf(teeManager.target)).to.be.eq(remainingStakeAmount);
         expect(await token.balanceOf(addrs[2])).to.be.eq(slashedAmount);
+
+        // case when missedEpochs = 0, nothing should be slashed
+        missedEpochs = 0n;
+        await expect(teeManager.slashStore(addrs[15], missedEpochs, addrs[2]))
+            .to.be.not.reverted;
+        expect(teeNode.stakeAmount).to.be.eq((await teeManager.teeNodes(addrs[15])).stakeAmount);
     });
 
     it("cannot slash store without valid secret store", async function () {
@@ -1452,7 +1477,7 @@ describe("TeeManager - Slash Store/Executor", function () {
         await expect(teeManager.slashExecutor(addrs[15], addrs[2]))
             .to.not.be.reverted;
 
-        let stakeAmount = 10n ** 20n;
+        let stakeAmount = 10n ** 28n;
         let slashedAmount = stakeAmount * (10n ** 2n) / (10n ** 6n);
 
         let teeNode = await teeManager.teeNodes(addrs[15]);

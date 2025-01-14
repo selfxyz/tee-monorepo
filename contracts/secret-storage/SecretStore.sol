@@ -23,15 +23,12 @@ contract SecretStore is
     UUPSUpgradeable, // public upgrade
     TreeMapUpgradeable
 {
-    using SafeERC20 for IERC20;
-    using ECDSA for bytes32;
-
     /// @notice Thrown when the provided TeeManager address is zero.
     error SecretStoreZeroAddressTeeManager();
 
     /**
      * @dev Initializes the logic contract without any admins, safeguarding against takeover.
-     * @param _token The TeeManager contract.
+     * @param _teeManager The TeeManager contract.
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(

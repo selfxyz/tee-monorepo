@@ -217,7 +217,7 @@ testERC165(
     "SecretStore - ERC165",
     async function (_signers: Signer[], addrs: string[]) {
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        const teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        const teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
         const secretStore = await upgrades.deployProxy(
@@ -244,18 +244,22 @@ testERC165(
     },
 );
 
-describe("SecretStore - TreeMap functions", function () {
+describe("SecretStore - TreeMap related and other functions", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let secretStore: SecretStore;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
         secretStore = await upgrades.deployProxy(
@@ -312,7 +316,6 @@ describe("SecretStore - TreeMap functions", function () {
             .to.be.revertedWithCustomError(secretStore, "SecretStoreGlobalEnvAlreadyUnsupported");
     });
 
-
     it('can add multiple envs and remove them', async function () {
         let env = 1;
         await secretStore.initTree(env);
@@ -320,13 +323,26 @@ describe("SecretStore - TreeMap functions", function () {
         expect(await secretStore.isTreeInitialized(env)).to.be.true;
         expect(await secretStore.nodesInTree(env)).that.eq(0);
 
-        let storageCapacity = 1e9,
-            stakeAmount = 10n ** 19n;
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
         for (let index = 0; index < 2; index++) {
-            await teeManager.registerSecretStore(
-                addrs[15 + index],
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[15 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+            await teeManager.registerTeeNode(
+                attestationSign,
+                attestation,
+                jobCapacity,
                 storageCapacity,
                 env,
+                signTimestamp,
+                "0x",
                 stakeAmount
             );
         }
@@ -338,10 +354,20 @@ describe("SecretStore - TreeMap functions", function () {
         expect(await secretStore.nodesInTree(env)).that.eq(0);
 
         for (let index = 0; index < 3; index++) {
-            await teeManager.registerSecretStore(
-                addrs[15 + index],
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[15 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+            await teeManager.registerTeeNode(
+                attestationSign,
+                attestation,
+                jobCapacity,
                 storageCapacity,
                 env,
+                signTimestamp,
+                "0x",
                 stakeAmount
             );
         }
@@ -357,20 +383,35 @@ describe("SecretStore - TreeMap functions", function () {
         expect(await secretStore.isTreeInitialized(2)).to.be.false;
     });
 
+    it('can set secret manager with DEFAULT_ADMIN_ROLE', async function () {
+        await expect(secretStore.setSecretManager(addrs[2])).to.be.not.reverted;
+
+        expect(await secretStore.SECRET_MANAGER()).to.eq(addrs[2]);
+    });
+
+    it('cannot set secret manager without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(secretStore.connect(signers[1]).setSecretManager(addrs[2]))
+            .to.be.revertedWithCustomError(secretStore, "AccessControlUnauthorizedAccount");
+    });
+
 });
 
 describe("SecretStore - Register/Deregister secret store", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let secretStore: SecretStore;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
         secretStore = await upgrades.deployProxy(
@@ -393,13 +434,26 @@ describe("SecretStore - Register/Deregister secret store", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can register secret store", async function () {
-        let storageCapacity = 1e9,
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10;
-        await expect(teeManager.registerSecretStore(
-            addrs[15],
+            stakeAmount = 10,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await expect(teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         )).to.be.not.reverted;
 
@@ -419,29 +473,55 @@ describe("SecretStore - Register/Deregister secret store", function () {
     });
 
     it("cannot register secret store with invalid env", async function () {
-        let storageCapacity = 1e9,
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 2,
-            stakeAmount = 10;
-        await expect(teeManager.registerSecretStore(
-            addrs[15],
+            stakeAmount = 10,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await expect(teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         )).to.be.revertedWithCustomError(secretStore, "SecretStoreUnsupportedEnv");
     });
 
     it('can deregister secret store without occupied storage', async function () {
-        let storageCapacity = 1e9,
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10;
-        await teeManager.registerSecretStore(
-            addrs[15],
+            stakeAmount = 10,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
-        await expect(teeManager.deregisterSecretStore(addrs[15]))
+        await expect(teeManager.deregisterTeeNode(addrs[15]))
             .to.be.not.reverted;
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
     });
@@ -451,21 +531,34 @@ describe("SecretStore - Register/Deregister secret store", function () {
         const secretManager = await SecretManagerMock.deploy(secretStore.target);
         await secretStore.setSecretManager(secretManager.target);
 
-        let storageCapacity = 1e9,
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10n ** 19n;
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
         // register a enclave
-        await teeManager.registerSecretStore(
-            addrs[15],
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
         // select nodes
         await secretManager.selectStores(env, 1, 100);
         // deregister
-        await expect(teeManager.deregisterSecretStore(addrs[15]))
+        await expect(teeManager.deregisterTeeNode(addrs[15]))
             .to.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
     });
 
@@ -479,15 +572,21 @@ describe("SecretStore - Register/Deregister secret store", function () {
 describe("SecretStore - Staking/Unstaking", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let secretStore: SecretStore;
+    let secretManager: SecretManagerMock;
+    let STAKE_ADJUSTMENT_FACTOR: bigint;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
         secretStore = await upgrades.deployProxy(
@@ -501,28 +600,54 @@ describe("SecretStore - Staking/Unstaking", function () {
                 ]
             },
         ) as unknown as SecretStore;
+        STAKE_ADJUSTMENT_FACTOR = await secretStore.STAKE_ADJUSTMENT_FACTOR();
 
         await teeManager.setSecretStore(secretStore.target);
         await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
         let env = 1;
         await secretStore.initTree(env);
 
-        let storageCapacity = 1e9,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerSecretStore(
-            addrs[15],
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
+
+        const SecretManagerMock = await ethers.getContractFactory("SecretManagerMock");
+        secretManager = await SecretManagerMock.deploy(secretStore.target) as unknown as SecretManagerMock;
+        await secretStore.setSecretManager(secretManager.target);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can stake", async function () {
-        let amount = 20;
-        await expect(teeManager.addSecretStoreStake(addrs[15], 1, amount))
+        let env = 1,
+            amount = 2n * (10n ** 19n);
+        await expect(teeManager.addTeeNodeStake(addrs[15], amount))
             .to.be.not.reverted;
+        expect(await secretStore.getNodeValue(env, addrs[15])).to.eq((10n ** 19n + amount) / STAKE_ADJUSTMENT_FACTOR);
+
+        // case when max storage capacity is exceeded
+        await secretManager.selectStores(env, 1, 1e10);
+        await expect(teeManager.addTeeNodeStake(addrs[15], amount))
+            .to.be.not.reverted;
+        expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
     });
 
     it("cannot stake without tee manager contract", async function () {
@@ -532,8 +657,10 @@ describe("SecretStore - Staking/Unstaking", function () {
     });
 
     it("can unstake if no occupied storage", async function () {
-        await expect(teeManager.removeSecretStoreStake(addrs[15]))
+        let amount = 100n;
+        await expect(teeManager.removeTeeNodeStake(addrs[15], amount))
             .to.be.not.reverted;
+        expect(await secretStore.getNodeValue(1, addrs[15])).to.eq((10n ** 19n + amount) / STAKE_ADJUSTMENT_FACTOR);
     });
 
     it("cannot unstake with occupied storage", async function () {
@@ -546,7 +673,7 @@ describe("SecretStore - Staking/Unstaking", function () {
         await secretManager.selectStores(env, 1, 100);
 
         // remove stake
-        await expect(teeManager.removeSecretStoreStake(addrs[15]))
+        await expect(teeManager.removeTeeNodeStake(addrs[15], 100))
             .to.be.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
     });
 
@@ -560,13 +687,16 @@ describe("SecretStore - Drain/Revive secret store", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let secretStore: SecretStore;
+    let secretManager: SecretManagerMock;
 
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
         wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const USDCoin = await ethers.getContractFactory("USDCoin");
         const usdcToken = await upgrades.deployProxy(
@@ -578,7 +708,7 @@ describe("SecretStore - Drain/Revive secret store", function () {
         ) as unknown as USDCoin;
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
         const executors = await upgrades.deployProxy(
@@ -611,47 +741,30 @@ describe("SecretStore - Drain/Revive secret store", function () {
         let env = 1;
         await secretStore.initTree(env);
 
-        let storageCapacity = 1e9,
-            stakeAmount = 10;
-        await teeManager.registerSecretStore(
-            addrs[15],
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
-        let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
-            globalMinStoreDuration = 10,
-            globalMaxStoreDuration = 1e6,
-            acknowledgementTimeout = 120,
-            markAliveTimeout = 500,
-            secretStoreFeeRate = 10,
-            stakingPaymentPool = addrs[2];
-
-        const SecretManager = await ethers.getContractFactory("SecretManager");
-        const secretManager = await upgrades.deployProxy(
-            SecretManager,
-            [addrs[0]],
-            {
-                kind: "uups",
-                initializer: "initialize",
-                constructorArgs: [
-                    usdcToken.target,
-                    noOfNodesToSelect,
-                    globalMaxStoreSize,
-                    globalMinStoreDuration,
-                    globalMaxStoreDuration,
-                    acknowledgementTimeout,
-                    markAliveTimeout,
-                    secretStoreFeeRate,
-                    stakingPaymentPool,
-                    teeManager.target,
-                    executors.target,
-                    secretStore.target
-                ]
-            },
-        ) as unknown as SecretManager;
+        const SecretManagerMock = await ethers.getContractFactory("SecretManagerMock");
+        secretManager = await SecretManagerMock.deploy(secretStore.target) as unknown as SecretManagerMock;
         await secretStore.setSecretManager(secretManager.target);
     });
 
@@ -659,7 +772,7 @@ describe("SecretStore - Drain/Revive secret store", function () {
 
     it('can drain secret store', async function () {
         let env = 1;
-        await expect(teeManager.drainSecretStore(addrs[15], env, addrs[0]))
+        await expect(teeManager.drainTeeNode(addrs[15]))
             .to.be.not.reverted;
 
         expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
@@ -670,18 +783,17 @@ describe("SecretStore - Drain/Revive secret store", function () {
             .to.be.revertedWithCustomError(secretStore, "SecretStoreNotTeeManager");
     });
 
-    it('cannot drain secret store twice consecutively', async function () {
-        let env = 1;
-        await teeManager.drainSecretStore(addrs[15], env, addrs[0]);
-        await expect(secretStore.connect(signers[1]).drainSecretStore(addrs[15], env, addrs[0]))
-            .to.be.reverted;
-    });
-
     it("can revive secret store", async function () {
         let env = 1,
-            stakeAmount = 10;
-        await teeManager.drainSecretStore(addrs[15], env, addrs[0]);
-        await expect(teeManager.reviveSecretStore(addrs[15], env, stakeAmount))
+            stakeAmount = 10n ** 19n;
+        await teeManager.drainTeeNode(addrs[15]);
+        await expect(teeManager.reviveTeeNode(addrs[15]))
+            .to.be.not.reverted;
+
+        // case when max storage capacity is exceeded
+        await secretManager.selectStores(env, 1, 1e10);
+        await teeManager.drainTeeNode(addrs[15]);
+        await expect(teeManager.reviveTeeNode(addrs[15]))
             .to.be.not.reverted;
     });
 
@@ -696,6 +808,8 @@ describe("SecretStore - Drain/Revive secret store", function () {
 describe("SecretStore - Select/Release", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let secretStore: SecretStore;
     let secretManager: SecretManagerMock;
@@ -703,9 +817,11 @@ describe("SecretStore - Select/Release", function () {
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
         secretStore = await upgrades.deployProxy(
@@ -725,12 +841,25 @@ describe("SecretStore - Select/Release", function () {
         let env = 1;
         await secretStore.initTree(env);
 
-        let storageCapacity = 1e9,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerSecretStore(
-            addrs[15],
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
@@ -767,13 +896,26 @@ describe("SecretStore - Select/Release", function () {
     });
 
     it("can select secret stores ignoring the already selected ones", async function () {
-        let storageCapacity = 1e9,
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerSecretStore(
-            addrs[16],
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[16],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
@@ -791,6 +933,13 @@ describe("SecretStore - Select/Release", function () {
             .to.be.not.reverted;
 
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
+
+        // case 2: release store post draining
+        await secretManager.selectStores(1, 1, 100);
+        await teeManager.drainTeeNode(addrs[15]);
+        await expect(secretManager.releaseStore(addrs[15], 100))
+            .to.be.not.reverted;
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
     });
 
     it("cannot release secret stores without SecretManager contract", async function () {
@@ -802,6 +951,8 @@ describe("SecretStore - Select/Release", function () {
 describe("SecretStore - Other only secret manager functions", function () {
     let signers: Signer[];
     let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let secretStore: SecretStore;
     let secretManager: SecretManagerMock;
@@ -809,9 +960,11 @@ describe("SecretStore - Other only secret manager functions", function () {
     before(async function () {
         signers = await ethers.getSigners();
         addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
 
         const TeeManagerMock = await ethers.getContractFactory("TeeManagerMock");
-        teeManager = await TeeManagerMock.deploy(1e10) as unknown as TeeManagerMock;
+        teeManager = await TeeManagerMock.deploy(addrs[1], 600, 1e10) as unknown as TeeManagerMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
         secretStore = await upgrades.deployProxy(
@@ -831,12 +984,25 @@ describe("SecretStore - Other only secret manager functions", function () {
         let env = 1;
         await secretStore.initTree(env);
 
-        let storageCapacity = 1e9,
-            stakeAmount = 10n ** 19n;
-        await teeManager.registerSecretStore(
-            addrs[15],
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = 10n ** 19n,
+            timestamp = await time.latest() * 1000,
+            signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+        await teeManager.registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
             storageCapacity,
             env,
+            signTimestamp,
+            "0x",
             stakeAmount
         );
 
@@ -867,13 +1033,28 @@ describe("SecretStore - Other only secret manager functions", function () {
             .to.not.be.reverted;
 
         expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+
+        // case 2: mark alive post draining
+        await teeManager.drainTeeNode(addrs[15]);
+        currentCheckTimestamp = await time.latest();
+        await expect(secretManager.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, addrs[2]))
+            .to.be.not.reverted;
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+
+        // case 3: mark alive post stake removal
+        await teeManager.removeTeeNodeStake(addrs[15], 10n ** 19n);
+        await teeManager.reviveTeeNode(addrs[15]);
+        await expect(secretManager.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, addrs[2]))
+            .to.be.not.reverted;
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.false;
     });
 
     it("can do mark alive updates with slashing", async function () {
         await time.increase(510);
         let currentCheckTimestamp = await time.latest();
         await expect(secretManager.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, addrs[2]))
-            .to.not.be.reverted;
+            .to.emit(teeManager, "TeeManagerMockStoreSlashed");
 
         expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
     });
@@ -889,7 +1070,16 @@ describe("SecretStore - Other only secret manager functions", function () {
         await secretManager.selectStores(1, 1, storageOccupied);
 
         let currentCheckTimestamp = await time.latest();
-        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, storageOccupied, addrs[2]))
+        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, 50, addrs[2]))
+            .to.not.be.reverted;
+
+        expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+
+        // can mark dead again after some delay
+        await time.increase(100);
+        currentCheckTimestamp = await time.latest();
+        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, 50, addrs[2]))
             .to.not.be.reverted;
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
@@ -905,7 +1095,7 @@ describe("SecretStore - Other only secret manager functions", function () {
         let currentCheckTimestamp = BigInt(await time.latest()),
             markAliveTimeout = 500n;
         await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, markAliveTimeout, storageOccupied, addrs[2]))
-            .to.not.be.reverted;
+            .to.emit(teeManager, "TeeManagerMockStoreSlashed");;
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
@@ -928,6 +1118,31 @@ describe("SecretStore - Other only secret manager functions", function () {
 
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+    });
+
+    it("can do secret termination updates with multiple ack secrets", async function () {
+        // Select one enclave
+        let secretId = 1,
+            sizeLimit = 100;
+        await secretManager.selectStores(1, 1, sizeLimit);
+        // adding multiple ack secrets
+        await secretManager.addAckSecretIdToStore(addrs[15], secretId++);
+        await secretManager.addAckSecretIdToStore(addrs[15], secretId++);
+        await secretManager.addAckSecretIdToStore(addrs[15], secretId);
+
+        // terminating 2nd ack secret
+        secretId = 2;
+        await expect(secretManager.secretTerminationUpdate(addrs[15], 30, secretId))
+            .to.not.be.reverted;
+
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(sizeLimit - 30);
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([1n, 3n]);
+
+        // cannot remove non existing secret
+        secretId = 4;
+        await expect(secretManager.secretTerminationUpdate(addrs[15], 30, secretId))
+            .to.not.be.reverted;
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([1n, 3n]);
     });
 
     it("cannot do secret termination updates without SecretManager contract", async function () {

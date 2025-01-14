@@ -306,6 +306,7 @@ describe("Jobs - Global Execution Env", function () {
     let attestationVerifier: AttestationVerifier;
     let teeManager: TeeManager;
     let executors: Executors;
+    let secretStore: SecretStore;
     let jobs: Jobs;
 
     before(async function () {
@@ -358,7 +359,7 @@ describe("Jobs - Global Execution Env", function () {
         ) as unknown as Executors;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
-        let secretStore = await upgrades.deployProxy(
+        secretStore = await upgrades.deployProxy(
             SecretStore,
             [addrs[0]],
             {
@@ -418,6 +419,8 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).to.eq(0);
+        expect(await secretStore.isTreeInitialized(env)).to.be.true;
+        expect(await secretStore.nodesInTree(env)).to.eq(0);
     });
 
     it('cannot add global execution env without admin account', async function () {
@@ -449,6 +452,7 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.executionFeePerMs).to.eq(0);
         expect(executionEnv.stakingRewardPerMs).to.eq(0);
         expect(await executors.isTreeInitialized(env)).to.be.false;
+        expect(await secretStore.isTreeInitialized(env)).to.be.false;
     });
 
     it('cannot remove global execution env without admin account', async function () {
@@ -474,6 +478,8 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).that.eq(0);
+        expect(await secretStore.isTreeInitialized(env)).to.be.true;
+        expect(await secretStore.nodesInTree(env)).that.eq(0);
 
         await token.transfer(addrs[1], 100000);
         await token.connect(signers[1]).approve(teeManager.target, 10000);
@@ -508,8 +514,8 @@ describe("Jobs - Global Execution Env", function () {
         }
 
         env = 2,
-            executionFeePerMs = 200,
-            stakingRewardPerMs = 250;
+        executionFeePerMs = 200,
+        stakingRewardPerMs = 250;
         await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
         executionEnv = await jobs.executionEnv(env);
@@ -517,6 +523,8 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).that.eq(0);
+        expect(await secretStore.isTreeInitialized(env)).to.be.true;
+        expect(await secretStore.nodesInTree(env)).that.eq(0);
 
         for (let index = 0; index < 3; index++) {
             let signTimestamp = await time.latest() - 540;
@@ -545,6 +553,8 @@ describe("Jobs - Global Execution Env", function () {
 
         expect(await executors.nodesInTree(1)).that.eq(2);
         expect(await executors.nodesInTree(2)).that.eq(3);
+        expect(await secretStore.nodesInTree(1)).that.eq(2);
+        expect(await secretStore.nodesInTree(2)).that.eq(3);
 
         await jobs.removeGlobalEnv(1);
 
@@ -553,6 +563,8 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(0);
         expect(await executors.isTreeInitialized(1)).to.be.false;
         expect(await executors.isTreeInitialized(2)).to.be.true;
+        expect(await secretStore.isTreeInitialized(1)).to.be.false;
+        expect(await secretStore.isTreeInitialized(2)).to.be.true;
 
         await jobs.removeGlobalEnv(2);
 
@@ -560,6 +572,47 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.executionFeePerMs).to.eq(0);
         expect(executionEnv.stakingRewardPerMs).to.eq(0);
         expect(await executors.isTreeInitialized(2)).to.be.false;
+        expect(await secretStore.isTreeInitialized(2)).to.be.false;
+    });
+
+    it('can set tee manager', async function () {
+        await expect(jobs.setTeeManager(addrs[1])).to.be.not.reverted;
+        expect(await jobs.TEE_MANAGER()).to.eq(addrs[1]);
+    });
+
+    it('cannot set tee manager without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setTeeManager(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set executors', async function () {
+        await expect(jobs.setExecutors(addrs[1])).to.be.not.reverted;
+        expect(await jobs.EXECUTORS()).to.eq(addrs[1]);
+    });
+
+    it('cannot set executors without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setExecutors(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set secret store', async function () {
+        await expect(jobs.setSecretStore(addrs[1])).to.be.not.reverted;
+        expect(await jobs.SECRET_STORE()).to.eq(addrs[1]);
+    });
+
+    it('cannot set secret store without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setSecretStore(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set secret manager', async function () {
+        await expect(jobs.setSecretManager(addrs[1])).to.be.not.reverted;
+        expect(await jobs.SECRET_MANAGER()).to.eq(addrs[1]);
+    });
+
+    it('cannot set secret manager without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setSecretManager(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
     });
 });
 
@@ -784,18 +837,21 @@ describe("Jobs - Create", function () {
             jobOwner = addrs[1];
         let tx = await jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline);
         await tx.wait();
-        await expect(tx).to.emit(jobs, "JobCreated");
 
         // Since it is a first job.
         let jobId = 0;
-        let job = await jobs.jobs(jobId);
+        let selectedExecutors = await jobs.getSelectedExecutors(jobId);
+        await expect(tx)
+            .to.emit(jobs, "JobCreated")
+            .withArgs(jobId, env, jobOwner, codeHash, codeInputs, deadline, selectedExecutors);
 
+        let job = await jobs.jobs(jobId);
         expect(job.jobOwner).to.eq(jobOwner);
         expect(job.deadline).to.eq(deadline);
         expect(job.execStartTime).to.eq((await tx.getBlock())?.timestamp);
         expect(job.env).to.eq(env);
+        expect(selectedExecutors.length).to.eq(3);
 
-        let selectedExecutors = await jobs.getSelectedExecutors(jobId);
         for (let index = 0; index < selectedExecutors.length; index++) {
             const executor = selectedExecutors[index];
             expect([addrs[17], addrs[18], addrs[19], addrs[20]]).to.contain(executor);
@@ -848,10 +904,6 @@ describe("Jobs - Create", function () {
             codeInputs = solidityPacked(["string"], ["codeInput"]),
             deadline = 10000;
 
-        await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
-            .to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
-
-        secretId = 1;
         await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
             .to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
     });
@@ -1143,15 +1195,18 @@ describe("Jobs - Output", function () {
         );
         await expect(tx).to.emit(jobs, "JobResponded")
             .and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
-        // check active jobs for submitter
+        // check active jobs and reputation for submitter
         let executor = await executors.executors(addrs[17]);
         expect(executor.activeJobs).to.eq(0);
-        // check active job for pending submitter
+        expect(executor.reputation).to.eq(1010);
+        // check active jobs and reputation for pending submitter
         executor = await executors.executors(addrs[18]);
         expect(executor.activeJobs).to.eq(1);
+        expect(executor.reputation).to.eq(1000);
 
         executor = await executors.executors(addrs[19]);
         expect(executor.activeJobs).to.eq(1);
+        expect(executor.reputation).to.eq(1000);
 
         // check usdc balance of executor
         expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n * 4n / 9n);
@@ -1199,15 +1254,18 @@ describe("Jobs - Output", function () {
         );
         await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobResultCallbackCalled");
 
-        // check active jobs for submitter
+        // check active jobs and reputation for submitter
         let executor = await executors.executors(addrs[17]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(1010);
         executor = await executors.executors(addrs[18]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(995);
 
-        // check active job for pending submitter
+        // check active jobs and reputation for pending submitter
         executor = await executors.executors(addrs[19]);
         expect(executor.activeJobs).to.eq(1);
+        expect(executor.reputation).to.eq(1000);
 
         // check usdc balance of executor
         expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n * 7n / 9n);
@@ -1267,15 +1325,18 @@ describe("Jobs - Output", function () {
         );
         await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobResultCallbackCalled");
 
-        // check active jobs for submitter
+        // check active jobs and reputation for submitter
         let executor = await executors.executors(addrs[17]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(1010);
 
         executor = await executors.executors(addrs[18]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(995);
 
         executor = await executors.executors(addrs[19]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(995);
 
         // check usdc balance of executor
         expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n);
@@ -1719,6 +1780,7 @@ describe("Jobs - Slashing", function () {
         // check job does not exists
         let job = await jobs.jobs(jobId);
         expect(job.execStartTime).to.be.eq(0);
+        expect(await (await executors.executors(addrs[17])).reputation).to.eq(990);
 
         // check slashed amount that job owner is getting
         expect(await staking_token.balanceOf(addrs[3])).to.be.eq(3n * 10n ** 15n);
@@ -1759,6 +1821,7 @@ describe("Jobs - Slashing", function () {
 
         let teeNode = await teeManager.teeNodes(addrs[17]);
         expect(teeNode.draining).to.be.true;
+        expect(await (await executors.executors(addrs[17])).reputation).to.eq(990);
     });
 
     it("slash after only one executor submits output", async function () {
