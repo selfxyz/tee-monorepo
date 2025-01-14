@@ -2513,6 +2513,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "clap",
