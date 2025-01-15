@@ -280,6 +280,7 @@ contract Jobs is
         uint256 indexed jobId,
         uint8 indexed env,
         address indexed jobOwner,
+        uint256 secretId,
         bytes32 codehash,
         bytes codeInputs,
         uint256 deadline, // in milliseconds
@@ -358,7 +359,7 @@ contract Jobs is
         // deposit escrow amount(USDC)
         USDC_TOKEN.safeTransferFrom(_jobOwner, address(this), _deadline * getJobExecutionFeePerMs(_env));
 
-        jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, _env, selectedNodes);
+        jobId = _create(_codehash, _codeInputs, _deadline, _jobOwner, _env, _secretId, selectedNodes);
     }
 
 
@@ -368,6 +369,7 @@ contract Jobs is
         uint256 _deadline, // in milliseconds
         address _jobOwner,
         uint8 _env,
+        uint256 _secretId,
         address[] memory _selectedNodes
     ) internal returns (uint256 jobId) {
         // create a struct
@@ -379,7 +381,7 @@ contract Jobs is
         jobs[jobId].env = _env;
         jobs[jobId].selectedExecutors = _selectedNodes;
 
-        emit JobCreated(jobId, _env, _jobOwner, _codehash, _codeInputs, _deadline, _selectedNodes);
+        emit JobCreated(jobId, _env, _jobOwner, _secretId, _codehash, _codeInputs, _deadline, _selectedNodes);
     }
 
     function _submitOutput(

@@ -1,7 +1,7 @@
 import { time } from "@nomicfoundation/hardhat-network-helpers";
-import { BytesLike, getBytes, keccak256, parseUnits, Signer, Wallet, ZeroAddress } from "ethers";
+import { BytesLike, getBytes, keccak256, parseUnits, Signer, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Pond, SecretManager, SecretStore, USDCoin } from "../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, SecretManager, SecretStore, TeeManager, USDCoin } from "../typechain-types";
 
 async function main() {
     //Create Enclave Image object
@@ -46,54 +46,119 @@ async function main() {
     let attestationVerifierAddr = attestationVerifier.target;
     console.log("AttestationVerifier: ", attestationVerifierAddr);
 
-    let maxAge = 600,
+    let teeImages = [img],
+        maxAge = 600,
         minStakeAmount = 10n ** 18n,
         slashPercentInBips = 100,
-        slashMaxBips = 1000000,
-        env = 1;
-
-    const SecretStore = await ethers.getContractFactory("SecretStore");
-    const secretStore = await upgrades.deployProxy(
-        SecretStore,
-        [
-            adminAddress,
-            [img]
-        ],
+        slashMaxBips = 1000000;
+    const TeeManager = await ethers.getContractFactory("TeeManager");
+    let teeManager = await upgrades.deployProxy(
+        TeeManager,
+        [adminAddress, teeImages],
         {
-            kind: 'uups',
+            kind: "uups",
+            initializer: "initialize",
             constructorArgs: [
-                attestationVerifierAddr,
+                attestationVerifier.target,
                 maxAge,
-                stakingTokenAddr,
+                stakingToken.target,
                 minStakeAmount,
                 slashPercentInBips,
-                slashMaxBips,
-                env
+                slashMaxBips
             ]
-        }
-    );
+        },
+    ) as unknown as TeeManager;
+    console.log("TeeManager: ", teeManager.target);
+
+    const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+    let executors = await upgrades.deployProxy(
+        Executors,
+        [adminAddress],
+        {
+            kind: "uups",
+            initializer: "initialize",
+            constructorArgs: [
+                teeManager.target
+            ]
+        },
+    ) as unknown as Executors;
+    console.log("Executors: ", executors.target);
+
+    const SecretStore = await ethers.getContractFactory("SecretStore");
+    let secretStore = await upgrades.deployProxy(
+        SecretStore,
+        [adminAddress],
+        {
+            kind: "uups",
+            initializer: "initialize",
+            constructorArgs: [
+                teeManager.target
+            ]
+        },
+    ) as unknown as SecretStore;
     console.log("SecretStore: ", secretStore.target);
 
+    await teeManager.setExecutors(executors.target);
+    console.log("teeManager.setExecutors done");
+    await teeManager.setSecretStore(secretStore.target);
+    console.log("teeManager.setSecretStore done");
+
+    let stakingPaymentPool = adminAddress,
+        usdcPaymentPool = adminAddress;
+    const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
+    let jobs = await upgrades.deployProxy(
+        Jobs,
+        [adminAddress],
+        {
+            kind: "uups",
+            initializer: "initialize",
+            constructorArgs: [
+                stakingToken.target,
+                usdcToken.target,
+                100,
+                100,
+                3,
+                stakingPaymentPool,
+                usdcPaymentPool
+            ]
+        },
+    ) as unknown as Jobs;
+    console.log("Jobs deployed to:", jobs.target);
+
+    // Grant role to jobs contract on executor
+    await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+    console.log("role 1 done");
+    await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+    console.log("role 2 done");
+
+    await jobs.setExecutors(executors.target);
+    console.log("jobs.setExecutors done");
+    await jobs.setSecretStore(secretStore.target);
+    console.log("jobs.setSecretStore done");
+
+    let env = 1,
+        executionFeePerMs = 1,
+        stakingRewardPerMs = 1;
+    await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
+    console.log("global env added");
+
     let noOfNodesToSelect = 3,
-        globalMaxStoreSize = 1e7,
+        globalMaxStoreSize = 1e6,
         globalMinStoreDuration = 10,
-        globalMaxStoreDuration = 10000,
+        globalMaxStoreDuration = 1e6,
         acknowledgementTimeout = 120,
-        markAliveTimeout = 600,
-        secretStoreFeeRate = 100,
-        stakingPaymentPool = adminAddress,
-        secretStoreAddress = secretStore.target;
+        markAliveTimeout = 500,
+        secretStoreFeeRate = 10;
 
     const SecretManager = await ethers.getContractFactory("SecretManager");
-    const secretManager = await upgrades.deployProxy(
+    let secretManager = await upgrades.deployProxy(
         SecretManager,
-        [
-            adminAddress
-        ],
+        [adminAddress],
         {
-            kind: 'uups',
+            kind: "uups",
+            initializer: "initialize",
             constructorArgs: [
-                usdcTokenAddr,
+                usdcToken.target,
                 noOfNodesToSelect,
                 globalMaxStoreSize,
                 globalMinStoreDuration,
@@ -102,14 +167,18 @@ async function main() {
                 markAliveTimeout,
                 secretStoreFeeRate,
                 stakingPaymentPool,
-                secretStoreAddress
+                teeManager.target,
+                executors.target,
+                secretStore.target
             ]
-        }
-    );
+        },
+    ) as unknown as SecretManager;
     console.log("SecretManager: ", secretManager.target);
 
-    await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("SECRET_MANAGER_ROLE")), secretManager.target);
-    console.log("Role granted");
+    await jobs.setSecretManager(secretManager.target);
+    console.log("jobs.setSecretManager done");
+    await secretStore.setSecretManager(secretManager.target);
+    console.log("secretStore.setSecretManager done");
 }
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
@@ -424,7 +493,7 @@ function walletForIndex(idx: number): Wallet {
     return new Wallet(wallet.privateKey);
 }
 
-markDeadTest()
+main()
     .then(() => process.exit(0))
     .catch((error) => {
         console.error(error);
