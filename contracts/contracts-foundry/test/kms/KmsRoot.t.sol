@@ -80,4 +80,20 @@ contract KmsRootTestUpdateVerifier is Test {
 
         assertEq(address(kmsRoot.verifier()), address(_verifier));
     }
+
+    function test_UpdateVerifier_FromNonOwner(
+        IRiscZeroVerifier _verifier,
+        address _nonOwner
+    ) public {
+        vm.assume(_nonOwner != owner);
+        vm.prank(_nonOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Ownable.OwnableUnauthorizedAccount.selector,
+                _nonOwner
+            )
+        );
+
+        kmsRoot.updateVerifier(_verifier);
+    }
 }
