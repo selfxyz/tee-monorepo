@@ -13,6 +13,7 @@ contract KmsRootTestConstruction is Test {
         IRiscZeroVerifier _verifier,
         bytes32 _imageId,
         bytes memory _pcrs,
+        bytes memory _rootKey,
         uint256 _maxAge
     ) public {
         vm.assume(_owner != address(0));
@@ -32,11 +33,15 @@ contract KmsRootTestConstruction is Test {
         vm.expectEmit();
         emit KmsRoot.KmsRootPcrsUpdated(_pcrs, new bytes(0));
 
+        vm.expectEmit();
+        emit KmsRoot.KmsRootRootKeyUpdated(_rootKey, new bytes(0));
+
         KmsRoot _kmsRoot = new KmsRoot(
             _owner,
             _verifier,
             _imageId,
             _pcrs,
+            _rootKey,
             _maxAge
         );
 
@@ -52,6 +57,7 @@ contract KmsRootTestUpdateVerifier is Test {
     IRiscZeroVerifier verifier;
     bytes32 imageId;
     bytes pcrs;
+    bytes rootKey;
     uint256 maxAge;
     KmsRoot kmsRoot;
 
@@ -60,14 +66,9 @@ contract KmsRootTestUpdateVerifier is Test {
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         imageId = bytes32(vm.randomUint());
         pcrs = vm.randomBytes(48);
+        rootKey = vm.randomBytes(48);
         maxAge = vm.randomUint();
-        kmsRoot = new KmsRoot(
-            makeAddr("owner"),
-            IRiscZeroVerifier(makeAddr("verifier")),
-            bytes32(vm.randomUint()),
-            vm.randomBytes(48),
-            vm.randomUint()
-        );
+        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
     }
 
     function test_UpdateVerifier_FromOwner(IRiscZeroVerifier _verifier) public {
