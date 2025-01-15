@@ -293,4 +293,76 @@ contract KmsRootTestVerify is Test {
 
         assertTrue(kmsRoot.isVerified(_addr));
     }
+
+    function test_Verify_TooOld(
+        bytes calldata _signerPubkey,
+        bytes calldata _seal,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_signerPubkey.length == 64);
+        _timestampInMilliseconds = uint64(
+            bound(_timestampInMilliseconds, 0, 2000)
+        );
+        bytes32 _journalDigest = sha256(
+            abi.encodePacked(
+                _timestampInMilliseconds,
+                pcrs,
+                rootKey,
+                uint8(64),
+                _signerPubkey,
+                uint16(0)
+            )
+        );
+        vm.mockCall(
+            address(verifier),
+            abi.encodeWithSelector(
+                KmsRoot.verify.selector,
+                _seal,
+                imageId,
+                _journalDigest
+            ),
+            abi.encode()
+        );
+        vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootTooOld.selector));
+        vm.warp(4);
+
+        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+    }
+
+    function test_Verify_InvalidLength(
+        bytes calldata _signerPubkey,
+        bytes calldata _seal,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_signerPubkey.length != 64);
+        _timestampInMilliseconds = uint64(
+            bound(_timestampInMilliseconds, 2001, type(uint64).max)
+        );
+        bytes32 _journalDigest = sha256(
+            abi.encodePacked(
+                _timestampInMilliseconds,
+                pcrs,
+                rootKey,
+                uint8(64),
+                _signerPubkey,
+                uint16(0)
+            )
+        );
+        vm.mockCall(
+            address(verifier),
+            abi.encodeWithSelector(
+                KmsRoot.verify.selector,
+                _seal,
+                imageId,
+                _journalDigest
+            ),
+            abi.encode()
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector)
+        );
+        vm.warp(4);
+
+        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+    }
 }
