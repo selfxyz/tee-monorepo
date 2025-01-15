@@ -30,3 +30,35 @@ contract KmsRootTestConstruction is Test {
         assertEq(_kmsRoot.pcrs(), _pcrs);
     }
 }
+
+contract KmsRootTestUpdateVerifier is Test {
+    address owner;
+    IRiscZeroVerifier verifier;
+    bytes32 imageId;
+    bytes pcrs;
+    uint256 maxAge;
+    KmsRoot kmsRoot;
+
+    function setUp() public {
+        owner = makeAddr("owner");
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        imageId = bytes32(vm.randomUint());
+        pcrs = vm.randomBytes(48);
+        maxAge = vm.randomUint();
+        kmsRoot = new KmsRoot(
+            makeAddr("owner"),
+            IRiscZeroVerifier(makeAddr("verifier")),
+            bytes32(vm.randomUint()),
+            vm.randomBytes(48),
+            vm.randomUint()
+        );
+    }
+
+    function test_UpdateVerifier_FromOwner(IRiscZeroVerifier _verifier) public {
+        vm.prank(owner);
+
+        kmsRoot.updateVerifier(_verifier);
+
+        assertEq(address(kmsRoot.verifier()), address(_verifier));
+    }
+}
