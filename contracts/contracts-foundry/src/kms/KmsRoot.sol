@@ -32,6 +32,7 @@ contract KmsRoot is Ownable {
         IRiscZeroVerifier _verifier,
         bytes32 _imageId,
         bytes memory _pcrs,
+        bytes memory _rootKey,
         uint256 _maxAge
     ) Ownable(_owner) {
         MAX_AGE = _maxAge;
@@ -39,6 +40,7 @@ contract KmsRoot is Ownable {
         _updateVerifier(_verifier);
         _updateImageId(_imageId);
         _updatePcrs(_pcrs);
+        _updateRootKey(_rootKey);
     }
 
     function updateVerifier(IRiscZeroVerifier _verifier) external onlyOwner {
@@ -101,7 +103,7 @@ contract KmsRoot is Ownable {
         pcrs = _pcrs;
     }
 
-    function _updateRootKey(bytes calldata _rootKey) internal {
+    function _updateRootKey(bytes memory _rootKey) internal {
         emit KmsRootRootKeyUpdated(_rootKey, rootKey);
         rootKey = _rootKey;
     }
