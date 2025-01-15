@@ -72,6 +72,8 @@ contract KmsRootTestUpdateVerifier is Test {
 
     function test_UpdateVerifier_FromOwner(IRiscZeroVerifier _verifier) public {
         vm.prank(owner);
+        vm.expectEmit();
+        emit KmsRoot.KmsRootVerifierUpdated(_verifier, verifier);
 
         kmsRoot.updateVerifier(_verifier);
 
