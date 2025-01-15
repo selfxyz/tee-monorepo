@@ -2,8 +2,8 @@
 
 pragma solidity ^0.8.0;
 
-import "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
-import "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
+import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 contract KmsRoot is Ownable {
     uint256 public immutable MAX_AGE;
@@ -18,13 +18,13 @@ contract KmsRoot is Ownable {
     error KmsRootTooOld();
     error KmsRootLengthInvalid();
 
-    event KmsRootVerifierUpdated(
+    event KmsRootUpdatedVerifier(
         IRiscZeroVerifier indexed verifier,
         IRiscZeroVerifier indexed old
     );
-    event KmsRootImageIdUpdated(bytes32 indexed imageId, bytes32 indexed old);
-    event KmsRootPcrsUpdated(bytes indexed pcrs, bytes indexed old);
-    event KmsRootRootKeyUpdated(bytes indexed rootKey, bytes indexed old);
+    event KmsRootUpdatedImageId(bytes32 indexed imageId, bytes32 indexed old);
+    event KmsRootUpdatedPcrs(bytes indexed pcrs, bytes indexed old);
+    event KmsRootUpdatedRootKey(bytes indexed rootKey, bytes indexed old);
     event KmsRootVerified(address indexed addr);
 
     constructor(
@@ -89,22 +89,22 @@ contract KmsRoot is Ownable {
     }
 
     function _updateVerifier(IRiscZeroVerifier _verifier) internal {
-        emit KmsRootVerifierUpdated(_verifier, verifier);
+        emit KmsRootUpdatedVerifier(_verifier, verifier);
         verifier = _verifier;
     }
 
     function _updateImageId(bytes32 _imageId) internal {
-        emit KmsRootImageIdUpdated(_imageId, imageId);
+        emit KmsRootUpdatedImageId(_imageId, imageId);
         imageId = _imageId;
     }
 
     function _updatePcrs(bytes memory _pcrs) internal {
-        emit KmsRootPcrsUpdated(_pcrs, pcrs);
+        emit KmsRootUpdatedPcrs(_pcrs, pcrs);
         pcrs = _pcrs;
     }
 
     function _updateRootKey(bytes memory _rootKey) internal {
-        emit KmsRootRootKeyUpdated(_rootKey, rootKey);
+        emit KmsRootUpdatedRootKey(_rootKey, rootKey);
         rootKey = _rootKey;
     }
 

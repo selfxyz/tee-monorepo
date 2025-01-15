@@ -4,8 +4,8 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {KmsRoot} from "../../src/kms/KmsRoot.sol";
 
-import "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
-import "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
+import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 contract KmsRootTestConstruction is Test {
     function test_Construction(
@@ -22,19 +22,19 @@ contract KmsRootTestConstruction is Test {
         emit Ownable.OwnershipTransferred(address(0), _owner);
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootVerifierUpdated(
+        emit KmsRoot.KmsRootUpdatedVerifier(
             _verifier,
             IRiscZeroVerifier(address(0))
         );
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootImageIdUpdated(_imageId, bytes32(0));
+        emit KmsRoot.KmsRootUpdatedImageId(_imageId, bytes32(0));
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootPcrsUpdated(_pcrs, new bytes(0));
+        emit KmsRoot.KmsRootUpdatedPcrs(_pcrs, new bytes(0));
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootRootKeyUpdated(_rootKey, new bytes(0));
+        emit KmsRoot.KmsRootUpdatedRootKey(_rootKey, new bytes(0));
 
         KmsRoot _kmsRoot = new KmsRoot(
             _owner,
@@ -74,7 +74,7 @@ contract KmsRootTestUpdateVerifier is Test {
     function test_UpdateVerifier_FromOwner(IRiscZeroVerifier _verifier) public {
         vm.prank(owner);
         vm.expectEmit();
-        emit KmsRoot.KmsRootVerifierUpdated(_verifier, verifier);
+        emit KmsRoot.KmsRootUpdatedVerifier(_verifier, verifier);
 
         kmsRoot.updateVerifier(_verifier);
 
