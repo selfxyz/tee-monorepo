@@ -189,3 +189,49 @@ contract KmsRootTestUpdatePcrs is Test {
         kmsRoot.updatePcrs(_pcrs);
     }
 }
+
+contract KmsRootTestUpdateRootKey is Test {
+    address owner;
+    IRiscZeroVerifier verifier;
+    bytes32 imageId;
+    bytes pcrs;
+    bytes rootKey;
+    uint256 maxAge;
+    KmsRoot kmsRoot;
+
+    function setUp() public {
+        owner = makeAddr("owner");
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        imageId = bytes32(vm.randomUint());
+        pcrs = vm.randomBytes(48);
+        rootKey = vm.randomBytes(48);
+        maxAge = vm.randomUint();
+        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
+    }
+
+    function test_UpdateRootKey_FromOwner(bytes calldata _rootKey) public {
+        vm.prank(owner);
+        vm.expectEmit();
+        emit KmsRoot.KmsRootUpdatedRootKey(_rootKey, rootKey);
+
+        kmsRoot.updateRootKey(_rootKey);
+
+        assertEq(kmsRoot.rootKey(), _rootKey);
+    }
+
+    function test_UpdateRootKey_FromNonOwner(
+        bytes calldata _rootKey,
+        address _nonOwner
+    ) public {
+        vm.assume(_nonOwner != owner);
+        vm.prank(_nonOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Ownable.OwnableUnauthorizedAccount.selector,
+                _nonOwner
+            )
+        );
+
+        kmsRoot.updateRootKey(_rootKey);
+    }
+}
