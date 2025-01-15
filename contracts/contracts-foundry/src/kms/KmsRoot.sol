@@ -62,8 +62,7 @@ contract KmsRoot is Ownable {
     function verify(
         bytes calldata _signerPubkey,
         bytes calldata _seal,
-        uint64 _timestampInMilliseconds,
-        bytes calldata _pcrs
+        uint64 _timestampInMilliseconds
     ) external {
         require(
             _timestampInMilliseconds > (block.timestamp - MAX_AGE) * 1000,
@@ -73,7 +72,7 @@ contract KmsRoot is Ownable {
         bytes32 _journalDigest = sha256(
             abi.encodePacked(
                 _timestampInMilliseconds,
-                _pcrs,
+                pcrs,
                 rootKey,
                 uint8(_signerPubkey.length),
                 _signerPubkey,
