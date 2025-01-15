@@ -7,7 +7,9 @@ mod server;
 mod utils;
 
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
+use actix_web::http::Uri;
 use actix_web::web::Data;
 use actix_web::{App, HttpServer};
 use alloy::primitives::Address;
@@ -16,6 +18,7 @@ use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
 use alloy::transports::http::reqwest::Url;
 use anyhow::{Context, Result};
+use anyhow::anyhow;
 use clap::Parser;
 use tokio::fs;
 
@@ -29,7 +32,7 @@ use utils::verify_rpc_url;
 struct Cli {
     // Server port
     #[clap(long, value_parser, default_value = "6002")]
-    port: u16,
+    inject_port: u16,
 
     // Path to the configuration file
     #[clap(
@@ -65,13 +68,22 @@ async fn main() -> Result<()> {
     let secret_manager_contract =
         SecretManagerContract::new(config.secret_manager_contract_addr, http_rpc_client);
 
+    // Validate the format of the web_socket_url
+    let _ = config
+        .web_socket_url
+        .parse::<Uri>()
+        .context("Invalid web_socket_url format")?;
+    if !config.web_socket_url.ends_with('/') {
+        return Err(anyhow!("web_socket_url should end with a '/'"));
+    }
+
     // Initialize App data that will be shared across multiple threads and tasks
     let app_data = Data::new(AppState {
         secret_store_path: config.secret_store_path,
         common_chain_id: config.common_chain_id,
         http_rpc_url: config.http_rpc_url,
-        web_socket_url: config.web_socket_url,
-        secret_store_contract_addr: config.secret_store_contract_addr,
+        web_socket_url: Arc::new(RwLock::new(config.web_socket_url)),
+        tee_manager_contract_addr: config.tee_manager_contract_addr,
         secret_manager_contract_addr: config.secret_manager_contract_addr,
         secret_manager_contract_instance: secret_manager_contract,
         num_selected_stores: config.num_selected_stores,
@@ -91,24 +103,37 @@ async fn main() -> Result<()> {
         secrets_stored: HashMap::new().into(),
     });
 
-    // Start actix server to expose the secret store API endpoints outside the enclave
-    let server = HttpServer::new(move || {
+    let app_data_clone = app_data.clone();
+    // Start actix server to expose the secret store API endpoints for configuration and registration requests inside the enclave local system
+    let server1 = HttpServer::new(move || {
         App::new()
-            .app_data(app_data.clone())
+            .app_data(app_data_clone.clone())
             .service(index)
             .service(inject_immutable_config)
             .service(inject_mutable_config)
             .service(get_secret_store_details)
-            .service(export_signed_registration_message)
-            .service(inject_and_store_secret)
+            .service(export_registration_details)
     })
-    .bind(("0.0.0.0", args.port))
-    .context(format!("could not bind to port {}", args.port))?
+    .bind(("0.0.0.0", config.config_port))
+    .context(format!("could not bind to port {}", config.config_port))?
     .run();
 
-    println!("Node server started on port {}", args.port);
+    println!("Config server started on port {}", config.config_port);
 
-    server.await?;
+    // Start actix server to expose the inject secret endpoint outside the enclave
+    let server2 = HttpServer::new(move || {
+        App::new()
+            .app_data(app_data.clone())
+            .service(inject_and_store_secret)
+    })
+    .bind(("0.0.0.0", args.inject_port))
+    .context(format!("could not bind to port {}", args.inject_port))?
+    .run();
+
+    println!("Inject server started on port {}", args.inject_port);
+
+    // Run both servers concurrently
+    tokio::try_join!(server1, server2)?;
 
     Ok(())
 }

@@ -65,11 +65,20 @@ async fn inject_mutable_config(
     Json(mutable_config): Json<MutableConfig>,
     app_state: Data<AppState>,
 ) -> impl Responder {
+    // Validate the user provided web socket api key
+    if !mutable_config
+        .ws_api_key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return HttpResponse::BadRequest().body("API key contains invalid characters!\n");
+    }
+
     // Decode the gas private key from the payload
     let mut bytes32_gas_key = [0u8; 32];
     if let Err(err) = hex::decode_to_slice(&mutable_config.gas_key_hex, &mut bytes32_gas_key) {
         return HttpResponse::BadRequest().body(format!(
-            "Failed to hex decode the gas private key into 32 bytes: {:?}",
+            "Failed to hex decode the gas private key into 32 bytes: {:?}\n",
             err
         ));
     }
@@ -106,6 +115,12 @@ async fn inject_mutable_config(
         };
 
         *app_state.http_rpc_txn_manager.lock().unwrap() = Some(http_rpc_txn_manager);
+        let mut ws_rpc_url = app_state.web_socket_url.write().unwrap();
+        // strip existing api key from the ws url by removing keys after last '/'
+        let pos = ws_rpc_url.rfind('/').unwrap();
+        ws_rpc_url.truncate(pos + 1);
+        ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
+
         *mutable_params_injected_guard = true;
         drop(mutable_params_injected_guard);
 
@@ -131,6 +146,12 @@ async fn inject_mutable_config(
                 err
             ));
         }
+
+        let mut ws_rpc_url = app_state.web_socket_url.write().unwrap();
+        // strip existing api key from the ws url by removing keys after last '/'
+        let pos = ws_rpc_url.rfind('/').unwrap();
+        ws_rpc_url.truncate(pos + 1);
+        ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
     }
 
     HttpResponse::Ok().body("Mutable params configured!\n")
@@ -161,7 +182,7 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
 
 #[get("/signed-registration-message")]
 // Endpoint exposed to retrieve the metadata required to register the secret store on the common chain
-async fn export_signed_registration_message(app_state: Data<AppState>) -> impl Responder {
+async fn export_registration_details(app_state: Data<AppState>) -> impl Responder {
     if *app_state.immutable_params_injected.lock().unwrap() == false {
         return HttpResponse::BadRequest().body("Immutable params not configured yet!\n");
     }
@@ -169,57 +190,6 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
     if *app_state.mutable_params_injected.lock().unwrap() == false {
         return HttpResponse::BadRequest().body("Mutable params not configured yet!\n");
     }
-
-    // Initialize the storage capacity of the enclave store
-    let storage_capacity = SECRET_STORAGE_CAPACITY_BYTES;
-    let owner = app_state.enclave_owner.lock().unwrap().clone();
-    let sign_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // Encode and hash the secret storage capacity of enclave following EIP712 format
-    let domain_separator = keccak256(
-        DynSolValue::Tuple(vec![
-            DynSolValue::FixedBytes(keccak256("EIP712Domain(string name,string version)"), 32),
-            DynSolValue::FixedBytes(keccak256("marlin.oyster.SecretStore"), 32),
-            DynSolValue::FixedBytes(keccak256("1"), 32),
-        ])
-        .abi_encode(),
-    );
-    let register_typehash =
-        keccak256("Register(address owner,uint256 storageCapacity,uint256 signTimestamp)");
-
-    let hash_struct = keccak256(
-        DynSolValue::Tuple(vec![
-            DynSolValue::FixedBytes(register_typehash, 32),
-            DynSolValue::Address(owner),
-            DynSolValue::Uint(U256::from(storage_capacity), 256),
-            DynSolValue::Uint(U256::from(sign_timestamp), 256),
-        ])
-        .abi_encode(),
-    );
-
-    let digest = keccak256(
-        DynSolValue::Tuple(vec![
-            DynSolValue::String("\x19\x01".to_string()),
-            DynSolValue::FixedBytes(domain_separator, 32),
-            DynSolValue::FixedBytes(hash_struct, 32),
-        ])
-        .abi_encode_packed(),
-    );
-
-    // Sign the digest using enclave key
-    let sig = app_state
-        .enclave_signer
-        .sign_prehash_recoverable(&digest.to_vec());
-    let Ok((rs, v)) = sig else {
-        return HttpResponse::InternalServerError().body(format!(
-            "Failed to sign the registration message using enclave key: {:?}\n",
-            sig.unwrap_err()
-        ));
-    };
-    let signature = hex::encode(rs.to_bytes().append(27 + v.to_byte()).to_vec());
 
     // Get the current block number from the rpc to initiate event listening
     let current_block_number = get_latest_block_number(&app_state.http_rpc_url).await;
@@ -242,10 +212,7 @@ async fn export_signed_registration_message(app_state: Data<AppState>) -> impl R
     }
 
     HttpResponse::Ok().json(json!({
-        "storage_capacity": storage_capacity,
-        "sign_timestamp": sign_timestamp,
-        "owner": owner,
-        "signature": format!("0x{}", signature),
+        "storage_capacity": SECRET_STORAGE_CAPACITY_BYTES,
     }))
 }
 
