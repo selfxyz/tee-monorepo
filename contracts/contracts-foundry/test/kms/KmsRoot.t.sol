@@ -235,3 +235,62 @@ contract KmsRootTestUpdateRootKey is Test {
         kmsRoot.updateRootKey(_rootKey);
     }
 }
+
+contract KmsRootTestVerify is Test {
+    address owner;
+    IRiscZeroVerifier verifier;
+    bytes32 imageId;
+    bytes pcrs;
+    bytes rootKey;
+    uint256 maxAge;
+    KmsRoot kmsRoot;
+
+    function setUp() public {
+        owner = makeAddr("owner");
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        imageId = bytes32(vm.randomUint());
+        pcrs = vm.randomBytes(48);
+        rootKey = vm.randomBytes(48);
+        maxAge = 2;
+        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
+    }
+
+    function test_Verify_Valid(
+        bytes calldata _signerPubkey,
+        bytes calldata _seal,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_signerPubkey.length == 64);
+        _timestampInMilliseconds = uint64(
+            bound(_timestampInMilliseconds, 2001, type(uint64).max)
+        );
+        bytes32 _journalDigest = sha256(
+            abi.encodePacked(
+                _timestampInMilliseconds,
+                pcrs,
+                rootKey,
+                uint8(64),
+                _signerPubkey,
+                uint16(0)
+            )
+        );
+        vm.mockCall(
+            address(verifier),
+            abi.encodeWithSelector(
+                KmsRoot.verify.selector,
+                _seal,
+                imageId,
+                _journalDigest
+            ),
+            abi.encode()
+        );
+        address _addr = address(uint160(uint256(keccak256(_signerPubkey))));
+        vm.expectEmit();
+        emit KmsRoot.KmsRootVerified(_addr);
+        vm.warp(4);
+
+        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+
+        assertTrue(kmsRoot.isVerified(_addr));
+    }
+}
