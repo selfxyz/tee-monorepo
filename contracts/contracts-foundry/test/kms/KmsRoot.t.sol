@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {KmsRoot} from "../../src/kms/KmsRoot.sol";
 
+import "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 contract KmsRootTestConstruction is Test {
@@ -15,6 +16,21 @@ contract KmsRootTestConstruction is Test {
         uint256 _maxAge
     ) public {
         vm.assume(_owner != address(0));
+
+        vm.expectEmit();
+        emit Ownable.OwnershipTransferred(address(0), _owner);
+
+        vm.expectEmit();
+        emit KmsRoot.KmsRootVerifierUpdated(
+            _verifier,
+            IRiscZeroVerifier(address(0))
+        );
+
+        vm.expectEmit();
+        emit KmsRoot.KmsRootImageIdUpdated(_imageId, bytes32(0));
+
+        vm.expectEmit();
+        emit KmsRoot.KmsRootPcrsUpdated(_pcrs, new bytes(0));
 
         KmsRoot _kmsRoot = new KmsRoot(
             _owner,
