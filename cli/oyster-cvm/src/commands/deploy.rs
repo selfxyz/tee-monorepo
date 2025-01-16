@@ -16,7 +16,6 @@ use tokio::net::TcpStream;
 use tracing::info;
 
 const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-const JOB_REFRESH_ENDPOINT: &str = "https://sk.arb1.marlin.org/operators/jobs/refresh/ArbOne/";
 
 const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
 const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
@@ -168,8 +167,7 @@ pub async fn deploy_oyster_instance(
     info!("Waiting for 3 minutes for enclave to start...");
     tokio::time::sleep(StdDuration::from_secs(180)).await;
 
-    let url = format!("{}{:?}", JOB_REFRESH_ENDPOINT, job_id);
-    let ip_address = wait_for_ip_address(&url).await?;
+    let ip_address = wait_for_ip_address(&cp_url, job_id, &config.region).await?;
     info!("IP address obtained: {}", ip_address);
 
     if !check_reachability(&ip_address).await {
@@ -258,9 +256,12 @@ async fn fetch_operator_spec(url: &str) -> Result<Operator> {
     Ok(operator)
 }
 
-async fn wait_for_ip_address(url: &str) -> Result<String> {
+async fn wait_for_ip_address(url: &str, job_id: H256, region: &str) -> Result<String> {
     let client = reqwest::Client::new();
     let mut last_response = String::new();
+
+    // Construct the IP endpoint URL with query parameters
+    let ip_url = format!("{}/ip?id={:?}&region={}", url, job_id, region);
 
     for attempt in 1..=IP_CHECK_RETRIES {
         info!(
@@ -268,19 +269,14 @@ async fn wait_for_ip_address(url: &str) -> Result<String> {
             attempt, IP_CHECK_RETRIES
         );
 
-        let response = client.get(url).send().await?;
+        let response = client.get(&ip_url).send().await?;
         let json: serde_json::Value = response.json().await?;
         last_response = json.to_string();
 
-        info!("Response from refresh endpoint: {}", last_response);
+        info!("Response from IP endpoint: {}", last_response);
 
-        // Check both possible IP locations in response
-        if let Some(ip) = json
-            .get("job")
-            .and_then(|job| job.get("ip"))
-            .and_then(|ip| ip.as_str())
-            .or_else(|| json.get("ip").and_then(|ip| ip.as_str()))
-        {
+        // Check for IP in response
+        if let Some(ip) = json.get("ip").and_then(|ip| ip.as_str()) {
             if !ip.is_empty() {
                 return Ok(ip.to_string());
             }
