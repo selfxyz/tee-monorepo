@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use axum::serve::Listener;
+use axum::{extract::connect_info::Connected, serve::Listener};
 use oyster::{
     attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
     scallop::{
@@ -19,8 +19,10 @@ use tracing::error;
 #[derive(Clone, Default)]
 pub struct AuthStore {}
 
+type AuthStoreState = ([[u8; 48]; 3], Box<[u8]>);
+
 impl ScallopAuthStore for AuthStore {
-    type State = ([[u8; 48]; 3], Box<[u8]>);
+    type State = AuthStoreState;
 
     fn verify(&mut self, attestation: &[u8], _key: Key) -> Option<Self::State> {
         let Ok(now) = SystemTime::now()
@@ -97,8 +99,10 @@ impl ScallopListener {
     }
 }
 
+type ListenerIo = ScallopStream<TcpStream, AuthStoreState>;
+
 impl Listener for ScallopListener {
-    type Io = ScallopStream<TcpStream, <AuthStore as ScallopAuthStore>::State>;
+    type Io = ListenerIo;
     type Addr = SocketAddr;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
@@ -112,5 +116,14 @@ impl Listener for ScallopListener {
 
     fn local_addr(&self) -> tokio::io::Result<Self::Addr> {
         self.listener.local_addr()
+    }
+}
+
+#[derive(Clone)]
+pub struct ScallopState(Option<AuthStoreState>);
+
+impl Connected<ListenerIo> for ScallopState {
+    fn connect_info(stream: ListenerIo) -> Self {
+        ScallopState(stream.state)
     }
 }
