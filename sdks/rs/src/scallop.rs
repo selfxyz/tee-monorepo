@@ -568,14 +568,15 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 #[allow(non_snake_case)]
 pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     Base: AsyncWrite + AsyncRead + Unpin,
+    AS: ScallopAuthStore,
 >(
     mut stream: Base,
     secret: &[u8; 32],
     // will not auth remote if None
-    mut auth_store: Option<impl ScallopAuthStore>,
+    mut auth_store: Option<AS>,
     // will not respond to auth requests if None
     auther: Option<impl ScallopAuther>,
-) -> Result<ScallopStream<Base>, ScallopError> {
+) -> Result<ScallopStream<Base, AS::State>, ScallopError> {
     let mut buf = [0u8; 1024];
     let mut noise_buf = [0u8; 1024];
 
@@ -635,7 +636,18 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             "remote static key rejected".into(),
         ));
     }
+
+    // start tracking what state should go in the stream
+    // it is expected to be set if contains returns state
+    // or verify returns state
+    let mut state = None::<AS::State>;
+
     let should_ask_auth = contains == Some(ContainsResponse::NotFound);
+
+    // set state immediately if key was approved previously
+    if let Some(ContainsResponse::Approved(_state)) = contains {
+        state = Some(_state);
+    }
 
     let payload = &[0u8, 1u8, if !should_ask_auth { 0u8 } else { 1u8 }];
 
@@ -676,13 +688,16 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // verify auth if we asked for it
     if should_ask_auth {
         // verify
-        if !auth_store
+        let Some(_state) = auth_store
             .as_mut()
             .unwrap()
             .verify(&noise_buf[3..len], remote_static)
-        {
+        else {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
+
+        // set state
+        state = Some(_state)
     }
 
     // auth request should be 0 or 1
@@ -758,7 +773,7 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         wbuf: vec![].into_boxed_slice(),
         write_start: 0,
         write_end: 0,
-        state: None,
+        state,
     })
 }
 
