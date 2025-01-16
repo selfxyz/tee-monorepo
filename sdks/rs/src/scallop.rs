@@ -193,7 +193,7 @@ pub trait ScallopAuthStore {
     fn contains(&mut self, _key: &Key) -> ContainsResponse<Self::State> {
         ContainsResponse::NotFound
     }
-    fn verify(&mut self, attestation: &[u8], key: Key) -> bool;
+    fn verify(&mut self, attestation: &[u8], key: Key) -> Option<Self::State>;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
@@ -203,7 +203,7 @@ impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
         (**self).contains(key)
     }
 
-    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
+    fn verify(&mut self, attestation: &[u8], key: Key) -> Option<Self::State> {
         (**self).verify(attestation, key)
     }
 }
@@ -216,7 +216,7 @@ impl ScallopAuthStore for () {
         unimplemented!()
     }
 
-    fn verify(&mut self, _attestation: &[u8], _key: Key) -> bool {
+    fn verify(&mut self, _attestation: &[u8], _key: Key) -> Option<Self::State> {
         unimplemented!()
     }
 }
