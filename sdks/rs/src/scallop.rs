@@ -175,48 +175,42 @@ enum ReadMode {
 }
 
 pub type Key = [u8; 32];
-pub type Pcrs = [[u8; 48]; 3];
+#[derive(PartialEq)]
+pub enum ContainsResponse {
+    // the key was found and is approved
+    Approved,
+    // the key was not found
+    NotFound,
+    // the key is rejected
+    Rejected,
+}
 
 pub trait ScallopAuthStore {
-    fn contains(&self, key: &Key) -> bool;
-    fn get(&self, key: &Key) -> Option<&Pcrs>;
-    fn set(&mut self, key: Key, pcrs: Pcrs);
-    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<Pcrs>;
+    // intended as a caching mechanism so attestations do not have to be
+    // requested every time, always returning NotFound is valid
+    fn contains(&mut self, _key: &Key) -> ContainsResponse {
+        ContainsResponse::NotFound
+    }
+    fn verify(&mut self, attestation: &[u8], key: Key) -> bool;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
-    fn contains(&self, key: &Key) -> bool {
+    fn contains(&mut self, key: &Key) -> ContainsResponse {
         (**self).contains(key)
     }
 
-    fn get(&self, key: &Key) -> Option<&Pcrs> {
-        (**self).get(key)
-    }
-
-    fn set(&mut self, key: Key, pcrs: Pcrs) {
-        (**self).set(key, pcrs)
-    }
-
-    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<Pcrs> {
+    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
         (**self).verify(attestation, key)
     }
 }
 
 // to let callers pass in None with empty type
 impl ScallopAuthStore for () {
-    fn contains(&self, _key: &Key) -> bool {
+    fn contains(&mut self, _key: &Key) -> ContainsResponse {
         unimplemented!()
     }
 
-    fn get(&self, _key: &Key) -> Option<&Pcrs> {
-        unimplemented!()
-    }
-
-    fn set(&mut self, _key: Key, _pcrs: Pcrs) {
-        unimplemented!()
-    }
-
-    fn verify(&mut self, _attestation: &[u8], _key: &Key) -> Option<Pcrs> {
+    fn verify(&mut self, _attestation: &[u8], _key: Key) -> bool {
         unimplemented!()
     }
 }
@@ -407,8 +401,14 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // safe to unwrap since IX should have key by now
     let remote_static: [u8; 32] = noise.get_remote_static().unwrap().try_into().unwrap();
 
-    let should_ask_auth =
-        auth_store.is_some() && !auth_store.as_mut().unwrap().contains(&remote_static);
+    let contains = auth_store.as_mut().map(|x| x.contains(&remote_static));
+    // error out if key is considered rejected
+    if contains == Some(ContainsResponse::Rejected) {
+        return Err(ScallopError::ProtocolError(
+            "remote static key rejected".into(),
+        ));
+    }
+    let should_ask_auth = contains == Some(ContainsResponse::NotFound);
 
     // handshake is done, switch to transport mode
     let mut noise = noise.into_transport_mode()?;
@@ -512,15 +512,13 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         }
 
         // verify
-        let Some(pcrs) = auth_store
+        if !auth_store
             .as_mut()
             .unwrap()
-            .verify(&noise_buf[2..len], &remote_static)
-        else {
+            .verify(&noise_buf[2..len], remote_static)
+        {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
-
-        auth_store.unwrap().set(remote_static, pcrs);
     }
 
     //---- <- SERVERFIN end ----//
@@ -603,8 +601,14 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         .try_into()
         .expect("expected 32 byte key");
 
-    let should_ask_auth =
-        auth_store.is_some() && !auth_store.as_mut().unwrap().contains(&remote_static);
+    let contains = auth_store.as_mut().map(|x| x.contains(&remote_static));
+    // error out if key is considered rejected
+    if contains == Some(ContainsResponse::Rejected) {
+        return Err(ScallopError::ProtocolError(
+            "remote static key rejected".into(),
+        ));
+    }
+    let should_ask_auth = contains == Some(ContainsResponse::NotFound);
 
     let payload = &[0u8, 1u8, if !should_ask_auth { 0u8 } else { 1u8 }];
 
@@ -645,15 +649,13 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // verify auth if we asked for it
     if should_ask_auth {
         // verify
-        let Some(pcrs) = auth_store
+        if !auth_store
             .as_mut()
             .unwrap()
-            .verify(&noise_buf[3..len], &remote_static)
-        else {
+            .verify(&noise_buf[3..len], remote_static)
+        {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
-
-        auth_store.unwrap().set(remote_static, pcrs);
     }
 
     // auth request should be 0 or 1

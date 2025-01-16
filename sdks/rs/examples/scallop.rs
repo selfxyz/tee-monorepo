@@ -11,29 +11,28 @@ use tokio::time::sleep;
 
 pub use oyster::scallop::*;
 
+type Pcrs = [[u8; 48]; 3];
+
 #[derive(Default)]
 struct AuthStore {
     store: HashMap<Key, Pcrs>,
 }
 
 impl ScallopAuthStore for AuthStore {
-    fn contains(&self, key: &Key) -> bool {
-        self.store.contains_key(key)
-    }
-
-    fn get(&self, key: &Key) -> Option<&Pcrs> {
-        self.store.get(key)
-    }
-
-    fn set(&mut self, key: Key, pcrs: Pcrs) {
-        self.store.insert(key, pcrs);
-    }
-
-    fn verify(&mut self, attestation: &[u8], _key: &Key) -> Option<Pcrs> {
-        if attestation == b"good auth" {
-            Some([[1u8; 48], [2u8; 48], [3u8; 48]])
+    fn contains(&mut self, key: &Key) -> ContainsResponse {
+        if self.store.contains_key(key) {
+            ContainsResponse::Approved
         } else {
-            None
+            ContainsResponse::NotFound
+        }
+    }
+
+    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
+        if attestation == b"good auth" {
+            self.store.insert(key, [[1u8; 48], [2u8; 48], [3u8; 48]]);
+            true
+        } else {
+            false
         }
     }
 }
