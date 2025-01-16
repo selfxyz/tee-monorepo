@@ -126,6 +126,8 @@ async fn main() -> Result<()> {
         url: args.attestation_endpoint,
     };
 
+    let auth_store = AuthStore {};
+
     // Panic safety: we simply abort on panics and eschew any handling
 
     let app_state_clone = app_state.clone();
@@ -139,7 +141,8 @@ async fn main() -> Result<()> {
         let app_state = app_state.clone();
         let listen_addr = args.derive_listen_addr.clone();
         let auther = auther.clone();
-        async { run_derive_server(app_state, listen_addr, auther).await }
+        let auth_store = auth_store.clone();
+        async { run_derive_server(app_state, listen_addr, auther, auth_store).await }
     }));
 
     // should never exit unless through an abort on panic
@@ -172,7 +175,12 @@ async fn run_dkg_server(app_state: AppState, listen_addr: String) -> Result<()> 
     axum::serve(listener, app).await.context("failed to serve")
 }
 
-async fn run_derive_server(app_state: AppState, listen_addr: String, auther: Auther) -> Result<()> {
+async fn run_derive_server(
+    app_state: AppState,
+    listen_addr: String,
+    auther: Auther,
+    auth_store: AuthStore,
+) -> Result<()> {
     let app = Router::new()
         .route("/derive", get(derive::derive))
         .with_state(app_state);
@@ -184,7 +192,7 @@ async fn run_derive_server(app_state: AppState, listen_addr: String, auther: Aut
     let listener = ScallopListener {
         listener: tcp_listener,
         secret: [0u8; 32],
-        auth_store: AuthStore {},
+        auth_store,
         auther,
     };
 
