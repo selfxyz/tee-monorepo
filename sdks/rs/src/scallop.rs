@@ -238,7 +238,7 @@ impl ScallopAuther for () {
 }
 
 #[derive(Debug)]
-pub struct ScallopStream<Stream: AsyncWrite + AsyncRead + Unpin> {
+pub struct ScallopStream<Stream: AsyncWrite + AsyncRead + Unpin, State = ()> {
     noise: TransportState,
     stream: Stream,
 
@@ -253,6 +253,9 @@ pub struct ScallopStream<Stream: AsyncWrite + AsyncRead + Unpin> {
     wbuf: Box<[u8]>,
     write_start: usize,
     write_end: usize,
+
+    // extra connection state from the AuthStore if any
+    pub state: Option<State>,
 }
 
 trait Noiser {
@@ -535,6 +538,7 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         wbuf: vec![].into_boxed_slice(),
         write_start: 0,
         write_end: 0,
+        state: None,
     })
 }
 
@@ -731,6 +735,7 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         wbuf: vec![].into_boxed_slice(),
         write_start: 0,
         write_end: 0,
+        state: None,
     })
 }
 
