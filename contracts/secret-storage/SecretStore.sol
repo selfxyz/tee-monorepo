@@ -332,6 +332,21 @@ contract SecretStore is
         _removeSecretStoreStake(_enclaveAddress);
     }
 
+    function upsertTreeNode(
+        uint8 _env,
+        address _enclaveAddress,
+        uint256 _stakeAmount
+    ) external onlyTeeManager {
+        _upsert(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+    }
+
+    function deleteTreeNodeIfPresent(
+        uint8 _env,
+        address _enclaveAddress
+    ) external onlyTeeManager {
+        _deleteIfPresent(_env, _enclaveAddress);
+    }
+
     //-------------------------------- external functions end ----------------------------------//
 
     //------------------------------- TeeManagerRole functions end --------------------------------------//
@@ -429,7 +444,8 @@ contract SecretStore is
         address _enclaveAddress,
         uint256 _secretSize
     ) internal {
-        _updateTreeState(_enclaveAddress);
+        TEE_MANAGER.updateTreeState(_enclaveAddress);
+        // TODO: need to check if storageOccupied < storageCapacity, before inserting in the tree in the previous step
         secretStores[_enclaveAddress].storageOccupied -= _secretSize;
     }
 
@@ -448,20 +464,6 @@ contract SecretStore is
         }
     }
 
-    function _updateTreeState(
-        address _enclaveAddress
-    ) internal {
-        (uint256 stakeAmount, , uint8 env, bool draining) = TEE_MANAGER.teeNodes(_enclaveAddress);
-        if (!draining) {
-            // node might have been deleted due to max job capacity reached
-            // if stakes are greater than minStakes then update the stakes for secretStores in tree if it already exists else add with latest stake
-            if (stakeAmount >= MIN_STAKE_AMOUNT)
-                _upsert(env, _enclaveAddress, uint64(stakeAmount / STAKE_ADJUSTMENT_FACTOR));
-                // remove node from tree if stake falls below min level
-            else _deleteIfPresent(env, _enclaveAddress);
-        }
-    }
-
     function _markAliveUpdate(
         address _enclaveAddress,
         uint256 _currentCheckTimestamp,
@@ -469,7 +471,7 @@ contract SecretStore is
         address _recipient
     ) internal {
         _slashStore(_enclaveAddress, _currentCheckTimestamp, _markAliveTimeout, _recipient);
-        _updateTreeState(_enclaveAddress);
+        TEE_MANAGER.updateTreeState(_enclaveAddress);
         secretStores[_enclaveAddress].lastAliveTimestamp = _currentCheckTimestamp;
     }
 

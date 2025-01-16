@@ -724,6 +724,14 @@ describe("Executors - Drain/Revive executor", function () {
 
         let env = 1;
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
+
+        // case 2: revive after unstaking
+        await teeManager.drainTeeNode(addrs[15]);
+        await teeManager.removeTeeNodeStake(addrs[15], 100);
+        await expect(teeManager.reviveTeeNode(addrs[15]))
+            .to.be.not.reverted;
+
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
     });
 
     it("can revive secret store with max job capacity reached", async function () {

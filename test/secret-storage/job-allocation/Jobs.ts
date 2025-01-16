@@ -843,7 +843,7 @@ describe("Jobs - Create", function () {
         let selectedExecutors = await jobs.getSelectedExecutors(jobId);
         await expect(tx)
             .to.emit(jobs, "JobCreated")
-            .withArgs(jobId, env, jobOwner, codeHash, codeInputs, deadline, selectedExecutors);
+            .withArgs(jobId, env, jobOwner, secretId, codeHash, codeInputs, deadline, selectedExecutors);
 
         let job = await jobs.jobs(jobId);
         expect(job.jobOwner).to.eq(jobOwner);
@@ -851,6 +851,7 @@ describe("Jobs - Create", function () {
         expect(job.execStartTime).to.eq((await tx.getBlock())?.timestamp);
         expect(job.env).to.eq(env);
         expect(selectedExecutors.length).to.eq(3);
+        expect(new Set(selectedExecutors).size).to.eq(selectedExecutors.length);
 
         for (let index = 0; index < selectedExecutors.length; index++) {
             const executor = selectedExecutors[index];

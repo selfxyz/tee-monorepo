@@ -136,6 +136,29 @@ contract TeeManagerMock is Context, AttestationAuther {
 
     // --------------------------------- Secret Store functions end ---------------------------------
 
+    function updateTreeState(
+        address _enclaveAddress
+    ) external {
+        TeeNode memory teeNode = teeNodes[_enclaveAddress];
+        if (!teeNode.draining) {
+            // node might have been deleted due to max job capacity reached
+            // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
+            if (teeNode.stakeAmount >= MIN_STAKE_AMOUNT) {
+                if(address(EXECUTORS) != address(0))
+                    EXECUTORS.upsertTreeNode(teeNode.env, _enclaveAddress, teeNode.stakeAmount);
+                if(address(SECRET_STORE) != address(0))
+                    SECRET_STORE.upsertTreeNode(teeNode.env, _enclaveAddress, teeNode.stakeAmount);
+            }
+            // remove node from tree if stake falls below min level
+            else {
+                if(address(EXECUTORS) != address(0))
+                    EXECUTORS.deleteTreeNodeIfPresent(teeNode.env, _enclaveAddress);
+                if(address(SECRET_STORE) != address(0))
+                    SECRET_STORE.deleteTreeNodeIfPresent(teeNode.env, _enclaveAddress);
+            }
+        }
+    }
+
     function getTeeNodesStake(
         address[] memory _enclaveAddresses
     ) external view returns (uint256[] memory) {

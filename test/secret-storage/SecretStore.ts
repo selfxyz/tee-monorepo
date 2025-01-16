@@ -437,7 +437,7 @@ describe("SecretStore - Register/Deregister secret store", function () {
         let jobCapacity = 20,
             storageCapacity = 1e9,
             env = 1,
-            stakeAmount = 10,
+            stakeAmount = 10n ** 19n,
             timestamp = await time.latest() * 1000,
             signTimestamp = await time.latest() - 540;
         let [attestationSign, attestation] = await createAttestation(
@@ -446,7 +446,7 @@ describe("SecretStore - Register/Deregister secret store", function () {
             wallets[14],
             timestamp - 540000
         );
-        await expect(teeManager.registerTeeNode(
+        let tx = await teeManager.registerTeeNode(
             attestationSign,
             attestation,
             jobCapacity,
@@ -455,9 +455,13 @@ describe("SecretStore - Register/Deregister secret store", function () {
             signTimestamp,
             "0x",
             stakeAmount
-        )).to.be.not.reverted;
+        );
+        await tx.wait();
+        await expect(tx).to.be.not.reverted;
 
-        expect((await secretStore.secretStores(addrs[15])).storageCapacity).to.equal(storageCapacity);
+        expect((await secretStore.secretStores(addrs[15])).storageCapacity).to.eq(storageCapacity);
+        expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp).to.eq((await tx.getBlock())?.timestamp);
+        expect(await secretStore.getNodeValue(env, addrs[15])).to.eq(stakeAmount / await secretStore.STAKE_ADJUSTMENT_FACTOR());
     });
 
     it("cannot register secret store without tee manager contract", async function () {
@@ -524,6 +528,7 @@ describe("SecretStore - Register/Deregister secret store", function () {
         await expect(teeManager.deregisterTeeNode(addrs[15]))
             .to.be.not.reverted;
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
+        expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp).to.eq(0);
     });
 
     it('cannot deregister secret store with occupied storage', async function () {
@@ -660,7 +665,6 @@ describe("SecretStore - Staking/Unstaking", function () {
         let amount = 100n;
         await expect(teeManager.removeTeeNodeStake(addrs[15], amount))
             .to.be.not.reverted;
-        expect(await secretStore.getNodeValue(1, addrs[15])).to.eq((10n ** 19n + amount) / STAKE_ADJUSTMENT_FACTOR);
     });
 
     it("cannot unstake with occupied storage", async function () {
@@ -772,10 +776,24 @@ describe("SecretStore - Drain/Revive secret store", function () {
 
     it('can drain secret store', async function () {
         let env = 1;
-        await expect(teeManager.drainTeeNode(addrs[15]))
-            .to.be.not.reverted;
+        let tx = await teeManager.drainTeeNode(addrs[15]);
+        await tx.wait();
+        await expect(tx).to.be.not.reverted;
 
         expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
+        expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp).to.eq((await tx.getBlock())?.timestamp);
+    });
+
+    it('can drain secret store with renounce secret slashing', async function () {
+        await time.increase(510);
+        let env = 1;
+        let tx = await teeManager.drainTeeNode(addrs[15]);
+        await tx.wait();
+        await expect(tx)
+            .to.emit(teeManager, "TeeManagerMockStoreSlashed");
+
+        expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
+        expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp).to.eq((await tx.getBlock())?.timestamp);
     });
 
     it("cannot drain without tee manager contract", async function () {
@@ -789,12 +807,14 @@ describe("SecretStore - Drain/Revive secret store", function () {
         await teeManager.drainTeeNode(addrs[15]);
         await expect(teeManager.reviveTeeNode(addrs[15]))
             .to.be.not.reverted;
+        expect(await secretStore.getNodeValue(env, addrs[15])).to.eq(stakeAmount / await secretStore.STAKE_ADJUSTMENT_FACTOR());
 
         // case when max storage capacity is exceeded
         await secretManager.selectStores(env, 1, 1e10);
         await teeManager.drainTeeNode(addrs[15]);
         await expect(teeManager.reviveTeeNode(addrs[15]))
             .to.be.not.reverted;
+        expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
     });
 
     it("cannot revive secret store without tee manager contract", async function () {
@@ -876,6 +896,13 @@ describe("SecretStore - Select/Release", function () {
 
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(100);
         expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.true;
+
+        // case 2: store is removed from the tree as storageOccupied exceeds storageCapacity
+        await expect(secretManager.selectStores(1, 1, 1e9))
+            .to.be.not.reverted;
+
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(100 + 1e9);
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.false;
     });
 
     it("cannot select secret stores without SecretManager contract", async function () {
@@ -1070,11 +1097,14 @@ describe("SecretStore - Other only secret manager functions", function () {
         await secretManager.selectStores(1, 1, storageOccupied);
 
         let currentCheckTimestamp = await time.latest();
-        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, 50, addrs[2]))
-            .to.not.be.reverted;
+        let tx = await secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, 50, addrs[2]);
+        await tx.wait();
+        await expect(tx).to.be.not.reverted;
+        await expect(tx).to.not.emit(teeManager, "TeeManagerMockStoreSlashed");
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(50);
 
         // can mark dead again after some delay
         await time.increase(100);
@@ -1084,6 +1114,7 @@ describe("SecretStore - Other only secret manager functions", function () {
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(0);
     });
 
     it("can do mark dead updates with slashing", async function () {
@@ -1099,6 +1130,7 @@ describe("SecretStore - Other only secret manager functions", function () {
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(0);
     });
 
     it("cannot do mark dead updates without SecretManager contract", async function () {

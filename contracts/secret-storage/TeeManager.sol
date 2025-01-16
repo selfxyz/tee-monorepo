@@ -146,6 +146,13 @@ contract TeeManager is
         _;
     }
 
+    modifier onlyExecutorsOrSecretStore() {
+        address caller = _msgSender();
+        if(!(caller == address(SECRET_STORE) || caller == address(EXECUTORS)))
+            revert TeeManagerInvalidCaller();
+        _;
+    }
+
     modifier isValidTeeNodeOwner(address _enclaveAddress) {
         _isValidTeeNodeOwner(_enclaveAddress);
         _;
@@ -222,6 +229,7 @@ contract TeeManager is
     error TeeManagerInvalidEnclaveOwner();
     error TeeManagerInvalidExecutors();
     error TeeManagerInvalidSecretStoreManager();
+    error TeeManagerInvalidCaller();
 
     //-------------------------------- Admin methods start --------------------------------//
 
@@ -603,5 +611,42 @@ contract TeeManager is
     //---------------------------------- external functions end ----------------------------------//
 
     //------------------------------ SecretStoreRole functions end --------------------------------//
+
+    //------------------------ ExecutorsOrSecretStoreRole functions start -------------------------//
+
+    //---------------------------------- internal functions start ----------------------------------//
+
+    function _updateTreeState(
+        address _enclaveAddress
+    ) internal {
+        TeeNode memory teeNode = teeNodes[_enclaveAddress];
+        if (!teeNode.draining) {
+            // node might have been deleted due to max job capacity reached
+            // if stakes are greater than minStakes then update the stakes for executors in tree if it already exists else add with latest stake
+            if (teeNode.stakeAmount >= MIN_STAKE_AMOUNT) {
+                EXECUTORS.upsertTreeNode(teeNode.env, _enclaveAddress, teeNode.stakeAmount);
+                SECRET_STORE.upsertTreeNode(teeNode.env, _enclaveAddress, teeNode.stakeAmount);
+            }
+            // remove node from tree if stake falls below min level
+            else {
+                EXECUTORS.deleteTreeNodeIfPresent(teeNode.env, _enclaveAddress);
+                SECRET_STORE.deleteTreeNodeIfPresent(teeNode.env, _enclaveAddress);
+            }
+        }
+    }
+
+    //---------------------------------- internal functions end ----------------------------------//
+
+    //--------------------------------- external functions start ----------------------------------//
+
+    function updateTreeState(
+        address _enclaveAddress
+    ) external onlyExecutorsOrSecretStore {
+        _updateTreeState(_enclaveAddress);
+    }
+
+    //---------------------------------- external functions end ----------------------------------//
+
+    //-------------------------- ExecutorsOrSecretStoreRole functions end ---------------------------//
 
 }
