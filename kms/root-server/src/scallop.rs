@@ -22,12 +22,14 @@ use tracing::error;
 pub struct AuthStore {}
 
 impl ScallopAuthStore for AuthStore {
-    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
+    type State = ([[u8; 48]; 3], Box<[u8]>);
+
+    fn verify(&mut self, attestation: &[u8], _key: Key) -> Option<Self::State> {
         let Ok(now) = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|x| x.as_millis() as usize)
         else {
-            return false;
+            return None;
         };
 
         let Ok(decoded) = attestation::verify(
@@ -39,10 +41,10 @@ impl ScallopAuthStore for AuthStore {
                 ..Default::default()
             },
         ) else {
-            return false;
+            return None;
         };
 
-        return true;
+        return Some((decoded.pcrs, decoded.user_data.into_boxed_slice()));
     }
 }
 
