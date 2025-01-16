@@ -21,7 +21,7 @@
     if systemConfig.static
     then pkgs.pkgsStatic.stdenv.cc
     else pkgs.stdenv.cc;
-in rec {
+in {
   default = naersk'.buildPackage {
     src = ./.;
     CARGO_BUILD_TARGET = target;
