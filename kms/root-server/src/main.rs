@@ -4,11 +4,9 @@ use std::{
 };
 
 use alloy::{
-    primitives::{Address, U256},
+    primitives::Address,
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
-    sol,
-    sol_types::SolValue,
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -16,7 +14,7 @@ use axum::{
     Router,
 };
 use clap::Parser;
-use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, ProtocolObject, SessionStaticKey};
+use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, SessionStaticKey};
 use tokio::{fs::read, net::TcpListener};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
