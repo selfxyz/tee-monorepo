@@ -184,22 +184,22 @@ pub trait ScallopAuthStore {
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
-    fn contains(&self, key: &Key) -> bool {
+    fn contains(&mut self, key: &Key) -> bool {
         (**self).contains(key)
     }
 
-    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<(Pcrs, UserData)> {
+    fn verify(&mut self, attestation: &[u8], key: &Key) -> bool {
         (**self).verify(attestation, key)
     }
 }
 
 // to let callers pass in None with empty type
 impl ScallopAuthStore for () {
-    fn contains(&self, _key: &Key) -> bool {
+    fn contains(&mut self, _key: &Key) -> bool {
         unimplemented!()
     }
 
-    fn verify(&mut self, _attestation: &[u8], _key: &Key) -> Option<(Pcrs, UserData)> {
+    fn verify(&mut self, _attestation: &[u8], _key: &Key) -> bool {
         unimplemented!()
     }
 }
@@ -495,11 +495,11 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         }
 
         // verify
-        let Some((pcrs, user_data)) = auth_store
+        if !auth_store
             .as_mut()
             .unwrap()
             .verify(&noise_buf[2..len], &remote_static)
-        else {
+        {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
     }
@@ -626,11 +626,11 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // verify auth if we asked for it
     if should_ask_auth {
         // verify
-        let Some((pcrs, user_data)) = auth_store
+        if !auth_store
             .as_mut()
             .unwrap()
             .verify(&noise_buf[3..len], &remote_static)
-        else {
+        {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
     }
