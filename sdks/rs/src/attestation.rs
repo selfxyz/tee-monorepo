@@ -21,6 +21,7 @@ pub struct AttestationDecoded {
     pub pcrs: [[u8; 48]; 3],
     pub root_public_key: Vec<u8>,
     pub public_key: Vec<u8>,
+    pub user_data: Vec<u8>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -53,6 +54,7 @@ pub fn verify(
         timestamp: 0,
         root_public_key: Vec::new(),
         public_key: Vec::new(),
+        user_data: Vec::new(),
     };
 
     // parse attestation doc
