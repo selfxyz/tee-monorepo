@@ -177,9 +177,16 @@ async fn run_derive_server(app_state: AppState, listen_addr: String) -> Result<(
         .route("/derive", get(derive::derive))
         .with_state(app_state);
 
-    let listener = TcpListener::bind(&listen_addr)
+    let tcp_listener = TcpListener::bind(&listen_addr)
         .await
         .context("failed to bind listener")?;
+
+    let listener = ScallopListener {
+        listener: tcp_listener,
+        secret: [0u8; 32],
+        auth_store: AuthStore {},
+        auther: Auther {},
+    };
 
     info!("Derive listening on {}", listen_addr);
     axum::serve(listener, app).await.context("failed to serve")
