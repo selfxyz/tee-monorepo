@@ -177,6 +177,8 @@ enum ReadMode {
 pub type Key = [u8; 32];
 
 pub trait ScallopAuthStore {
+    // intended as a caching mechanism so attestations do not have to be
+    // requested every time
     fn contains(&mut self, key: &Key) -> bool;
     fn verify(&mut self, attestation: &[u8], key: &Key) -> bool;
 }
