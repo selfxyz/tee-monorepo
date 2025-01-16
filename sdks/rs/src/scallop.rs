@@ -176,9 +176,9 @@ enum ReadMode {
 
 pub type Key = [u8; 32];
 #[derive(PartialEq)]
-pub enum ContainsResponse {
+pub enum ContainsResponse<State: PartialEq> {
     // the key was found and is approved
-    Approved,
+    Approved(State),
     // the key was not found
     NotFound,
     // the key is rejected
@@ -186,16 +186,20 @@ pub enum ContainsResponse {
 }
 
 pub trait ScallopAuthStore {
+    type State: PartialEq;
+
     // intended as a caching mechanism so attestations do not have to be
     // requested every time, always returning NotFound is valid
-    fn contains(&mut self, _key: &Key) -> ContainsResponse {
+    fn contains(&mut self, _key: &Key) -> ContainsResponse<Self::State> {
         ContainsResponse::NotFound
     }
     fn verify(&mut self, attestation: &[u8], key: Key) -> bool;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
-    fn contains(&mut self, key: &Key) -> ContainsResponse {
+    type State = T::State;
+
+    fn contains(&mut self, key: &Key) -> ContainsResponse<Self::State> {
         (**self).contains(key)
     }
 
@@ -206,7 +210,9 @@ impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
 
 // to let callers pass in None with empty type
 impl ScallopAuthStore for () {
-    fn contains(&mut self, _key: &Key) -> ContainsResponse {
+    type State = ();
+
+    fn contains(&mut self, _key: &Key) -> ContainsResponse<Self::State> {
         unimplemented!()
     }
 
