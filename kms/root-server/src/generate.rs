@@ -53,38 +53,3 @@ pub async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
 
     (StatusCode::OK, encrypted)
 }
-
-fn encrypt(
-    message: &[u8],
-    conditions: &Conditions,
-    dkg_public_key: DkgPublicKey,
-    auth_signer: PrivateKeySigner,
-) -> Result<String> {
-    // encrypt
-    let (ciphertext, auth_data) =
-        encrypt_for_dkg(message, &dkg_public_key, &conditions).context("encrypt failed")?;
-
-    // calculate header hash
-    let header_hash = keccak256(
-        bincode::serialize(&ciphertext.header().context("failed to get header")?)
-            .context("failed to serialize header")?,
-    );
-
-    // sign the header hash
-    let authorization = auth_signer
-        .sign_message_sync(header_hash.as_slice())
-        .context("signing failed")?
-        .as_bytes()
-        .into();
-
-    // create access control policy
-    let acp = AccessControlPolicy {
-        auth_data,
-        authorization,
-    };
-
-    // create message kit
-    let message_kit = ThresholdMessageKit { ciphertext, acp };
-
-    Ok(hex::encode(message_kit.to_bytes()))
-}
