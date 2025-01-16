@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
+    future::Future,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use alloy::{
@@ -15,8 +17,8 @@ use axum::{
 };
 use clap::Parser;
 use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, SessionStaticKey};
-use tokio::{fs::read, net::TcpListener};
-use tracing::info;
+use tokio::{fs::read, net::TcpListener, spawn, time::sleep};
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod derive;
@@ -110,6 +112,30 @@ async fn main() -> Result<()> {
         chain_id,
     };
 
+    // Panic safety: we simply abort on panics and eschew any handling
+
+    let dkg_handle = spawn(run_forever(move || {
+        let app_state = app_state.clone();
+        let listen_addr = args.listen_addr.clone();
+        async { run_dkg_server(app_state, listen_addr).await }
+    }));
+
+    // should never exit
+    tokio::try_join!(dkg_handle).expect("not supposed to ever exit");
+    panic!("not supposed to ever exit");
+}
+
+async fn run_forever<T: FnMut() -> F, F: Future<Output = Result<()>>>(mut task: T) {
+    loop {
+        if let Err(e) = task().await {
+            error!("{e:?}");
+        }
+
+        sleep(Duration::from_secs(5)).await;
+    }
+}
+
+async fn run_dkg_server(app_state: AppState, listen_addr: String) -> Result<()> {
     let app = Router::new()
         .route("/generate", post(generate::generate))
         .route("/import", post(import::import))
@@ -117,16 +143,12 @@ async fn main() -> Result<()> {
         .route("/derive", get(derive::derive))
         .with_state(app_state);
 
-    let listener = TcpListener::bind(&args.listen_addr)
+    let listener = TcpListener::bind(&listen_addr)
         .await
         .context("failed to bind listener")?;
 
-    info!("Listening on {}", args.listen_addr);
-    axum::serve(listener, app)
-        .await
-        .context("failed to serve")?;
-
-    Ok(())
+    info!("DKG listening on {}", listen_addr);
+    axum::serve(listener, app).await.context("failed to serve")
 }
 
 fn setup_logging() {
