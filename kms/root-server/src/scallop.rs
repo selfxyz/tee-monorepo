@@ -1,20 +1,55 @@
-use std::net::SocketAddr;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    ops::Deref,
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Result};
 use axum::serve::Listener;
-use oyster::scallop::{
-    new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
-    ScallopStream,
+use oyster::{
+    attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
+    scallop::{
+        new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
+        ScallopStream,
+    },
 };
 use tokio::net::{TcpListener, TcpStream};
 use tracing::error;
 
-#[derive(Clone)]
-pub struct AuthStore {}
+#[derive(Clone, Default)]
+pub struct AuthStore {
+    store: Arc<Mutex<HashMap<Key, ([[u8; 48]; 3], Box<[u8]>)>>>,
+}
 
 impl ScallopAuthStore for AuthStore {
     fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
-        todo!()
+        let Ok(now) = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|x| x.as_millis() as usize)
+        else {
+            return false;
+        };
+
+        let Ok(decoded) = attestation::verify(
+            attestation.to_vec(),
+            AttestationExpectations {
+                age: Some((300000, now)),
+                root_public_key: Some(AWS_ROOT_KEY.to_vec()),
+                // do not care about PCRs, will derive different keys for each set
+                ..Default::default()
+            },
+        ) else {
+            return false;
+        };
+
+        // store pcrs and user data so the key derivation method can access
+        let mut guard = self.store.lock().unwrap();
+        guard.insert(key, (decoded.pcrs, decoded.user_data.into_boxed_slice()));
+        drop(guard);
+
+        return true;
     }
 }
 
