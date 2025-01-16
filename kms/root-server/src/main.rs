@@ -10,7 +10,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use axum::{
     routing::{get, post},
     Router,
@@ -67,6 +67,10 @@ struct Args {
     /// Attestation endpoint
     #[arg(long, default_value = "http://127.0.0.1:1300/attestation/raw")]
     attestation_endpoint: String,
+
+    /// Path to X25519 secret file
+    #[arg(long, default_value = "/app/x25519.sec")]
+    secret_path: String,
 }
 
 #[derive(Clone)]
@@ -109,6 +113,12 @@ async fn main() -> Result<()> {
         .await
         .context("failed to get chain id")?;
 
+    let secret: [u8; 32] = read(args.secret_path)
+        .await
+        .context("failed to read secret file")?
+        .try_into()
+        .map_err(|_| anyhow!("failed to parse secret file"))?;
+
     let app_state = AppState {
         signer,
         randomness: Default::default(),
@@ -132,17 +142,22 @@ async fn main() -> Result<()> {
 
     let app_state_clone = app_state.clone();
     let dkg_handle = spawn(run_forever(move || {
+        // what the actual fuck
+        // TODO: see if there is a better way
         let app_state = app_state_clone.clone();
         let listen_addr = args.dkg_listen_addr.clone();
-        async { run_dkg_server(app_state, listen_addr).await }
+        async move { run_dkg_server(app_state, listen_addr).await }
     }));
 
     let derive_handle = spawn(run_forever(move || {
+        // what the actual fuck
+        // TODO: see if there is a better way
         let app_state = app_state.clone();
         let listen_addr = args.derive_listen_addr.clone();
         let auther = auther.clone();
         let auth_store = auth_store.clone();
-        async { run_derive_server(app_state, listen_addr, auther, auth_store).await }
+        let secret = secret.clone();
+        async move { run_derive_server(app_state, listen_addr, auther, auth_store, secret).await }
     }));
 
     // should never exit unless through an abort on panic
@@ -180,6 +195,7 @@ async fn run_derive_server(
     listen_addr: String,
     auther: Auther,
     auth_store: AuthStore,
+    secret: [u8; 32],
 ) -> Result<()> {
     let app = Router::new()
         .route("/derive", get(derive::derive))
@@ -191,7 +207,7 @@ async fn run_derive_server(
 
     let listener = ScallopListener {
         listener: tcp_listener,
-        secret: [0u8; 32],
+        secret,
         auth_store,
         auther,
     };
