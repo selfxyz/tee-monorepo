@@ -179,7 +179,7 @@ pub type Pcrs = [[u8; 48]; 3];
 pub type UserData = Box<[u8]>;
 
 pub trait ScallopAuthStore {
-    fn contains(&self, key: &Key) -> bool;
+    fn contains(&mut self, key: &Key) -> bool;
     fn verify(&mut self, attestation: &[u8], key: &Key) -> bool;
 }
 
