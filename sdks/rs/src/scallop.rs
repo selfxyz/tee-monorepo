@@ -333,14 +333,15 @@ async fn noise_write(
 #[allow(non_snake_case)]
 pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     Base: AsyncWrite + AsyncRead + Unpin,
+    AS: ScallopAuthStore,
 >(
     mut stream: Base,
     secret: &[u8; 32],
     // will not auth remote if None
-    mut auth_store: Option<impl ScallopAuthStore>,
+    mut auth_store: Option<AS>,
     // will not respond to auth requests if None
     auther: Option<impl ScallopAuther>,
-) -> Result<ScallopStream<Base>, ScallopError> {
+) -> Result<ScallopStream<Base, AS::State>, ScallopError> {
     let mut buf = [0u8; 1024];
     let mut noise_buf = [0u8; 1024];
 
@@ -417,7 +418,16 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             "remote static key rejected".into(),
         ));
     }
+
+    // start tracking what state should go in the stream
+    let mut state = None::<AS::State>;
+
     let should_ask_auth = contains == Some(ContainsResponse::NotFound);
+
+    // set state immediately if key was approved previously
+    if let Some(ContainsResponse::Approved(_state)) = contains {
+        state = Some(_state);
+    }
 
     // handshake is done, switch to transport mode
     let mut noise = noise.into_transport_mode()?;
@@ -532,6 +542,8 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 
     //---- <- SERVERFIN end ----//
 
+    // at this point, one of the below is true
+    // contains is either None
     Ok(ScallopStream {
         noise,
         stream,
@@ -544,7 +556,7 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         wbuf: vec![].into_boxed_slice(),
         write_start: 0,
         write_end: 0,
-        state: None,
+        state,
     })
 }
 
