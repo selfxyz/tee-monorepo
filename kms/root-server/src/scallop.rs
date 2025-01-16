@@ -5,7 +5,10 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use axum::{extract::connect_info::Connected, serve::Listener};
+use axum::{
+    extract::connect_info::Connected,
+    serve::{IncomingStream, Listener},
+};
 use oyster::{
     attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
     scallop::{
@@ -122,8 +125,9 @@ impl Listener for ScallopListener {
 #[derive(Clone)]
 pub struct ScallopState(Option<AuthStoreState>);
 
-impl Connected<ListenerIo> for ScallopState {
-    fn connect_info(stream: ListenerIo) -> Self {
-        ScallopState(stream.state)
+impl Connected<IncomingStream<'_, ScallopListener>> for ScallopState {
+    fn connect_info(stream: IncomingStream<'_, ScallopListener>) -> Self {
+        // is it possible to avoid a clone here?
+        ScallopState(stream.io().state.clone())
     }
 }
