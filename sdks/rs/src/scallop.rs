@@ -175,8 +175,6 @@ enum ReadMode {
 }
 
 pub type Key = [u8; 32];
-pub type Pcrs = [[u8; 48]; 3];
-pub type UserData = Box<[u8]>;
 
 pub trait ScallopAuthStore {
     fn contains(&mut self, key: &Key) -> bool;
