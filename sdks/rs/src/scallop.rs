@@ -175,11 +175,21 @@ enum ReadMode {
 }
 
 pub type Key = [u8; 32];
+pub enum ContainsResponse {
+    // the key was found and is approved
+    Approved,
+    // the key was not found
+    NotFound,
+    // the key is rejected
+    Rejected,
+}
 
 pub trait ScallopAuthStore {
     // intended as a caching mechanism so attestations do not have to be
-    // requested every time
-    fn contains(&mut self, key: &Key) -> bool;
+    // requested every time, always returning NotFound is valid
+    fn contains(&mut self, _key: &Key) -> ContainsResponse {
+        ContainsResponse::NotFound
+    }
     fn verify(&mut self, attestation: &[u8], key: &Key) -> bool;
 }
 
