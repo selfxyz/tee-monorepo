@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     future::Future,
+    net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -13,11 +14,21 @@ use alloy::{
 use anyhow::{Context, Result};
 use axum::{
     routing::{get, post},
+    serve::Listener,
     Router,
 };
 use clap::Parser;
 use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, SessionStaticKey};
-use tokio::{fs::read, net::TcpListener, spawn, time::sleep};
+use oyster::scallop::{
+    new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, ScallopAuthStore, ScallopAuther,
+    ScallopStream,
+};
+use tokio::{
+    fs::read,
+    net::{TcpListener, TcpStream},
+    spawn,
+    time::sleep,
+};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -172,6 +183,76 @@ async fn run_derive_server(app_state: AppState, listen_addr: String) -> Result<(
 
     info!("Derive listening on {}", listen_addr);
     axum::serve(listener, app).await.context("failed to serve")
+}
+
+#[derive(Clone)]
+struct AuthStore {}
+
+impl ScallopAuthStore for AuthStore {
+    fn verify(&mut self, attestation: &[u8], key: oyster::scallop::Key) -> bool {
+        todo!()
+    }
+}
+
+#[derive(Clone)]
+struct Auther {}
+
+impl ScallopAuther for Auther {
+    type Error = anyhow::Error;
+
+    async fn new_auth(&mut self) -> Result<Box<[u8]>> {
+        todo!()
+    }
+}
+
+struct ScallopListener {
+    listener: TcpListener,
+    secret: [u8; 32],
+    auth_store: AuthStore,
+    auther: Auther,
+}
+
+impl ScallopListener {
+    async fn accept_impl(
+        &mut self,
+    ) -> Result<(
+        <ScallopListener as Listener>::Io,
+        <ScallopListener as Listener>::Addr,
+    )> {
+        let (stream, addr) = self
+            .listener
+            .accept()
+            .await
+            .context("failed to accept conns")?;
+        let stream = new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b(
+            stream,
+            &self.secret,
+            Some(self.auth_store.clone()),
+            Some(self.auther.clone()),
+        )
+        .await
+        .context("failed to scallop")?;
+
+        Ok((stream, addr))
+    }
+}
+
+impl Listener for ScallopListener {
+    type Io = ScallopStream<TcpStream>;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match self.accept_impl().await {
+                Ok(res) => return res,
+                Err(e) => error!("{e:?}"),
+            }
+        }
+    }
+
+    fn local_addr(&self) -> tokio::io::Result<Self::Addr> {
+        self.listener.local_addr()
+    }
 }
 
 fn setup_logging() {
