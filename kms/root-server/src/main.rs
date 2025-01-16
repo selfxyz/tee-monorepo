@@ -30,9 +30,13 @@ mod taco;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Listening address
+    /// DKG listening address
+    #[arg(long, default_value = "0.0.0.0:1101")]
+    dkg_listen_addr: String,
+
+    /// Derive listening address
     #[arg(long, default_value = "0.0.0.0:1100")]
-    listen_addr: String,
+    derive_listen_addr: String,
 
     /// Path to file with private key signer
     #[arg(long, default_value = "/app/secp256k1.sec")]
@@ -114,14 +118,21 @@ async fn main() -> Result<()> {
 
     // Panic safety: we simply abort on panics and eschew any handling
 
+    let app_state_clone = app_state.clone();
     let dkg_handle = spawn(run_forever(move || {
-        let app_state = app_state.clone();
-        let listen_addr = args.listen_addr.clone();
+        let app_state = app_state_clone.clone();
+        let listen_addr = args.dkg_listen_addr.clone();
         async { run_dkg_server(app_state, listen_addr).await }
     }));
 
-    // should never exit
-    tokio::try_join!(dkg_handle).expect("not supposed to ever exit");
+    let derive_handle = spawn(run_forever(move || {
+        let app_state = app_state.clone();
+        let listen_addr = args.derive_listen_addr.clone();
+        async { run_dkg_server(app_state, listen_addr).await }
+    }));
+
+    // should never exit unless through an abort on panic
+    tokio::try_join!(dkg_handle, derive_handle).expect("not supposed to ever exit");
     panic!("not supposed to ever exit");
 }
 
