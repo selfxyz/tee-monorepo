@@ -136,7 +136,7 @@ async fn main() -> Result<()> {
         url: args.attestation_endpoint,
     };
 
-    let auth_store = AuthStore {};
+    let auth_store = AuthStore::default();
 
     // Panic safety: we simply abort on panics and eschew any handling
 
