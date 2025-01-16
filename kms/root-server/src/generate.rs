@@ -16,7 +16,7 @@ pub async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
     drop(guard);
 
     // generate randomness
-    let mut randomness = vec![0u8; 512].into_boxed_slice();
+    let mut randomness = vec![0u8; 64].into_boxed_slice();
     OsRng.fill_bytes(randomness.as_mut());
 
     // generate encrypted message
