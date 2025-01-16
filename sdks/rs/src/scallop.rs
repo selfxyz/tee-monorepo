@@ -420,6 +420,8 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     }
 
     // start tracking what state should go in the stream
+    // it is expected to be set if contains returns state
+    // or verify returns state
     let mut state = None::<AS::State>;
 
     let should_ask_auth = contains == Some(ContainsResponse::NotFound);
@@ -531,13 +533,16 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         }
 
         // verify
-        if !auth_store
+        let Some(_state) = auth_store
             .as_mut()
             .unwrap()
             .verify(&noise_buf[2..len], remote_static)
-        {
+        else {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
+
+        // set state
+        state = Some(_state)
     }
 
     //---- <- SERVERFIN end ----//
