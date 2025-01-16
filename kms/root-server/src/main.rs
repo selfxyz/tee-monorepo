@@ -122,6 +122,10 @@ async fn main() -> Result<()> {
         chain_id,
     };
 
+    let auther = Auther {
+        url: args.attestation_endpoint,
+    };
+
     // Panic safety: we simply abort on panics and eschew any handling
 
     let app_state_clone = app_state.clone();
@@ -134,8 +138,8 @@ async fn main() -> Result<()> {
     let derive_handle = spawn(run_forever(move || {
         let app_state = app_state.clone();
         let listen_addr = args.derive_listen_addr.clone();
-        let attestation_endpoint = args.attestation_endpoint.clone();
-        async { run_derive_server(app_state, listen_addr, attestation_endpoint).await }
+        let auther = auther.clone();
+        async { run_derive_server(app_state, listen_addr, auther).await }
     }));
 
     // should never exit unless through an abort on panic
@@ -168,11 +172,7 @@ async fn run_dkg_server(app_state: AppState, listen_addr: String) -> Result<()> 
     axum::serve(listener, app).await.context("failed to serve")
 }
 
-async fn run_derive_server(
-    app_state: AppState,
-    listen_addr: String,
-    attestation_endpoint: String,
-) -> Result<()> {
+async fn run_derive_server(app_state: AppState, listen_addr: String, auther: Auther) -> Result<()> {
     let app = Router::new()
         .route("/derive", get(derive::derive))
         .with_state(app_state);
@@ -185,9 +185,7 @@ async fn run_derive_server(
         listener: tcp_listener,
         secret: [0u8; 32],
         auth_store: AuthStore {},
-        auther: Auther {
-            url: attestation_endpoint,
-        },
+        auther,
     };
 
     info!("Derive listening on {}", listen_addr);
