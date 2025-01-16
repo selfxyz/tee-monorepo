@@ -27,7 +27,13 @@ impl ScallopAuther for Auther {
     type Error = anyhow::Error;
 
     async fn new_auth(&mut self) -> Result<Box<[u8]>> {
-        todo!()
+        let body = reqwest::get(&self.url)
+            .await
+            .context("failed to fetch attestation")?
+            .bytes()
+            .await
+            .context("failed to read attestation")?;
+        Ok(body.deref().into())
     }
 }
 
