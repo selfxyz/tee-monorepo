@@ -17,7 +17,7 @@ use axum::{
 };
 use clap::Parser;
 use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, SessionStaticKey};
-use scallop::{AuthStore, Auther, ScallopListener};
+use scallop::{AuthStore, Auther, ScallopListener, ScallopState};
 use tokio::{fs::read, net::TcpListener, spawn, time::sleep};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -213,7 +213,12 @@ async fn run_derive_server(
     };
 
     info!("Derive listening on {}", listen_addr);
-    axum::serve(listener, app).await.context("failed to serve")
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<ScallopState>(),
+    )
+    .await
+    .context("failed to serve")
 }
 
 fn setup_logging() {
