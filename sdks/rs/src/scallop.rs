@@ -188,14 +188,6 @@ impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
         (**self).contains(key)
     }
 
-    fn get(&self, key: &Key) -> Option<&(Pcrs, UserData)> {
-        (**self).get(key)
-    }
-
-    fn set(&mut self, key: Key, pcrs: Pcrs, user_data: UserData) {
-        (**self).set(key, pcrs, user_data)
-    }
-
     fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<(Pcrs, UserData)> {
         (**self).verify(attestation, key)
     }
@@ -204,14 +196,6 @@ impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
 // to let callers pass in None with empty type
 impl ScallopAuthStore for () {
     fn contains(&self, _key: &Key) -> bool {
-        unimplemented!()
-    }
-
-    fn get(&self, _key: &Key) -> Option<&(Pcrs, UserData)> {
-        unimplemented!()
-    }
-
-    fn set(&mut self, _key: Key, _pcrs: Pcrs, _user_data: UserData) {
         unimplemented!()
     }
 
@@ -518,8 +502,6 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         else {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
-
-        auth_store.unwrap().set(remote_static, pcrs, user_data);
     }
 
     //---- <- SERVERFIN end ----//
@@ -651,8 +633,6 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         else {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
-
-        auth_store.unwrap().set(remote_static, pcrs, user_data);
     }
 
     // auth request should be 0 or 1
