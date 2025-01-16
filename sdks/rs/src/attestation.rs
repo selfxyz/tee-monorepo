@@ -102,6 +102,9 @@ pub fn verify(
     // return the enclave key
     result.public_key = parse_enclave_key(&mut attestation_doc)?;
 
+    // return the user data
+    result.user_data = parse_user_data(&mut attestation_doc)?;
+
     Ok(result)
 }
 
@@ -301,6 +304,24 @@ fn parse_enclave_key(
     })?;
 
     Ok(public_key)
+}
+
+fn parse_user_data(
+    attestation_doc: &mut BTreeMap<Value, Value>,
+) -> Result<Vec<u8>, AttestationError> {
+    let user_data = attestation_doc
+        .remove(&"user_data".to_owned().into())
+        .ok_or(AttestationError::ParseFailed(
+            "user data not found in attestation doc".to_owned(),
+        ))?;
+    let user_data = (match user_data {
+        Value::Bytes(b) => Ok(b),
+        _ => Err(AttestationError::ParseFailed(
+            "user data decode failure".to_owned(),
+        )),
+    })?;
+
+    Ok(user_data)
 }
 
 pub async fn get(endpoint: Uri) -> Result<Vec<u8>, AttestationError> {
