@@ -123,7 +123,7 @@ impl Listener for ScallopListener {
 }
 
 #[derive(Clone)]
-pub struct ScallopState(Option<AuthStoreState>);
+pub struct ScallopState(pub Option<AuthStoreState>);
 
 impl Connected<IncomingStream<'_, ScallopListener>> for ScallopState {
     fn connect_info(stream: IncomingStream<'_, ScallopListener>) -> Self {
