@@ -2725,6 +2725,7 @@ dependencies = [
  "chrono",
  "clap",
  "hex",
+ "hmac",
  "nucypher-core",
  "oyster-sdk",
  "rand 0.8.5",
