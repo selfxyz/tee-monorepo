@@ -17,8 +17,8 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
 use alloy::transports::http::reqwest::Url;
-use anyhow::{Context, Result};
 use anyhow::anyhow;
+use anyhow::{Context, Result};
 use clap::Parser;
 use tokio::fs;
 

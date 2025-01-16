@@ -29,11 +29,6 @@ async fn inject_immutable_config(
     Json(immutable_config): Json<ImmutableConfig>,
     app_state: Data<AppState>,
 ) -> impl Responder {
-    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
-    if *immutable_params_injected_guard == true {
-        return HttpResponse::BadRequest().body("Immutable params already configured!\n");
-    }
-
     // Extract the owner address from the payload
     let owner_address = hex::decode(
         &immutable_config
@@ -50,6 +45,12 @@ async fn inject_immutable_config(
 
     if owner_address.len() != 20 {
         return HttpResponse::BadRequest().body("Owner address must be 20 bytes long!\n");
+    }
+
+    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
+    if *immutable_params_injected_guard == true {
+        return HttpResponse::BadRequest()
+            .body("Immutable params already configured in the secret store!\n");
     }
 
     // Initialize owner address for the enclave
@@ -157,7 +158,7 @@ async fn inject_mutable_config(
     HttpResponse::Ok().body("Mutable params configured!\n")
 }
 
-#[get("/store-details")]
+#[post("/store-details")]
 // Endpoint exposed to retrieve secret store enclave details
 async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     let mut gas_address = Address::ZERO;
@@ -180,7 +181,7 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     }))
 }
 
-#[get("/signed-registration-message")]
+#[post("/signed-registration-message")]
 // Endpoint exposed to retrieve the metadata required to register the secret store on the common chain
 async fn export_registration_details(app_state: Data<AppState>) -> impl Responder {
     if *app_state.immutable_params_injected.lock().unwrap() == false {

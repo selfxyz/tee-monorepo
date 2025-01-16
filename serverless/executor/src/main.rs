@@ -15,7 +15,7 @@ use tokio::fs;
 
 use serverless::cgroups::Cgroups;
 use serverless::node_handler::{
-    export_signed_registration_message, get_executor_details, index, inject_immutable_config,
+    export_signed_registration_message, get_tee_details, index, inject_immutable_config,
     inject_mutable_config,
 };
 use serverless::utils::{load_abi_from_file, AppState, ConfigManager};
@@ -79,6 +79,7 @@ async fn main() -> Result<()> {
     let app_data = AppState {
         job_capacity: cgroups.free.len(),
         cgroups: Arc::new(Mutex::new(cgroups)),
+        secret_store_config_port: config.secret_store_config_port,
         workerd_runtime_path: config.workerd_runtime_path,
         execution_buffer_time: config.execution_buffer_time,
         common_chain_id: config.common_chain_id,
@@ -107,7 +108,7 @@ async fn main() -> Result<()> {
         .route("/", get(index))
         .route("/immutable-config", post(inject_immutable_config))
         .route("/mutable-config", post(inject_mutable_config))
-        .route("/executor-details", get(get_executor_details))
+        .route("/tee-details", get(get_tee_details))
         .route(
             "/signed-registration-message",
             get(export_signed_registration_message),

@@ -57,6 +57,7 @@ pub mod serverless_executor_test {
         AppState {
             job_capacity: 20,
             cgroups: Arc::new(Mutex::new(Cgroups::new().unwrap())),
+            secret_store_config_port: 6002,
             workerd_runtime_path: "./runtime/".to_owned(),
             execution_buffer_time: 10,
             common_chain_id: CHAIN_ID,
@@ -87,7 +88,7 @@ pub mod serverless_executor_test {
             .route("/", get(index))
             .route("/immutable-config", post(inject_immutable_config))
             .route("/mutable-config", post(inject_mutable_config))
-            .route("/executor-details", get(get_executor_details))
+            .route("/tee-details", get(get_tee_details))
             .route(
                 "/signed-registration-message",
                 get(export_signed_registration_message),

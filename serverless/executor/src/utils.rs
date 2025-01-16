@@ -37,6 +37,7 @@ pub struct ConfigManager {
 // Config struct containing the executor configuration parameters
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    pub secret_store_config_port: u16,
     pub workerd_runtime_path: String,
     pub common_chain_id: u64,
     pub http_rpc_url: String,
@@ -54,6 +55,7 @@ pub struct Config {
 pub struct AppState {
     pub cgroups: Arc<Mutex<Cgroups>>,
     pub job_capacity: usize,
+    pub secret_store_config_port: u16,
     pub workerd_runtime_path: String,
     pub execution_buffer_time: u64,
     pub common_chain_id: u64,
@@ -84,22 +86,25 @@ pub struct ImmutableConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MutableConfig {
-    pub gas_key_hex: String,
+    pub executor_gas_key: String,
+    pub secret_store_gas_key: String,
     pub ws_api_key: String,
 }
 
 #[derive(Serialize)]
-pub struct ExecutorConfig {
+pub struct TeeConfig {
     pub enclave_address: H160,
     pub enclave_public_key: String,
     pub owner_address: H160,
-    pub gas_address: H160,
+    pub executor_gas_address: H160,
+    pub secret_store_gas_address: String,
     pub ws_rpc_url: String,
 }
 
 #[derive(Serialize)]
 pub struct RegistrationMessage {
     pub job_capacity: usize,
+    pub storage_capacity: usize,
     pub sign_timestamp: u64,
     pub env: u8,
     pub owner: H160,

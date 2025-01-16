@@ -8,12 +8,13 @@ use ethers::abi::{encode, encode_packed, Token};
 use ethers::prelude::*;
 use ethers::utils::keccak256;
 use k256::elliptic_curve::generic_array::sequence::Lengthen;
+use serde_json::{json, Value};
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::event_handler::events_listener;
 use crate::utils::{
-    AppState, ExecutorConfig, ImmutableConfig, MutableConfig, RegistrationMessage, EXECUTION_ENV_ID,
+    AppState, ImmutableConfig, MutableConfig, RegistrationMessage, TeeConfig, EXECUTION_ENV_ID,
 };
 
 pub async fn index() {}
@@ -23,15 +24,6 @@ pub async fn inject_immutable_config(
     app_state: State<AppState>,
     Json(immutable_config): Json<ImmutableConfig>,
 ) -> Response {
-    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
-    if *immutable_params_injected_guard == true {
-        return (
-            StatusCode::BAD_REQUEST,
-            String::from("Immutable params already configured!\n"),
-        )
-            .into_response();
-    }
-
     let owner_address = hex::decode(
         &immutable_config
             .owner_address_hex
@@ -53,6 +45,37 @@ pub async fn inject_immutable_config(
         return (
             StatusCode::BAD_REQUEST,
             String::from("Owner address must be 20 bytes long!\n"),
+        )
+            .into_response();
+    }
+
+    let secret_store_endpoint =
+        app_state.secret_store_config_port.to_string() + "/immutable-config";
+    let request_json = json!({
+        "owner_address_hex": immutable_config.owner_address_hex,
+    });
+
+    let secret_store_response = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    )
+    .await;
+    let Ok(_) = secret_store_response else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to call corresponding secret store endpoint: {:?}\n",
+                secret_store_response.unwrap_err()
+            ),
+        )
+            .into_response();
+    };
+
+    let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
+    if *immutable_params_injected_guard == true {
+        return (
+            StatusCode::BAD_REQUEST,
+            String::from("Immutable params already configured!\n"),
         )
             .into_response();
     }
@@ -89,9 +112,9 @@ pub async fn inject_mutable_config(
     // Validate the user provided gas wallet private key
     let bytes32_gas_key = hex::decode(
         &mutable_config
-            .gas_key_hex
+            .executor_gas_key
             .strip_prefix("0x")
-            .unwrap_or(&mutable_config.gas_key_hex),
+            .unwrap_or(&mutable_config.executor_gas_key),
     );
     let Ok(bytes32_gas_key) = bytes32_gas_key else {
         return (
@@ -162,6 +185,28 @@ pub async fn inject_mutable_config(
             .into_response();
     };
 
+    let secret_store_endpoint = app_state.secret_store_config_port.to_string() + "/mutable-config";
+    let request_json = json!({
+        "gas_key_hex": mutable_config.secret_store_gas_key,
+        "ws_api_key": mutable_config.ws_api_key,
+    });
+
+    let secret_store_response = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    )
+    .await;
+    let Ok(secret_store_response) = secret_store_response else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to call corresponding secret store endpoint: {:?}\n",
+                secret_store_response.unwrap_err()
+            ),
+        )
+            .into_response();
+    };
+
     // Initialize HTTP RPC client and nonce for sending the signed transactions while holding lock
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
     *app_state.nonce_to_send.lock().unwrap() = nonce_to_send;
@@ -171,13 +216,24 @@ pub async fn inject_mutable_config(
     let pos = ws_rpc_url.rfind('/').unwrap();
     ws_rpc_url.truncate(pos + 1);
     ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
-    *mutable_params_injected_guard = true;
 
-    (StatusCode::OK, "Mutable params configured!\n").into_response()
+    if secret_store_response.0 == reqwest::StatusCode::OK {
+        *mutable_params_injected_guard = true;
+        return (StatusCode::OK, "Mutable params configured!\n").into_response();
+    }
+
+    (
+        StatusCode::from_u16(secret_store_response.0.as_u16()).unwrap(),
+        format!(
+            "Failed to inject config into secret store: {}",
+            secret_store_response.1
+        ),
+    )
+        .into_response()
 }
 
 // Endpoint exposed to retrieve executor enclave details
-pub async fn get_executor_details(app_state: State<AppState>) -> Response {
+pub async fn get_tee_details(app_state: State<AppState>) -> Response {
     let mut gas_address = H160::zero();
     if *app_state.mutable_params_injected.lock().unwrap() == true {
         gas_address = app_state
@@ -189,7 +245,38 @@ pub async fn get_executor_details(app_state: State<AppState>) -> Response {
             .address();
     }
 
-    let details = ExecutorConfig {
+    let secret_store_endpoint = app_state.secret_store_config_port.to_string() + "/store-details";
+    let request_json = json!({});
+
+    let secret_store_response = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    )
+    .await;
+    let Ok(secret_store_response) = secret_store_response else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to call corresponding secret store endpoint: {:?}\n",
+                secret_store_response.unwrap_err()
+            ),
+        )
+            .into_response();
+    };
+
+    let secret_store_response_value = secret_store_response.2.unwrap();
+    let Some(secret_store_gas_address) = secret_store_response_value
+        .get("gas_address")
+        .and_then(Value::as_str)
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::from("Failed to get the secret store address!\n"),
+        )
+            .into_response();
+    };
+
+    let details = TeeConfig {
         enclave_address: app_state.enclave_address,
         enclave_public_key: format!(
             "0x{}",
@@ -202,7 +289,8 @@ pub async fn get_executor_details(app_state: State<AppState>) -> Response {
             )
         ),
         owner_address: *app_state.enclave_owner.lock().unwrap(),
-        gas_address,
+        executor_gas_address: gas_address,
+        secret_store_gas_address: secret_store_gas_address.to_owned(),
         ws_rpc_url: app_state.ws_rpc_url.read().unwrap().clone(),
     };
     (StatusCode::OK, Json(details)).into_response()
@@ -226,6 +314,49 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
             .into_response();
     }
 
+    let secret_store_endpoint =
+        app_state.secret_store_config_port.to_string() + "/signed-registration-message";
+    let request_json = json!({});
+
+    let secret_store_response = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    )
+    .await;
+    let Ok(secret_store_response) = secret_store_response else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to call corresponding secret store endpoint: {:?}\n",
+                secret_store_response.unwrap_err()
+            ),
+        )
+            .into_response();
+    };
+
+    if secret_store_response.0 != reqwest::StatusCode::OK {
+        return (
+            StatusCode::from_u16(secret_store_response.0.as_u16()).unwrap(),
+            format!(
+                "Failed to export registration details from secret store: {}",
+                secret_store_response.1
+            ),
+        )
+            .into_response();
+    }
+
+    let secret_store_response_value = secret_store_response.2.unwrap();
+    let Some(secret_storage_capacity) = secret_store_response_value
+        .get("storage_capacity")
+        .and_then(Value::as_u64)
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::from("Failed to get the secret store capacity!\n"),
+        )
+            .into_response();
+    };
+
     let job_capacity = app_state.job_capacity;
     let owner = app_state.enclave_owner.lock().unwrap().clone();
     let sign_timestamp = SystemTime::now()
@@ -236,16 +367,17 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
     // Encode and hash the job capacity of executor following EIP712 format
     let domain_separator = keccak256(encode(&[
         Token::FixedBytes(keccak256("EIP712Domain(string name,string version)").to_vec()),
-        Token::FixedBytes(keccak256("marlin.oyster.Executors").to_vec()),
+        Token::FixedBytes(keccak256("marlin.oyster.TeeManager").to_vec()),
         Token::FixedBytes(keccak256("1").to_vec()),
     ]));
     let register_typehash =
-        keccak256("Register(address owner,uint256 jobCapacity,uint8 env,uint256 signTimestamp)");
+        keccak256("Register(address owner,uint256 jobCapacity,uint256 storageCapacity,uint8 env,uint256 signTimestamp)");
 
     let hash_struct = keccak256(encode(&[
         Token::FixedBytes(register_typehash.to_vec()),
         Token::Address(owner),
         Token::Uint(job_capacity.into()),
+        Token::Uint(secret_storage_capacity.into()),
         Token::Uint(EXECUTION_ENV_ID.into()),
         Token::Uint(sign_timestamp.into()),
     ]));
@@ -304,6 +436,7 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
 
     let response_body = RegistrationMessage {
         job_capacity,
+        storage_capacity: secret_storage_capacity as usize,
         sign_timestamp,
         env: EXECUTION_ENV_ID,
         owner,
@@ -311,4 +444,44 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
     };
 
     (StatusCode::OK, Json(response_body)).into_response()
+}
+
+async fn call_secret_store_endpoint(
+    endpoint: &str,
+    request_json: Value,
+) -> Result<(reqwest::StatusCode, String, Option<Value>), reqwest::Error> {
+    let client = reqwest::Client::new();
+    let req_url = "http://127.0.0.1:".to_string() + endpoint;
+
+    let response = client
+        .post(req_url)
+        .json(&request_json)
+        .send()
+        .await
+        .map_err(|err| {
+            eprintln!(
+                "Failed to send the request to secret store endpoint {}: {:?}",
+                endpoint, err
+            );
+            err
+        })?;
+
+    let status_code = response.status();
+
+    let response_body = response.text().await.map_err(|err| {
+        eprintln!(
+            "Failed to parse the response body from the secret store endpoint {}: {:?}",
+            endpoint, err
+        );
+        err
+    })?;
+
+    let mut response_json = None;
+    if response_body.is_empty() {
+        if let Ok(json) = serde_json::from_str::<Value>(&response_body) {
+            response_json = Some(json);
+        }
+    }
+
+    Ok((status_code, response_body, response_json))
 }
