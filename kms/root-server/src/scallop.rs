@@ -19,9 +19,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tracing::error;
 
 #[derive(Clone, Default)]
-pub struct AuthStore {
-    store: Arc<Mutex<HashMap<Key, ([[u8; 48]; 3], Box<[u8]>)>>>,
-}
+pub struct AuthStore {}
 
 impl ScallopAuthStore for AuthStore {
     fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
@@ -43,11 +41,6 @@ impl ScallopAuthStore for AuthStore {
         ) else {
             return false;
         };
-
-        // store pcrs and user data so the key derivation method can access
-        let mut guard = self.store.lock().unwrap();
-        guard.insert(key, (decoded.pcrs, decoded.user_data.into_boxed_slice()));
-        drop(guard);
 
         return true;
     }
