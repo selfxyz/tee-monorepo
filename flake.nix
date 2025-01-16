@@ -74,6 +74,9 @@
       operator.control-plane = import ./operator/control-plane {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      operator.setup-aws = import ./operator/setup-aws {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       attestation.verifier-enclave = import ./attestation/verifier-enclave {
         inherit nixpkgs systemConfig nitro-util;
         supervisord = external.supervisord.compressed;
