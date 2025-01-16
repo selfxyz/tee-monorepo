@@ -191,7 +191,7 @@ pub trait ScallopAuthStore {
     fn contains(&mut self, _key: &Key) -> ContainsResponse {
         ContainsResponse::NotFound
     }
-    fn verify(&mut self, attestation: &[u8], key: &Key) -> bool;
+    fn verify(&mut self, attestation: &[u8], key: Key) -> bool;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
@@ -199,7 +199,7 @@ impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
         (**self).contains(key)
     }
 
-    fn verify(&mut self, attestation: &[u8], key: &Key) -> bool {
+    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
         (**self).verify(attestation, key)
     }
 }
@@ -210,7 +210,7 @@ impl ScallopAuthStore for () {
         unimplemented!()
     }
 
-    fn verify(&mut self, _attestation: &[u8], _key: &Key) -> bool {
+    fn verify(&mut self, _attestation: &[u8], _key: Key) -> bool {
         unimplemented!()
     }
 }
@@ -515,7 +515,7 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         if !auth_store
             .as_mut()
             .unwrap()
-            .verify(&noise_buf[2..len], &remote_static)
+            .verify(&noise_buf[2..len], remote_static)
         {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
@@ -652,7 +652,7 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         if !auth_store
             .as_mut()
             .unwrap()
-            .verify(&noise_buf[3..len], &remote_static)
+            .verify(&noise_buf[3..len], remote_static)
         {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
