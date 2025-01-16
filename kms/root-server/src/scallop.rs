@@ -19,7 +19,9 @@ impl ScallopAuthStore for AuthStore {
 }
 
 #[derive(Clone)]
-pub struct Auther {}
+pub struct Auther {
+    pub url: String,
+}
 
 impl ScallopAuther for Auther {
     type Error = anyhow::Error;

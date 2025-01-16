@@ -63,6 +63,10 @@ struct Args {
     /// RPC URL
     #[arg(long)]
     rpc: String,
+
+    /// Attestation endpoint
+    #[arg(long, default_value = "http://127.0.0.1:1300")]
+    attestation_endpoint: String,
 }
 
 #[derive(Clone)]
@@ -130,7 +134,8 @@ async fn main() -> Result<()> {
     let derive_handle = spawn(run_forever(move || {
         let app_state = app_state.clone();
         let listen_addr = args.derive_listen_addr.clone();
-        async { run_derive_server(app_state, listen_addr).await }
+        let attestation_endpoint = args.attestation_endpoint.clone();
+        async { run_derive_server(app_state, listen_addr, attestation_endpoint).await }
     }));
 
     // should never exit unless through an abort on panic
@@ -163,7 +168,11 @@ async fn run_dkg_server(app_state: AppState, listen_addr: String) -> Result<()> 
     axum::serve(listener, app).await.context("failed to serve")
 }
 
-async fn run_derive_server(app_state: AppState, listen_addr: String) -> Result<()> {
+async fn run_derive_server(
+    app_state: AppState,
+    listen_addr: String,
+    attestation_endpoint: String,
+) -> Result<()> {
     let app = Router::new()
         .route("/derive", get(derive::derive))
         .with_state(app_state);
@@ -176,7 +185,9 @@ async fn run_derive_server(app_state: AppState, listen_addr: String) -> Result<(
         listener: tcp_listener,
         secret: [0u8; 32],
         auth_store: AuthStore {},
-        auther: Auther {},
+        auther: Auther {
+            url: attestation_endpoint,
+        },
     };
 
     info!("Derive listening on {}", listen_addr);
