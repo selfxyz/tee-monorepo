@@ -100,7 +100,7 @@ impl ScallopListener {
 }
 
 impl Listener for ScallopListener {
-    type Io = ScallopStream<TcpStream>;
+    type Io = ScallopStream<TcpStream, <AuthStore as ScallopAuthStore>::State>;
     type Addr = SocketAddr;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
