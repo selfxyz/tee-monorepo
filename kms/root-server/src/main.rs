@@ -25,6 +25,7 @@ mod derive;
 mod export;
 mod generate;
 mod import;
+mod taco;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
