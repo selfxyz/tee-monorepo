@@ -180,7 +180,7 @@ pub type UserData = Box<[u8]>;
 
 pub trait ScallopAuthStore {
     fn contains(&self, key: &Key) -> bool;
-    fn verify(&mut self, attestation: &[u8], key: &Key) -> Option<(Pcrs, UserData)>;
+    fn verify(&mut self, attestation: &[u8], key: &Key) -> bool;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
