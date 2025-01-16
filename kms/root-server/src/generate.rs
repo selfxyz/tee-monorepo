@@ -29,7 +29,7 @@ pub async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
     OsRng.fill_bytes(randomness.as_mut());
 
     // generate encrypted message
-    let Ok(encrypted) = encrypt(
+    let Ok(encrypted) = crate::taco::encrypt(
         &randomness,
         &state.conditions,
         state.dkg_public_key,

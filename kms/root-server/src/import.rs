@@ -26,7 +26,7 @@ pub async fn import(State(state): State<AppState>, encrypted: String) -> (Status
         return (StatusCode::BAD_REQUEST, "failed to decode payload\n".into());
     };
 
-    let Ok(randomness) = decrypt(
+    let Ok(randomness) = crate::taco::decrypt(
         &encrypted_bytes,
         state.ritual,
         &state.taco_nodes,
