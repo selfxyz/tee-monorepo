@@ -777,7 +777,7 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     })
 }
 
-impl<Base: AsyncWrite + AsyncRead + Unpin> ScallopStream<Base> {
+impl<Base: AsyncWrite + AsyncRead + Unpin, State> ScallopStream<Base, State> {
     pub fn get_remote_static(&self) -> Option<[u8; 32]> {
         self.noise
             .get_remote_static()
@@ -785,7 +785,7 @@ impl<Base: AsyncWrite + AsyncRead + Unpin> ScallopStream<Base> {
     }
 }
 
-impl<Base: AsyncWrite + AsyncRead + Unpin> AsyncRead for ScallopStream<Base> {
+impl<Base: AsyncWrite + AsyncRead + Unpin, State: Unpin> AsyncRead for ScallopStream<Base, State> {
     // IMPORTANT: Return Pending only as a direct result of base returning Pending
     // Ensures wakers are set up correctly
     fn poll_read(
@@ -856,7 +856,7 @@ impl<Base: AsyncWrite + AsyncRead + Unpin> AsyncRead for ScallopStream<Base> {
     }
 }
 
-impl<Base: AsyncWrite + AsyncRead + Unpin> AsyncWrite for ScallopStream<Base> {
+impl<Base: AsyncWrite + AsyncRead + Unpin, State: Unpin> AsyncWrite for ScallopStream<Base, State> {
     // IMPORTANT: Return Pending only as a direct result of base returning Pending
     // Ensures wakers are set up correctly
     fn poll_write(
