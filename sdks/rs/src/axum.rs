@@ -16,7 +16,6 @@ use oyster::{
     },
 };
 use tokio::net::{TcpListener, TcpStream};
-use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AxumError {}
@@ -117,7 +116,7 @@ impl Listener for ScallopListener {
         loop {
             match self.accept_impl().await {
                 Ok(res) => return res,
-                Err(e) => error!("{e:?}"),
+                Err(e) => {} // nothing, maybe log?
             }
         }
     }
