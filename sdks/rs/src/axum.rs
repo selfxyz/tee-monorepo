@@ -1,8 +1,4 @@
-use std::{
-    net::SocketAddr,
-    ops::Deref,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::net::SocketAddr;
 
 use axum::{
     extract::connect_info::Connected,
@@ -11,7 +7,7 @@ use axum::{
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::scallop::{
-    new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
+    new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, ScallopAuthStore, ScallopAuther,
     ScallopError, ScallopStream,
 };
 
