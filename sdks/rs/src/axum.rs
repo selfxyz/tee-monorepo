@@ -8,14 +8,15 @@ use axum::{
     extract::connect_info::Connected,
     serve::{IncomingStream, Listener},
 };
-use oyster::{
+use tokio::net::{TcpListener, TcpStream};
+
+use crate::{
     attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
     scallop::{
         new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
         ScallopStream,
     },
 };
-use tokio::net::{TcpListener, TcpStream};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AxumError {}
