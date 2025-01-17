@@ -115,7 +115,7 @@ contract Executors is
     error ExecutorsGlobalEnvAlreadySupported();
     error ExecutorsGlobalEnvAlreadyUnsupported();
     /// @notice Thrown when attempting to deregister or remove stake from an enclave that has pending jobs.
-    error ExecutorsEnclaveNotEmpty();
+    error ExecutorsHasPendingJobs();
     /// @notice Thrown when the provided enclave owner does not match the stored owner.
     error ExecutorsNotTeeManager();
     /// @notice Thrown when the provided execution environment is not supported globally.
@@ -170,7 +170,7 @@ contract Executors is
 
     function _deregisterExecutor(address _enclaveAddress) internal {
         if (executors[_enclaveAddress].activeJobs != 0) 
-            revert ExecutorsEnclaveNotEmpty();
+            revert ExecutorsHasPendingJobs();
 
         delete executors[_enclaveAddress];
     }
@@ -188,7 +188,7 @@ contract Executors is
 
     function _removeExecutorStake(address _enclaveAddress) internal view {
         if (executors[_enclaveAddress].activeJobs != 0) 
-            revert ExecutorsEnclaveNotEmpty();
+            revert ExecutorsHasPendingJobs();
     }
 
     //-------------------------------- internal functions end ----------------------------------//

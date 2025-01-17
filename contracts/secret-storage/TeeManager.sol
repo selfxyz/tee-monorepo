@@ -536,6 +536,10 @@ contract TeeManager is
         return teeNodes[_enclaveAddress].draining;
     }
 
+    function getTeeNodeEnv(address _enclaveAddress) external view returns (uint8) {
+        return teeNodes[_enclaveAddress].env;
+    }
+
     //-------------------------------- external functions end ----------------------------------//
 
     //-------------------------------- TeeManager functions end ----------------------------------//

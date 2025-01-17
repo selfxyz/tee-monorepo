@@ -527,7 +527,7 @@ describe("Executors - Register/deregister executor", function () {
         await executors.selectExecutionNodes(env, [addrs[15]], 1);
         // deregister
         await expect(teeManager.deregisterTeeNode(addrs[15]))
-            .to.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
+            .to.revertedWithCustomError(executors, "ExecutorsHasPendingJobs");
     });
 
     it('cannot deregister executor without tee manager contract', async function () {
@@ -633,7 +633,7 @@ describe("Executors - Staking/Unstaking", function () {
         await executors.selectExecutionNodes(env, [addrs[15]], 1);
 
         await expect(teeManager.removeTeeNodeStake(addrs[15], 100))
-            .to.be.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
+            .to.be.revertedWithCustomError(executors, "ExecutorsHasPendingJobs");
 
     });
 

@@ -564,7 +564,7 @@ describe("SecretStore - Register/Deregister secret store", function () {
         await secretManager.selectStores(env, 1, 100);
         // deregister
         await expect(teeManager.deregisterTeeNode(addrs[15]))
-            .to.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
+            .to.revertedWithCustomError(secretStore, "SecretStoreHasOccupiedStorage");
     });
 
     it('cannot deregister secret store without tee manager contract', async function () {
@@ -678,7 +678,7 @@ describe("SecretStore - Staking/Unstaking", function () {
 
         // remove stake
         await expect(teeManager.removeTeeNodeStake(addrs[15], 100))
-            .to.be.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
+            .to.be.revertedWithCustomError(secretStore, "SecretStoreHasOccupiedStorage");
     });
 
     it("cannot unstake without tee manager contract", async function () {

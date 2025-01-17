@@ -818,7 +818,7 @@ describe("TeeManager - Register/Deregister tee node", function () {
         await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
         // deregister
         await expect(teeManager.connect(signers[1]).deregisterTeeNode(addrs[15]))
-            .to.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
+            .to.revertedWithCustomError(secretStore, "SecretStoreHasOccupiedStorage");
     });
 
     it('can deregister secret store after drain', async function () {
@@ -958,7 +958,7 @@ describe("TeeManager - Register/Deregister tee node", function () {
         await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
         // deregister
         await expect(teeManager.connect(signers[1]).deregisterTeeNode(addrs[15]))
-            .to.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
+            .to.revertedWithCustomError(executors, "ExecutorsHasPendingJobs");
     });
 
     it('cannot deregister tee node without the owner account', async function () {
@@ -1234,7 +1234,7 @@ describe("TeeManager - Staking/Unstaking", function () {
 
         let amount = 5;
         await expect(teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], amount))
-            .to.be.revertedWithCustomError(secretStore, "SecretStoreEnclaveNotEmpty");
+            .to.be.revertedWithCustomError(secretStore, "SecretStoreHasOccupiedStorage");
     });
 
     it('can unstake store after drain', async function () {
@@ -1308,7 +1308,7 @@ describe("TeeManager - Staking/Unstaking", function () {
 
         let amount = 5;
         await expect(teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], amount))
-            .to.be.revertedWithCustomError(executors, "ExecutorsEnclaveNotEmpty");
+            .to.be.revertedWithCustomError(executors, "ExecutorsHasPendingJobs");
 
     });
 });

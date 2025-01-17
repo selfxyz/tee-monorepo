@@ -128,7 +128,7 @@ contract SecretStore is
     error SecretStoreGlobalEnvAlreadySupported();
     error SecretStoreGlobalEnvAlreadyUnsupported();
     /// @notice Thrown when attempting to deregister or remove stake from an enclave that has pending jobs.
-    error SecretStoreEnclaveNotEmpty();
+    error SecretStoreHasOccupiedStorage();
     /// @notice Thrown when the provided enclave owner does not match the stored owner.
     error SecretStoreNotTeeManager();
     /// @notice Thrown when the caller is not the SecretManager contract.
@@ -212,7 +212,7 @@ contract SecretStore is
 
     function _deregisterSecretStore(address _enclaveAddress) internal {
         if (secretStores[_enclaveAddress].storageOccupied != 0) 
-            revert SecretStoreEnclaveNotEmpty();
+            revert SecretStoreHasOccupiedStorage();
 
         delete secretStores[_enclaveAddress];
     }
@@ -230,7 +230,7 @@ contract SecretStore is
 
     function _removeSecretStoreStake(address _enclaveAddress) internal view {
         if (secretStores[_enclaveAddress].storageOccupied != 0) 
-            revert SecretStoreEnclaveNotEmpty();
+            revert SecretStoreHasOccupiedStorage();
     }
 
     function _renounceSecrets(
@@ -389,7 +389,7 @@ contract SecretStore is
             selectedEnclaves[index] = selectedEnclave;
 
             // TODO: need to have some buffer space for each enclave
-            if (secretStores[enclaveAddress].storageOccupied >= secretStores[enclaveAddress].storageCapacity)
+            if (secretStores[enclaveAddress].storageOccupied >= (secretStores[enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE()))
                 _deleteIfPresent(_env, enclaveAddress);
         }
         return selectedEnclaves;
@@ -447,6 +447,13 @@ contract SecretStore is
         TEE_MANAGER.updateTreeState(_enclaveAddress);
         // TODO: need to check if storageOccupied < storageCapacity, before inserting in the tree in the previous step
         secretStores[_enclaveAddress].storageOccupied -= _secretSize;
+        uint8 env = TEE_MANAGER.getTeeNodeEnv(_enclaveAddress);
+        // need to remove the node from the tree if storageOccupied exceeds threshold size
+        if(
+            isNodePresentInTree(env, _enclaveAddress) &&
+            secretStores[_enclaveAddress].storageOccupied >= (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+        )
+            _deleteIfPresent(env, _enclaveAddress);
     }
 
     function _removeStoreSecretId(

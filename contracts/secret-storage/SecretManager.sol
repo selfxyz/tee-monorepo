@@ -471,6 +471,7 @@ contract SecretManager is
                 selectedStores
             );
 
+            // TODO: what if replication reaches 0? Need to notify the user on UI to terminate the secret if replication factor reduces.
             // case for when a new enclave can't be selected as they all are already occupied to their max storage capacity
             if (selectedEnclaves.length == 0) {
                 isArrayLenReduced = true;
