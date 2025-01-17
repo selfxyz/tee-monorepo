@@ -468,19 +468,31 @@ async fn call_secret_store_endpoint(
 
     let status_code = response.status();
 
-    let response_body = response.text().await.map_err(|err| {
-        eprintln!(
-            "Failed to parse the response body from the secret store endpoint {}: {:?}",
-            endpoint, err
-        );
-        err
-    })?;
-
+    let mut response_body = String::new();
     let mut response_json = None;
-    if response_body.is_empty() {
-        if let Ok(json) = serde_json::from_str::<Value>(&response_body) {
-            response_json = Some(json);
-        }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if content_type.contains("application/json") {
+        response_json = Some(response.json::<Value>().await.map_err(|err| {
+            eprintln!(
+                "Failed to parse the response json from the secret store endpoint {}: {:?}",
+                endpoint, err
+            );
+            err
+        })?);
+    } else {
+        response_body = response.text().await.map_err(|err| {
+            eprintln!(
+                "Failed to parse the response body from the secret store endpoint {}: {:?}",
+                endpoint, err
+            );
+            err
+        })?;
     }
 
     Ok((status_code, response_body, response_json))

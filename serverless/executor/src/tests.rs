@@ -45,7 +45,7 @@ pub mod serverless_executor_test {
     const CHAIN_ID: u64 = 421614;
     const HTTP_RPC_URL: &str = "https://sepolia-rollup.arbitrum.io/rpc";
     const WS_URL: &str = "wss://arb-sepolia.g.alchemy.com/v2/";
-    const EXECUTORS_CONTRACT_ADDR: &str = "0xE35E287DBC371561E198bFaCBdbEc9cF78bDe930";
+    const TEE_MANAGER_CONTRACT_ADDR: &str = "0xE35E287DBC371561E198bFaCBdbEc9cF78bDe930";
     const JOBS_CONTRACT_ADDR: &str = "0xd3b682f6F58323EC77dEaE730733C6A83a1561Fd";
     const CODE_CONTRACT_ADDR: &str = "0x44fe06d2940b8782a0a9a9ffd09c65852c0156b1";
 
@@ -59,11 +59,12 @@ pub mod serverless_executor_test {
             cgroups: Arc::new(Mutex::new(Cgroups::new().unwrap())),
             secret_store_config_port: 6002,
             workerd_runtime_path: "./runtime/".to_owned(),
+            secret_store_path: "./store/".to_owned(),
             execution_buffer_time: 10,
             common_chain_id: CHAIN_ID,
             http_rpc_url: HTTP_RPC_URL.to_owned(),
             ws_rpc_url: Arc::new(RwLock::new(WS_URL.to_owned())),
-            executors_contract_addr: EXECUTORS_CONTRACT_ADDR.parse::<Address>().unwrap(),
+            tee_manager_contract_addr: TEE_MANAGER_CONTRACT_ADDR.parse::<Address>().unwrap(),
             jobs_contract_addr: JOBS_CONTRACT_ADDR.parse::<Address>().unwrap(),
             code_contract_addr: CODE_CONTRACT_ADDR.to_owned(),
             num_selected_executors: 1,
@@ -1007,7 +1008,7 @@ pub mod serverless_executor_test {
 
         // Add log for deregistering the current executor
         let executor_deregistered_logs = vec![Log {
-            address: H160::from_str(EXECUTORS_CONTRACT_ADDR).unwrap(),
+            address: H160::from_str(TEE_MANAGER_CONTRACT_ADDR).unwrap(),
             topics: vec![
                 keccak256("ExecutorDeregistered(address)").into(),
                 H256::from(app_state.enclave_address),

@@ -125,6 +125,8 @@ pub async fn create_code_file(
 }
 
 pub async fn create_config_file(
+    secret_store_path: &str,
+    secret_id: &str,
     tx_hash: &str,
     slug: &str,
     workerd_runtime_path: &str,
@@ -143,6 +145,9 @@ const oysterConfig :Workerd.Config = (
 const oysterWorker :Workerd.Worker = (
   modules = [
     (name = \"main\", esModule = embed \"{tx_hash}-{slug}.js\")
+  ],
+  bindings = [
+    (name = \"secret\", data = embed \"{secret_store_path}/{secret_id}.bin\")
   ],
   compatibilityDate = \"2023-03-07\",
 );"
