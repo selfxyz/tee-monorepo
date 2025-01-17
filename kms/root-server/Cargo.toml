@@ -14,7 +14,7 @@ clap = { version = "4.5.26", features = ["derive"] }
 hex = "0.4.3"
 hmac = "0.12.1"
 nucypher-core = "0.14.0"
-oyster-sdk = "0.14.2"
+oyster-sdk = { version = "0.14.2", features = ["axum"] }
 rand = "0.8.5"
 reqwest = "0.12.12"
 serde = { version = "1.0.217", features = ["derive"] }
