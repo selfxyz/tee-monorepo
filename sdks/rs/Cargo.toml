@@ -28,7 +28,6 @@ axum = { version = "0.8.1", optional = true }
 [dev-dependencies]
 http = "1.1.0"
 hyper = { version = "1.5.1", features = ["client", "http1", "http2", "server"] }
-tower = { version = "0.5.1", features = ["full"] }
 
 [features]
 axum = ["dep:axum"]
