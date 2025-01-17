@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 
+use axum::extract::ConnectInfo;
 use axum::{routing::get, Router};
 use http::{Request, StatusCode};
 use http_body_util::BodyExt;
@@ -20,11 +21,12 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::sleep;
 use tower::Service;
 
+pub use oyster::axum::*;
 pub use oyster::scallop::*;
 
 type Pcrs = [[u8; 48]; 3];
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct AuthStore {
     store: HashMap<Key, Pcrs>,
 }
@@ -50,6 +52,7 @@ impl ScallopAuthStore for AuthStore {
     }
 }
 
+#[derive(Clone)]
 struct Auther {}
 
 impl ScallopAuther for Auther {
@@ -59,46 +62,37 @@ impl ScallopAuther for Auther {
     }
 }
 
+async fn hello(ConnectInfo(info): ConnectInfo<Pcrs>) -> &'static str {
+    println!("Pcrs: {:?}", info);
+    "Hello World!"
+}
+
+async fn welcome() -> &'static str {
+    "Welcome!"
+}
+
 async fn server_task(key: Key) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let app = Router::new()
-        .route("/hello", get(|| async { "Hello World!" }))
-        .route("/welcome", get(|| async { "Welcome!" }));
-
-    let server = TcpListener::bind("127.0.0.1:21000").await?;
-
     let mut auth_store = AuthStore::default();
     let mut auther = Auther {};
 
-    loop {
-        let (stream, _) = server.accept().await?;
+    let app = Router::new()
+        .route("/hello", get(hello))
+        .route("/welcome", get(welcome));
 
-        let stream = new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b(
-            stream,
-            &key,
-            Some(&mut auth_store),
-            Some(&mut auther),
-        )
-        .await?;
+    let tcp_listener = TcpListener::bind("127.0.0.1:21000").await?;
 
-        let app = app.clone();
+    let server = ScallopListener {
+        listener: tcp_listener,
+        secret: key,
+        auth_store,
+        auther,
+    };
 
-        println!("Client key: {:?}", stream.get_remote_static());
-
-        tokio::spawn(async move {
-            let stream = TokioIo::new(stream);
-
-            let app = hyper::service::service_fn(move |request: Request<Incoming>| {
-                app.clone().call(request)
-            });
-
-            if let Err(err) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                .serve_connection(stream, app)
-                .await
-            {
-                eprintln!("failed to serve connection: {err:#}");
-            }
-        });
-    }
+    Ok(axum::serve(
+        server,
+        app.into_make_service_with_connect_info::<ScallopState<Pcrs>>(),
+    )
+    .await?)
 }
 
 async fn client_task(key: Key) -> Result<(), Box<dyn Error + Send + Sync>> {

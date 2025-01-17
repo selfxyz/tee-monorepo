@@ -52,6 +52,7 @@ path = "examples/hyper.rs"
 [[example]]
 name = "axum"
 path = "examples/axum.rs"
+required-features = ["axum"]
 
 [profile.release]
 strip = true
