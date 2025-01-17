@@ -62,8 +62,8 @@ impl ScallopAuther for Auther {
     }
 }
 
-async fn hello(ConnectInfo(info): ConnectInfo<Pcrs>) -> &'static str {
-    println!("Pcrs: {:?}", info);
+async fn hello(ConnectInfo(info): ConnectInfo<ScallopState<Pcrs>>) -> &'static str {
+    println!("Pcrs: {:?}", info.0);
     "Hello World!"
 }
 
