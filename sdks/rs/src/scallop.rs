@@ -221,9 +221,13 @@ impl ScallopAuthStore for () {
     }
 }
 
-pub trait ScallopAuther {
+// Send bound not ideal
+// Investigate both Send and non-Send versions
+pub trait ScallopAuther: Send {
     type Error: std::fmt::Debug;
-    fn new_auth(&mut self) -> impl std::future::Future<Output = Result<Box<[u8]>, Self::Error>>;
+    fn new_auth(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Box<[u8]>, Self::Error>> + Send;
 }
 
 impl<T: ScallopAuther> ScallopAuther for &mut T {
