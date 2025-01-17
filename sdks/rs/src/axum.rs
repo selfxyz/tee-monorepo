@@ -117,7 +117,7 @@ impl Listener for ScallopListener {
         loop {
             match self.accept_impl().await {
                 Ok(res) => return res,
-                Err(e) => {} // nothing, maybe log?
+                Err(_) => {} // nothing, maybe log?
             }
         }
     }
