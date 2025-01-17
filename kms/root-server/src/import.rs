@@ -25,6 +25,10 @@ pub async fn import(State(state): State<AppState>, encrypted: String) -> (Status
         );
     };
 
+    let Ok(randomness) = randomness.as_ref().try_into() else {
+        return (StatusCode::BAD_REQUEST, "incorrect size\n".into());
+    };
+
     // set randomness and encrypted
     let mut randomness_guard = state.randomness.lock().unwrap();
     let mut encrypted_guard = state.encrypted.lock().unwrap();

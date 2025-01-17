@@ -78,7 +78,7 @@ struct AppState {
     // lock hierarchy:
     // randomness
     // encrypted
-    randomness: Arc<Mutex<Option<Box<[u8]>>>>,
+    randomness: Arc<Mutex<Option<[u8; 64]>>>,
     encrypted: Arc<Mutex<String>>,
     signer: PrivateKeySigner,
     conditions: Conditions,
