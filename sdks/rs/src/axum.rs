@@ -19,7 +19,12 @@ pub enum AxumError {
     ScallopError(#[from] ScallopError),
 }
 
-pub struct ScallopListener<AuthStore: ScallopAuthStore, Auther: ScallopAuther> {
+pub struct ScallopListener<AuthStore, Auther>
+where
+    AuthStore: ScallopAuthStore + Clone + Send + Sync + Unpin + 'static,
+    AuthStore::State: Clone + Send + Sync + Unpin + 'static,
+    Auther: ScallopAuther + Clone + Send + Sync + Unpin + 'static,
+{
     pub listener: TcpListener,
     pub secret: [u8; 32],
     pub auth_store: AuthStore,
@@ -28,9 +33,9 @@ pub struct ScallopListener<AuthStore: ScallopAuthStore, Auther: ScallopAuther> {
 
 impl<AuthStore, Auther> ScallopListener<AuthStore, Auther>
 where
-    AuthStore: ScallopAuthStore + Clone + Send,
-    AuthStore::State: Send + Unpin,
-    Auther: ScallopAuther + Clone + Send,
+    AuthStore: ScallopAuthStore + Clone + Send + Sync + Unpin + 'static,
+    AuthStore::State: Clone + Send + Sync + Unpin + 'static,
+    Auther: ScallopAuther + Clone + Send + Sync + Unpin + 'static,
 {
     async fn accept_impl(
         &mut self,
@@ -48,22 +53,23 @@ where
     }
 }
 
-type ListenerIo<AuthStore: ScallopAuthStore> = ScallopStream<TcpStream, AuthStore::State>;
+type ListenerIo<AuthStore> = ScallopStream<TcpStream, <AuthStore as ScallopAuthStore>::State>;
 
 impl<AuthStore, Auther> Listener for ScallopListener<AuthStore, Auther>
 where
-    AuthStore: ScallopAuthStore + Clone + Send + 'static,
-    AuthStore::State: Send + Unpin,
-    Auther: ScallopAuther + Clone + Send + 'static,
+    AuthStore: ScallopAuthStore + Clone + Send + Sync + Unpin + 'static,
+    AuthStore::State: Clone + Send + Sync + Unpin + 'static,
+    Auther: ScallopAuther + Clone + Send + Sync + Unpin + 'static,
 {
     type Io = ListenerIo<AuthStore>;
     type Addr = SocketAddr;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
-            match self.accept_impl().await {
+            let res = self.accept_impl().await;
+            match res {
                 Ok(res) => return res,
-                Err(_) => {} // nothing, maybe log?
+                Err(_) => continue, // nothing, maybe log?
             }
         }
     }
@@ -74,14 +80,16 @@ where
 }
 
 #[derive(Clone)]
-pub struct ScallopState<AuthStore: ScallopAuthStore>(pub Option<AuthStore::State>);
+pub struct ScallopState<AuthStore: ScallopAuthStore + Clone + Send + Sync + Unpin + 'static>(
+    pub Option<AuthStore::State>,
+);
 
 impl<AuthStore, Auther> Connected<IncomingStream<'_, ScallopListener<AuthStore, Auther>>>
     for ScallopState<AuthStore>
 where
-    AuthStore: ScallopAuthStore + Clone + Send + 'static,
-    AuthStore::State: Send + Unpin + Clone + Sync,
-    Auther: ScallopAuther + Clone + Send + 'static,
+    AuthStore: ScallopAuthStore + Clone + Send + Sync + Unpin + 'static,
+    AuthStore::State: Clone + Send + Sync + Unpin + 'static,
+    Auther: ScallopAuther + Clone + Send + Sync + Unpin + 'static,
 {
     fn connect_info(stream: IncomingStream<'_, ScallopListener<AuthStore, Auther>>) -> Self {
         // is it possible to avoid a clone here?
