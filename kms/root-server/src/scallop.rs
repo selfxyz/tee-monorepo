@@ -28,6 +28,7 @@ impl ScallopAuthStore for AuthStore {
         let Ok(decoded) = attestation::verify(
             attestation.to_vec(),
             AttestationExpectations {
+                // TODO: hardcoded, make it a param
                 age: Some((300000, now)),
                 root_public_key: Some(AWS_ROOT_KEY.to_vec()),
                 // do not care about PCRs, will derive different keys for each set
