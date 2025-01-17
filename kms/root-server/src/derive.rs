@@ -3,9 +3,10 @@ use axum::{
     http::StatusCode,
 };
 use hmac::{Hmac, Mac};
+use oyster::axum::ScallopState;
 use sha2::Sha512;
 
-use crate::{scallop::ScallopState, AppState};
+use crate::{scallop::AuthStoreState, AppState};
 
 // derivation format:
 // 1 byte
@@ -17,7 +18,7 @@ use crate::{scallop::ScallopState, AppState};
 
 // derive keys after verifying attestations
 pub async fn derive(
-    ConnectInfo(scallop_state): ConnectInfo<ScallopState>,
+    ConnectInfo(scallop_state): ConnectInfo<ScallopState<AuthStoreState>>,
     State(state): State<AppState>,
 ) -> (StatusCode, [u8; 64]) {
     let Some(randomness) = state.randomness.lock().unwrap().clone() else {

@@ -22,7 +22,7 @@ use tracing::error;
 #[derive(Clone, Default)]
 pub struct AuthStore {}
 
-type AuthStoreState = ([[u8; 48]; 3], Box<[u8]>);
+pub type AuthStoreState = ([[u8; 48]; 3], Box<[u8]>);
 
 impl ScallopAuthStore for AuthStore {
     type State = AuthStoreState;
