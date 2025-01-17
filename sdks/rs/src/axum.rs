@@ -12,11 +12,16 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::scallop::{
     new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
-    ScallopStream,
+    ScallopError, ScallopStream,
 };
 
 #[derive(Debug, thiserror::Error)]
-pub enum AxumError {}
+pub enum AxumError {
+    #[error("failed to accept conns")]
+    AcceptError(#[from] tokio::io::Error),
+    #[error("failed to scallop")]
+    ScallopError(#[from] ScallopError),
+}
 
 pub struct ScallopListener<AuthStore: ScallopAuthStore, Auther: ScallopAuther> {
     pub listener: TcpListener,
@@ -34,19 +39,14 @@ where
     async fn accept_impl(
         &mut self,
     ) -> Result<(<Self as Listener>::Io, <Self as Listener>::Addr), AxumError> {
-        let (stream, addr) = self
-            .listener
-            .accept()
-            .await
-            .context("failed to accept conns")?;
+        let (stream, addr) = self.listener.accept().await?;
         let stream = new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b(
             stream,
             &self.secret,
             Some(self.auth_store.clone()),
             Some(self.auther.clone()),
         )
-        .await
-        .context("failed to scallop")?;
+        .await?;
 
         Ok((stream, addr))
     }
