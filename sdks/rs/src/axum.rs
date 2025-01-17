@@ -4,7 +4,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context, Result};
 use axum::{
     extract::connect_info::Connected,
     serve::{IncomingStream, Listener},
@@ -18,6 +17,9 @@ use oyster::{
 };
 use tokio::net::{TcpListener, TcpStream};
 use tracing::error;
+
+#[derive(Debug, thiserror::Error)]
+pub enum AxumError {}
 
 #[derive(Clone, Default)]
 pub struct AuthStore {}
@@ -59,7 +61,7 @@ pub struct Auther {
 impl ScallopAuther for Auther {
     type Error = anyhow::Error;
 
-    async fn new_auth(&mut self) -> Result<Box<[u8]>> {
+    async fn new_auth(&mut self) -> Result<Box<[u8]>, AxumError> {
         let body = reqwest::get(&self.url)
             .await
             .context("failed to fetch attestation")?
@@ -80,10 +82,13 @@ pub struct ScallopListener {
 impl ScallopListener {
     async fn accept_impl(
         &mut self,
-    ) -> Result<(
-        <ScallopListener as Listener>::Io,
-        <ScallopListener as Listener>::Addr,
-    )> {
+    ) -> Result<
+        (
+            <ScallopListener as Listener>::Io,
+            <ScallopListener as Listener>::Addr,
+        ),
+        AxumError,
+    > {
         let (stream, addr) = self
             .listener
             .accept()
