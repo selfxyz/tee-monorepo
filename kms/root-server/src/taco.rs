@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Args;
 
+// snippet from taco contracts
 sol! {
     #[sol(rpc)]
     #[derive(Debug)]
