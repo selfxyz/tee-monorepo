@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
     )
     .context("failed to create signer")?;
 
-    let (taco_nodes, threshold, dkg_public_key) = taco::get_taco_nodes(&args)
+    let taco_nodes = taco::get_taco_nodes(&args)
         .await
         .context("failed to fetch taco nodes")?;
 

@@ -73,9 +73,7 @@ sol! {
     }
 }
 
-pub async fn get_taco_nodes(
-    args: &Args,
-) -> Result<(HashMap<Address, SessionStaticKey>, u16, DkgPublicKey)> {
+pub async fn get_taco_nodes(args: &Args) -> Result<HashMap<Address, SessionStaticKey>> {
     let provider =
         ProviderBuilder::new().on_http(args.rpc.parse().context("failed to parse rpc url")?);
     let contract = Coordinator::new(
@@ -100,16 +98,14 @@ pub async fn get_taco_nodes(
     let dkg_public_key = DkgPublicKey::from_bytes(&ritual.publicKey.abi_encode_packed())
         .context("failed to parse dkg public key")?;
 
-    Ok((
-        HashMap::from_iter(participants._0.into_iter().filter_map(|p| {
+    Ok(HashMap::from_iter(participants._0.into_iter().filter_map(
+        |p| {
             Some((
                 p.provider,
                 SessionStaticKey::from_bytes(&p.decryptionRequestStaticKey).ok()?,
             ))
-        })),
-        ritual.threshold,
-        dkg_public_key,
-    ))
+        },
+    )))
 }
 
 pub fn encrypt(
