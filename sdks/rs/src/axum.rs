@@ -10,12 +10,9 @@ use axum::{
 };
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::{
-    attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
-    scallop::{
-        new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
-        ScallopStream,
-    },
+use crate::scallop::{
+    new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b, Key, ScallopAuthStore, ScallopAuther,
+    ScallopStream,
 };
 
 #[derive(Debug, thiserror::Error)]
