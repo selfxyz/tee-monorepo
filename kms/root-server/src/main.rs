@@ -72,6 +72,17 @@ struct Args {
     /// Path to X25519 secret file
     #[arg(long, default_value = "/app/x25519.sec")]
     secret_path: String,
+
+    // this could be fetched from the RPC but that then adds trust on the RPC
+    // especially for something critical like the public key against which
+    // randomness is encrypted
+    /// DKG ceremony public key
+    #[arg(long)]
+    dkg_public_key: String,
+
+    /// DKG threshold
+    #[arg(long)]
+    threshold: u16,
 }
 
 #[derive(Clone)]
@@ -120,6 +131,11 @@ async fn main() -> Result<()> {
         .try_into()
         .map_err(|_| anyhow!("failed to parse secret file"))?;
 
+    let dkg_public_key = DkgPublicKey::from_bytes(
+        &hex::decode(args.dkg_public_key).context("failed to decode dkg public key")?,
+    )
+    .context("failed to parse dkg public key")?;
+
     let app_state = AppState {
         signer,
         randomness: Default::default(),
@@ -128,7 +144,7 @@ async fn main() -> Result<()> {
         dkg_public_key,
         ritual: args.ritual,
         taco_nodes,
-        threshold,
+        threshold: args.threshold,
         porter: args.porter,
         chain_id,
     };
