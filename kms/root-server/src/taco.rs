@@ -6,7 +6,6 @@ use alloy::{
     providers::ProviderBuilder,
     signers::{local::PrivateKeySigner, SignerSync},
     sol,
-    sol_types::SolValue,
 };
 use anyhow::{anyhow, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -94,9 +93,6 @@ pub async fn get_taco_nodes(args: &Args) -> Result<HashMap<Address, SessionStati
         .call()
         .await
         .context("failed to get participants")?;
-
-    let dkg_public_key = DkgPublicKey::from_bytes(&ritual.publicKey.abi_encode_packed())
-        .context("failed to parse dkg public key")?;
 
     Ok(HashMap::from_iter(participants._0.into_iter().filter_map(
         |p| {
