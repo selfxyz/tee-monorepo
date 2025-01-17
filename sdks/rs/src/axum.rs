@@ -25,16 +25,15 @@ pub struct ScallopListener<AuthStore: ScallopAuthStore, Auther: ScallopAuther> {
     pub auther: Auther,
 }
 
-impl ScallopListener {
+impl<AuthStore, Auther> ScallopListener<AuthStore, Auther>
+where
+    AuthStore: ScallopAuthStore + Clone + Send,
+    AuthStore::State: Send + Unpin,
+    Auther: ScallopAuther + Clone + Send,
+{
     async fn accept_impl(
         &mut self,
-    ) -> Result<
-        (
-            <ScallopListener as Listener>::Io,
-            <ScallopListener as Listener>::Addr,
-        ),
-        AxumError,
-    > {
+    ) -> Result<(<Self as Listener>::Io, <Self as Listener>::Addr), AxumError> {
         let (stream, addr) = self
             .listener
             .accept()
@@ -53,10 +52,15 @@ impl ScallopListener {
     }
 }
 
-type ListenerIo = ScallopStream<TcpStream, AuthStoreState>;
+type ListenerIo<AuthStore: ScallopAuthStore> = ScallopStream<TcpStream, AuthStore::State>;
 
-impl Listener for ScallopListener {
-    type Io = ListenerIo;
+impl<AuthStore, Auther> Listener for ScallopListener<AuthStore, Auther>
+where
+    AuthStore: ScallopAuthStore + Clone + Send + 'static,
+    AuthStore::State: Send + Unpin,
+    Auther: ScallopAuther + Clone + Send + 'static,
+{
+    type Io = ListenerIo<AuthStore>;
     type Addr = SocketAddr;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
@@ -74,10 +78,16 @@ impl Listener for ScallopListener {
 }
 
 #[derive(Clone)]
-pub struct ScallopState(pub Option<AuthStoreState>);
+pub struct ScallopState<AuthStore: ScallopAuthStore>(pub Option<AuthStore::State>);
 
-impl Connected<IncomingStream<'_, ScallopListener>> for ScallopState {
-    fn connect_info(stream: IncomingStream<'_, ScallopListener>) -> Self {
+impl<AuthStore, Auther> Connected<IncomingStream<'_, ScallopListener<AuthStore, Auther>>>
+    for ScallopState<AuthStore>
+where
+    AuthStore: ScallopAuthStore + Clone + Send + 'static,
+    AuthStore::State: Send + Unpin + Clone + Sync,
+    Auther: ScallopAuther + Clone + Send + 'static,
+{
+    fn connect_info(stream: IncomingStream<'_, ScallopListener<AuthStore, Auther>>) -> Self {
         // is it possible to avoid a clone here?
         ScallopState(stream.io().state.clone())
     }
