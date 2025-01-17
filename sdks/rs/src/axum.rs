@@ -21,7 +21,7 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum AxumError {}
 
-pub struct ScallopListener {
+pub struct ScallopListener<AuthStore: ScallopAuthStore, Auther: ScallopAuther> {
     pub listener: TcpListener,
     pub secret: [u8; 32],
     pub auth_store: AuthStore,
