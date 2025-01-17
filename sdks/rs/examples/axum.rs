@@ -12,14 +12,12 @@ use http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use http_body_util::Empty;
 use hyper::body::Bytes;
-use hyper::body::Incoming;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::TokioIo;
 use libsodium_sys::{
     crypto_sign_ed25519_pk_to_curve25519, crypto_sign_ed25519_sk_to_curve25519, crypto_sign_keypair,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::sleep;
-use tower::Service;
 
 pub use oyster::axum::*;
 pub use oyster::scallop::*;
@@ -72,8 +70,8 @@ async fn welcome() -> &'static str {
 }
 
 async fn server_task(key: Key) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut auth_store = AuthStore::default();
-    let mut auther = Auther {};
+    let auth_store = AuthStore::default();
+    let auther = Auther {};
 
     let app = Router::new()
         .route("/hello", get(hello))
