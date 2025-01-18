@@ -464,6 +464,7 @@ struct JobState<'a> {
     req_vcpus: i32,
     req_mem: i64,
     debug: bool,
+    init_params: Box<[u8]>,
 
     // whether instance should exist or not
     infra_state: bool,
@@ -501,6 +502,7 @@ impl<'a> JobState<'a> {
             req_vcpus: 2,
             req_mem: 4096,
             debug: false,
+            init_params: Box::new([0; 0]),
             infra_state: false,
             infra_change_time: Instant::now(),
             infra_change_scheduled: false,
