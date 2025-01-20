@@ -112,6 +112,9 @@ struct Cli {
     /// path to init params file
     #[clap(short, long, value_parser)]
     init_params_path: String,
+    /// path to extra init params file
+    #[clap(short, long, value_parser)]
+    extra_init_params_path: String,
 }
 
 #[tokio::main]
@@ -134,6 +137,18 @@ async fn main() -> Result<(), anyhow::Error> {
                     .unwrap_or((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Vec::from(b"could not read init params"),
+                    ))
+            }),
+        )
+        .route(
+            "/oyster/extra-init-params",
+            get(|| async {
+                fs::read(cli.extra_init_params_path)
+                    .await
+                    .map(|data| (StatusCode::OK, data))
+                    .unwrap_or((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Vec::from(b"could not read extra init params"),
                     ))
             }),
         )
