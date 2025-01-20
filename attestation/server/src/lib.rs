@@ -2,7 +2,7 @@ use aws_nitro_enclaves_nsm_api::api::{Request, Response};
 use aws_nitro_enclaves_nsm_api::driver as nsm_driver;
 use serde_bytes::ByteBuf;
 
-pub fn get_attestation_doc(pub_key: &[u8]) -> Vec<u8> {
+pub fn get_attestation_doc(pub_key: &[u8], init_params: &[u8]) -> Vec<u8> {
     let public_key = ByteBuf::from(pub_key);
 
     let request = Request::Attestation {
@@ -21,7 +21,7 @@ pub fn get_attestation_doc(pub_key: &[u8]) -> Vec<u8> {
     }
 }
 
-pub fn get_hex_attestation_doc(pub_key: &[u8]) -> String {
-    let attestation = get_attestation_doc(pub_key);
+pub fn get_hex_attestation_doc(pub_key: &[u8], init_params: &[u8]) -> String {
+    let attestation = get_attestation_doc(pub_key, init_params);
     return hex::encode(attestation);
 }
