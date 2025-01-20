@@ -262,6 +262,8 @@ impl Aws {
         req_mem: i64,
         bandwidth: u64,
         debug: bool,
+        init_params: &[u8],
+        extra_init_params: &[u8],
     ) -> Result<()> {
         if family != "salmon" && family != "tuna" {
             return Err(anyhow!("unsupported image family"));
@@ -290,7 +292,7 @@ impl Aws {
             // set up iptables rules
             Self::run_fragment_iptables_tuna(sess)?;
             // set up job id in the init server
-            Self::run_fragment_init_server(sess, job_id)?;
+            Self::run_fragment_init_server(sess, job_id, init_params, extra_init_params)?;
         } else {
             // set up iptables rules
             Self::run_fragment_iptables_salmon(sess)?;
@@ -560,7 +562,12 @@ impl Aws {
     // Goal: set up init server params
     // assumes the .conf has not been modified externally
     // cheap, so just always does `sed`
-    fn run_fragment_init_server(sess: &Session, job_id: &str) -> Result<()> {
+    fn run_fragment_init_server(
+        sess: &Session,
+        job_id: &str,
+        init_params: &[u8],
+        extra_init_params: &[u8],
+    ) -> Result<()> {
         let (_, stderr) = Self::ssh_exec(
             sess,
             &format!(
@@ -1266,6 +1273,8 @@ EOF
         bandwidth: u64,
         image_url: &str,
         debug: bool,
+        init_params: &[u8],
+        extra_init_params: &[u8],
     ) -> Result<()> {
         let (mut exist, mut instance, state) = self
             .get_job_instance_id(job, region)
@@ -1302,7 +1311,17 @@ EOF
         }
 
         self.run_enclave_impl(
-            &job.id, family, &instance, region, image_url, req_vcpu, req_mem, bandwidth, debug,
+            &job.id,
+            family,
+            &instance,
+            region,
+            image_url,
+            req_vcpu,
+            req_mem,
+            bandwidth,
+            debug,
+            init_params,
+            extra_init_params,
         )
         .await
         .context("failed to run enclave")
@@ -1459,6 +1478,8 @@ impl InfraProvider for Aws {
         bandwidth: u64,
         image_url: &str,
         debug: bool,
+        init_params: &[u8],
+        extra_init_params: &[u8],
     ) -> Result<()> {
         self.spin_up_impl(
             job,
@@ -1470,6 +1491,8 @@ impl InfraProvider for Aws {
             bandwidth,
             image_url,
             debug,
+            init_params,
+            extra_init_params,
         )
         .await
         .context("could not spin up enclave")

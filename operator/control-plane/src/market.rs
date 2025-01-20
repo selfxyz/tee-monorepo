@@ -61,6 +61,8 @@ pub trait InfraProvider {
         bandwidth: u64,
         image_url: &str,
         debug: bool,
+        init_params: &[u8],
+        extra_init_params: &[u8],
     ) -> impl Future<Output = Result<()>> + Send;
 
     fn spin_down(&mut self, job: &JobId, region: &str) -> impl Future<Output = Result<()>> + Send;
@@ -89,6 +91,8 @@ where
         bandwidth: u64,
         image_url: &str,
         debug: bool,
+        init_params: &[u8],
+        extra_init_params: &[u8],
     ) -> Result<()> {
         (**self)
             .spin_up(
@@ -101,6 +105,8 @@ where
                 bandwidth,
                 image_url,
                 debug,
+                init_params,
+                extra_init_params,
             )
             .await
     }
@@ -598,6 +604,8 @@ impl<'a> JobState<'a> {
                     self.bandwidth,
                     &self.eif_url,
                     self.debug,
+                    &self.init_params,
+                    &self.extra_init_params,
                 )
                 .await;
             if let Err(err) = res {
