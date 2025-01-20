@@ -5,6 +5,7 @@ use alloy::{
 };
 use anyhow::{Context, Result};
 use axum::{extract::State, http::StatusCode};
+use clap::Parser;
 use nucypher_core::{
     encrypt_for_dkg, ferveo::api::DkgPublicKey, AccessControlPolicy, Conditions, ProtocolObject,
     ThresholdMessageKit,
@@ -75,6 +76,26 @@ async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
     };
 
     (StatusCode::OK, encrypted)
+}
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// DKG listening address
+    #[arg(long, default_value = "0.0.0.0:1100")]
+    listen_addr: String,
+
+    /// Path to file with private key signer
+    #[arg(long, default_value = "/app/secp256k1.sec")]
+    signer: String,
+
+    /// Condition string for the key
+    #[arg(long)]
+    condition: String,
+
+    /// DKG ceremony public key
+    #[arg(long)]
+    dkg_public_key: String,
 }
 
 fn main() {
