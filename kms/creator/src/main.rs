@@ -4,13 +4,14 @@ use alloy::{
     signers::{local::PrivateKeySigner, SignerSync},
 };
 use anyhow::{Context, Result};
-use axum::{extract::State, http::StatusCode};
+use axum::{extract::State, http::StatusCode, routing::post, Router};
 use clap::Parser;
 use nucypher_core::{
     encrypt_for_dkg, ferveo::api::DkgPublicKey, AccessControlPolicy, Conditions, ProtocolObject,
     ThresholdMessageKit,
 };
 use rand::{rngs::OsRng, RngCore};
+use tokio::{fs::read, net::TcpListener};
 
 #[derive(Clone)]
 struct AppState {
@@ -98,6 +99,38 @@ struct Args {
     dkg_public_key: String,
 }
 
-fn main() {
-    println!("Hello, world!");
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let signer = PrivateKeySigner::from_slice(
+        &read(&args.signer)
+            .await
+            .context("failed to read signer file")?,
+    )
+    .context("failed to create signer")?;
+
+    let dkg_public_key = DkgPublicKey::from_bytes(
+        &hex::decode(args.dkg_public_key).context("failed to decode dkg public key")?,
+    )
+    .context("failed to parse dkg public key")?;
+
+    let conditions = Conditions::new(&args.condition);
+
+    let app_state = AppState {
+        conditions,
+        dkg_public_key,
+        signer,
+    };
+
+    let app = Router::new()
+        .route("/generate", post(generate))
+        .with_state(app_state);
+
+    let listener = TcpListener::bind(&args.listen_addr)
+        .await
+        .context("failed to bind listener")?;
+
+    println!("Listening on {}", args.listen_addr);
+    axum::serve(listener, app).await.context("failed to serve")
 }
