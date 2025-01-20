@@ -133,7 +133,7 @@ func SetupPreRequisites(client *connect.SshClient, host string, instanceID strin
 	RunCommand(client, "chmod +x ip-to-vsock-raw-incoming")
 
 	// init server
-	RunCommand(client, "wget -O oyster-init-server https://artifacts.marlin.org/oyster/binaries/oyster-init-server_v1.0.0_linux_"+arch)
+	RunCommand(client, "wget -O oyster-init-server https://artifacts.marlin.org/oyster/binaries/init-server_v1.0.0_linux_"+arch)
 	RunCommand(client, "chmod +x oyster-init-server")
 
 	// supervisord
