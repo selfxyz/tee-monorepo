@@ -1,6 +1,6 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, TeeManagerMock } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
@@ -624,7 +624,6 @@ describe("Executors - Staking/Unstaking", function () {
         let amount = 100n;
         await expect(teeManager.removeTeeNodeStake(addrs[15], amount))
             .to.be.not.reverted;
-        expect(await executors.getNodeValue(1, addrs[15])).to.eq((10n ** 19n + amount) / STAKE_ADJUSTMENT_FACTOR);
     });
 
     it('cannot unstake with active jobs', async function () {
@@ -727,11 +726,13 @@ describe("Executors - Drain/Revive executor", function () {
 
         // case 2: revive after unstaking
         await teeManager.drainTeeNode(addrs[15]);
-        await teeManager.removeTeeNodeStake(addrs[15], 100);
+        await teeManager.removeTeeNodeStake(addrs[15], 9n * (10n ** 18n));
         await expect(teeManager.reviveTeeNode(addrs[15]))
             .to.be.not.reverted;
 
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
+        // remaining stake = 10 POND - 9 POND = 1 POND
+        expect(await executors.getNodeValue(env, addrs[15])).to.eq((10n ** 18n) / await executors.STAKE_ADJUSTMENT_FACTOR());
     });
 
     it("can revive secret store with max job capacity reached", async function () {
@@ -933,7 +934,7 @@ describe("Executors - Select/Release/Slash", function () {
     });
 });
 
-describe("Executors - Reputation functions", function () {
+describe("Executors - Reputation and other functions", function () {
     let signers: Signer[];
     let addrs: string[];
     let wallets: Wallet[];
@@ -1016,6 +1017,30 @@ describe("Executors - Reputation functions", function () {
     it("cannot decrease reputation without JOBS_ROLE", async function () {
         await expect(executors.connect(signers[1]).decreaseReputation(addrs[15], 10))
             .to.be.revertedWithCustomError(executors, "AccessControlUnauthorizedAccount");
+    });
+
+    it("can upsert node in tree", async function () {
+        await expect(teeManager.updateTreeState(addrs[15])).to.be.not.reverted;
+        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.true;
+        expect(await executors.getNodeValue(1, addrs[15])).to.eq((10n ** 19n) / await executors.STAKE_ADJUSTMENT_FACTOR());
+    });
+
+    it("cannot upsert node in tree without TeeManager contract", async function () {
+        await expect(executors.upsertTreeNode(1, addrs[15], 10n ** 20n))
+            .to.be.revertedWithCustomError(executors, "ExecutorsNotTeeManager");
+    });
+
+    it("can delete node in tree", async function () {
+        await teeManager.removeTeeNodeStake(addrs[15], 10n ** 19n);
+
+        // as stake < minStake, it will delete the node
+        await expect(teeManager.updateTreeState(addrs[15])).to.be.not.reverted;
+        expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.false;
+    });
+
+    it("cannot delete node in tree without TeeManager contract", async function () {
+        await expect(executors.deleteTreeNodeIfPresent(1, addrs[15]))
+            .to.be.revertedWithCustomError(executors, "ExecutorsNotTeeManager");
     });
 });
 

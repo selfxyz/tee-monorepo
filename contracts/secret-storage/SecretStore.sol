@@ -203,9 +203,10 @@ contract SecretStore is
         uint8 _env,
         uint256 _stakeAmount
     ) internal {
+        secretStores[_enclaveAddress].lastAliveTimestamp = block.timestamp;
         // TODO: need to check buffer capacity
         // insert node in the tree
-        if (secretStores[_enclaveAddress].storageOccupied < secretStores[_enclaveAddress].storageCapacity) {
+        if (secretStores[_enclaveAddress].storageOccupied < (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())) {
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
     }
@@ -217,12 +218,12 @@ contract SecretStore is
         delete secretStores[_enclaveAddress];
     }
 
-    function _addSecretStoreStake(
+    function _upsertTreeNode(
         address _enclaveAddress,
         uint8 _env,
         uint256 _stake
     ) internal {
-        if (secretStores[_enclaveAddress].storageOccupied < secretStores[_enclaveAddress].storageCapacity) {
+        if (secretStores[_enclaveAddress].storageOccupied < (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
             _upsert(_env, _enclaveAddress, uint64(_stake / STAKE_ADJUSTMENT_FACTOR));
         }
@@ -318,7 +319,7 @@ contract SecretStore is
         uint8 _env,
         uint256 _stake
     ) external onlyTeeManager {
-        _addSecretStoreStake(_enclaveAddress, _env, _stake);
+        _upsertTreeNode(_enclaveAddress, _env, _stake);
     }
 
     /**
@@ -337,7 +338,7 @@ contract SecretStore is
         address _enclaveAddress,
         uint256 _stakeAmount
     ) external onlyTeeManager {
-        _upsert(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+        _upsertTreeNode(_enclaveAddress, _env, _stakeAmount);
     }
 
     function deleteTreeNodeIfPresent(
@@ -444,16 +445,8 @@ contract SecretStore is
         address _enclaveAddress,
         uint256 _secretSize
     ) internal {
-        TEE_MANAGER.updateTreeState(_enclaveAddress);
-        // TODO: need to check if storageOccupied < storageCapacity, before inserting in the tree in the previous step
         secretStores[_enclaveAddress].storageOccupied -= _secretSize;
-        uint8 env = TEE_MANAGER.getTeeNodeEnv(_enclaveAddress);
-        // need to remove the node from the tree if storageOccupied exceeds threshold size
-        if(
-            isNodePresentInTree(env, _enclaveAddress) &&
-            secretStores[_enclaveAddress].storageOccupied >= (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
-        )
-            _deleteIfPresent(env, _enclaveAddress);
+        TEE_MANAGER.updateTreeState(_enclaveAddress);
     }
 
     function _removeStoreSecretId(

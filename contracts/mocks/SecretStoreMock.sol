@@ -3,10 +3,17 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/Context.sol";
 // import "../secret-storage/SecretStore.sol";
 import "../secret-storage/SecretManager.sol";
+import "../secret-storage/TeeManager.sol";
 
 contract SecretStoreMock is Context {
 
-    constructor() {}
+    constructor(
+        address _teeManagerAddress
+    ) {
+        TEE_MANAGER = TeeManager(_teeManagerAddress);
+    }
+
+    TeeManager public TEE_MANAGER;
 
     SecretManager public SECRET_MANAGER;
 
@@ -21,6 +28,23 @@ contract SecretStoreMock is Context {
     // enclaveAddress => Storage node details
     mapping(address => SecretStorage) public secretStores;
 
+    event SecretStoreMockStakeAdded(
+        address enclaveAddress,
+        uint8 env,
+        uint256 stake
+    );
+
+    event SecretStoreMockNodeUpserted(
+        uint8 env,
+        address enclaveAddress,
+        uint256 stakeAmount
+    );
+
+    event SecretStoreMockNodeDeleted(
+        uint8 env,
+        address enclaveAddress
+    );
+
     function setSecretManager(address _secretManagerAddress) external {
         SECRET_MANAGER = SecretManager(_secretManagerAddress);
     }
@@ -33,6 +57,14 @@ contract SecretStoreMock is Context {
     ) external {
         secretStores[_enclaveAddress].storageCapacity = _storageCapacity;
         secretStores[_enclaveAddress].lastAliveTimestamp = block.timestamp;
+    }
+
+    function addSecretStoreStake(
+        address _enclaveAddress,
+        uint8 _env,
+        uint256 _stake
+    ) external {
+        emit SecretStoreMockStakeAdded(_enclaveAddress, _env, _stake);
     }
 
     function selectNonAssignedSecretStore(
@@ -125,6 +157,27 @@ contract SecretStoreMock is Context {
 
     function getStoreAckSecretIds(address _enclaveAddress) external view returns (uint256[] memory) {
         return secretStores[_enclaveAddress].ackSecretIds;
+    }
+
+    function updateTreeState(
+        address _enclaveAddress
+    ) external {
+        TEE_MANAGER.updateTreeState(_enclaveAddress);
+    }
+
+    function upsertTreeNode(
+        uint8 _env,
+        address _enclaveAddress,
+        uint256 _stakeAmount
+    ) external {
+        emit SecretStoreMockNodeUpserted(_env, _enclaveAddress, _stakeAmount);
+    }
+
+    function deleteTreeNodeIfPresent(
+        uint8 _env,
+        address _enclaveAddress
+    ) external {
+        emit SecretStoreMockNodeDeleted(_env, _enclaveAddress);
     }
 
 }

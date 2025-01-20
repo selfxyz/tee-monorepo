@@ -975,7 +975,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxStoreSize = 8000,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -1081,6 +1081,15 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
 
         expect(await secretManager.getCurrentConfirmedUsdcDeposit(secretId)).to.eq((await secretManager.userStorage(secretId)).usdcDeposit - usdcPayment);
+    });
+
+    it("cannot submit alive check while draining", async function () {
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[17]);
+        let signTimestamp = await time.latest(),
+            signedDigest = await createAliveSignature(signTimestamp, wallets[17]);
+
+        await expect(secretManager.markStoreAlive(signTimestamp, signedDigest))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerNodeIsDraining")
     });
 
     it("cannot submit alive check with expired signature", async function () {
@@ -1275,7 +1284,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         await time.increase(510);
         // create secret such that occupiedStorage exceeds storageCapacity, due to which nodes will be removed from the tree
         let env = 1,
-            sizeLimit = 10000,
+            sizeLimit = 8000,
             endTimestamp = await time.latest() + 800,
             usdcDeposit = parseUnits("3000", 6);
         await secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, []);
@@ -1319,6 +1328,12 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         let slashedAmount = 3n * parseUnits("10") * 100n / 1000000n;
         let stakingPoolFinalBal = await stakingToken.balanceOf(addrs[2]);
         expect(stakingPoolFinalBal - stakingPoolInitialBal).to.eq(slashedAmount);
+    });
+
+    it("cannot mark store dead while draining", async function () {
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[17]);
+        await expect(secretManager.markStoreDead(addrs[17]))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerNodeIsDraining")
     });
 
     it("cannot mark store dead before alive timeout", async function () {
@@ -2390,7 +2405,7 @@ describe("SecretManager - Renounce secrets", function () {
         ) as unknown as Executors;
 
         const SecretStore = await ethers.getContractFactory("SecretStoreMock");
-        secretStore = await SecretStore.deploy() as unknown as SecretStoreMock;
+        secretStore = await SecretStore.deploy(teeManager.target) as unknown as SecretStoreMock;
 
         let env = 1;
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
@@ -2516,9 +2531,7 @@ describe("SecretManager - Renounce secrets", function () {
         let nodeOwnerBalFinal = await usdcToken.balanceOf(addrs[1]);
         expect(nodeOwnerBalFinal - nodeOwnerBalInitial).to.eq(usdcPayment);
 
-        // calculating updated usdc stake amount
-        let ackTimestamp = userSecret.ackTimestamp;
-        usdcPayment = (endTimestamp - ackTimestamp) * userSecret.sizeLimit * secretStoreFeeRate;
+        // checking updated usdc deposit amount
         expect((await secretManager.userStorage(1)).usdcDeposit).to.eq(parseUnits("30", 6) - usdcPayment);
     });
 
@@ -2545,7 +2558,7 @@ describe("SecretManager - Renounce secrets", function () {
         let nodeOwnerBalFinal = await usdcToken.balanceOf(addrs[1]);
         expect(nodeOwnerBalFinal - nodeOwnerBalInitial).to.eq(usdcPayment);
 
-        // calculating updated usdc stake amount
+        // calculating updated usdc deposit amount
         let ackTimestamp = userSecret.ackTimestamp;
         usdcPayment = (endTimestamp - ackTimestamp) * userSecret.sizeLimit * secretStoreFeeRate;
         expect((await secretManager.userStorage(1)).usdcDeposit).to.eq(parseUnits("30", 6) - usdcPayment);
@@ -2561,6 +2574,7 @@ describe("SecretManager - Renounce secrets", function () {
         let secretId = 1;
         let userSecret = await secretManager.userStorage(1);
         let nodeOwnerBalInitial = await usdcToken.balanceOf(addrs[1]);
+        let secretOwnerBalInitial = await usdcToken.balanceOf(addrs[0]);
 
         // renounce secret from 1st selected store
         await expect(secretStore.renounceSecrets(addrs[17], addrs[1]))
@@ -2579,7 +2593,7 @@ describe("SecretManager - Renounce secrets", function () {
         let nodeOwnerBalFinal = await usdcToken.balanceOf(addrs[1]);
         expect(nodeOwnerBalFinal - nodeOwnerBalInitial).to.eq(usdcPayment);
 
-        // calculating updated usdc stake amount
+        // calculating updated usdc deposit amount
         let ackTimestamp = userSecret.ackTimestamp;
         usdcPayment = (endTimestamp - ackTimestamp) * userSecret.sizeLimit * secretStoreFeeRate;
         expect((await secretManager.userStorage(1)).usdcDeposit).to.eq(parseUnits("30", 6) - usdcPayment);
@@ -2597,7 +2611,7 @@ describe("SecretManager - Renounce secrets", function () {
         nodeOwnerBalFinal = await usdcToken.balanceOf(addrs[1]);
         expect(nodeOwnerBalFinal - nodeOwnerBalInitial).to.eq(usdcPayment);
 
-        // checking updated usdc stake amount
+        // checking updated usdc deposit amount
         expect((await secretManager.userStorage(1)).usdcDeposit).to.eq(parseUnits("30", 6) - (2n * usdcPayment));
 
         nodeOwnerBalInitial = await usdcToken.balanceOf(addrs[1]);
@@ -2616,6 +2630,10 @@ describe("SecretManager - Renounce secrets", function () {
         // secret data will be deleted after last selected enclave renounces the secret
         expect((await secretManager.userStorage(secretId)).owner).to.eq(ZeroAddress);        
         expect((await secretManager.userStorage(1)).usdcDeposit).to.eq(0);
+        
+        // checking refund amount to secret owner
+        let secretOwnerBalFinal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerBalFinal - secretOwnerBalInitial).to.eq(parseUnits("30", 6) - (3n * usdcPayment));
     });
 });
 

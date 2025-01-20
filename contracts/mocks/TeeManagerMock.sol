@@ -23,7 +23,11 @@ contract TeeManagerMock is Context, AttestationAuther {
     mapping(address => TeeNode) public teeNodes;
 
     event TeeManagerMockExecutorSlashed();
-    event TeeManagerMockStoreSlashed();
+    event TeeManagerMockStoreSlashed(
+        address _enclaveAddress,
+        uint256 _missedEpochsCount,
+        address _recipient
+    );
 
     constructor(
         IAttestationVerifier attestationVerifier,
@@ -131,7 +135,7 @@ contract TeeManagerMock is Context, AttestationAuther {
         uint256 _missedEpochsCount,
         address _recipient
     ) external {
-        emit TeeManagerMockStoreSlashed();
+        emit TeeManagerMockStoreSlashed(_enclaveAddress, _missedEpochsCount, _recipient);
     }
 
     // --------------------------------- Secret Store functions end ---------------------------------

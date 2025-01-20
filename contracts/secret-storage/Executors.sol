@@ -175,19 +175,18 @@ contract Executors is
         delete executors[_enclaveAddress];
     }
 
-    function _addExecutorStake(
+    function _upsertTreeNode(
         address _enclaveAddress,
         uint8 _env,
         uint256 _stake
     ) internal {
         if (executors[_enclaveAddress].activeJobs < executors[_enclaveAddress].jobCapacity) {
-            // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
             _upsert(_env, _enclaveAddress, uint64(_stake / STAKE_ADJUSTMENT_FACTOR));
         }
     }
 
     function _removeExecutorStake(address _enclaveAddress) internal view {
-        if (executors[_enclaveAddress].activeJobs != 0) 
+        if (executors[_enclaveAddress].activeJobs != 0)
             revert ExecutorsHasPendingJobs();
     }
 
@@ -254,7 +253,7 @@ contract Executors is
         uint8 _env,
         uint256 _stake
     ) external onlyTeeManager {
-        _addExecutorStake(_enclaveAddress, _env, _stake);
+        _upsertTreeNode(_enclaveAddress, _env, _stake);
     }
 
     /**
@@ -273,7 +272,7 @@ contract Executors is
         address _enclaveAddress,
         uint256 _stakeAmount
     ) external onlyTeeManager {
-        _upsert(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
+        _upsertTreeNode(_enclaveAddress, _env, _stakeAmount);
     }
 
     function deleteTreeNodeIfPresent(
@@ -399,8 +398,8 @@ contract Executors is
     function _releaseExecutor(
         address _enclaveAddress
     ) internal {
-        TEE_MANAGER.updateTreeState(_enclaveAddress);
         executors[_enclaveAddress].activeJobs -= 1;
+        TEE_MANAGER.updateTreeState(_enclaveAddress);
     }
 
     function _slashExecutor(address _enclaveAddress, address _recipient) internal returns (uint256) {    

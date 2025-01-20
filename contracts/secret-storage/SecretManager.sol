@@ -262,6 +262,7 @@ contract SecretManager is
     error SecretManagerAcknowledgementTimeoutPending(address enclaveAddress);
     error SecretManagerAcknowledgedAlready();
     error SecretManagerUnacknowledged();
+    error SecretManagerNodeIsDraining();
     error SecretManagerEnclaveNotFound();
     error SecretManagerStoreIsAlive();
     error SecretManagerInvalidSecretOwner();
@@ -515,6 +516,8 @@ contract SecretManager is
         bytes memory _signature
     ) internal {
         address enclaveAddress = _verifyStoreAliveSign(_signTimestamp, _signature);
+        if(TEE_MANAGER.getDrainingStatus(enclaveAddress))
+            revert SecretManagerNodeIsDraining();
         if(_signTimestamp <= SECRET_STORE.getSecretStoreDeadTimestamp(enclaveAddress))
             revert SecretManagerSignatureTooOld();
 
@@ -584,6 +587,8 @@ contract SecretManager is
     function _markStoreDead(
         address _enclaveAddress
     ) internal {
+        if(TEE_MANAGER.getDrainingStatus(_enclaveAddress))
+            revert SecretManagerNodeIsDraining();
         uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(_enclaveAddress);
         if(block.timestamp <= lastAliveTimestamp + MARK_ALIVE_TIMEOUT)
             revert SecretManagerStoreIsAlive();

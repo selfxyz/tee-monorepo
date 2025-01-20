@@ -2,7 +2,7 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, SecretManager, SecretManagerMock, SecretStore, TeeManager, USDCoin } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, SecretManager, SecretManagerMock, SecretStore, SecretStoreMock, TeeManager, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -1281,12 +1281,12 @@ describe("TeeManager - Staking/Unstaking", function () {
             endTimestamp = await time.latest() + 800,
             usdcDeposit = parseUnits("30", 6);
         await secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, [addrs[3]]);
+        // drain
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
         // stake withdrawal can only be done after ack fail is marked after ackTimeout
         await time.increase(130);
         // mark ack failed
         await secretManager.acknowledgeStoreFailed(1);
-        // drain
-        await teeManager.connect(signers[1]).drainTeeNode(addrs[15]);
 
         let amount = 5;
         await expect(teeManager.connect(signers[1]).removeTeeNodeStake(addrs[15], amount))
@@ -1399,7 +1399,7 @@ describe("TeeManager - Drain/Revive secret store", function () {
         ) as unknown as SecretStore;
 
         let noOfNodesToSelect = 1,
-            globalMaxStoreSize = 1e6,
+            globalMaxStoreSize = 1500,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -1571,7 +1571,7 @@ describe("TeeManager - Drain/Revive secret store", function () {
         let nodeOwnerBalFinal = await usdcToken.balanceOf(addrs[1]);
         expect(nodeOwnerBalFinal - nodeOwnerBalInitial).to.eq(usdcPayment);
 
-        // calculating updated usdc stake amount
+        // calculating updated usdc deposit amount
         let ackTimestamp = userSecret.ackTimestamp;
         usdcPayment = (endTimestamp - ackTimestamp) * userSecret.sizeLimit * secretStoreFeeRate;
         expect((await secretManager.userStorage(1)).usdcDeposit).to.eq(parseUnits("30", 6) - usdcPayment);
@@ -1755,6 +1755,7 @@ describe("TeeManager - Slash Store/Executor", function () {
 
         let teeNode = await teeManager.teeNodes(addrs[15]);
         expect(teeNode.stakeAmount).to.be.eq(remainingStakeAmount);
+        expect(await teeManager.getTeeNodesStake([addrs[15]])).to.deep.eq([remainingStakeAmount]);
         expect(await token.balanceOf(teeManager.target)).to.be.eq(remainingStakeAmount);
         expect(await token.balanceOf(addrs[2])).to.be.eq(slashedAmount);
 
@@ -1763,6 +1764,7 @@ describe("TeeManager - Slash Store/Executor", function () {
         await expect(teeManager.slashStore(addrs[15], missedEpochs, addrs[2]))
             .to.be.not.reverted;
         expect(teeNode.stakeAmount).to.be.eq((await teeManager.teeNodes(addrs[15])).stakeAmount);
+        expect(await teeManager.getTeeNodesStake([addrs[15]])).to.deep.eq([teeNode.stakeAmount]);
     });
 
     it("cannot slash store without valid secret store", async function () {
@@ -1780,6 +1782,7 @@ describe("TeeManager - Slash Store/Executor", function () {
 
         let teeNode = await teeManager.teeNodes(addrs[15]);
         expect(teeNode.stakeAmount).to.be.eq(stakeAmount - slashedAmount);
+        expect(await teeManager.getTeeNodesStake([addrs[15]])).to.deep.eq([stakeAmount - slashedAmount]);
         expect(await token.balanceOf(teeManager.target)).to.be.eq(stakeAmount - slashedAmount);
         expect(await token.balanceOf(addrs[2])).to.be.eq(slashedAmount);
     });
@@ -1787,6 +1790,136 @@ describe("TeeManager - Slash Store/Executor", function () {
     it("cannot slash executor without valid executors", async function () {
         await expect(teeManager.connect(signers[1]).slashExecutor(addrs[15], addrs[2]))
             .to.be.revertedWithCustomError(teeManager, "TeeManagerInvalidExecutors");
+    });
+});
+
+describe("TeeManager - Update tree state functions", function () {
+    let signers: Signer[];
+    let addrs: string[];
+    let wallets: Wallet[];
+    let pubkeys: string[];
+    let attestationVerifier: AttestationVerifier;
+    let teeManager: TeeManager;
+    let executors: Executors;
+    let secretStore: SecretStoreMock;
+
+    before(async function () {
+        signers = await ethers.getSigners();
+        addrs = await Promise.all(signers.map((a) => a.getAddress()));
+        wallets = signers.map((_, idx) => walletForIndex(idx));
+        pubkeys = wallets.map((w) => normalize(w.signingKey.publicKey));
+
+        const AttestationVerifier = await ethers.getContractFactory("AttestationVerifier");
+        attestationVerifier = await upgrades.deployProxy(
+            AttestationVerifier,
+            [[image1], [pubkeys[14]], addrs[0]],
+            { kind: "uups" },
+        ) as unknown as AttestationVerifier;
+
+        const Pond = await ethers.getContractFactory("Pond");
+        const stakingToken = await upgrades.deployProxy(Pond, ["Marlin", "POND"], {
+            kind: "uups",
+        }) as unknown as Pond;
+
+        const TeeManager = await ethers.getContractFactory("TeeManager");
+        teeManager = await upgrades.deployProxy(
+            TeeManager,
+            [addrs[0], [image2, image3]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    attestationVerifier.target,
+                    600,
+                    stakingToken.target,
+                    10 ** 10,
+                    10 ** 2,
+                    10 ** 6
+                ]
+            },
+        ) as unknown as TeeManager;
+
+        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+        executors = await upgrades.deployProxy(
+            Executors,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
+        ) as unknown as Executors;
+
+        const SecretStore = await ethers.getContractFactory("SecretStoreMock");
+        secretStore = await SecretStore.deploy(teeManager.target) as unknown as SecretStoreMock;
+
+        await teeManager.setExecutors(executors.target);
+        await teeManager.setSecretStore(secretStore.target);
+
+        await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
+
+        await executors.initTree(1);
+
+        await stakingToken.transfer(addrs[1], parseUnits("10"));
+        // approval for registration stake amount
+        await stakingToken.connect(signers[1]).approve(teeManager.target, parseUnits("10"));
+
+        // REGISTER NODE
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest() - 540;
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[15],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            env = 1,
+            stakeAmount = 0;
+        let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[15]);
+
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+    });
+
+    takeSnapshotBeforeAndAfterEveryTest(async () => { });
+
+    it('can update tree state by upserting node', async function () {
+        let env = 1,
+            stakeAmount = parseUnits("10");
+        await teeManager.connect(signers[1]).addTeeNodeStake(addrs[15], stakeAmount);
+
+        await expect(secretStore.updateTreeState(addrs[15]))
+            .to.emit(secretStore, "SecretStoreMockNodeUpserted")
+            .withArgs(env, addrs[15], stakeAmount);
+
+        expect(await executors.getNodeValue(env, addrs[15])).to.eq(stakeAmount / await executors.STAKE_ADJUSTMENT_FACTOR());
+    });
+
+    it('can update tree state by deleting node', async function () {
+        let env = 1;
+        await expect(secretStore.updateTreeState(addrs[15]))
+            .to.emit(secretStore, "SecretStoreMockNodeDeleted")
+            .withArgs(env, addrs[15]);
+
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.false;
+    });
+
+    it('cannot update tree state without Executors or SecretStore contract', async function () {
+        await expect(teeManager.updateTreeState(addrs[15]))
+            .to.be.revertedWithCustomError(teeManager, "TeeManagerInvalidCaller");
     });
 });
 
