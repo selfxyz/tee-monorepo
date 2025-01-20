@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::str::FromStr;
@@ -568,6 +568,7 @@ impl Aws {
         init_params: &[u8],
         extra_init_params: &[u8],
     ) -> Result<()> {
+        // set job id
         let (_, stderr) = Self::ssh_exec(
             sess,
             &format!(
@@ -579,6 +580,50 @@ impl Aws {
         if !stderr.is_empty() {
             return Err(anyhow!(stderr)).context("Failed to set job id for init server");
         }
+
+        // set init params
+        let mut init_params_file = sess
+            .scp_send(
+                Path::new("/home/ubuntu/init_params"),
+                0o644,
+                init_params.len() as u64,
+                None,
+            )
+            .context("failed to scp init params")?;
+        init_params_file
+            .write_all(init_params)
+            .context("failed to write init params")?;
+        init_params_file.send_eof().context("failed to send eof")?;
+        init_params_file
+            .wait_eof()
+            .context("failed to wait for eof")?;
+        init_params_file.close().context("failed to close")?;
+        init_params_file
+            .wait_close()
+            .context("failed to wait for close")?;
+
+        // set extra init params
+        let mut extra_init_params_file = sess
+            .scp_send(
+                Path::new("/home/ubuntu/extra_init_params"),
+                0o644,
+                extra_init_params.len() as u64,
+                None,
+            )
+            .context("failed to scp extra init params")?;
+        extra_init_params_file
+            .write_all(extra_init_params)
+            .context("failed to write extra init params")?;
+        extra_init_params_file
+            .send_eof()
+            .context("failed to send eof")?;
+        extra_init_params_file
+            .wait_eof()
+            .context("failed to wait for eof")?;
+        extra_init_params_file.close().context("failed to close")?;
+        extra_init_params_file
+            .wait_close()
+            .context("failed to wait for close")?;
 
         let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl update")
             .context("Failed to update init server")?;
