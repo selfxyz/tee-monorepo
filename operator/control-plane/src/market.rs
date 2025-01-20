@@ -1396,6 +1396,59 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn test_init_params() {
+        let start_time = Instant::now();
+        let job_id = format!("{:064x}", 1);
+
+        let logs = vec![
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"c29tZSBwYXJhbXM=\",\"extra_init_params\":\"c29tZSBleHRyYSBwYXJhbXM=\"}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            (301, Action::Close, [].into()),
+        ];
+
+        let job_manager_params = JobManagerParams {
+            job_id: market::JobId {
+                id: job_id.clone(),
+                operator: "abc".into(),
+                contract: "xyz".into(),
+                chain: "123".into(),
+            },
+            allowed_regions: vec!["ap-south-1".to_owned()],
+            address_whitelist: vec![],
+            address_blacklist: vec![],
+        };
+
+        let test_results = TestResults {
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    init_params: b"some params".to_vec().into_boxed_slice(),
+                    extra_init_params: b"some extra params".to_vec().into_boxed_slice(),
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(301),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
+        };
+
+        run_test(start_time, logs, job_manager_params, test_results).await;
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn test_instance_launch_with_debug_mode_on_spin_up() {
         let start_time = Instant::now();
         let job_id = format!("{:064x}", 1);
