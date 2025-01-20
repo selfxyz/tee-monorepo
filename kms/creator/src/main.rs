@@ -52,7 +52,19 @@ fn encrypt(
     // create message kit
     let message_kit = ThresholdMessageKit { ciphertext, acp };
 
-    Ok(hex::encode(message_kit.to_bytes()))
+    // message bytes
+    let message_bytes = message_kit.to_bytes();
+
+    // message signature
+    let signature = auth_signer
+        .sign_message_sync(&message_bytes)
+        .context("signing failed")?
+        .as_bytes();
+
+    let mut resp = message_kit.to_bytes().to_vec();
+    resp.extend_from_slice(&signature);
+
+    Ok(hex::encode(resp))
 }
 
 // generate new randomness and encyrpt it against the DKG key
