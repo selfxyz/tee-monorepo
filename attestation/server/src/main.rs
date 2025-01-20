@@ -29,7 +29,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let pub_key = std::fs::read(cli.pub_key)?.leak::<'static>();
     println!("pub key: {:02x?}", pub_key);
 
-    let init_params = std::fs::read(cli.init_params)?.leak::<'static>();
+    let init_params = std::fs::read(cli.init_params)
+        .unwrap_or(Vec::new())
+        .leak::<'static>();
 
     let app = Router::new()
         .route(
