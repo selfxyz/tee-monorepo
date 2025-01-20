@@ -467,6 +467,7 @@ struct JobState<'a> {
     req_mem: i64,
     debug: bool,
     init_params: Box<[u8]>,
+    extra_init_params: Box<[u8]>,
 
     // whether instance should exist or not
     infra_state: bool,
@@ -505,6 +506,7 @@ impl<'a> JobState<'a> {
             req_mem: 4096,
             debug: false,
             init_params: Box::new([0; 0]),
+            extra_init_params: Box::new([0; 0]),
             infra_state: false,
             infra_change_time: Instant::now(),
             infra_change_scheduled: false,
@@ -745,6 +747,14 @@ impl<'a> JobState<'a> {
                 return JobResult::Failed;
             };
             self.init_params = init_params.into_boxed_slice();
+
+            let Ok(extra_init_params) =
+                BASE64_STANDARD.decode(v["extra_init_params"].as_str().unwrap_or(""))
+            else {
+                error!("failed to decode extra init params");
+                return JobResult::Failed;
+            };
+            self.extra_init_params = extra_init_params.into_boxed_slice();
 
             // blacklist whitelist check
             let allowed =
