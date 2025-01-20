@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let res = String::from_utf8(response_bytes.to_vec())?;
 
-    println!("{res}");
+    print!("{res}");
 
     Ok(())
 }
