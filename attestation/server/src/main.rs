@@ -16,7 +16,7 @@ struct Cli {
     pub_key: String,
 
     /// path to init params file (e.g. /app/init-params)
-    #[arg(short, long)]
+    #[arg(long)]
     init_params: String,
 }
 

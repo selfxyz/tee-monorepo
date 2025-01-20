@@ -4,10 +4,11 @@ use serde_bytes::ByteBuf;
 
 pub fn get_attestation_doc(pub_key: &[u8], init_params: &[u8]) -> Vec<u8> {
     let public_key = ByteBuf::from(pub_key);
+    let user_data = ByteBuf::from(init_params);
 
     let request = Request::Attestation {
         public_key: Some(public_key),
-        user_data: None,
+        user_data: Some(user_data),
         nonce: None,
     };
 
