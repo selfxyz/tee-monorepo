@@ -8,6 +8,8 @@ use alloy::rpc::types::eth::{Filter, Log};
 use alloy::sol_types::SolValue;
 use alloy::transports::ws::WsConnect;
 use anyhow::{Context, Result};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::sleep;
@@ -736,6 +738,13 @@ impl<'a> JobState<'a> {
 
             // we leave the default debug mode unchanged if not found for backward compatibility
             v["debug"].as_bool().inspect(|f| self.debug = *f);
+
+            let Ok(init_params) = BASE64_STANDARD.decode(v["init_params"].as_str().unwrap_or(""))
+            else {
+                error!("failed to decode init params");
+                return JobResult::Failed;
+            };
+            self.init_params = init_params.into_boxed_slice();
 
             // blacklist whitelist check
             let allowed =
