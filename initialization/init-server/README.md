@@ -74,6 +74,8 @@ $ vet --url vsock://3:1500/instance/ip
 192.168.0.1
 ```
 
+### Init params
+
 ##### Endpoint
 
 ```
