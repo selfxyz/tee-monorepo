@@ -1047,6 +1047,27 @@ impl<'a> JobState<'a> {
 
             self.eif_url = url.to_string();
 
+            let Ok(init_params) = BASE64_STANDARD.decode(v["init_params"].as_str().unwrap_or(""))
+            else {
+                error!("failed to decode init params");
+                return JobResult::Failed;
+            };
+            if self.init_params != init_params.into_boxed_slice() {
+                error!("Init params change not allowed");
+                return JobResult::Failed;
+            }
+
+            let Ok(extra_init_params) =
+                BASE64_STANDARD.decode(v["extra_init_params"].as_str().unwrap_or(""))
+            else {
+                error!("failed to decode extra init params");
+                return JobResult::Failed;
+            };
+            if self.extra_init_params != extra_init_params.into_boxed_slice() {
+                error!("Extra init params change not allowed");
+                return JobResult::Failed;
+            }
+
             // schedule change immediately if not already scheduled
             if !self.infra_change_scheduled {
                 self.schedule_launch(0);
