@@ -1,7 +1,14 @@
+use alloy::signers::local::PrivateKeySigner;
 use axum::{extract::State, http::StatusCode};
+use nucypher_core::{ferveo::api::DkgPublicKey, Conditions};
 use rand::{rngs::OsRng, RngCore};
 
-use crate::AppState;
+#[derive(Clone)]
+struct AppState {
+    signer: PrivateKeySigner,
+    conditions: Conditions,
+    dkg_public_key: DkgPublicKey,
+}
 
 // generate new randomness and encyrpt it against the DKG key
 pub async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
