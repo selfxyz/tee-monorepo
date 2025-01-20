@@ -127,13 +127,13 @@ func SetupPreRequisites(client *connect.SshClient, host string, instanceID strin
 	RunCommand(client, "sudo apt -y install network-manager")
 
 	// proxies
-	RunCommand(client, "wget -O vsock-to-ip-raw-outgoing http://public.artifacts.marlin.pro/projects/enclaves/vsock-to-ip-raw-outgoing_v1.0.0_linux_"+arch)
+	RunCommand(client, "wget -O vsock-to-ip-raw-outgoing https://artifacts.marlin.org/oyster/binaries/vsock-to-ip-raw-outgoing_v1.0.0_linux_"+arch)
 	RunCommand(client, "chmod +x vsock-to-ip-raw-outgoing")
-	RunCommand(client, "wget -O ip-to-vsock-raw-incoming http://public.artifacts.marlin.pro/projects/enclaves/ip-to-vsock-raw-incoming_v1.0.0_linux_"+arch)
+	RunCommand(client, "wget -O ip-to-vsock-raw-incoming https://artifacts.marlin.org/oyster/binaries/ip-to-vsock-raw-incoming_v1.0.0_linux_"+arch)
 	RunCommand(client, "chmod +x ip-to-vsock-raw-incoming")
 
 	// init server
-	RunCommand(client, "wget -O oyster-init-server http://public.artifacts.marlin.pro/projects/enclaves/oyster-init-server_v1.0.0_linux_"+arch)
+	RunCommand(client, "wget -O oyster-init-server https://artifacts.marlin.org/oyster/binaries/oyster-init-server_v1.0.0_linux_"+arch)
 	RunCommand(client, "chmod +x oyster-init-server")
 
 	// supervisord
