@@ -584,7 +584,7 @@ impl Aws {
         // set init params
         let mut init_params_file = sess
             .scp_send(
-                Path::new("/home/ubuntu/init_params"),
+                Path::new("/home/ubuntu/init-params"),
                 0o644,
                 init_params.len() as u64,
                 None,
@@ -605,7 +605,7 @@ impl Aws {
         // set extra init params
         let mut extra_init_params_file = sess
             .scp_send(
-                Path::new("/home/ubuntu/extra_init_params"),
+                Path::new("/home/ubuntu/extra-init-params"),
                 0o644,
                 extra_init_params.len() as u64,
                 None,
