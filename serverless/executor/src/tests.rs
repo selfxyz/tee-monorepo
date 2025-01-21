@@ -34,12 +34,11 @@ pub mod serverless_executor_test {
     use tokio_stream::StreamExt as _;
 
     use crate::cgroups::Cgroups;
+    use crate::constant::{EXECUTION_ENV_ID, MAX_OUTPUT_BYTES_LENGTH};
     use crate::event_handler::handle_event_logs;
+    use crate::model::{AppState, JobsTxnMetadata, JobsTxnType};
     use crate::node_handler::*;
-    use crate::utils::{
-        load_abi_from_file, AppState, JobsTxnMetadata, JobsTxnType, EXECUTION_ENV_ID,
-        MAX_OUTPUT_BYTES_LENGTH,
-    };
+    use crate::utils::load_abi_from_file;
 
     // Testnet or Local blockchain (Hardhat) configurations
     const CHAIN_ID: u64 = 421614;

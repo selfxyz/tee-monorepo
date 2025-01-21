@@ -95,6 +95,14 @@ async fn inject_mutable_config(
 
     // Initialize HTTP RPC client and nonce for sending the signed transactions
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
+
+    let mut ws_rpc_url = app_state.web_socket_url.write().unwrap();
+    // strip existing api key from the ws url by removing keys after last '/'
+    let pos = ws_rpc_url.rfind('/').unwrap();
+    ws_rpc_url.truncate(pos + 1);
+    ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
+    drop(ws_rpc_url);
+
     if *mutable_params_injected_guard == false {
         // Connect the rpc http provider with the operator's gas wallet
         let http_rpc_txn_manager = TxnManager::new(
@@ -116,12 +124,6 @@ async fn inject_mutable_config(
         };
 
         *app_state.http_rpc_txn_manager.lock().unwrap() = Some(http_rpc_txn_manager);
-        let mut ws_rpc_url = app_state.web_socket_url.write().unwrap();
-        // strip existing api key from the ws url by removing keys after last '/'
-        let pos = ws_rpc_url.rfind('/').unwrap();
-        ws_rpc_url.truncate(pos + 1);
-        ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
-
         *mutable_params_injected_guard = true;
         drop(mutable_params_injected_guard);
 
@@ -147,12 +149,6 @@ async fn inject_mutable_config(
                 err
             ));
         }
-
-        let mut ws_rpc_url = app_state.web_socket_url.write().unwrap();
-        // strip existing api key from the ws url by removing keys after last '/'
-        let pos = ws_rpc_url.rfind('/').unwrap();
-        ws_rpc_url.truncate(pos + 1);
-        ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
     }
 
     HttpResponse::Ok().body("Mutable params configured!\n")
@@ -181,7 +177,7 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     }))
 }
 
-#[post("/signed-registration-message")]
+#[post("/register-details")]
 // Endpoint exposed to retrieve the metadata required to register the secret store on the common chain
 async fn export_registration_details(app_state: Data<AppState>) -> impl Responder {
     if *app_state.immutable_params_injected.lock().unwrap() == false {

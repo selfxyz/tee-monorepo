@@ -14,11 +14,9 @@ use k256::ecdsa::SigningKey;
 use tokio::fs;
 
 use serverless::cgroups::Cgroups;
-use serverless::node_handler::{
-    export_signed_registration_message, get_tee_details, index, inject_immutable_config,
-    inject_mutable_config,
-};
-use serverless::utils::{load_abi_from_file, AppState, ConfigManager};
+use serverless::model::{AppState, ConfigManager};
+use serverless::node_handler::*;
+use serverless::utils::load_abi_from_file;
 use tokio_vsock::VsockListener;
 
 // EXECUTOR CONFIGURATION PARAMETERS
@@ -43,7 +41,7 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
     let config_manager = ConfigManager::new(&args.config_file);
-    let config = config_manager.load_config().unwrap();
+    let mut config = config_manager.load_config().unwrap();
 
     // Initialize the 'cgroups' available inside the enclave to execute user code
     let cgroups = Cgroups::new().context("Failed to retrieve cgroups")?;
@@ -70,7 +68,7 @@ async fn main() -> Result<()> {
         .parse::<Uri>()
         .context("Invalid web_socket_url format")?;
     if !config.web_socket_url.ends_with('/') {
-        return Err(anyhow!("web_socket_url should end with a '/'"));
+        config.web_socket_url.push('/');
     }
 
     let enclave_address = public_key_to_address(&enclave_signer_key.verifying_key());

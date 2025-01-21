@@ -14,7 +14,8 @@ use scopeguard::defer;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 
-use crate::utils::{AppState, JobOutput, JobsTxnMetadata, JobsTxnType, MAX_OUTPUT_BYTES_LENGTH};
+use crate::constant::MAX_OUTPUT_BYTES_LENGTH;
+use crate::model::{AppState, JobOutput, JobsTxnMetadata, JobsTxnType};
 use crate::workerd;
 use crate::workerd::ServerlessError::*;
 

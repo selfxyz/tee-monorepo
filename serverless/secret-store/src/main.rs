@@ -17,7 +17,6 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::utils::public_key_to_address;
 use alloy::transports::http::reqwest::Url;
-use anyhow::anyhow;
 use anyhow::{Context, Result};
 use clap::Parser;
 use tokio::fs;
@@ -30,9 +29,9 @@ use utils::verify_rpc_url;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    // Server port
+    /// External port to expose outside enclave for injecting secret
     #[clap(long, value_parser, default_value = "6002")]
-    inject_port: u16,
+    external_port: u16,
 
     // Path to the configuration file
     #[clap(
@@ -47,7 +46,7 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
     let config_manager = ConfigManager::new(&args.config_file);
-    let config = config_manager.load_config().unwrap();
+    let mut config = config_manager.load_config().unwrap();
 
     verify_rpc_url(&config.http_rpc_url).context("Invalid RPC URL")?;
 
@@ -74,7 +73,7 @@ async fn main() -> Result<()> {
         .parse::<Uri>()
         .context("Invalid web_socket_url format")?;
     if !config.web_socket_url.ends_with('/') {
-        return Err(anyhow!("web_socket_url should end with a '/'"));
+        config.web_socket_url.push('/');
     }
 
     // Initialize App data that will be shared across multiple threads and tasks
@@ -105,7 +104,7 @@ async fn main() -> Result<()> {
 
     let app_data_clone = app_data.clone();
     // Start actix server to expose the secret store API endpoints for configuration and registration requests inside the enclave local system
-    let server1 = HttpServer::new(move || {
+    let config_server = HttpServer::new(move || {
         App::new()
             .app_data(app_data_clone.clone())
             .service(index)
@@ -121,19 +120,22 @@ async fn main() -> Result<()> {
     println!("Config server started on port {}", config.config_port);
 
     // Start actix server to expose the inject secret endpoint outside the enclave
-    let server2 = HttpServer::new(move || {
+    let external_server = HttpServer::new(move || {
         App::new()
             .app_data(app_data.clone())
             .service(inject_and_store_secret)
     })
-    .bind(("0.0.0.0", args.inject_port))
-    .context(format!("could not bind to port {}", args.inject_port))?
+    .bind(("0.0.0.0", args.external_port))
+    .context(format!("could not bind to port {}", args.external_port))?
     .run();
 
-    println!("Inject server started on port {}", args.inject_port);
+    println!(
+        "Secret inject server started on port {}",
+        args.external_port
+    );
 
     // Run both servers concurrently
-    tokio::try_join!(server1, server2)?;
+    tokio::try_join!(config_server, external_server)?;
 
     Ok(())
 }

@@ -12,10 +12,10 @@ use serde_json::{json, Value};
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
+use crate::constant::EXECUTION_ENV_ID;
 use crate::event_handler::events_listener;
-use crate::utils::{
-    AppState, ImmutableConfig, MutableConfig, RegistrationMessage, TeeConfig, EXECUTION_ENV_ID,
-};
+use crate::model::{AppState, ImmutableConfig, MutableConfig, RegistrationMessage, TeeConfig};
+use crate::utils::call_secret_store_endpoint;
 
 pub async fn index() {}
 
@@ -49,15 +49,14 @@ pub async fn inject_immutable_config(
             .into_response();
     }
 
-    let secret_store_endpoint =
-        app_state.secret_store_config_port.to_string() + "/immutable-config";
     let request_json = json!({
         "owner_address_hex": immutable_config.owner_address_hex,
     });
 
-    let secret_store_response = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    let secret_store_response = call_secret_store_endpoint(
+        app_state.secret_store_config_port,
+        "/immutable-config",
+        request_json,
     )
     .await;
     let Ok(_) = secret_store_response else {
@@ -185,15 +184,15 @@ pub async fn inject_mutable_config(
             .into_response();
     };
 
-    let secret_store_endpoint = app_state.secret_store_config_port.to_string() + "/mutable-config";
     let request_json = json!({
         "gas_key_hex": mutable_config.secret_store_gas_key,
         "ws_api_key": mutable_config.ws_api_key,
     });
 
-    let secret_store_response = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    let secret_store_response = call_secret_store_endpoint(
+        app_state.secret_store_config_port,
+        "/mutable-config",
+        request_json,
     )
     .await;
     let Ok(secret_store_response) = secret_store_response else {
@@ -245,12 +244,12 @@ pub async fn get_tee_details(app_state: State<AppState>) -> Response {
             .address();
     }
 
-    let secret_store_endpoint = app_state.secret_store_config_port.to_string() + "/store-details";
     let request_json = json!({});
 
-    let secret_store_response = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    let secret_store_response = call_secret_store_endpoint(
+        app_state.secret_store_config_port,
+        "/store-details",
+        request_json,
     )
     .await;
     let Ok(secret_store_response) = secret_store_response else {
@@ -314,13 +313,12 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
             .into_response();
     }
 
-    let secret_store_endpoint =
-        app_state.secret_store_config_port.to_string() + "/signed-registration-message";
     let request_json = json!({});
 
-    let secret_store_response = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async { call_secret_store_endpoint(&secret_store_endpoint, request_json.clone()).await },
+    let secret_store_response = call_secret_store_endpoint(
+        app_state.secret_store_config_port,
+        "/register-details",
+        request_json,
     )
     .await;
     let Ok(secret_store_response) = secret_store_response else {
@@ -444,56 +442,4 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
     };
 
     (StatusCode::OK, Json(response_body)).into_response()
-}
-
-async fn call_secret_store_endpoint(
-    endpoint: &str,
-    request_json: Value,
-) -> Result<(reqwest::StatusCode, String, Option<Value>), reqwest::Error> {
-    let client = reqwest::Client::new();
-    let req_url = "http://127.0.0.1:".to_string() + endpoint;
-
-    let response = client
-        .post(req_url)
-        .json(&request_json)
-        .send()
-        .await
-        .map_err(|err| {
-            eprintln!(
-                "Failed to send the request to secret store endpoint {}: {:?}",
-                endpoint, err
-            );
-            err
-        })?;
-
-    let status_code = response.status();
-
-    let mut response_body = String::new();
-    let mut response_json = None;
-
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if content_type.contains("application/json") {
-        response_json = Some(response.json::<Value>().await.map_err(|err| {
-            eprintln!(
-                "Failed to parse the response json from the secret store endpoint {}: {:?}",
-                endpoint, err
-            );
-            err
-        })?);
-    } else {
-        response_body = response.text().await.map_err(|err| {
-            eprintln!(
-                "Failed to parse the response body from the secret store endpoint {}: {:?}",
-                endpoint, err
-            );
-            err
-        })?;
-    }
-
-    Ok((status_code, response_body, response_json))
 }
