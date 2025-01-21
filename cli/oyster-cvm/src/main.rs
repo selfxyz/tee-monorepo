@@ -51,7 +51,7 @@ enum Commands {
         #[arg(
             short = 'r',
             long,
-            default_value = "2d7507501049f3c685f0859aa92e57397e490e88" // To be updated when nix configs are changed
+            default_value = "oyster-cvm-v1.1.0" // To be updated when new version is tagged
         )]
         commit_ref: String,
     },
