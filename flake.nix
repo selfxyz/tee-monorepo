@@ -68,6 +68,19 @@
       kms.creator = import ./kms/creator {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      kms.creator-enclave = import ./kms/creator-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        creator = kms.creator.compressed;
+      };
+      kms.derive-server = import ./kms/derive-server {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       kms.root-server = import ./kms/root-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
@@ -81,9 +94,6 @@
         vet = initialization.vet.compressed;
         kernels = kernels.tuna;
         root-server = kms.root-server.compressed;
-      };
-      kms.derive-server = import ./kms/derive-server {
-        inherit nixpkgs systemConfig fenix naersk;
       };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;
