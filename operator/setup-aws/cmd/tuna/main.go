@@ -116,8 +116,8 @@ func SetupPreRequisites(client *connect.SshClient, host string, instanceID strin
 	RunCommand(client, "rm -rf aws-nitro-enclaves-cli && git clone https://github.com/aws/aws-nitro-enclaves-cli.git")
 	RunCommand(client, "cd aws-nitro-enclaves-cli && THIS_USER=\"$(whoami)\"")
 	RunCommand(client, "cd aws-nitro-enclaves-cli && export NITRO_CLI_INSTALL_DIR=/")
-	RunCommand(client, "cd aws-nitro-enclaves-cli && (docker ps -a -q | xargs -r sudo docker stop) && (docker ps -a -q | xargs -r sudo docker rm) && sudo docker image prune --all -f && make nitro-cli")
 	RunCommand(client, "cd aws-nitro-enclaves-cli && (docker ps -a -q | xargs -r sudo docker stop) && (docker ps -a -q | xargs -r sudo docker rm) && sudo docker image prune --all -f  && make vsock-proxy")
+	RunCommand(client, "cd aws-nitro-enclaves-cli && (docker ps -a -q | xargs -r sudo docker stop) && (docker ps -a -q | xargs -r sudo docker rm) && sudo docker image prune --all -f && make nitro-cli")
 	RunCommand(client, `cd aws-nitro-enclaves-cli && (docker ps -a -q | xargs -r sudo docker stop) && (docker ps -a -q | xargs -r sudo docker rm) && sudo docker image prune --all -f  &&
 						sudo make NITRO_CLI_INSTALL_DIR=/ install &&
 						source /etc/profile.d/nitro-cli-env.sh &&
