@@ -2,7 +2,7 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, SecretManager, SecretManagerMock, SecretStore, SecretStoreMock, TeeManager, USDCoin } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, ExecutorsMock, Jobs, Pond, SecretManager, SecretManagerMock, SecretStore, SecretStoreMock, TeeManager, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -1800,7 +1800,7 @@ describe("TeeManager - Update tree state functions", function () {
     let pubkeys: string[];
     let attestationVerifier: AttestationVerifier;
     let teeManager: TeeManager;
-    let executors: Executors;
+    let executors: ExecutorsMock;
     let secretStore: SecretStoreMock;
 
     before(async function () {
@@ -1839,28 +1839,14 @@ describe("TeeManager - Update tree state functions", function () {
             },
         ) as unknown as TeeManager;
 
-        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
-        executors = await upgrades.deployProxy(
-            Executors,
-            [addrs[0]],
-            {
-                kind: "uups",
-                initializer: "initialize",
-                constructorArgs: [
-                    teeManager.target
-                ]
-            },
-        ) as unknown as Executors;
+        const Executors = await ethers.getContractFactory("ExecutorsMock");
+        executors = await Executors.deploy(teeManager.target) as unknown as ExecutorsMock;
 
         const SecretStore = await ethers.getContractFactory("SecretStoreMock");
         secretStore = await SecretStore.deploy(teeManager.target) as unknown as SecretStoreMock;
 
         await teeManager.setExecutors(executors.target);
         await teeManager.setSecretStore(secretStore.target);
-
-        await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
-
-        await executors.initTree(1);
 
         await stakingToken.transfer(addrs[1], parseUnits("10"));
         // approval for registration stake amount
@@ -1901,20 +1887,37 @@ describe("TeeManager - Update tree state functions", function () {
             stakeAmount = parseUnits("10");
         await teeManager.connect(signers[1]).addTeeNodeStake(addrs[15], stakeAmount);
 
-        await expect(secretStore.updateTreeState(addrs[15]))
+        // calling with executors contract
+        await expect(executors.updateTreeState(addrs[15]))
+            .to.emit(executors, "ExecutorsMockNodeUpserted")
+            .withArgs(env, addrs[15], stakeAmount)
             .to.emit(secretStore, "SecretStoreMockNodeUpserted")
             .withArgs(env, addrs[15], stakeAmount);
 
-        expect(await executors.getNodeValue(env, addrs[15])).to.eq(stakeAmount / await executors.STAKE_ADJUSTMENT_FACTOR());
+        // calling with secret store contract
+        await expect(secretStore.updateTreeState(addrs[15]))
+            .to.emit(executors, "ExecutorsMockNodeUpserted")
+            .withArgs(env, addrs[15], stakeAmount)
+            .to.emit(secretStore, "SecretStoreMockNodeUpserted")
+            .withArgs(env, addrs[15], stakeAmount);
+
     });
 
     it('can update tree state by deleting node', async function () {
         let env = 1;
-        await expect(secretStore.updateTreeState(addrs[15]))
+        // calling with executors contract
+        await expect(executors.updateTreeState(addrs[15]))
+            .to.emit(executors, "ExecutorsMockNodeDeleted")
+            .withArgs(env, addrs[15])
             .to.emit(secretStore, "SecretStoreMockNodeDeleted")
             .withArgs(env, addrs[15]);
 
-        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.false;
+        // calling with secret store contract
+        await expect(secretStore.updateTreeState(addrs[15]))
+            .to.emit(executors, "ExecutorsMockNodeDeleted")
+            .withArgs(env, addrs[15])
+            .to.emit(secretStore, "SecretStoreMockNodeDeleted")
+            .withArgs(env, addrs[15]);
     });
 
     it('cannot update tree state without Executors or SecretStore contract', async function () {

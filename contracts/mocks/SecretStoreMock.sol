@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/Context.sol";
-// import "../secret-storage/SecretStore.sol";
 import "../secret-storage/SecretManager.sol";
 import "../secret-storage/TeeManager.sol";
 

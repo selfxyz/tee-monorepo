@@ -460,8 +460,10 @@ describe("SecretStore - Register/Deregister secret store", function () {
         await expect(tx).to.be.not.reverted;
 
         expect((await secretStore.secretStores(addrs[15])).storageCapacity).to.eq(storageCapacity);
-        expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp).to.eq((await tx.getBlock())?.timestamp);
-        expect(await secretStore.getNodeValue(env, addrs[15])).to.eq(stakeAmount / await secretStore.STAKE_ADJUSTMENT_FACTOR());
+        expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp)
+            .to.eq((await tx.getBlock())?.timestamp);
+        expect(await secretStore.getNodeValue(env, addrs[15]))
+            .to.eq(stakeAmount / await secretStore.STAKE_ADJUSTMENT_FACTOR());
     });
 
     it("cannot register secret store without tee manager contract", async function () {
@@ -791,7 +793,7 @@ describe("SecretStore - Drain/Revive secret store", function () {
         await tx.wait();
         await expect(tx)
             .to.emit(teeManager, "TeeManagerMockStoreSlashed")
-            .withArgs(addrs[15], 1, "0x0000000000000000000000000000000000000001");
+            .withArgs(addrs[15], 1, await secretManager.STAKING_PAYMENT_POOL()); // recipient set in the SecretManagerMock contract
 
         expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
         expect((await secretStore.secretStores(addrs[15])).lastAliveTimestamp).to.eq((await tx.getBlock())?.timestamp);
@@ -1086,10 +1088,11 @@ describe("SecretStore - Other only secret manager functions", function () {
 
     it("can do mark alive updates with slashing", async function () {
         await time.increase(510);
-        let currentCheckTimestamp = await time.latest();
-        await expect(secretManager.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, addrs[2]))
+        let currentCheckTimestamp = await time.latest(),
+            recipient = addrs[2];
+        await expect(secretManager.markAliveUpdate(addrs[15], currentCheckTimestamp, 500, recipient))
             .to.emit(teeManager, "TeeManagerMockStoreSlashed")
-            .withArgs(addrs[15], 1, addrs[2]);
+            .withArgs(addrs[15], 1, recipient);
 
         expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
     });
@@ -1104,24 +1107,28 @@ describe("SecretStore - Other only secret manager functions", function () {
         let storageOccupied = 100;
         await secretManager.selectStores(1, 1, storageOccupied);
 
+        // marking dead to relase 50 units of storage
         let currentCheckTimestamp = await time.latest();
-        let tx = await secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, 50, addrs[2]);
+        storageOccupied = 50;
+        let tx = await secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, storageOccupied, addrs[2]);
         await tx.wait();
         await expect(tx).to.be.not.reverted;
         await expect(tx).to.not.emit(teeManager, "TeeManagerMockStoreSlashed");
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        // since we have released 50 units of storage, storageOccupied should be 100 - 50 = 50
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(50);
 
-        // can mark dead again after some delay
+        // can mark dead again after some delay, to relase the remaining 50 units of storage
         await time.increase(100);
         currentCheckTimestamp = await time.latest();
-        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, 50, addrs[2]))
+        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, storageOccupied, addrs[2]))
             .to.not.be.reverted;
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        // since we have released 50 units of storage, storageOccupied should be 50 - 50 = 0
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(0);
     });
 
@@ -1132,10 +1139,11 @@ describe("SecretStore - Other only secret manager functions", function () {
 
         await time.increase(1010);  // 2 epochs passed
         let currentCheckTimestamp = BigInt(await time.latest()),
-            markAliveTimeout = 500n;
-        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, markAliveTimeout, storageOccupied, addrs[2]))
+            markAliveTimeout = 500n,
+            recipient = addrs[2];
+        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, markAliveTimeout, storageOccupied, recipient))
             .to.emit(teeManager, "TeeManagerMockStoreSlashed")
-            .withArgs(addrs[15], 2, addrs[2]);
+            .withArgs(addrs[15], 2, recipient);
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);

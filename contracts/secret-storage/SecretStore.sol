@@ -204,9 +204,11 @@ contract SecretStore is
         uint256 _stakeAmount
     ) internal {
         secretStores[_enclaveAddress].lastAliveTimestamp = block.timestamp;
-        // TODO: need to check buffer capacity
         // insert node in the tree
-        if (secretStores[_enclaveAddress].storageOccupied < (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())) {
+        if (
+            secretStores[_enclaveAddress].storageOccupied < 
+            (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+        ) {
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
     }
@@ -223,7 +225,10 @@ contract SecretStore is
         uint8 _env,
         uint256 _stake
     ) internal {
-        if (secretStores[_enclaveAddress].storageOccupied < (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())) {
+        if (
+            secretStores[_enclaveAddress].storageOccupied < 
+            (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+        ) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
             _upsert(_env, _enclaveAddress, uint64(_stake / STAKE_ADJUSTMENT_FACTOR));
         }
