@@ -94,19 +94,7 @@ struct Args {
 
 #[derive(Clone)]
 struct AppState {
-    // lock hierarchy:
-    // randomness
-    // encrypted
     randomness: [u8; 64],
-    encrypted: Arc<Mutex<String>>,
-    signer: PrivateKeySigner,
-    conditions: Conditions,
-    dkg_public_key: DkgPublicKey,
-    ritual: u32,
-    taco_nodes: HashMap<Address, SessionStaticKey>,
-    threshold: u16,
-    porter: String,
-    chain_id: u64,
 }
 
 #[tokio::main]
@@ -161,18 +149,7 @@ async fn main() -> Result<()> {
     )
     .context("failed to parse dkg public key")?;
 
-    let app_state = AppState {
-        signer,
-        randomness,
-        encrypted: Default::default(),
-        conditions: Conditions::new(&args.condition),
-        dkg_public_key,
-        ritual: args.ritual,
-        taco_nodes,
-        threshold: args.threshold,
-        porter: args.porter,
-        chain_id,
-    };
+    let app_state = AppState { randomness };
 
     let auther = Auther {
         url: args.attestation_endpoint,
