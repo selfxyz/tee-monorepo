@@ -97,7 +97,7 @@ struct AppState {
     // lock hierarchy:
     // randomness
     // encrypted
-    randomness: Arc<Mutex<[u8; 64]>>,
+    randomness: [u8; 64],
     encrypted: Arc<Mutex<String>>,
     signer: PrivateKeySigner,
     conditions: Conditions,
@@ -135,7 +135,7 @@ async fn main() -> Result<()> {
     let encrypted_randomness = fs::read(args.randomness_file)
         .await
         .context("failed to read randomness file")?;
-    let randomness: [u8; 64] = decrypt(
+    let randomness = decrypt(
         &encrypted_randomness,
         args.ritual,
         &taco_nodes,
@@ -163,7 +163,7 @@ async fn main() -> Result<()> {
 
     let app_state = AppState {
         signer,
-        randomness: Arc::new(Mutex::new(randomness)),
+        randomness,
         encrypted: Default::default(),
         conditions: Conditions::new(&args.condition),
         dkg_public_key,
