@@ -42,6 +42,7 @@ pub struct AttestationExpectations {
     // (max age, current timestamp)
     pub age: Option<(usize, usize)>,
     pub pcrs: Option<[[u8; 48]; 3]>,
+    pub user_data: Option<Vec<u8>>,
     pub root_public_key: Option<Vec<u8>>,
 }
 
@@ -104,6 +105,15 @@ pub fn verify(
 
     // return the user data
     result.user_data = parse_user_data(&mut attestation_doc)?;
+
+    // check user data if exists
+    if let Some(user_data) = expectations.user_data {
+        if result.user_data != user_data {
+            return Err(AttestationError::VerifyFailed(
+                "user data mismatch".into(),
+            ));
+        }
+    }
 
     Ok(result)
 }
