@@ -158,14 +158,6 @@ async fn main() -> Result<()> {
     // Panic safety: we simply abort on panics and eschew any handling
 
     let app_state_clone = app_state.clone();
-    let dkg_handle = spawn(run_forever(move || {
-        // what the actual fuck
-        // TODO: see if there is a better way
-        let app_state = app_state_clone.clone();
-        let listen_addr = args.dkg_listen_addr.clone();
-        async move { run_dkg_server(app_state, listen_addr).await }
-    }));
-
     let derive_handle = spawn(run_forever(move || {
         // what the actual fuck
         // TODO: see if there is a better way
@@ -178,7 +170,7 @@ async fn main() -> Result<()> {
     }));
 
     // should never exit unless through an abort on panic
-    tokio::try_join!(dkg_handle, derive_handle).expect("not supposed to ever exit");
+    tokio::try_join!(derive_handle).expect("not supposed to ever exit");
     panic!("not supposed to ever exit");
 }
 
@@ -190,21 +182,6 @@ async fn run_forever<T: FnMut() -> F, F: Future<Output = Result<()>>>(mut task: 
 
         sleep(Duration::from_secs(5)).await;
     }
-}
-
-async fn run_dkg_server(app_state: AppState, listen_addr: String) -> Result<()> {
-    let app = Router::new()
-        .route("/generate", post(generate::generate))
-        .route("/import", post(import::import))
-        .route("/export", get(export::export))
-        .with_state(app_state);
-
-    let listener = TcpListener::bind(&listen_addr)
-        .await
-        .context("failed to bind listener")?;
-
-    info!("DKG listening on {}", listen_addr);
-    axum::serve(listener, app).await.context("failed to serve")
 }
 
 async fn run_derive_server(
