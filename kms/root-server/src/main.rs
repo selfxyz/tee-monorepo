@@ -55,7 +55,7 @@ struct Args {
     rpc: String,
 
     /// Attestation endpoint
-    #[arg(long, default_value = "http://127.0.0.1:1300/attestation/raw")]
+    #[arg(long, default_value = "http://127.0.0.1:1301/attestation/raw")]
     attestation_endpoint: String,
 
     /// Path to X25519 secret file
