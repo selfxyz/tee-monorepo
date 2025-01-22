@@ -39,7 +39,7 @@
 		cp ${vtiriProxy} $out/app/vsock-to-ip-raw-incoming
 		cp ${attestationServer} $out/app/attestation-server
 		cp ${vet'} $out/app/vet
-		cp ${creator'} $out/app/creator
+		cp ${creator'} $out/app/kms-creator
 		cp ${setup} $out/app/setup.sh
 		chmod +x $out/app/*
 		cp ${supervisorConf} $out/etc/supervisord.conf
