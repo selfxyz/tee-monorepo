@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test, console} from "../../lib/forge-std/src/Test.sol";
 import {KmsRoot} from "../../src/kms/KmsRoot.sol";
 
 import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
