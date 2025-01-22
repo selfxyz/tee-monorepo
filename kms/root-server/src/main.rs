@@ -1,32 +1,18 @@
-use std::{
-    collections::HashMap,
-    future::Future,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
 use alloy::{
-    primitives::Address,
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
 };
 use anyhow::{anyhow, Context, Result};
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::get, Router};
 use clap::Parser;
-use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, SessionStaticKey};
 use oyster::axum::{ScallopListener, ScallopState};
 use scallop::{AuthStore, AuthStoreState, Auther};
 use taco::decrypt;
 use tokio::{
     fs::{self, read},
     net::TcpListener,
-    spawn,
-    time::sleep,
 };
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod derive;
@@ -157,47 +143,6 @@ async fn main() -> Result<()> {
     };
 
     info!("Derive listening on {}", args.listen_addr);
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<ScallopState<AuthStoreState>>(),
-    )
-    .await
-    .context("failed to serve")
-}
-
-async fn run_forever<T: FnMut() -> F, F: Future<Output = Result<()>>>(mut task: T) {
-    loop {
-        if let Err(e) = task().await {
-            error!("{e:?}");
-        }
-
-        sleep(Duration::from_secs(5)).await;
-    }
-}
-
-async fn run_derive_server(
-    app_state: AppState,
-    listen_addr: String,
-    auther: Auther,
-    auth_store: AuthStore,
-    secret: [u8; 32],
-) -> Result<()> {
-    let app = Router::new()
-        .route("/derive", get(derive::derive))
-        .with_state(app_state);
-
-    let tcp_listener = TcpListener::bind(&listen_addr)
-        .await
-        .context("failed to bind listener")?;
-
-    let listener = ScallopListener {
-        listener: tcp_listener,
-        secret,
-        auth_store,
-        auther,
-    };
-
-    info!("Derive listening on {}", listen_addr);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<ScallopState<AuthStoreState>>(),
