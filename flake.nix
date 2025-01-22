@@ -74,6 +74,7 @@
       kms.root-server-enclave = import ./kms/root-server-enclave {
         inherit nixpkgs systemConfig nitro-util;
         supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
         keygen = initialization.keygen.compressed;
         raw-proxy = networking.raw-proxy.compressed;
         attestation-server = attestation.server.compressed;
