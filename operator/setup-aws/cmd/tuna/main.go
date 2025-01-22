@@ -106,7 +106,7 @@ func create_ami(keyPairName string, keyStoreLocation string, profile string, reg
 
 func SetupPreRequisites(client *connect.SshClient, host string, instanceID string, profile string, region string, arch string) {
 	RunCommand(client, "sudo apt-get -y update && sudo apt-get -y upgrade")
-	RunCommand(client, "sudo apt-get -y install file")
+	RunCommand(client, "sudo apt-get -y install file build-essential")
 	RunCommand(client, "grep /boot/config-$(uname -r) -e NITRO_ENCLAVES")
 	RunCommand(client, "sudo apt-get -y install linux-modules-extra-aws")
 	RunCommand(client, "sudo apt-get -y install docker.io")
