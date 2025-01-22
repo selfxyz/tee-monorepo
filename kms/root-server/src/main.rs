@@ -40,13 +40,9 @@ struct Args {
     #[arg(long, default_value = "/app/init-params")]
     randomness_file: String,
 
-    /// DKG listening address
-    #[arg(long, default_value = "0.0.0.0:1101")]
-    dkg_listen_addr: String,
-
-    /// Derive listening address
+    /// Listening address
     #[arg(long, default_value = "0.0.0.0:1100")]
-    derive_listen_addr: String,
+    listen_addr: String,
 
     /// Path to file with private key signer
     #[arg(long, default_value = "/app/secp256k1.sec")]
@@ -79,13 +75,6 @@ struct Args {
     /// Path to X25519 secret file
     #[arg(long, default_value = "/app/x25519.sec")]
     secret_path: String,
-
-    // this could be fetched from the RPC but that then adds trust on the RPC
-    // especially for something critical like the public key against which
-    // randomness is encrypted
-    /// DKG ceremony public key
-    #[arg(long)]
-    dkg_public_key: String,
 
     /// DKG threshold
     #[arg(long)]
@@ -143,11 +132,6 @@ async fn main() -> Result<()> {
         .context("failed to read secret file")?
         .try_into()
         .map_err(|_| anyhow!("failed to parse secret file"))?;
-
-    let dkg_public_key = DkgPublicKey::from_bytes(
-        &hex::decode(args.dkg_public_key).context("failed to decode dkg public key")?,
-    )
-    .context("failed to parse dkg public key")?;
 
     let app_state = AppState { randomness };
 
