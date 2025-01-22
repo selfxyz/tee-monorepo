@@ -62,6 +62,7 @@ iptables -vL
 
 # your custom setup goes here
 /app/keygen-secp256k1 --secret /app/secp256k1.sec --public /app/secp256k1.pub
+/app/keygen-x25519 --secret /app/x25519.sec --public /app/x25519.pub
 
 # starting supervisord
 cat /etc/supervisord.conf
