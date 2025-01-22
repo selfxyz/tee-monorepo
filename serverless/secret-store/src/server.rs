@@ -126,15 +126,6 @@ async fn inject_mutable_config(
         *app_state.http_rpc_txn_manager.lock().unwrap() = Some(http_rpc_txn_manager);
         *mutable_params_injected_guard = true;
         drop(mutable_params_injected_guard);
-
-        app_state
-            .http_rpc_txn_manager
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap()
-            .run()
-            .await;
     } else {
         if let Err(err) = app_state
             .http_rpc_txn_manager
@@ -154,7 +145,7 @@ async fn inject_mutable_config(
     HttpResponse::Ok().body("Mutable params configured!\n")
 }
 
-#[post("/store-details")]
+#[get("/store-details")]
 // Endpoint exposed to retrieve secret store enclave details
 async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     let mut gas_address = Address::ZERO;
@@ -177,7 +168,7 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
     }))
 }
 
-#[post("/register-details")]
+#[get("/register-details")]
 // Endpoint exposed to retrieve the metadata required to register the secret store on the common chain
 async fn export_registration_details(app_state: Data<AppState>) -> impl Responder {
     if *app_state.immutable_params_injected.lock().unwrap() == false {

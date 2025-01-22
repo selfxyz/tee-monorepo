@@ -76,6 +76,15 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
                     event.block_number.unwrap_or(starting_block),
                     Ordering::SeqCst,
                 );
+
+                let txn_manager = app_state
+                    .http_rpc_txn_manager
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap();
+                txn_manager.run().await;
+
                 break;
             }
 

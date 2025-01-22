@@ -174,7 +174,7 @@ pub fn parse_send_error(error: String) -> JobsTxnSendError {
     return JobsTxnSendError::OtherRetryable;
 }
 
-pub async fn call_secret_store_endpoint(
+pub async fn call_secret_store_endpoint_post(
     port: u16,
     endpoint: &str,
     request_json: Value,
@@ -201,6 +201,35 @@ pub async fn call_secret_store_endpoint(
         err
     })?;
 
+    parse_response(response).await
+}
+
+pub async fn call_secret_store_endpoint_get(
+    port: u16,
+    endpoint: &str,
+) -> Result<(reqwest::StatusCode, String, Option<Value>), reqwest::Error> {
+    let client = reqwest::Client::new();
+    let req_url = "http://127.0.0.1:".to_string() + &port.to_string() + endpoint;
+
+    let response = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async { client.get(req_url.clone()).send().await },
+    )
+    .await
+    .map_err(|err| {
+        eprintln!(
+            "Failed to send the request to secret store endpoint {}: {:?}",
+            endpoint, err
+        );
+        err
+    })?;
+
+    parse_response(response).await
+}
+
+async fn parse_response(
+    response: reqwest::Response,
+) -> Result<(reqwest::StatusCode, String, Option<Value>), reqwest::Error> {
     let status_code = response.status();
 
     let mut response_body = String::new();
@@ -215,16 +244,16 @@ pub async fn call_secret_store_endpoint(
     if content_type.contains("application/json") {
         response_json = Some(response.json::<Value>().await.map_err(|err| {
             eprintln!(
-                "Failed to parse the response json from the secret store endpoint {}: {:?}",
-                endpoint, err
+                "Failed to parse the response json from the secret store response: {:?}",
+                err
             );
             err
         })?);
     } else {
         response_body = response.text().await.map_err(|err| {
             eprintln!(
-                "Failed to parse the response body from the secret store endpoint {}: {:?}",
-                endpoint, err
+                "Failed to parse the response body from the secret store response: {:?}",
+                err
             );
             err
         })?;

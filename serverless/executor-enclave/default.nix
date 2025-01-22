@@ -23,7 +23,7 @@
   attestationServer = "${attestation-server}/bin/oyster-attestation-server";
   keygenSecp256k1 = "${keygen}/bin/keygen-secp256k1";
   executor' = "${executor}/bin/oyster-serverless-executor";
-  secret-store' = "${secret-store}/bin/oyster-secret-store";
+  secretStore' = "${secret-store}/bin/oyster-secret-store";
   kernel = kernels.kernel;
   kernelConfig = kernels.kernelConfig;
   nsmKo = kernels.nsmKo;
@@ -46,7 +46,7 @@
     cp ${dnsproxy'} $out/app/dnsproxy
     cp ${keygenSecp256k1} $out/app/keygen-secp256k1
     cp ${executor'} $out/app/oyster-serverless-executor
-    cp ${secret-store'} $out/app/oyster-secret-store
+    cp ${secretStore'} $out/app/oyster-secret-store
     cp ${setup} $out/app/setup.sh
     cp ${cgroupSetup} $out/app/cgroupv2_setup.sh
     cp ${workerd} $out/app/workerd

@@ -15,7 +15,7 @@ use tokio_retry::Retry;
 use crate::constant::EXECUTION_ENV_ID;
 use crate::event_handler::events_listener;
 use crate::model::{AppState, ImmutableConfig, MutableConfig, RegistrationMessage, TeeConfig};
-use crate::utils::call_secret_store_endpoint;
+use crate::utils::{call_secret_store_endpoint_get, call_secret_store_endpoint_post};
 
 pub async fn index() {}
 
@@ -53,13 +53,13 @@ pub async fn inject_immutable_config(
         "owner_address_hex": immutable_config.owner_address_hex,
     });
 
-    let secret_store_response = call_secret_store_endpoint(
+    let secret_store_response = call_secret_store_endpoint_post(
         app_state.secret_store_config_port,
         "/immutable-config",
         request_json,
     )
     .await;
-    let Ok(_) = secret_store_response else {
+    let Ok((status_code, response_body, _)) = secret_store_response else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!(
@@ -69,6 +69,17 @@ pub async fn inject_immutable_config(
         )
             .into_response();
     };
+
+    if !status_code.is_success() {
+        return (
+            StatusCode::from_u16(status_code.as_u16()).unwrap(),
+            format!(
+                "Failed to inject immutable config into the secret store: {}\n",
+                response_body
+            ),
+        )
+            .into_response();
+    }
 
     let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
     if *immutable_params_injected_guard == true {
@@ -189,13 +200,13 @@ pub async fn inject_mutable_config(
         "ws_api_key": mutable_config.ws_api_key,
     });
 
-    let secret_store_response = call_secret_store_endpoint(
+    let secret_store_response = call_secret_store_endpoint_post(
         app_state.secret_store_config_port,
         "/mutable-config",
         request_json,
     )
     .await;
-    let Ok(secret_store_response) = secret_store_response else {
+    let Ok((status_code, response_body, _)) = secret_store_response else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!(
@@ -206,8 +217,20 @@ pub async fn inject_mutable_config(
             .into_response();
     };
 
+    if !status_code.is_success() {
+        return (
+            StatusCode::from_u16(status_code.as_u16()).unwrap(),
+            format!(
+                "Failed to inject mutable config into the secret store: {}\n",
+                response_body
+            ),
+        )
+            .into_response();
+    }
+
     // Initialize HTTP RPC client and nonce for sending the signed transactions while holding lock
     let mut mutable_params_injected_guard = app_state.mutable_params_injected.lock().unwrap();
+
     *app_state.nonce_to_send.lock().unwrap() = nonce_to_send;
     *app_state.http_rpc_client.lock().unwrap() = Some(http_rpc_client);
     let mut ws_rpc_url = app_state.ws_rpc_url.write().unwrap();
@@ -216,19 +239,9 @@ pub async fn inject_mutable_config(
     ws_rpc_url.truncate(pos + 1);
     ws_rpc_url.push_str(mutable_config.ws_api_key.as_str());
 
-    if secret_store_response.0 == reqwest::StatusCode::OK {
-        *mutable_params_injected_guard = true;
-        return (StatusCode::OK, "Mutable params configured!\n").into_response();
-    }
+    *mutable_params_injected_guard = true;
 
-    (
-        StatusCode::from_u16(secret_store_response.0.as_u16()).unwrap(),
-        format!(
-            "Failed to inject config into secret store: {}",
-            secret_store_response.1
-        ),
-    )
-        .into_response()
+    (StatusCode::OK, "Mutable params configured!\n").into_response()
 }
 
 // Endpoint exposed to retrieve executor enclave details
@@ -244,14 +257,8 @@ pub async fn get_tee_details(app_state: State<AppState>) -> Response {
             .address();
     }
 
-    let request_json = json!({});
-
-    let secret_store_response = call_secret_store_endpoint(
-        app_state.secret_store_config_port,
-        "/store-details",
-        request_json,
-    )
-    .await;
+    let secret_store_response =
+        call_secret_store_endpoint_get(app_state.secret_store_config_port, "/store-details").await;
     let Ok(secret_store_response) = secret_store_response else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -313,14 +320,9 @@ pub async fn export_signed_registration_message(app_state: State<AppState>) -> R
             .into_response();
     }
 
-    let request_json = json!({});
-
-    let secret_store_response = call_secret_store_endpoint(
-        app_state.secret_store_config_port,
-        "/register-details",
-        request_json,
-    )
-    .await;
+    let secret_store_response =
+        call_secret_store_endpoint_get(app_state.secret_store_config_port, "/register-details")
+            .await;
     let Ok(secret_store_response) = secret_store_response else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
