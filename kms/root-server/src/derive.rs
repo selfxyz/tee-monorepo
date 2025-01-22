@@ -21,10 +21,6 @@ pub async fn derive(
     ConnectInfo(scallop_state): ConnectInfo<ScallopState<AuthStoreState>>,
     State(state): State<AppState>,
 ) -> (StatusCode, [u8; 64]) {
-    let Some(randomness) = state.randomness.lock().unwrap().clone() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, [0; 64]);
-    };
-
     // safe to unwrap since the server should always have an authstore
     let (pcrs, user_data) = scallop_state.0.unwrap();
 
@@ -32,7 +28,7 @@ pub async fn derive(
         return (StatusCode::BAD_REQUEST, [0; 64]);
     }
 
-    let Ok(mut mac) = Hmac::<Sha512>::new_from_slice(&randomness) else {
+    let Ok(mut mac) = Hmac::<Sha512>::new_from_slice(&state.randomness) else {
         return (StatusCode::INTERNAL_SERVER_ERROR, [0; 64]);
     };
     mac.update(&pcrs[0]);

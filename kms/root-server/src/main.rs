@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
         auther,
     };
 
-    info!("Derive listening on {}", args.listen_addr);
+    info!("Listening on {}", args.listen_addr);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<ScallopState<AuthStoreState>>(),
