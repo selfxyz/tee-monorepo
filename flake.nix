@@ -68,6 +68,9 @@
       kms.creator = import ./kms/creator {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      kms.root-server = import ./kms/root-server {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;
       };
