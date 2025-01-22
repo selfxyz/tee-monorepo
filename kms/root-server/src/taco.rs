@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use alloy::{
     hex::ToHexExt,
-    primitives::{keccak256, Address, U256},
+    primitives::{Address, U256},
     providers::ProviderBuilder,
     signers::{local::PrivateKeySigner, SignerSync},
     sol,
@@ -11,11 +11,9 @@ use anyhow::{anyhow, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use chrono::{SecondsFormat, TimeDelta, Utc};
 use nucypher_core::{
-    encrypt_for_dkg,
-    ferveo::api::{combine_shares_simple, DecryptionShareSimple, DkgPublicKey, FerveoVariant},
-    AccessControlPolicy, Conditions, EncryptedThresholdDecryptionResponse, ProtocolObject,
-    SessionSharedSecret, SessionStaticKey, SessionStaticSecret, ThresholdDecryptionRequest,
-    ThresholdMessageKit,
+    ferveo::api::{combine_shares_simple, DecryptionShareSimple, FerveoVariant},
+    EncryptedThresholdDecryptionResponse, ProtocolObject, SessionSharedSecret, SessionStaticKey,
+    SessionStaticSecret, ThresholdDecryptionRequest, ThresholdMessageKit,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use reqwest::{Client, StatusCode};
