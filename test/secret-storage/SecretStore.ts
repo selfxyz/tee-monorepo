@@ -1,8 +1,8 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Pond, SecretManager, SecretManagerMock, SecretStore, TeeManager, TeeManagerMock, USDCoin } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, SecretManagerMock, SecretStore, TeeManager, TeeManagerMock, USDCoin } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -963,17 +963,31 @@ describe("SecretStore - Select/Release", function () {
     });
 
     it("can release secret store", async function () {
-        await secretManager.selectStores(1, 1, 100);
+        let secretSize = 100;
+        await secretManager.selectStores(1, 1, secretSize);
 
-        await expect(secretManager.releaseStore(addrs[15], 100))
+        await expect(secretManager.releaseStore(addrs[15], secretSize))
             .to.be.not.reverted;
 
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
 
+        // case 2: occupying the entire storage to remove the node from tree. On release, node is added back to the tree.
+        secretSize = 1e9;
+        await secretManager.selectStores(1, 1, secretSize);
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.false;
+
+        await expect(secretManager.releaseStore(addrs[15], secretSize))
+            .to.be.not.reverted;
+
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
+        expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.true;
+
+
         // case 2: release store post draining
-        await secretManager.selectStores(1, 1, 100);
+        secretSize = 100;
+        await secretManager.selectStores(1, 1, secretSize);
         await teeManager.drainTeeNode(addrs[15]);
-        await expect(secretManager.releaseStore(addrs[15], 100))
+        await expect(secretManager.releaseStore(addrs[15], secretSize))
             .to.be.not.reverted;
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.be.eq(0);
     });
@@ -1141,13 +1155,29 @@ describe("SecretStore - Other only secret manager functions", function () {
         let currentCheckTimestamp = BigInt(await time.latest()),
             markAliveTimeout = 500n,
             recipient = addrs[2];
-        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, markAliveTimeout, storageOccupied, recipient))
-            .to.emit(teeManager, "TeeManagerMockStoreSlashed")
-            .withArgs(addrs[15], 2, recipient);
+        await expect(
+            secretManager.markDeadUpdate(
+                addrs[15],
+                currentCheckTimestamp,
+                markAliveTimeout,
+                storageOccupied,
+                recipient
+            )
+        ).to.emit(teeManager, "TeeManagerMockStoreSlashed")
+        .withArgs(addrs[15], 2, recipient);
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
         expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(0);
+
+        // can mark alive after dead, for the lastest epoch
+        await time.increase(510); // 1 epoch passed
+        currentCheckTimestamp = BigInt(await time.latest());
+        await expect(secretManager.markAliveUpdate(addrs[15], currentCheckTimestamp, markAliveTimeout, recipient))
+            .to.emit(teeManager, "TeeManagerMockStoreSlashed")
+            .withArgs(addrs[15], 1, recipient);
+
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
     });
 
     it("cannot do mark dead updates without SecretManager contract", async function () {

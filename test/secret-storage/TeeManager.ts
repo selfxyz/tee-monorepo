@@ -1,8 +1,29 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
+import {
+    BytesLike,
+    Signer,
+    Wallet,
+    ZeroAddress,
+    ZeroHash,
+    keccak256,
+    parseUnits,
+    solidityPacked
+} from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, ExecutorsMock, Jobs, Pond, SecretManager, SecretManagerMock, SecretStore, SecretStoreMock, TeeManager, USDCoin } from "../../typechain-types";
+import {
+    AttestationAutherUpgradeable,
+    AttestationVerifier,
+    Executors,
+    ExecutorsMock,
+    Jobs,
+    Pond,
+    SecretManager,
+    SecretStore,
+    SecretStoreMock,
+    TeeManager,
+    USDCoin
+} from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
