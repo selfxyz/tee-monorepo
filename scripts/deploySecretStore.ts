@@ -135,6 +135,8 @@ async function main() {
     console.log("jobs.setExecutors done");
     await jobs.setSecretStore(secretStore.target);
     console.log("jobs.setSecretStore done");
+    await jobs.setTeeManager(teeManager.target);
+    console.log("jobs.setTeeManager done");
 
     let env = 1,
         executionFeePerMs = 1,
