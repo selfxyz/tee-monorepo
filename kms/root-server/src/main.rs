@@ -141,23 +141,28 @@ async fn main() -> Result<()> {
 
     let auth_store = AuthStore {};
 
-    // Panic safety: we simply abort on panics and eschew any handling
+    let app = Router::new()
+        .route("/derive", get(derive::derive))
+        .with_state(app_state);
 
-    let app_state_clone = app_state.clone();
-    let derive_handle = spawn(run_forever(move || {
-        // what the actual fuck
-        // TODO: see if there is a better way
-        let app_state = app_state.clone();
-        let listen_addr = args.derive_listen_addr.clone();
-        let auther = auther.clone();
-        let auth_store = auth_store.clone();
-        let secret = secret.clone();
-        async move { run_derive_server(app_state, listen_addr, auther, auth_store, secret).await }
-    }));
+    let tcp_listener = TcpListener::bind(&args.listen_addr)
+        .await
+        .context("failed to bind listener")?;
 
-    // should never exit unless through an abort on panic
-    tokio::try_join!(derive_handle).expect("not supposed to ever exit");
-    panic!("not supposed to ever exit");
+    let listener = ScallopListener {
+        listener: tcp_listener,
+        secret,
+        auth_store,
+        auther,
+    };
+
+    info!("Derive listening on {}", args.listen_addr);
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<ScallopState<AuthStoreState>>(),
+    )
+    .await
+    .context("failed to serve")
 }
 
 async fn run_forever<T: FnMut() -> F, F: Future<Output = Result<()>>>(mut task: T) {
