@@ -75,7 +75,7 @@ enum Commands {
         #[arg(long, required = true)]
         wallet_private_key: String,
 
-        /// Optional operator address
+        /// Operator address
         #[arg(long, required = true)]
         operator: String,
 
