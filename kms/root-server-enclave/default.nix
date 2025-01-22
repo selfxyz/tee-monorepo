@@ -3,6 +3,7 @@
   systemConfig,
   nitro-util,
   supervisord,
+  dnsproxy,
   keygen,
   raw-proxy,
   attestation-server,
@@ -15,6 +16,7 @@
   eifArch = systemConfig.eif_arch;
   pkgs = nixpkgs.legacyPackages."${system}";
   supervisord' = "${supervisord}/bin/supervisord";
+  dnsproxy' = "${dnsproxy}/bin/dnsproxy";
   keygenSecp256k1 = "${keygen}/bin/keygen-secp256k1";
   keygenX25519 = "${keygen}/bin/keygen-x25519";
   itvroProxy = "${raw-proxy}/bin/ip-to-vsock-raw-outgoing";
@@ -40,6 +42,7 @@
 		cp ${itvroProxy} $out/app/ip-to-vsock-raw-outgoing
 		cp ${vtiriProxy} $out/app/vsock-to-ip-raw-incoming
 		cp ${attestationServer} $out/app/attestation-server
+		cp ${dnsproxy'} $out/app/dnsproxy
 		cp ${vet'} $out/app/vet
 		cp ${rootServer'} $out/app/kms-root-server
 		cp ${setup} $out/app/setup.sh
@@ -66,7 +69,7 @@ in {
     env = "";
     copyToRoot = pkgs.buildEnv {
       name = "image-root";
-      paths = [app pkgs.busybox pkgs.nettools pkgs.iproute2 pkgs.iptables-legacy pkgs.ipset];
+      paths = [app pkgs.busybox pkgs.nettools pkgs.iproute2 pkgs.iptables-legacy pkgs.ipset pkgs.cacert];
       pathsToLink = ["/bin" "/app" "/etc"];
     };
   };
