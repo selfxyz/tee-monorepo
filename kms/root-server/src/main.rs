@@ -19,7 +19,13 @@ use clap::Parser;
 use nucypher_core::{ferveo::api::DkgPublicKey, Conditions, SessionStaticKey};
 use oyster::axum::{ScallopListener, ScallopState};
 use scallop::{AuthStore, AuthStoreState, Auther};
-use tokio::{fs::read, net::TcpListener, spawn, time::sleep};
+use taco::decrypt;
+use tokio::{
+    fs::{self, read},
+    net::TcpListener,
+    spawn,
+    time::sleep,
+};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -30,6 +36,10 @@ mod taco;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Path to encrypted randomness file
+    #[arg(long, default_value = "/app/init-params")]
+    randomness_file: String,
+
     /// DKG listening address
     #[arg(long, default_value = "0.0.0.0:1101")]
     dkg_listen_addr: String,
@@ -87,7 +97,7 @@ struct AppState {
     // lock hierarchy:
     // randomness
     // encrypted
-    randomness: Arc<Mutex<Option<[u8; 64]>>>,
+    randomness: Arc<Mutex<[u8; 64]>>,
     encrypted: Arc<Mutex<String>>,
     signer: PrivateKeySigner,
     conditions: Conditions,
@@ -105,6 +115,10 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    let taco_nodes = taco::get_taco_nodes(&args)
+        .await
+        .context("failed to fetch taco nodes")?;
+
     let signer = PrivateKeySigner::from_slice(
         &read(&args.signer)
             .await
@@ -112,15 +126,29 @@ async fn main() -> Result<()> {
     )
     .context("failed to create signer")?;
 
-    let taco_nodes = taco::get_taco_nodes(&args)
-        .await
-        .context("failed to fetch taco nodes")?;
-
     let chain_id = ProviderBuilder::new()
         .on_http(args.rpc.parse().context("failed to parse rpc url")?)
         .get_chain_id()
         .await
         .context("failed to get chain id")?;
+
+    let encrypted_randomness = fs::read(args.randomness_file)
+        .await
+        .context("failed to read randomness file")?;
+    let randomness: [u8; 64] = decrypt(
+        &encrypted_randomness,
+        args.ritual,
+        &taco_nodes,
+        args.threshold,
+        &args.porter,
+        &signer,
+        chain_id,
+    )
+    .await
+    .context("failed to decrypt randomness")?
+    .as_ref()
+    .try_into()
+    .context("randomness is not the right size")?;
 
     let secret: [u8; 32] = read(args.secret_path)
         .await
@@ -135,7 +163,7 @@ async fn main() -> Result<()> {
 
     let app_state = AppState {
         signer,
-        randomness: Default::default(),
+        randomness: Arc::new(Mutex::new(randomness)),
         encrypted: Default::default(),
         conditions: Conditions::new(&args.condition),
         dkg_public_key,
