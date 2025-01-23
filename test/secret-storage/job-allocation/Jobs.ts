@@ -2,7 +2,18 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, USDCoin, JobsUser, SecretStore, TeeManager, SecretManager } from "../../../typechain-types";
+import {
+    AttestationAutherUpgradeable,
+    AttestationVerifier,
+    Executors,
+    Jobs,
+    Pond,
+    USDCoin,
+    JobsUser,
+    SecretStore,
+    TeeManager,
+    SecretManager
+} from "../../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../../utils/testSuite";
 import { testERC165 } from '../../helpers/erc165';
 
@@ -498,8 +509,9 @@ describe("Jobs - Global Execution Env", function () {
                 timestamp - 540000
             );
 
-            let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
-                wallets[10 + index]);
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[10 + index]
+            );
 
             await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
@@ -536,8 +548,9 @@ describe("Jobs - Global Execution Env", function () {
                 timestamp - 540000
             );
 
-            let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
-                wallets[12 + index]);
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[12 + index]
+            );
 
             await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
@@ -754,8 +767,9 @@ describe("Jobs - Create", function () {
                 timestamp - 540000
             );
 
-            let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
-                wallets[17 + index]);
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[17 + index]
+            );
 
             await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
@@ -1689,8 +1703,9 @@ describe("Jobs - Slashing", function () {
                 timestamp - 540000
             );
 
-            let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
-                wallets[17 + index]);
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[17 + index]
+            );
 
             await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
@@ -2144,7 +2159,9 @@ async function createOutputSignature(
 }
 
 function walletForIndex(idx: number): Wallet {
-    let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
+    let wallet = ethers.HDNodeWallet.fromPhrase(
+        "test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString()
+    );
 
     return new Wallet(wallet.privateKey);
 }

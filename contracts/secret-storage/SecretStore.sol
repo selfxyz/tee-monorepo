@@ -395,7 +395,10 @@ contract SecretStore is
             selectedEnclaves[index] = selectedEnclave;
 
             // TODO: need to have some buffer space for each enclave
-            if (secretStores[enclaveAddress].storageOccupied >= (secretStores[enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE()))
+            if (
+                secretStores[enclaveAddress].storageOccupied >= 
+                (secretStores[enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+            )
                 _deleteIfPresent(_env, enclaveAddress);
         }
         return selectedEnclaves;

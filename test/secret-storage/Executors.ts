@@ -1,8 +1,8 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, ZeroHash, keccak256, parseUnits, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, TeeManagerMock } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, TeeManagerMock } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -732,7 +732,8 @@ describe("Executors - Drain/Revive executor", function () {
 
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
         // remaining stake = 10 POND - 9 POND = 1 POND
-        expect(await executors.getNodeValue(env, addrs[15])).to.eq((10n ** 18n) / await executors.STAKE_ADJUSTMENT_FACTOR());
+        expect(await executors.getNodeValue(env, addrs[15]))
+            .to.eq((10n ** 18n) / await executors.STAKE_ADJUSTMENT_FACTOR());
     });
 
     it("can revive secret store with max job capacity reached", async function () {
@@ -1022,7 +1023,8 @@ describe("Executors - Reputation and other functions", function () {
     it("can upsert node in tree", async function () {
         await expect(teeManager.updateTreeState(addrs[15])).to.be.not.reverted;
         expect(await executors.isNodePresentInTree(1, addrs[15])).to.be.true;
-        expect(await executors.getNodeValue(1, addrs[15])).to.eq((10n ** 19n) / await executors.STAKE_ADJUSTMENT_FACTOR());
+        expect(await executors.getNodeValue(1, addrs[15]))
+            .to.eq((10n ** 19n) / await executors.STAKE_ADJUSTMENT_FACTOR());
     });
 
     it("cannot upsert node in tree without TeeManager contract", async function () {
@@ -1196,7 +1198,9 @@ async function createRelayJobSignature(
 }
 
 function walletForIndex(idx: number): Wallet {
-    let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
+    let wallet = ethers.HDNodeWallet.fromPhrase(
+        "test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString()
+    );
 
     return new Wallet(wallet.privateKey);
 }

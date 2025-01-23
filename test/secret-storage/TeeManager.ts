@@ -423,7 +423,8 @@ describe("TeeManager - Whitelist/Revoke enclave images and other setter function
 
     it("can whitelist enclave image with admin account", async function () {
         await expect(teeManager.connect(signers[0]).whitelistEnclaveImage(image1.PCR0, image1.PCR1, image1.PCR2))
-            .to.emit(teeManager, "EnclaveImageWhitelisted").withArgs(getImageId(image1), image1.PCR0, image1.PCR1, image1.PCR2);
+            .to.emit(teeManager, "EnclaveImageWhitelisted")
+            .withArgs(getImageId(image1), image1.PCR0, image1.PCR1, image1.PCR2);
 
         const { PCR0, PCR1, PCR2 } = await teeManager.getWhitelistedImage(getImageId(image1));
         expect({ PCR0, PCR1, PCR2 }).to.deep.equal(image1);
@@ -1576,7 +1577,8 @@ describe("TeeManager - Drain/Revive secret store", function () {
             missedEpochs = 1n,
             slashMaxBips = 10n ** 6n,
             slashPercentInBips = 10n ** 2n;
-        const remainingStakeAmount = stakeAmount * ((slashMaxBips - slashPercentInBips) ** missedEpochs) / (slashMaxBips ** missedEpochs);
+        const remainingStakeAmount = stakeAmount * ((slashMaxBips - slashPercentInBips) ** missedEpochs) / 
+            (slashMaxBips ** missedEpochs);
         const slashedAmount = stakeAmount - remainingStakeAmount;
 
         expect(await stakingToken.balanceOf(addrs[2])).to.eq(slashedAmount);
@@ -1771,7 +1773,8 @@ describe("TeeManager - Slash Store/Executor", function () {
         await expect(teeManager.slashStore(addrs[15], missedEpochs, addrs[2]))
             .to.be.not.reverted;
 
-        const remainingStakeAmount = stakeAmount * ((slashMaxBips - slashPercentInBips) ** missedEpochs) / (slashMaxBips ** missedEpochs);
+        const remainingStakeAmount = stakeAmount * ((slashMaxBips - slashPercentInBips) ** missedEpochs) / 
+            (slashMaxBips ** missedEpochs);
         const slashedAmount = stakeAmount - remainingStakeAmount;
 
         let teeNode = await teeManager.teeNodes(addrs[15]);
@@ -1887,7 +1890,9 @@ describe("TeeManager - Update tree state functions", function () {
             storageCapacity = 1e9,
             env = 1,
             stakeAmount = 0;
-        let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[15]);
+        let signedDigest = await registerTeeNodeSignature(
+            addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[15]
+        );
 
         await teeManager.connect(signers[1]).registerTeeNode(
             attestationSign,
@@ -2058,7 +2063,9 @@ async function createAcknowledgeSignature(
 }
 
 function walletForIndex(idx: number): Wallet {
-    let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
+    let wallet = ethers.HDNodeWallet.fromPhrase(
+        "test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString()
+    );
 
     return new Wallet(wallet.privateKey);
 }

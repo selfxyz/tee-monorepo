@@ -2,7 +2,16 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, SecretManagerMock, SecretStore, TeeManager, TeeManagerMock, USDCoin } from "../../typechain-types";
+import {
+    AttestationAutherUpgradeable,
+    AttestationVerifier,
+    Executors,
+    SecretManagerMock,
+    SecretStore,
+    TeeManager,
+    TeeManagerMock,
+    USDCoin 
+} from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -812,8 +821,10 @@ describe("SecretStore - Drain/Revive secret store", function () {
         await tx.wait();
         await expect(tx)
             .to.be.not.reverted;
-        expect(await secretStore.getNodeValue(env, addrs[15])).to.eq(stakeAmount / await secretStore.STAKE_ADJUSTMENT_FACTOR());
-        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(await (await tx.getBlock())?.timestamp)
+        expect(await secretStore.getNodeValue(env, addrs[15]))
+            .to.eq(stakeAmount / await secretStore.STAKE_ADJUSTMENT_FACTOR());
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15]))
+            .to.eq(await (await tx.getBlock())?.timestamp)
 
         // case when max storage capacity is exceeded
         await secretManager.selectStores(env, 1, 1e10);
@@ -823,7 +834,8 @@ describe("SecretStore - Drain/Revive secret store", function () {
         await expect(tx)
             .to.be.not.reverted;
         expect(await secretStore.isNodePresentInTree(env, addrs[15])).to.be.false;
-        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15])).to.eq(await (await tx.getBlock())?.timestamp)
+        expect(await secretStore.getSecretStoreLastAliveTimestamp(addrs[15]))
+            .to.eq(await (await tx.getBlock())?.timestamp)
     });
 
     it("cannot revive secret store without tee manager contract", async function () {
@@ -983,7 +995,7 @@ describe("SecretStore - Select/Release", function () {
         expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.true;
 
 
-        // case 2: release store post draining
+        // case 3: release store post draining
         secretSize = 100;
         await secretManager.selectStores(1, 1, secretSize);
         await teeManager.drainTeeNode(addrs[15]);
@@ -1137,8 +1149,10 @@ describe("SecretStore - Other only secret manager functions", function () {
         // can mark dead again after some delay, to relase the remaining 50 units of storage
         await time.increase(100);
         currentCheckTimestamp = await time.latest();
-        await expect(secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, storageOccupied, addrs[2]))
-            .to.not.be.reverted;
+        tx = await secretManager.markDeadUpdate(addrs[15], currentCheckTimestamp, 500, storageOccupied, addrs[2]);
+        await tx.wait();
+        await expect(tx).to.not.be.reverted;
+        await expect(tx).to.not.emit(teeManager, "TeeManagerMockStoreSlashed");
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
@@ -1165,6 +1179,26 @@ describe("SecretStore - Other only secret manager functions", function () {
             )
         ).to.emit(teeManager, "TeeManagerMockStoreSlashed")
         .withArgs(addrs[15], 2, recipient);
+
+        expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
+        expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
+        expect((await secretStore.secretStores(addrs[15])).storageOccupied).to.eq(0);
+
+        // can mark dead after dead with slashing
+        await secretManager.selectStores(1, 1, storageOccupied);
+
+        await time.increase(510);  // 1 epoch passed
+        currentCheckTimestamp = BigInt(await time.latest());
+        await expect(
+            secretManager.markDeadUpdate(
+                addrs[15],
+                currentCheckTimestamp,
+                markAliveTimeout,
+                storageOccupied,
+                recipient
+            )
+        ).to.emit(teeManager, "TeeManagerMockStoreSlashed")
+        .withArgs(addrs[15], 1, recipient);
 
         expect(await secretStore.getSecretStoreDeadTimestamp(addrs[15])).to.eq(currentCheckTimestamp);
         expect(await secretStore.getStoreAckSecretIds(addrs[15])).to.deep.eq([]);
@@ -1232,7 +1266,8 @@ describe("SecretStore - Other only secret manager functions", function () {
     it("can upsert node in tree", async function () {
         await expect(teeManager.updateTreeState(addrs[15])).to.be.not.reverted;
         expect(await secretStore.isNodePresentInTree(1, addrs[15])).to.be.true;
-        expect(await secretStore.getNodeValue(1, addrs[15])).to.eq((10n ** 19n) / await secretStore.STAKE_ADJUSTMENT_FACTOR());
+        expect(await secretStore.getNodeValue(1, addrs[15]))
+            .to.eq((10n ** 19n) / await secretStore.STAKE_ADJUSTMENT_FACTOR());
     });
 
     it("cannot upsert node in tree without TeeManager contract", async function () {
@@ -1333,7 +1368,9 @@ async function createSecretStoreSignature(
 }
 
 function walletForIndex(idx: number): Wallet {
-    let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
+    let wallet = ethers.HDNodeWallet.fromPhrase(
+        "test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString()
+    );
 
     return new Wallet(wallet.privateKey);
 }

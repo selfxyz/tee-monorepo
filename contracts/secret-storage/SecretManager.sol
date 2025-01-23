@@ -779,7 +779,7 @@ contract SecretManager is
     function _terminateSecret(
         uint256 _secretId
     ) internal {
-        if(block.timestamp > userStorage[_secretId].endTimestamp)
+        if(block.timestamp >= userStorage[_secretId].endTimestamp)
             revert SecretManagerAlreadyTerminated();
 
         userStorage[_secretId].endTimestamp = block.timestamp;
