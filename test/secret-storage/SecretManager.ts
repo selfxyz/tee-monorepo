@@ -795,8 +795,11 @@ describe("SecretManager - Acknowledge secret", function () {
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
     it("can acknowledge secret", async function () {
-        let secretId = 1,
-            signTimestamp = await time.latest() - 540,
+        let secretId = 1;
+        expect(await secretManager.getCurrentConfirmedUsdcDeposit(secretId))
+            .to.eq((await secretManager.userStorage(secretId)).usdcDeposit);
+
+        let signTimestamp = await time.latest() - 540,
             signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17]);
 
         await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
@@ -814,6 +817,48 @@ describe("SecretManager - Acknowledge secret", function () {
             signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17]);
         await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
             .to.be.revertedWithCustomError(secretManager, "SecretManagerCantAckWhileDraining")
+    });
+
+    it("cannot acknowledge secret with non-selected store", async function () {
+        // Registering a new node
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest();
+        let jobCapacity = 20,
+            storageCapacity = 1e9,
+            env = 1,
+            stakeAmount = parseUnits("10");	// 10 POND
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[16],
+            image2,
+            wallets[14],
+            timestamp
+        );
+
+        let signedDigest = await registerTeeNodeSignature(
+            addrs[1],
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            wallets[16]
+        );
+
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+        
+        // trying to ack secret with non-selected node
+        let secretId = 1;
+        signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[16]);
+        await expect(secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerEnclaveNotFound")
     });
 
     it("cannot acknowledge secret after secret is terminated", async function () {
@@ -936,7 +981,7 @@ describe("SecretManager - Acknowledge secret", function () {
             .to.be.revertedWithCustomError(secretManager, "SecretManagerAcknowledgedAlready");
     });
 
-    it("cannot mark acknowledgement failed if secret has been already acknowledged", async function () {
+    it("can mark acknowledgement failed if all the selected stores haven't ack the secret", async function () {
         let secretId = 1,
             signTimestamp = await time.latest(),
             signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17]);
@@ -2448,6 +2493,8 @@ describe("SecretManager - Other functions", function () {
         // it should only return the selected stores that can accept more jobs
         const selectedStores = await secretManager.verifyUserAndGetSelectedStores(1, addrs[0]);
         expect(selectedStores.length).to.eq(2);
+        expect(selectedStores).to.include.members([addrs[18], addrs[19]]);
+        expect(selectedStores).to.not.include.members([addrs[17]]);
     });
 
     it('can verify user and get selected stores, after marking dead and replacing a store', async function () {
@@ -2458,6 +2505,8 @@ describe("SecretManager - Other functions", function () {
         // it will only return the selected stores that have ack the secret
         const selectedStores = await secretManager.verifyUserAndGetSelectedStores(1, addrs[0]);
         expect(selectedStores.length).to.eq(2);
+        expect(selectedStores).to.include.members([addrs[18], addrs[19]]);
+        expect(selectedStores).to.not.include.members([addrs[17]]);
     });
 });
 

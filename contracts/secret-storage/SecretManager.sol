@@ -894,10 +894,7 @@ contract SecretManager is
             if(!userStorage[_secretId].selectedEnclaves[index].hasAcknowledgedStore)
                 continue;
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
-            uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
-            uint256 endTimestamp = userStorage[_secretId].endTimestamp;
-            if(lastAliveTimestamp < endTimestamp)
-                endTimestamp = lastAliveTimestamp;
+            uint256 endTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
 
             uint256 ackTimestamp;
             if(_isReplacedStore(_secretId, index))
