@@ -1,12 +1,8 @@
-use axum::{
-    extract::{ConnectInfo, State},
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode};
 use hmac::{Hmac, Mac};
-use oyster::axum::ScallopState;
 use sha2::Sha512;
 
-use crate::{scallop::AuthStoreState, AppState};
+use crate::AppState;
 
 // derivation format:
 // 1 byte
@@ -17,10 +13,7 @@ use crate::{scallop::AuthStoreState, AppState};
 // the PCRs of the current version are the version
 
 // derive keys after verifying attestations
-pub async fn derive(
-    ConnectInfo(scallop_state): ConnectInfo<ScallopState<AuthStoreState>>,
-    State(state): State<AppState>,
-) -> (StatusCode, [u8; 64]) {
+pub async fn derive(State(state): State<AppState>) -> (StatusCode, [u8; 64]) {
     // safe to unwrap since the server should always have an authstore
     let (pcrs, user_data) = scallop_state.0.unwrap();
 
