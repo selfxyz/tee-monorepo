@@ -136,7 +136,7 @@ async fn main() -> Result<()> {
     };
 
     let app = Router::new()
-        .route("/generate", post(generate))
+        .route("/generate", get(generate))
         .with_state(app_state);
 
     let listener = TcpListener::bind(&args.listen_addr)
