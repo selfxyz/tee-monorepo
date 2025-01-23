@@ -1186,6 +1186,7 @@ dependencies = [
  "clap",
  "hex",
  "hmac",
+ "hyper",
  "hyper-util",
  "oyster-sdk",
  "reqwest",

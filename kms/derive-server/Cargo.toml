@@ -9,6 +9,7 @@ axum = "0.8.1"
 clap = { version = "4.5.27", features = ["derive"] }
 hex = "0.4.3"
 hmac = "0.12.1"
+hyper = { version = "1.5.2", features = ["full"] }
 hyper-util = { version = "0.1.10", features = ["tokio"] }
 oyster-sdk = "0.14.3"
 reqwest = "0.12.12"
