@@ -1188,6 +1188,7 @@ dependencies = [
  "hmac",
  "oyster-sdk",
  "reqwest",
+ "serde",
  "sha2",
  "tokio",
  "tracing",
