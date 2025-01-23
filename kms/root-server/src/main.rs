@@ -34,10 +34,6 @@ struct Args {
     #[arg(long, default_value = "/app/secp256k1.sec")]
     signer: String,
 
-    /// Condition string for the key
-    #[arg(long)]
-    condition: String,
-
     /// Porter URI
     #[arg(long)]
     porter: String,
