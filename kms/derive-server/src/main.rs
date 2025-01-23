@@ -19,7 +19,7 @@ struct Args {
     kms_endpoint: String,
 
     /// Listening address
-    #[arg(long, default_value = "0.0.0.0:1100")]
+    #[arg(long, default_value = "127.0.0.1:1100")]
     listen_addr: String,
 
     /// Attestation endpoint
