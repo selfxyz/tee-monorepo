@@ -1175,6 +1175,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "hex",
  "oyster-sdk",
  "reqwest",
  "tokio",
