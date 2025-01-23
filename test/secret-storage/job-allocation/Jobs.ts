@@ -9,7 +9,7 @@ import {
     Jobs,
     Pond,
     USDCoin,
-    JobsUser,
+    SecretJobsUser,
     SecretStore,
     TeeManager,
     SecretManager
@@ -1368,8 +1368,8 @@ describe("Jobs - Output", function () {
 
     it("verify job result callback", async function () {
         // deploy job user
-        const JobsUser = await ethers.getContractFactory("JobsUser");
-        let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
+        const SecretJobsUser = await ethers.getContractFactory("SecretJobsUser");
+        let jobsUser = await SecretJobsUser.deploy(jobs.target, usdc_token.target) as unknown as SecretJobsUser;
         let env = 1,
             secretId = 1,
             codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
@@ -1957,8 +1957,8 @@ describe("Jobs - Slashing", function () {
 
     it("verify job failed callback", async function () {
         // deploy job user
-        const JobsUser = await ethers.getContractFactory("JobsUser");
-        let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
+        const SecretJobsUser = await ethers.getContractFactory("SecretJobsUser");
+        let jobsUser = await SecretJobsUser.deploy(jobs.target, usdc_token.target) as unknown as SecretJobsUser;
         let env = 1,
             secretId = 1,
             codeHash = keccak256(solidityPacked(["string"], ["codehash"])),

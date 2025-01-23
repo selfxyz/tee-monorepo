@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract JobsUser {
+contract SecretJobsUser {
     using SafeERC20 for IERC20;
 
     address public jobs;
@@ -23,6 +23,7 @@ contract JobsUser {
 
     function createJob(
         uint8 _env,
+        uint256 _secretId,
         bytes32 _codehash,
         bytes memory _codeInputs,
         uint256 _userTimeout,
@@ -32,8 +33,9 @@ contract JobsUser {
 
         (bool _success, ) = jobs.call(
             abi.encodeWithSignature(
-                "createJob(uint8,bytes32,bytes,uint256)",
+                "createJob(uint8,uint256,bytes32,bytes,uint256)",
                 _env,
+                _secretId,
                 _codehash,
                 _codeInputs,
                 _userTimeout
