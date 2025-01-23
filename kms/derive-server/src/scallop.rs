@@ -9,13 +9,13 @@ use oyster::{
     scallop::{Key, ScallopAuthStore, ScallopAuther},
 };
 
-#[derive(Clone, Default)]
-pub struct AuthStore {}
-
-pub type AuthStoreState = ([[u8; 48]; 3], Box<[u8]>);
+#[derive(Clone)]
+pub struct AuthStore {
+    pub state: ([[u8; 48]; 3], Box<[u8]>),
+}
 
 impl ScallopAuthStore for AuthStore {
-    type State = AuthStoreState;
+    type State = ();
 
     fn verify(&mut self, attestation: &[u8], _key: Key) -> Option<Self::State> {
         let Ok(now) = SystemTime::now()
@@ -25,20 +25,21 @@ impl ScallopAuthStore for AuthStore {
             return None;
         };
 
-        let Ok(decoded) = attestation::verify(
+        let Ok(_) = attestation::verify(
             attestation.to_vec(),
             AttestationExpectations {
                 // TODO: hardcoded, make it a param
                 age: Some((300000, now)),
                 root_public_key: Some(AWS_ROOT_KEY.to_vec()),
-                // do not care about PCRs, will derive different keys for each set
+                pcrs: Some(self.state.0),
+                user_data: Some(self.state.1.to_vec()),
                 ..Default::default()
             },
         ) else {
             return None;
         };
 
-        return Some((decoded.pcrs, decoded.user_data.into_boxed_slice()));
+        return Some(());
     }
 }
 

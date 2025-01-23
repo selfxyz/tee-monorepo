@@ -82,7 +82,9 @@ async fn main() -> Result<()> {
         .context("failed to decode pcr2")?
         .into_boxed_slice();
 
-    let auth_store = AuthStore {};
+    let auth_store = AuthStore {
+        state: ([pcr0, pcr1, pcr2], user_data),
+    };
 
     let app_state = AppState { randomness };
 
