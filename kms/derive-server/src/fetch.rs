@@ -41,6 +41,7 @@ pub async fn fetch_randomness(
 
     let request = Request::builder()
         .method("GET")
+        .uri("/derive")
         .body("".to_string())
         .context("failed to build request")?;
     let response = request_sender
