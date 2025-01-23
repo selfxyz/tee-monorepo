@@ -17,7 +17,7 @@ use crate::AppState;
 // the PCRs of the current version are the version
 
 #[derive(Deserialize)]
-struct Params {
+pub struct Params {
     path: String,
 }
 

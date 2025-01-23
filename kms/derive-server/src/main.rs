@@ -78,8 +78,8 @@ async fn main() -> Result<()> {
         .context("failed to decode pcr2")?
         .try_into()
         .map_err(|_| anyhow!("incorrect pcr2 size"))?;
-    let user_data = hex::decode(args.pcr2)
-        .context("failed to decode pcr2")?
+    let user_data = hex::decode(args.user_data)
+        .context("failed to decode user data")?
         .into_boxed_slice();
 
     let auth_store = AuthStore {
