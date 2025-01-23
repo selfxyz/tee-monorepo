@@ -302,6 +302,11 @@ async fn noise_read(
     // read noise message length
     let len = stream.read_u16().await? as usize;
 
+    // check if buffer is big enough
+    if len > src.len() {
+        return Err(ScallopError::ProtocolError("message too big".into()));
+    }
+
     // read handshake message
     stream.read_exact(&mut src[0..len]).await?;
 
