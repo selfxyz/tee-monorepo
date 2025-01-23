@@ -351,8 +351,8 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // will not respond to auth requests if None
     auther: Option<impl ScallopAuther>,
 ) -> Result<ScallopStream<Base, AS::State>, ScallopError> {
-    let mut buf = [0u8; 1024];
-    let mut noise_buf = [0u8; 1024];
+    let mut buf = vec![0u8; 65000].into_boxed_slice();
+    let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
 
     let prologue = b"NoiseSocketInit1\x00\x00";
 
@@ -484,10 +484,6 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
         }
 
-        // new heap allocated buffers
-        let mut buf = vec![0u8; 65000].into_boxed_slice();
-        let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
-
         send_CLIENTFIN(
             &mut noise,
             &mut stream,
@@ -520,10 +516,6 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // payload
 
     if should_ask_auth {
-        // new heap allocated buffers
-        let mut buf = vec![0u8; 65000].into_boxed_slice();
-        let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
-
         // read and handle handshake message
         let len = noise_read(&mut noise, &mut stream, &mut buf, &mut noise_buf).await?;
 
@@ -586,8 +578,8 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // will not respond to auth requests if None
     auther: Option<impl ScallopAuther>,
 ) -> Result<ScallopStream<Base, AS::State>, ScallopError> {
-    let mut buf = [0u8; 1024];
-    let mut noise_buf = [0u8; 1024];
+    let mut buf = vec![0u8; 65000].into_boxed_slice();
+    let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
 
     let prologue = b"NoiseSocketInit1\x00\x00";
 
@@ -748,10 +740,6 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         if payload.len() > 60000 {
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
         }
-
-        // new heap allocated buffers
-        let mut buf = vec![0u8; 65000].into_boxed_slice();
-        let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
 
         // safe to cast since range has been checked above
         noise_buf[0..2].copy_from_slice(&(payload.len() as u16).to_be_bytes());
