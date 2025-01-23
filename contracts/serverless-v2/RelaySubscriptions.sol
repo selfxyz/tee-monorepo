@@ -36,11 +36,19 @@ contract RelaySubscriptions is
      * @param _relay The Relay contract.
      */
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor(Relay _relay) {
+    constructor(
+        Relay _relay,
+        uint256 _minPeriodicGap,
+        uint256 _maxPeriodicGap,
+        uint256 _maxTerminationDuration
+    ) {
         _disableInitializers();
 
         if (address(_relay) == address(0)) revert RelaySubscriptionsInvalidRelay();
         RELAY = _relay;
+        MIN_PERIODIC_GAP = _minPeriodicGap;
+        MAX_PERIODIC_GAP = _maxPeriodicGap;
+        MAX_TERMINATION_DURATION = _maxTerminationDuration;
     }
 
     //-------------------------------- Overrides start --------------------------------//
@@ -83,6 +91,15 @@ contract RelaySubscriptions is
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     Relay public immutable RELAY;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MIN_PERIODIC_GAP;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MAX_PERIODIC_GAP;
+
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    uint256 public immutable MAX_TERMINATION_DURATION;
 
     bytes32 private constant DOMAIN_SEPARATOR =
         keccak256(
@@ -219,14 +236,14 @@ contract RelaySubscriptions is
     /**
      * @notice Emitted when job subscription remaining funds are withdrawn.
      * @param jobSubsId The unique identifier of the job subscription.
-     * @param withdrawer The address withdrawing the funds.
+     * @param jobOwner The owner account of the job subscription.
      * @param usdcAmountWithdrawn The amount of USDC withdrawn.
      * @param callbackAmountWithdrawn The amount of callback deposit withdrawn.
      * @param success A boolean indicating if the withdrawal was successful.
      */
-    event JobSubscriptionFundsWithdrawn(
+    event JobSubscriptionDepositsRefunded(
         uint256 indexed jobSubsId,
-        address indexed withdrawer,
+        address indexed jobOwner,
         uint256 usdcAmountWithdrawn,
         uint256 callbackAmountWithdrawn,
         bool success
@@ -258,10 +275,14 @@ contract RelaySubscriptions is
     error RelaySubscriptionsSignatureTooOld();
     /// @notice Error for when the termination timestamp is an invalid value.
     error RelaySubscriptionsInvalidTerminationTimestamp();
+    /// @notice Error for when the periodic gap is an invalid value.
+    error RelaySubscriptionsInvalidPeriodicGap();
     /// @notice Error for when the termination timestamp is being updated after the termination condition is reached.
     error RelaySubscriptionsJobSubscriptionTerminated();
     /// @notice Error for when the msg.sender isn't the job subscription owner
     error RelaySubscriptionsNotJobSubscriptionOwner();
+    /// @notice Error for when the job subscription does not exists corresponding to a job subscription id.
+    error RelaySubscriptionsNotExists();
     /// @notice Error for when the job subscription owner tries to terminate the subscription
     ///         before the termination condition is reached.
     error RelaySubscriptionsTerminationConditionPending();
@@ -283,8 +304,11 @@ contract RelaySubscriptions is
         if (_jobSubsParams.startTime >= _jobSubsParams.terminationTimestamp)
             revert RelaySubscriptionsInvalidStartTimestamp();
 
-        if (_jobSubsParams.terminationTimestamp <= block.timestamp)
+        if (_jobSubsParams.terminationTimestamp <= block.timestamp || _jobSubsParams.terminationTimestamp > block.timestamp + MAX_TERMINATION_DURATION)
             revert RelaySubscriptionsInvalidTerminationTimestamp();
+
+        if (_jobSubsParams.periodicGap < MIN_PERIODIC_GAP || _jobSubsParams.periodicGap > MAX_PERIODIC_GAP)
+            revert RelaySubscriptionsInvalidPeriodicGap();
 
         if (
             _jobSubsParams.userTimeout <= RELAY.GLOBAL_MIN_TIMEOUT() ||
@@ -301,6 +325,7 @@ contract RelaySubscriptions is
             _jobSubsParams.maxGasPrice,
             _jobSubsParams.callbackGasLimit,
             _jobSubsParams.periodicGap,
+            _callbackDeposit,
             _jobSubsParams.usdcDeposit,
             _jobSubsParams.startTime,
             _jobSubsParams.terminationTimestamp
@@ -337,18 +362,17 @@ contract RelaySubscriptions is
         uint256 _maxGasPrice,
         uint256 _callbackGasLimit,
         uint256 _periodicGap,
+        uint256 _callbackDeposit,
         uint256 _usdcDeposit,
         uint256 _startTimestamp,
         uint256 _terminationTimestamp
-    ) internal {
-        uint256 totalRuns = (_terminationTimestamp - _startTimestamp) / _periodicGap;
-        if (
-            _maxGasPrice * (_callbackGasLimit + RELAY.FIXED_GAS() + RELAY.CALLBACK_MEASURE_GAS()) * totalRuns >
-            msg.value
-        ) revert RelaySubscriptionsInsufficientCallbackDeposit();
+    ) internal view {
+        uint256 totalRuns = ((_terminationTimestamp - _startTimestamp) / _periodicGap) + 1;
 
-        uint256 minUsdcDeposit = (_userTimeout * RELAY.getJobExecutionFeePerMs(_env) + RELAY.GATEWAY_FEE_PER_JOB()) *
-            totalRuns;
+        uint256 minCallbackDeposit = _maxGasPrice * (_callbackGasLimit + RELAY.FIXED_GAS() + RELAY.CALLBACK_MEASURE_GAS()) * totalRuns;
+        if (_callbackDeposit < minCallbackDeposit) revert RelaySubscriptionsInsufficientCallbackDeposit();
+
+        uint256 minUsdcDeposit = (_userTimeout * RELAY.getJobExecutionFeePerMs(_env) + RELAY.GATEWAY_FEE_PER_JOB()) * totalRuns;
         if (_usdcDeposit < minUsdcDeposit) revert RelaySubscriptionsInsufficientUsdcDeposit();
     }
 
@@ -405,13 +429,13 @@ contract RelaySubscriptions is
         JobSubscription memory jobSubs = jobSubscriptions[jobSubsId];
         if (jobSubs.job.jobOwner == address(0)) revert RelaySubscriptionsInvalidJobSubscription();
 
-        // getting the virtual start time of the job subscription current run
-        uint256 jobStartTime = jobSubs.job.startTime + (jobSubs.currentRuns * jobSubs.periodicGap);
-        if (block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT()) revert RelaySubscriptionsOverallTimeoutOver();
-
         uint256 instanceCount = _jobId & ((1 << 127) - 1);
         // note: instance count for the first output should be 0
         if (instanceCount < jobSubs.currentRuns) revert RelaySubscriptionsInvalidCurrentRuns();
+
+        // getting the virtual start time of the job subscription current run
+        uint256 jobStartTime = jobSubs.job.startTime + (instanceCount * jobSubs.periodicGap);
+        if (block.timestamp > jobStartTime + RELAY.OVERALL_TIMEOUT()) revert RelaySubscriptionsOverallTimeoutOver();
 
         // signature check
         address enclaveAddress = _verifyJobResponseSign(
@@ -564,7 +588,7 @@ contract RelaySubscriptions is
         if (jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
             revert RelaySubscriptionsNotJobSubscriptionOwner();
 
-        if (_terminationTimestamp < block.timestamp + RELAY.OVERALL_TIMEOUT())
+        if (_terminationTimestamp < block.timestamp + RELAY.OVERALL_TIMEOUT() || _terminationTimestamp > block.timestamp + MAX_TERMINATION_DURATION)
             revert RelaySubscriptionsInvalidTerminationTimestamp();
 
         uint256 currentTerminationTimestamp = jobSubscriptions[_jobSubsId].terminationTimestamp;
@@ -575,7 +599,7 @@ contract RelaySubscriptions is
             _depositTokens(_jobSubsId, _usdcDeposit, _callbackDeposit);
 
             JobSubscription memory jobSubs = jobSubscriptions[_jobSubsId];
-            uint256 remainingRuns = (_terminationTimestamp - block.timestamp) / jobSubs.periodicGap;
+            uint256 remainingRuns = ((_terminationTimestamp - jobSubs.job.startTime) / jobSubs.periodicGap) + 1 - jobSubs.currentRuns;
 
             if (
                 jobSubs.job.maxGasPrice *
@@ -595,8 +619,8 @@ contract RelaySubscriptions is
         emit JobSubscriptionTerminationParamsUpdated(_jobSubsId, _terminationTimestamp);
     }
 
-    function _withdrawJobSubsFunds(uint256 _jobSubsId, address _jobOwner) internal {
-        if (jobSubscriptions[_jobSubsId].job.jobOwner != _jobOwner) revert RelaySubscriptionsNotJobSubscriptionOwner();
+    function _refundJobSubsDeposits(uint256 _jobSubsId) internal {
+        if (jobSubscriptions[_jobSubsId].job.jobOwner == address(0)) revert RelaySubscriptionsNotExists();
 
         if (block.timestamp <= jobSubscriptions[_jobSubsId].terminationTimestamp + RELAY.OVERALL_TIMEOUT())
             revert RelaySubscriptionsTerminationConditionPending();
@@ -604,13 +628,14 @@ contract RelaySubscriptions is
         uint256 usdcAmount = jobSubscriptions[_jobSubsId].job.usdcDeposit;
         uint256 callbackAmount = jobSubscriptions[_jobSubsId].job.callbackDeposit;
 
+        address _jobOwner = jobSubscriptions[_jobSubsId].job.jobOwner;
         delete jobSubscriptions[_jobSubsId];
 
         RELAY.TOKEN().safeTransfer(_jobOwner, usdcAmount);
         // TODO: do we need to check this bool success
         (bool success, ) = _jobOwner.call{value: callbackAmount}("");
 
-        emit JobSubscriptionFundsWithdrawn(_jobSubsId, _jobOwner, usdcAmount, callbackAmount, success);
+        emit JobSubscriptionDepositsRefunded(_jobSubsId, _jobOwner, usdcAmount, callbackAmount, success);
     }
 
     function _terminateJobSubscription(uint256 _jobSubsId) internal {
@@ -702,8 +727,8 @@ contract RelaySubscriptions is
      * @dev This function deletes the job subscription data and refunds the deposited USDC and ETH, if any.
      * param _jobSubsId The unique identifier of the job subscription.
      */
-    function withdrawJobSubsFunds(uint256 _jobSubsId) external {
-        _withdrawJobSubsFunds(_jobSubsId, _msgSender());
+    function refundJobSubsDeposits(uint256 _jobSubsId) external {
+        _refundJobSubsDeposits(_jobSubsId);
     }
 
     /**
