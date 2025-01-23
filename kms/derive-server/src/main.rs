@@ -15,8 +15,8 @@ mod scallop;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Path to encrypted randomness file
-    #[arg(long, default_value = "/app/init-params")]
-    root_server_endpoint: String,
+    #[arg(long)]
+    kms_endpoint: String,
 
     /// Listening address
     #[arg(long, default_value = "0.0.0.0:1100")]
@@ -88,7 +88,7 @@ async fn main() -> Result<()> {
         state: ([pcr0, pcr1, pcr2], user_data),
     };
 
-    let randomness = fetch_randomness(auther, auth_store, secret)
+    let randomness = fetch_randomness(auther, auth_store, secret, args.kms_endpoint)
         .await
         .context("failed to fetch randomness")?;
 
