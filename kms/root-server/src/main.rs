@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use alloy::{
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
@@ -11,6 +13,7 @@ use taco::decrypt;
 use tokio::{
     fs::{self, read},
     net::TcpListener,
+    time::sleep,
 };
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -61,6 +64,10 @@ struct Args {
     /// DKG threshold
     #[arg(long)]
     threshold: u16,
+
+    /// Initial delay to allow for attestation verification
+    #[arg(long)]
+    delay: u64,
 }
 
 #[derive(Clone)]
@@ -73,6 +80,11 @@ async fn main() -> Result<()> {
     setup_logging();
 
     let args = Args::parse();
+
+    // sleep to allow attestation verification
+    // taco decryption will only work after the signer is
+    // verified on chain
+    sleep(Duration::from_secs(args.delay)).await;
 
     let taco_nodes = taco::get_taco_nodes(&args)
         .await
