@@ -81,6 +81,17 @@
       kms.derive-server = import ./kms/derive-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      kms.derive-server-enclave = import ./kms/derive-server-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        derive-server = kms.derive-server.compressed;
+      };
       kms.root-server = import ./kms/root-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
