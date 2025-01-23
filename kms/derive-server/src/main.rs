@@ -62,13 +62,29 @@ async fn main() -> Result<()> {
         .try_into()
         .map_err(|_| anyhow!("failed to parse secret file"))?;
 
-    let app_state = AppState { randomness };
-
     let auther = Auther {
         url: args.attestation_endpoint,
     };
 
+    let pcr0: [u8; 48] = hex::decode(args.pcr0)
+        .context("failed to decode pcr0")?
+        .try_into()
+        .map_err(|_| anyhow!("incorrect pcr0 size"))?;
+    let pcr1: [u8; 48] = hex::decode(args.pcr1)
+        .context("failed to decode pcr1")?
+        .try_into()
+        .map_err(|_| anyhow!("incorrect pcr1 size"))?;
+    let pcr2: [u8; 48] = hex::decode(args.pcr2)
+        .context("failed to decode pcr2")?
+        .try_into()
+        .map_err(|_| anyhow!("incorrect pcr2 size"))?;
+    let user_data = hex::decode(args.pcr2)
+        .context("failed to decode pcr2")?
+        .into_boxed_slice();
+
     let auth_store = AuthStore {};
+
+    let app_state = AppState { randomness };
 
     let app = Router::new()
         .route("/derive", get(derive::derive))
