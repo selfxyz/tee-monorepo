@@ -27,6 +27,22 @@ struct Args {
     /// Path to X25519 secret file
     #[arg(long, default_value = "/app/x25519.sec")]
     secret_path: String,
+
+    /// PCR0 of the root server
+    #[arg(long)]
+    pcr0: String,
+
+    /// PCR1 of the root server
+    #[arg(long)]
+    pcr1: String,
+
+    /// PCR2 of the root server
+    #[arg(long)]
+    pcr2: String,
+
+    /// user data of the root server
+    #[arg(long)]
+    user_data: String,
 }
 
 #[derive(Clone)]
