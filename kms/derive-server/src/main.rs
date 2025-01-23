@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
+use fetch::fetch_randomness;
 use scallop::{AuthStore, Auther};
 use tokio::{fs::read, net::TcpListener};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod derive;
+mod fetch;
 mod scallop;
 
 #[derive(Parser, Debug)]
@@ -85,6 +87,10 @@ async fn main() -> Result<()> {
     let auth_store = AuthStore {
         state: ([pcr0, pcr1, pcr2], user_data),
     };
+
+    let randomness = fetch_randomness(auther, auth_store, secret)
+        .await
+        .context("failed to fetch randomness")?;
 
     let app_state = AppState { randomness };
 
