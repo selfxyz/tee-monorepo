@@ -2692,6 +2692,7 @@ dependencies = [
  "elliptic-curve",
  "once_cell",
  "sha2",
+ "signature",
 ]
 
 [[package]]
@@ -2726,6 +2727,7 @@ dependencies = [
  "clap",
  "hex",
  "hmac",
+ "k256",
  "nucypher-core",
  "oyster-sdk",
  "rand 0.8.5",
