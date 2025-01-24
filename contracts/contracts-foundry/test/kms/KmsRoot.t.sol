@@ -326,4 +326,20 @@ contract KmsRootTestVerify is Test {
 
         kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
     }
+
+    function test_Verify_InvalidSeal(
+        bytes calldata _signerPubkey,
+        bytes calldata _seal,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_signerPubkey.length == 64);
+        _timestampInMilliseconds = uint64(
+            bound(_timestampInMilliseconds, 2001, type(uint64).max)
+        );
+        vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
+        vm.expectRevert("0x12345678");
+        vm.warp(4);
+
+        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+    }
 }
