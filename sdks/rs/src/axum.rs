@@ -48,15 +48,13 @@ where
     }
 }
 
-type ListenerIo<AuthStore> = ScallopStream<TcpStream, <AuthStore as ScallopAuthStore>::State>;
-
 impl<AuthStore, Auther> Listener for ScallopListener<AuthStore, Auther>
 where
     AuthStore: ScallopAuthStore + Clone + Send + 'static,
     AuthStore::State: Send + Unpin,
     Auther: ScallopAuther + Clone + 'static,
 {
-    type Io = ListenerIo<AuthStore>;
+    type Io = ScallopStream<TcpStream, <AuthStore as ScallopAuthStore>::State>;
     type Addr = SocketAddr;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {

@@ -1,6 +1,4 @@
 // Axum based example for the scallop transport
-// Sadly, the only real axum usage here is for the router
-// We end up having to repeat the connection loop in order to wrap the underlying stream
 
 use std::collections::HashMap;
 use std::error::Error;
