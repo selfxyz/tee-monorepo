@@ -280,7 +280,7 @@ contract KmsRootTestVerify is Test {
         vm.mockCall(
             address(verifier),
             abi.encodeWithSelector(
-                KmsRoot.verify.selector,
+                IRiscZeroVerifier.verify.selector,
                 _seal,
                 imageId,
                 _journalDigest
@@ -320,7 +320,7 @@ contract KmsRootTestVerify is Test {
         vm.mockCall(
             address(verifier),
             abi.encodeWithSelector(
-                KmsRoot.verify.selector,
+                IRiscZeroVerifier.verify.selector,
                 _seal,
                 imageId,
                 _journalDigest
@@ -356,7 +356,7 @@ contract KmsRootTestVerify is Test {
         vm.mockCall(
             address(verifier),
             abi.encodeWithSelector(
-                KmsRoot.verify.selector,
+                IRiscZeroVerifier.verify.selector,
                 _seal,
                 imageId,
                 _journalDigest
