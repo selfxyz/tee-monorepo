@@ -66,7 +66,7 @@ struct Args {
     threshold: u16,
 
     /// Initial delay to allow for attestation verification
-    #[arg(long)]
+    #[arg(long, default_value = "0")]
     delay: u64,
 }
 
