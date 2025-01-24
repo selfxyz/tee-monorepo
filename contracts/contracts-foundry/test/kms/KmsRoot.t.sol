@@ -277,16 +277,14 @@ contract KmsRootTestVerify is Test {
             )
         );
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
-        vm.mockCall(
-            address(verifier),
-            abi.encodeWithSelector(
-                IRiscZeroVerifier.verify.selector,
-                _seal,
-                imageId,
-                _journalDigest
-            ),
-            abi.encode()
+        bytes memory _calldata = abi.encodeWithSelector(
+            IRiscZeroVerifier.verify.selector,
+            _seal,
+            imageId,
+            _journalDigest
         );
+        vm.mockCall(address(verifier), _calldata, abi.encode());
+        vm.expectCall(address(verifier), _calldata, 1);
         address _addr = address(uint160(uint256(keccak256(_signerPubkey))));
         vm.expectEmit();
         emit KmsRoot.KmsRootVerified(_addr);
