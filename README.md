@@ -12,7 +12,8 @@ The repository is organized into projects:
 - [attestation/verifier](./attestation/verifier/): Attestation verifier server that verifies attestations.
 - [attestation/verifier-enclave](./attestation/verifier-enclave/): Attestation verifier enclave that packages the attestation verifier server.
 - [attestation/verifier-risczero](./attestation/verifier-risczero/): Attestation verifier that generates a ZK proof of attestation verification using RISCZero.
-- [contracts/contracts](./contracts/contracts/): All of the Oyster contracts are included here.
+- [contracts/contracts](./contracts/contracts/): Most of the Oyster contracts are included here.
+- [contracts/contracts-foundry](./contracts/contracts-foundry/): Contains KMS related contracts.
 - [contracts/indexer](./contracts/indexer/): Indexer for the Oyster contracts.
 - [initialization/init-server](./initialization/init-server/): Server that provides data endpoints over vsocks during enclave initialization.
 - [initialization/vet](./initialization/vet/): Curl-like utility that makes http queries over vsocks instead of TCP sockets.
@@ -35,7 +36,6 @@ The repository is organized into projects:
 - [serverless/http-on-vsock-server](./serverless/http-on-vsock-server/): Server library for HTTP over vsock connections.
 - [serverless/secret-store](./serverless/secret-store/) : Oyster secret store to securely store and manage user secrets 
 - [serverless/transaction-manager](./serverless/transaction-manager/): Oyster library for sending transaction and confirmation management
-
 
 In addition, some external projects are used which are described in [external](./external/).
 
