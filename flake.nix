@@ -65,6 +65,9 @@
       kernels.serverless = import ./kernels/serverless.nix {
         inherit nixpkgs systemConfig;
       };
+      kms.creator = import ./kms/creator {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;
       };
