@@ -176,9 +176,9 @@ enum ReadMode {
 
 pub type Key = [u8; 32];
 #[derive(PartialEq)]
-pub enum ContainsResponse {
+pub enum ContainsResponse<State: PartialEq> {
     // the key was found and is approved
-    Approved,
+    Approved(State),
     // the key was not found
     NotFound,
     // the key is rejected
@@ -186,38 +186,48 @@ pub enum ContainsResponse {
 }
 
 pub trait ScallopAuthStore {
+    type State: PartialEq;
+
     // intended as a caching mechanism so attestations do not have to be
     // requested every time, always returning NotFound is valid
-    fn contains(&mut self, _key: &Key) -> ContainsResponse {
+    fn contains(&mut self, _key: &Key) -> ContainsResponse<Self::State> {
         ContainsResponse::NotFound
     }
-    fn verify(&mut self, attestation: &[u8], key: Key) -> bool;
+    fn verify(&mut self, attestation: &[u8], key: Key) -> Option<Self::State>;
 }
 
 impl<T: ScallopAuthStore> ScallopAuthStore for &mut T {
-    fn contains(&mut self, key: &Key) -> ContainsResponse {
+    type State = T::State;
+
+    fn contains(&mut self, key: &Key) -> ContainsResponse<Self::State> {
         (**self).contains(key)
     }
 
-    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
+    fn verify(&mut self, attestation: &[u8], key: Key) -> Option<Self::State> {
         (**self).verify(attestation, key)
     }
 }
 
 // to let callers pass in None with empty type
 impl ScallopAuthStore for () {
-    fn contains(&mut self, _key: &Key) -> ContainsResponse {
+    type State = ();
+
+    fn contains(&mut self, _key: &Key) -> ContainsResponse<Self::State> {
         unimplemented!()
     }
 
-    fn verify(&mut self, _attestation: &[u8], _key: Key) -> bool {
+    fn verify(&mut self, _attestation: &[u8], _key: Key) -> Option<Self::State> {
         unimplemented!()
     }
 }
 
-pub trait ScallopAuther {
+// Send bound not ideal
+// Investigate both Send and non-Send versions
+pub trait ScallopAuther: Send {
     type Error: std::fmt::Debug;
-    fn new_auth(&mut self) -> impl std::future::Future<Output = Result<Box<[u8]>, Self::Error>>;
+    fn new_auth(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Box<[u8]>, Self::Error>> + Send;
 }
 
 impl<T: ScallopAuther> ScallopAuther for &mut T {
@@ -238,7 +248,7 @@ impl ScallopAuther for () {
 }
 
 #[derive(Debug)]
-pub struct ScallopStream<Stream: AsyncWrite + AsyncRead + Unpin> {
+pub struct ScallopStream<Stream: AsyncWrite + AsyncRead + Unpin, State = ()> {
     noise: TransportState,
     stream: Stream,
 
@@ -253,6 +263,9 @@ pub struct ScallopStream<Stream: AsyncWrite + AsyncRead + Unpin> {
     wbuf: Box<[u8]>,
     write_start: usize,
     write_end: usize,
+
+    // extra connection state from the AuthStore if any
+    pub state: Option<State>,
 }
 
 trait Noiser {
@@ -289,6 +302,11 @@ async fn noise_read(
     // read noise message length
     let len = stream.read_u16().await? as usize;
 
+    // check if buffer is big enough
+    if len > src.len() {
+        return Err(ScallopError::ProtocolError("message too big".into()));
+    }
+
     // read handshake message
     stream.read_exact(&mut src[0..len]).await?;
 
@@ -324,16 +342,17 @@ async fn noise_write(
 #[allow(non_snake_case)]
 pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     Base: AsyncWrite + AsyncRead + Unpin,
+    AS: ScallopAuthStore,
 >(
     mut stream: Base,
     secret: &[u8; 32],
     // will not auth remote if None
-    mut auth_store: Option<impl ScallopAuthStore>,
+    mut auth_store: Option<AS>,
     // will not respond to auth requests if None
     auther: Option<impl ScallopAuther>,
-) -> Result<ScallopStream<Base>, ScallopError> {
-    let mut buf = [0u8; 1024];
-    let mut noise_buf = [0u8; 1024];
+) -> Result<ScallopStream<Base, AS::State>, ScallopError> {
+    let mut buf = vec![0u8; 65000].into_boxed_slice();
+    let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
 
     let prologue = b"NoiseSocketInit1\x00\x00";
 
@@ -408,7 +427,18 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             "remote static key rejected".into(),
         ));
     }
+
+    // start tracking what state should go in the stream
+    // it is expected to be set if contains returns state
+    // or verify returns state
+    let mut state = None::<AS::State>;
+
     let should_ask_auth = contains == Some(ContainsResponse::NotFound);
+
+    // set state immediately if key was approved previously
+    if let Some(ContainsResponse::Approved(_state)) = contains {
+        state = Some(_state);
+    }
 
     // handshake is done, switch to transport mode
     let mut noise = noise.into_transport_mode()?;
@@ -454,10 +484,6 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
         }
 
-        // new heap allocated buffers
-        let mut buf = vec![0u8; 65000].into_boxed_slice();
-        let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
-
         send_CLIENTFIN(
             &mut noise,
             &mut stream,
@@ -490,10 +516,6 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // payload
 
     if should_ask_auth {
-        // new heap allocated buffers
-        let mut buf = vec![0u8; 65000].into_boxed_slice();
-        let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
-
         // read and handle handshake message
         let len = noise_read(&mut noise, &mut stream, &mut buf, &mut noise_buf).await?;
 
@@ -512,13 +534,16 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         }
 
         // verify
-        if !auth_store
+        let Some(_state) = auth_store
             .as_mut()
             .unwrap()
             .verify(&noise_buf[2..len], remote_static)
-        {
+        else {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
+
+        // set state
+        state = Some(_state)
     }
 
     //---- <- SERVERFIN end ----//
@@ -535,22 +560,24 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         wbuf: vec![].into_boxed_slice(),
         write_start: 0,
         write_end: 0,
+        state,
     })
 }
 
 #[allow(non_snake_case)]
 pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     Base: AsyncWrite + AsyncRead + Unpin,
+    AS: ScallopAuthStore,
 >(
     mut stream: Base,
     secret: &[u8; 32],
     // will not auth remote if None
-    mut auth_store: Option<impl ScallopAuthStore>,
+    mut auth_store: Option<AS>,
     // will not respond to auth requests if None
     auther: Option<impl ScallopAuther>,
-) -> Result<ScallopStream<Base>, ScallopError> {
-    let mut buf = [0u8; 1024];
-    let mut noise_buf = [0u8; 1024];
+) -> Result<ScallopStream<Base, AS::State>, ScallopError> {
+    let mut buf = vec![0u8; 65000].into_boxed_slice();
+    let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
 
     let prologue = b"NoiseSocketInit1\x00\x00";
 
@@ -608,7 +635,18 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             "remote static key rejected".into(),
         ));
     }
+
+    // start tracking what state should go in the stream
+    // it is expected to be set if contains returns state
+    // or verify returns state
+    let mut state = None::<AS::State>;
+
     let should_ask_auth = contains == Some(ContainsResponse::NotFound);
+
+    // set state immediately if key was approved previously
+    if let Some(ContainsResponse::Approved(_state)) = contains {
+        state = Some(_state);
+    }
 
     let payload = &[0u8, 1u8, if !should_ask_auth { 0u8 } else { 1u8 }];
 
@@ -649,13 +687,16 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
     // verify auth if we asked for it
     if should_ask_auth {
         // verify
-        if !auth_store
+        let Some(_state) = auth_store
             .as_mut()
             .unwrap()
             .verify(&noise_buf[3..len], remote_static)
-        {
+        else {
             return Err(ScallopError::ProtocolError("invalid attestation".into()));
         };
+
+        // set state
+        state = Some(_state)
     }
 
     // auth request should be 0 or 1
@@ -698,10 +739,6 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
             return Err(ScallopError::ProtocolError("auth payload too big".into()));
         }
 
-        // new heap allocated buffers
-        let mut buf = vec![0u8; 65000].into_boxed_slice();
-        let mut noise_buf = vec![0u8; 65000].into_boxed_slice();
-
         // safe to cast since range has been checked above
         noise_buf[0..2].copy_from_slice(&(payload.len() as u16).to_be_bytes());
         noise_buf[2..2 + payload.len()].copy_from_slice(&payload);
@@ -731,10 +768,11 @@ pub async fn new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
         wbuf: vec![].into_boxed_slice(),
         write_start: 0,
         write_end: 0,
+        state,
     })
 }
 
-impl<Base: AsyncWrite + AsyncRead + Unpin> ScallopStream<Base> {
+impl<Base: AsyncWrite + AsyncRead + Unpin, State> ScallopStream<Base, State> {
     pub fn get_remote_static(&self) -> Option<[u8; 32]> {
         self.noise
             .get_remote_static()
@@ -742,7 +780,7 @@ impl<Base: AsyncWrite + AsyncRead + Unpin> ScallopStream<Base> {
     }
 }
 
-impl<Base: AsyncWrite + AsyncRead + Unpin> AsyncRead for ScallopStream<Base> {
+impl<Base: AsyncWrite + AsyncRead + Unpin, State: Unpin> AsyncRead for ScallopStream<Base, State> {
     // IMPORTANT: Return Pending only as a direct result of base returning Pending
     // Ensures wakers are set up correctly
     fn poll_read(
@@ -813,7 +851,7 @@ impl<Base: AsyncWrite + AsyncRead + Unpin> AsyncRead for ScallopStream<Base> {
     }
 }
 
-impl<Base: AsyncWrite + AsyncRead + Unpin> AsyncWrite for ScallopStream<Base> {
+impl<Base: AsyncWrite + AsyncRead + Unpin, State: Unpin> AsyncWrite for ScallopStream<Base, State> {
     // IMPORTANT: Return Pending only as a direct result of base returning Pending
     // Ensures wakers are set up correctly
     fn poll_write(

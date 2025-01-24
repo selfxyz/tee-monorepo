@@ -19,20 +19,22 @@ struct AuthStore {
 }
 
 impl ScallopAuthStore for AuthStore {
-    fn contains(&mut self, key: &Key) -> ContainsResponse {
-        if self.store.contains_key(key) {
-            ContainsResponse::Approved
+    type State = Pcrs;
+
+    fn contains(&mut self, key: &Key) -> ContainsResponse<Pcrs> {
+        if let Some(pcrs) = self.store.get(key) {
+            ContainsResponse::Approved(pcrs.to_owned())
         } else {
             ContainsResponse::NotFound
         }
     }
 
-    fn verify(&mut self, attestation: &[u8], key: Key) -> bool {
+    fn verify(&mut self, attestation: &[u8], key: Key) -> Option<Pcrs> {
         if attestation == b"good auth" {
             self.store.insert(key, [[1u8; 48], [2u8; 48], [3u8; 48]]);
-            true
+            Some([[1u8; 48], [2u8; 48], [3u8; 48]])
         } else {
-            false
+            None
         }
     }
 }
