@@ -276,6 +276,7 @@ contract KmsRootTestVerify is Test {
                 uint16(0)
             )
         );
+        vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         vm.mockCall(
             address(verifier),
             abi.encodeWithSelector(
@@ -315,6 +316,7 @@ contract KmsRootTestVerify is Test {
                 uint16(0)
             )
         );
+        vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         vm.mockCall(
             address(verifier),
             abi.encodeWithSelector(
@@ -350,6 +352,7 @@ contract KmsRootTestVerify is Test {
                 uint16(0)
             )
         );
+        vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         vm.mockCall(
             address(verifier),
             abi.encodeWithSelector(
