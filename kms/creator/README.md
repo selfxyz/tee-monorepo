@@ -57,7 +57,7 @@ Options:
 ## Example
 
 ```
-$ curl <ip:port>/attestation/raw -vs | xxd
+$ curl <ip:port>/generate
 544d4b69000100009293c43099822c1c52b001c0a...
 ```
 
