@@ -1,10 +1,21 @@
 import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
-import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
+import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, parseUnits, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, Jobs, Pond, USDCoin, JobsUser } from "../../typechain-types";
-import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
-import { testERC165 } from '../helpers/erc165';
+import {
+    AttestationAutherUpgradeable,
+    AttestationVerifier,
+    Executors,
+    Jobs,
+    Pond,
+    USDCoin,
+    SecretJobsUser,
+    SecretStore,
+    TeeManager,
+    SecretManager
+} from "../../../typechain-types";
+import { takeSnapshotBeforeAndAfterEveryTest } from "../../../utils/testSuite";
+import { testERC165 } from '../../helpers/erc165';
 
 const image1: AttestationAutherUpgradeable.EnclaveImageStruct = {
     PCR0: ethers.hexlify(ethers.randomBytes(48)),
@@ -53,7 +64,6 @@ describe("Jobs - Init", function () {
     let addrs: string[];
     let staking_token: string;
     let usdc_token: string;
-    let executors: string;
     let staking_payment_pool: string;
     let usdc_payment_pool: string;
 
@@ -63,7 +73,6 @@ describe("Jobs - Init", function () {
 
         staking_token = addrs[1];
         usdc_token = addrs[1];
-        executors = addrs[1];
         staking_payment_pool = addrs[1];
         usdc_payment_pool = addrs[1];
     });
@@ -72,7 +81,7 @@ describe("Jobs - Init", function () {
 
     it("deploys with initialization disabled", async function () {
 
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         const jobs = await Jobs.deploy(
             staking_token,
             usdc_token,
@@ -80,8 +89,7 @@ describe("Jobs - Init", function () {
             100,
             3,
             staking_payment_pool,
-            usdc_payment_pool,
-            executors
+            usdc_payment_pool
         );
 
         await expect(
@@ -90,7 +98,7 @@ describe("Jobs - Init", function () {
     });
 
     it("deploys as proxy and initializes", async function () {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         const jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -104,8 +112,7 @@ describe("Jobs - Init", function () {
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors
+                    usdc_payment_pool
                 ]
             },
         );
@@ -114,7 +121,7 @@ describe("Jobs - Init", function () {
     });
 
     it("cannot initialize with zero address as admin", async function () {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         await expect(
             upgrades.deployProxy(
                 Jobs,
@@ -129,8 +136,7 @@ describe("Jobs - Init", function () {
                         100,
                         3,
                         staking_payment_pool,
-                        usdc_payment_pool,
-                        executors
+                        usdc_payment_pool
                     ]
                 },
             )
@@ -138,7 +144,7 @@ describe("Jobs - Init", function () {
     });
 
     it("cannot initialize with zero address as staking token", async function () {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         await expect(
             upgrades.deployProxy(
                 Jobs,
@@ -153,8 +159,7 @@ describe("Jobs - Init", function () {
                         100,
                         3,
                         staking_payment_pool,
-                        usdc_payment_pool,
-                        executors
+                        usdc_payment_pool
                     ]
                 },
             )
@@ -162,7 +167,7 @@ describe("Jobs - Init", function () {
     });
 
     it("cannot initialize with zero address as usdc token", async function () {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         await expect(
             upgrades.deployProxy(
                 Jobs,
@@ -177,8 +182,7 @@ describe("Jobs - Init", function () {
                         100,
                         3,
                         staking_payment_pool,
-                        usdc_payment_pool,
-                        executors
+                        usdc_payment_pool
                     ]
                 },
             )
@@ -186,7 +190,7 @@ describe("Jobs - Init", function () {
     });
 
     it("upgrades", async function () {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         const jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -200,30 +204,11 @@ describe("Jobs - Init", function () {
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors
+                    usdc_payment_pool
                 ]
             },
         );
 
-        // Deploy new executor contract
-        const Executors = await ethers.getContractFactory("contracts/serverless-v2/Executors.sol:Executors");
-        const executors2 = await upgrades.deployProxy(
-            Executors,
-            [addrs[0], [image1]],
-            {
-                kind: "uups",
-                initializer: "initialize",
-                constructorArgs: [
-                    addrs[0],
-                    600,
-                    staking_token,
-                    10 ** 10,
-                    10 ** 2,
-                    10 ** 6
-                ]
-            },
-        );
         await upgrades.upgradeProxy(
             jobs.target,
             Jobs,
@@ -236,8 +221,7 @@ describe("Jobs - Init", function () {
                     200,
                     5,
                     addrs[2],
-                    addrs[2],
-                    executors2.target
+                    addrs[2]
                 ]
             }
         );
@@ -250,11 +234,10 @@ describe("Jobs - Init", function () {
         expect(await jobs.NO_OF_NODES_TO_SELECT()).to.be.eq(5);
         expect(await jobs.STAKING_PAYMENT_POOL()).to.be.eq(addrs[2]);
         expect(await jobs.USDC_PAYMENT_POOL()).to.be.eq(addrs[2]);
-        expect(await jobs.EXECUTORS()).to.be.eq(executors2.target);
     });
 
     it("does not upgrade without admin", async function () {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         const jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -268,8 +251,7 @@ describe("Jobs - Init", function () {
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors
+                    usdc_payment_pool
                 ]
             },
         );
@@ -284,8 +266,7 @@ describe("Jobs - Init", function () {
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors
+                    usdc_payment_pool
                 ]
             }),
         ).to.be.revertedWithCustomError(Jobs, "AccessControlUnauthorizedAccount");
@@ -296,7 +277,7 @@ describe("Jobs - Init", function () {
 testERC165(
     "Jobs - ERC165",
     async function (_signers: Signer[], addrs: string[]) {
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         const jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -309,7 +290,6 @@ testERC165(
                     100,
                     100,
                     3,
-                    addrs[1],
                     addrs[1],
                     addrs[1]
                 ]
@@ -335,7 +315,9 @@ describe("Jobs - Global Execution Env", function () {
     let pubkeys: string[];
     let token: Pond;
     let attestationVerifier: AttestationVerifier;
+    let teeManager: TeeManager;
     let executors: Executors;
+    let secretStore: SecretStore;
     let jobs: Jobs;
 
     before(async function () {
@@ -356,10 +338,10 @@ describe("Jobs - Global Execution Env", function () {
             kind: "uups",
         }) as unknown as Pond;
 
-        const Executors = await ethers.getContractFactory("contracts/serverless-v2/Executors.sol:Executors");
-        executors = await upgrades.deployProxy(
-            Executors,
-            [addrs[0], [image2, image3, image4, image5, image6]],
+        const TeeManager = await ethers.getContractFactory("TeeManager");
+        teeManager = await upgrades.deployProxy(
+            TeeManager,
+            [addrs[0], [image2, image3]],
             {
                 kind: "uups",
                 initializer: "initialize",
@@ -372,7 +354,36 @@ describe("Jobs - Global Execution Env", function () {
                     10 ** 6
                 ]
             },
+        ) as unknown as TeeManager;
+
+        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+        executors = await upgrades.deployProxy(
+            Executors,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
         ) as unknown as Executors;
+
+        const SecretStore = await ethers.getContractFactory("SecretStore");
+        secretStore = await upgrades.deployProxy(
+            SecretStore,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
+        ) as unknown as SecretStore;
+
+        await teeManager.setExecutors(executors.target);
+        await teeManager.setSecretStore(secretStore.target);
 
         let usdcToken = addrs[2],
             signMaxAge = 100,
@@ -380,7 +391,7 @@ describe("Jobs - Global Execution Env", function () {
             noOfNodesToSelect = 3,
             stakingPaymentPoolAddress = addrs[3],
             usdcPaymentPoolAddress = addrs[4];
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -394,13 +405,16 @@ describe("Jobs - Global Execution Env", function () {
                     executionBufferTime,
                     noOfNodesToSelect,
                     stakingPaymentPoolAddress,
-                    usdcPaymentPoolAddress,
-                    executors.target
+                    usdcPaymentPoolAddress
                 ]
             },
         ) as unknown as Jobs;
 
         await executors.grantRole(await executors.JOBS_ROLE(), jobs.target);
+        await secretStore.grantRole(await secretStore.JOBS_ROLE(), jobs.target);
+
+        await jobs.setExecutors(executors.target);
+        await jobs.setSecretStore(secretStore.target);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -416,6 +430,8 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).to.eq(0);
+        expect(await secretStore.isTreeInitialized(env)).to.be.true;
+        expect(await secretStore.nodesInTree(env)).to.eq(0);
     });
 
     it('cannot add global execution env without admin account', async function () {
@@ -433,7 +449,7 @@ describe("Jobs - Global Execution Env", function () {
         await jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs);
 
         await expect(jobs.addGlobalEnv(env, executionFeePerMs, stakingRewardPerMs))
-            .to.be.revertedWithCustomError(jobs, "JobsGlobalEnvAlreadySupported");
+            .to.be.revertedWithCustomError(executors, "ExecutorsGlobalEnvAlreadySupported");
     });
 
     it('can remove global execution env', async function () {
@@ -447,6 +463,7 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.executionFeePerMs).to.eq(0);
         expect(executionEnv.stakingRewardPerMs).to.eq(0);
         expect(await executors.isTreeInitialized(env)).to.be.false;
+        expect(await secretStore.isTreeInitialized(env)).to.be.false;
     });
 
     it('cannot remove global execution env without admin account', async function () {
@@ -458,7 +475,7 @@ describe("Jobs - Global Execution Env", function () {
     it('cannot remove unsupported global execution env', async function () {
         let env = 1;
         await expect(jobs.removeGlobalEnv(env))
-            .to.be.revertedWithCustomError(jobs, "JobsGlobalEnvAlreadyUnsupported");
+            .to.be.revertedWithCustomError(executors, "ExecutorsGlobalEnvAlreadyUnsupported");
     });
 
     it('can add multiple envs and remove them', async function () {
@@ -472,28 +489,39 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).that.eq(0);
+        expect(await secretStore.isTreeInitialized(env)).to.be.true;
+        expect(await secretStore.nodesInTree(env)).that.eq(0);
 
         await token.transfer(addrs[1], 100000);
-        await token.connect(signers[1]).approve(executors.target, 10000);
+        await token.connect(signers[1]).approve(teeManager.target, 10000);
 
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             stakeAmount = 10,
-            executorImages = [image2, image3],
             timestamp = await time.latest() * 1000;
         for (let index = 0; index < 2; index++) {
             let signTimestamp = await time.latest() - 540;
             // Executor index using wallet 10 + index as enclave address
-            let [attestationSign, attestation] = await createAttestation(pubkeys[10 + index], executorImages[index],
-                wallets[14], timestamp - 540000);
-            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[10 + index]);
-            await executors.connect(signers[1]).registerExecutor(
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[10 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[10 + index]
+            );
+
+            await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
                 attestation,
                 jobCapacity,
+                storageCapacity,
+                env,
                 signTimestamp,
                 signedDigest,
-                stakeAmount,
-                env
+                stakeAmount
             );
         }
 
@@ -507,27 +535,39 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(stakingRewardPerMs);
         expect(await executors.isTreeInitialized(env)).to.be.true;
         expect(await executors.nodesInTree(env)).that.eq(0);
+        expect(await secretStore.isTreeInitialized(env)).to.be.true;
+        expect(await secretStore.nodesInTree(env)).that.eq(0);
 
-        executorImages = [image4, image5, image6];
         for (let index = 0; index < 3; index++) {
             let signTimestamp = await time.latest() - 540;
             // Executor index using wallet 12 + index as enclave address
-            let [attestationSign, attestation] = await createAttestation(pubkeys[12 + index], executorImages[index],
-                wallets[14], timestamp - 540000);
-            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp, wallets[12 + index]);
-            await executors.connect(signers[1]).registerExecutor(
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[12 + index],
+                image2,
+                wallets[14],
+                timestamp - 540000
+            );
+
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[12 + index]
+            );
+
+            await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
                 attestation,
                 jobCapacity,
+                storageCapacity,
+                env,
                 signTimestamp,
                 signedDigest,
-                stakeAmount,
-                env
+                stakeAmount
             );
         }
 
         expect(await executors.nodesInTree(1)).that.eq(2);
         expect(await executors.nodesInTree(2)).that.eq(3);
+        expect(await secretStore.nodesInTree(1)).that.eq(2);
+        expect(await secretStore.nodesInTree(2)).that.eq(3);
 
         await jobs.removeGlobalEnv(1);
 
@@ -536,6 +576,8 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.stakingRewardPerMs).to.eq(0);
         expect(await executors.isTreeInitialized(1)).to.be.false;
         expect(await executors.isTreeInitialized(2)).to.be.true;
+        expect(await secretStore.isTreeInitialized(1)).to.be.false;
+        expect(await secretStore.isTreeInitialized(2)).to.be.true;
 
         await jobs.removeGlobalEnv(2);
 
@@ -543,6 +585,47 @@ describe("Jobs - Global Execution Env", function () {
         expect(executionEnv.executionFeePerMs).to.eq(0);
         expect(executionEnv.stakingRewardPerMs).to.eq(0);
         expect(await executors.isTreeInitialized(2)).to.be.false;
+        expect(await secretStore.isTreeInitialized(2)).to.be.false;
+    });
+
+    it('can set tee manager', async function () {
+        await expect(jobs.setTeeManager(addrs[1])).to.be.not.reverted;
+        expect(await jobs.TEE_MANAGER()).to.eq(addrs[1]);
+    });
+
+    it('cannot set tee manager without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setTeeManager(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set executors', async function () {
+        await expect(jobs.setExecutors(addrs[1])).to.be.not.reverted;
+        expect(await jobs.EXECUTORS()).to.eq(addrs[1]);
+    });
+
+    it('cannot set executors without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setExecutors(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set secret store', async function () {
+        await expect(jobs.setSecretStore(addrs[1])).to.be.not.reverted;
+        expect(await jobs.SECRET_STORE()).to.eq(addrs[1]);
+    });
+
+    it('cannot set secret store without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setSecretStore(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
+    });
+
+    it('can set secret manager', async function () {
+        await expect(jobs.setSecretManager(addrs[1])).to.be.not.reverted;
+        expect(await jobs.SECRET_MANAGER()).to.eq(addrs[1]);
+    });
+
+    it('cannot set secret manager without DEFAULT_ADMIN_ROLE', async function () {
+        await expect(jobs.connect(signers[1]).setSecretManager(addrs[1]))
+            .to.be.revertedWithCustomError(jobs, "AccessControlUnauthorizedAccount");
     });
 });
 
@@ -554,8 +637,10 @@ describe("Jobs - Create", function () {
     let wallets: Wallet[];
     let pubkeys: string[];
     let attestationVerifier: AttestationVerifier;
+    let teeManager: TeeManager;
     let executors: Executors;
     let jobs: Jobs;
+    let secretManager: SecretManager;
     let staking_payment_pool: string;
     let usdc_payment_pool: string;
 
@@ -584,11 +669,11 @@ describe("Jobs - Create", function () {
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
 
-        let executor_images = [image4, image5, image6, image7];
-        const Executors = await ethers.getContractFactory("contracts/serverless-v2/Executors.sol:Executors");
-        executors = await upgrades.deployProxy(
-            Executors,
-            [addrs[0], executor_images],
+        let teeImages = [image4, image5, image6, image7];
+        const TeeManager = await ethers.getContractFactory("TeeManager");
+        teeManager = await upgrades.deployProxy(
+            TeeManager,
+            [addrs[0], teeImages],
             {
                 kind: "uups",
                 initializer: "initialize",
@@ -596,14 +681,43 @@ describe("Jobs - Create", function () {
                     attestationVerifier.target,
                     600,
                     staking_token.target,
-                    10 ** 10,
+                    10,
                     10 ** 2,
                     10 ** 6
                 ]
             },
+        ) as unknown as TeeManager;
+
+        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+        executors = await upgrades.deployProxy(
+            Executors,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
         ) as unknown as Executors;
 
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const SecretStore = await ethers.getContractFactory("SecretStore");
+        let secretStore = await upgrades.deployProxy(
+            SecretStore,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
+        ) as unknown as SecretStore;
+
+        await teeManager.setExecutors(executors.target);
+        await teeManager.setSecretStore(secretStore.target);
+
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -611,20 +725,23 @@ describe("Jobs - Create", function () {
                 kind: "uups",
                 initializer: "initialize",
                 constructorArgs: [
-                    attestationVerifier.target,
+                    staking_token.target,
                     usdc_token.target,
                     100,
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors.target
+                    usdc_payment_pool
                 ]
             },
         ) as unknown as Jobs;
 
         // Grant role to jobs contract on executor
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+        await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+
+        await jobs.setExecutors(executors.target);
+        await jobs.setSecretStore(secretStore.target);
 
         let env = 1,
             executionFeePerMs = 1,
@@ -633,103 +750,227 @@ describe("Jobs - Create", function () {
 
         // Register Executors. Owner is addrs[1]
         await staking_token.transfer(addrs[1], 10n ** 20n);
-        await staking_token.connect(signers[1]).approve(executors.target, 10n ** 20n);
+        await staking_token.connect(signers[1]).approve(teeManager.target, 10n ** 20n);
 
         const timestamp = await time.latest() * 1000;
         let jobCapacity = 3,
+            storageCapacity = 1e9,
             stakeAmount = 10n ** 19n;
 
+        let signTimestamp = await time.latest() - 540;
         for (let index = 0; index < 4; index++) {
-            let signTimestamp = await time.latest() - 540;
             // Executor index using wallet 17 + index as enclave address
-            let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index],
-                wallets[14], timestamp - 540000);
-            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
-                wallets[17 + index]);
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[17 + index],
+                teeImages[index],
+                wallets[14],
+                timestamp - 540000
+            );
 
-            await executors.connect(signers[1]).registerExecutor(
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[17 + index]
+            );
+
+            await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
                 attestation,
                 jobCapacity,
+                storageCapacity,
+                env,
                 signTimestamp,
                 signedDigest,
-                stakeAmount,
-                env
+                stakeAmount
             );
         }
 
         await usdc_token.transfer(addrs[1], 10n ** 6n);
         await usdc_token.connect(signers[1]).approve(jobs.target, 10n ** 6n);
+
+        let noOfNodesToSelect = 3,
+            globalMaxStoreSize = 1e6,
+            globalMinStoreDuration = 10,
+            globalMaxStoreDuration = 1e6,
+            acknowledgementTimeout = 120,
+            markAliveTimeout = 500,
+            secretStoreFeeRate = 10,
+            stakingPaymentPool = addrs[2];
+
+        const SecretManager = await ethers.getContractFactory("SecretManager");
+        secretManager = await upgrades.deployProxy(
+            SecretManager,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    usdc_token.target,
+                    noOfNodesToSelect,
+                    globalMaxStoreSize,
+                    globalMinStoreDuration,
+                    globalMaxStoreDuration,
+                    acknowledgementTimeout,
+                    markAliveTimeout,
+                    secretStoreFeeRate,
+                    stakingPaymentPool,
+                    teeManager.target,
+                    executors.target,
+                    secretStore.target
+                ]
+            },
+        ) as unknown as SecretManager;
+
+        await usdc_token.approve(secretManager.target, parseUnits("10000", 6));
+        await jobs.setSecretManager(secretManager.target);
+        await secretStore.setSecretManager(secretManager.target);
+
+        // CREATE SECRET
+        let sizeLimit = 1000,
+            endTimestamp = await time.latest() + 800,
+            usdcDeposit = parseUnits("30", 6);
+        await secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, [addrs[1]]);
+
+        // ACKNOWLEDGE SECRET
+        let secretId = 1;
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        for (let i = 0; i < selectedStores.length; i++) {
+            let index = addrs.indexOf(selectedStores[i].enclaveAddress);
+            const wallet = wallets[index];
+            let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallet);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        }
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
 
-    it("can relay job", async function () {
-        // let reqChainId = (await ethers.provider.getNetwork()).chainId;
-        let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+    it("can relay job with secret", async function () {
+        let env = 1,
+            secretId = 1,
+            codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
             codeInputs = solidityPacked(["string"], ["codeInput"]),
             deadline = 10000,
-            jobOwner = addrs[1],
-            env = 1;
-
-        let tx = await jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline);
+            jobOwner = addrs[1];
+        let tx = await jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline);
         await tx.wait();
-        await expect(tx).to.emit(jobs, "JobCreated");
 
         // Since it is a first job.
         let jobId = 0;
-        let job = await jobs.jobs(jobId);
+        let selectedExecutors = await jobs.getSelectedExecutors(jobId);
+        await expect(tx)
+            .to.emit(jobs, "JobCreated")
+            .withArgs(jobId, env, jobOwner, secretId, codeHash, codeInputs, deadline, selectedExecutors);
 
+        let job = await jobs.jobs(jobId);
         expect(job.jobOwner).to.eq(jobOwner);
         expect(job.deadline).to.eq(deadline);
         expect(job.execStartTime).to.eq((await tx.getBlock())?.timestamp);
+        expect(job.env).to.eq(env);
+        expect(selectedExecutors.length).to.eq(3);
+        expect(new Set(selectedExecutors).size).to.eq(selectedExecutors.length);
 
-
-        let selectedExecutors = await jobs.getSelectedExecutors(jobId);
         for (let index = 0; index < selectedExecutors.length; index++) {
             const executor = selectedExecutors[index];
             expect([addrs[17], addrs[18], addrs[19], addrs[20]]).to.contain(executor);
         }
     });
 
-    it("cannot relay job with unsupported execution env", async function () {
-        let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-            codeInputs = solidityPacked(["string"], ["codeInput"]),
-            deadline = 10000,
-            env = 2;
+    // it("can relay job without secret", async function () {
+    //     let env = 1,
+    //         secretId = 0,
+    //         codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+    //         codeInputs = solidityPacked(["string"], ["codeInput"]),
+    //         deadline = 10000,
+    //         jobOwner = addrs[1];
+    //     let tx = await jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline);
+    //     await tx.wait();
+    //     await expect(tx).to.emit(jobs, "JobCreated");
 
-        await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
+    //     // Since it is a first job.
+    //     let jobId = 0;
+    //     let job = await jobs.jobs(jobId);
+
+    //     expect(job.jobOwner).to.eq(jobOwner);
+    //     expect(job.deadline).to.eq(deadline);
+    //     expect(job.execStartTime).to.eq((await tx.getBlock())?.timestamp);
+    //     expect(job.env).to.eq(env);
+
+    //     let selectedExecutors = await jobs.getSelectedExecutors(jobId);
+    //     console.log("select: ", selectedExecutors, selectedExecutors.length);
+    //     for (let index = 0; index < selectedExecutors.length; index++) {
+    //         const executor = selectedExecutors[index];
+    //         expect([addrs[17], addrs[18], addrs[19], addrs[20]]).to.contain(executor);
+    //     }
+    // });
+
+    it("cannot relay job without secret", async function () {
+        let env = 1,
+            secretId = 0,
+            codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+            codeInputs = solidityPacked(["string"], ["codeInput"]),
+            deadline = 10000;
+
+        await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
+            .to.revertedWithCustomError(jobs, "JobsInvalidSecretId");
+    });
+
+    it("cannot relay job with unsupported execution env", async function () {
+        let env = 2,
+            secretId = 1,
+            codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+            codeInputs = solidityPacked(["string"], ["codeInput"]),
+            deadline = 10000;
+
+        await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
             .to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
     });
 
-    it("cannot relay job when a minimum no. of executor nodes are not available", async function () {
-        await executors.connect(signers[1]).drainExecutor(addrs[19]);
-        await executors.connect(signers[1]).drainExecutor(addrs[20]);
+    // it("cannot relay job when a minimum no. of executor nodes are not available", async function () {
+    //     let secretId = 1;
+    //     // remove the unselected store
+    //     let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+    //     let stores = [addrs[17], addrs[18], addrs[19], addrs[20]];
+    //     for (let i = 0; i < selectedStores.length; i++) {
+    //         let index = stores.indexOf(selectedStores[i].enclaveAddress);
+    //         stores.splice(index, 1);
+    //     }
+    //     let unselectedStore = stores[0];
+    //     await teeManager.connect(signers[1]).drainTeeNode(unselectedStore);
 
-        let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
-            codeInputs = solidityPacked(["string"], ["codeInput"]),
-            deadline = 10000,
-            env = 1;
+    //     let env = 1,
+    //         codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+    //         codeInputs = solidityPacked(["string"], ["codeInput"]),
+    //         deadline = 10000;
 
-        await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
-            .to.revertedWithCustomError(jobs, "JobsUnavailableResources");
-    });
+    //     // max 3 jobs can be assigned
+    //     await jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline);
+    //     await jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline);
+    //     await jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline);
+    //     await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
+    //         .to.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
+    // });
 
     it("cannot relay job after all the executors are fully occupied", async function () {
-        await executors.connect(signers[1]).drainExecutor(addrs[20]);
+        let secretId = 1;
+        // remove the unselected store
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        let stores = [addrs[17], addrs[18], addrs[19], addrs[20]];
+        for (let i = 0; i < selectedStores.length; i++) {
+            let index = stores.indexOf(selectedStores[i].enclaveAddress);
+            stores.splice(index, 1);
+        }
+        let unselectedStore = stores[0];
+        await teeManager.connect(signers[1]).drainTeeNode(unselectedStore);
 
-        let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
+        let env = 1,
+            codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
             codeInputs = solidityPacked(["string"], ["codeInput"]),
-            deadline = 10000,
-            env = 1;
+            deadline = 10000;
 
         for (let index = 1; index <= 3; index++) {
-            await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
+            await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
                 .to.emit(jobs, "JobCreated");
         }
-
-        await expect(jobs.connect(signers[1]).createJob(env, codeHash, codeInputs, deadline))
-            .to.revertedWithCustomError(jobs, "JobsUnavailableResources");
+        await expect(jobs.connect(signers[1]).createJob(env, secretId, codeHash, codeInputs, deadline))
+            .to.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
     });
 });
 
@@ -741,8 +982,10 @@ describe("Jobs - Output", function () {
     let wallets: Wallet[];
     let pubkeys: string[];
     let attestationVerifier: AttestationVerifier;
+    let teeManager: TeeManager;
     let executors: Executors;
     let jobs: Jobs;
+    let secretManager: SecretManager;
     let staking_payment_pool: string;
     let usdc_payment_pool: string;
 
@@ -770,11 +1013,12 @@ describe("Jobs - Output", function () {
             [[image1], [pubkeys[14]], addrs[0]],
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
-        let executor_images = [image4, image5, image6, image7];
-        const Executors = await ethers.getContractFactory("contracts/serverless-v2/Executors.sol:Executors");
-        executors = await upgrades.deployProxy(
-            Executors,
-            [addrs[0], executor_images],
+
+        let teeImages = [image4, image5, image6, image7];
+        const TeeManager = await ethers.getContractFactory("TeeManager");
+        teeManager = await upgrades.deployProxy(
+            TeeManager,
+            [addrs[0], teeImages],
             {
                 kind: "uups",
                 initializer: "initialize",
@@ -782,15 +1026,43 @@ describe("Jobs - Output", function () {
                     attestationVerifier.target,
                     600,
                     staking_token.target,
-                    10 ** 10,
+                    10,
                     10 ** 2,
                     10 ** 6
                 ]
             },
+        ) as unknown as TeeManager;
+
+        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+        executors = await upgrades.deployProxy(
+            Executors,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
         ) as unknown as Executors;
 
+        const SecretStore = await ethers.getContractFactory("SecretStore");
+        let secretStore = await upgrades.deployProxy(
+            SecretStore,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
+        ) as unknown as SecretStore;
 
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        await teeManager.setExecutors(executors.target);
+        await teeManager.setSecretStore(secretStore.target);
+
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -804,15 +1076,17 @@ describe("Jobs - Output", function () {
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors.target
+                    usdc_payment_pool
                 ]
             },
         ) as unknown as Jobs;
 
         // Grant role to jobs contract on executor
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+        await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
 
+        await jobs.setExecutors(executors.target);
+        await jobs.setSecretStore(secretStore.target);
 
         let env = 1,
             executionFeePerMs = 1,
@@ -821,39 +1095,98 @@ describe("Jobs - Output", function () {
 
         // Register Executors. Owner is addrs[1]
         await staking_token.transfer(addrs[1], 10n ** 20n);
-        await staking_token.connect(signers[1]).approve(executors.target, 10n ** 20n);
+        await staking_token.connect(signers[1]).approve(teeManager.target, 10n ** 20n);
 
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             stakeAmount = 10n ** 19n;
         const timestamp = await time.latest() * 1000;
-
+        let signTimestamp = await time.latest() - 540;
         for (let index = 0; index < 3; index++) {
-            let signTimestamp = await time.latest() - 540;
             // Executor index using wallet 17 + index as enclave address
-            let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index],
-                wallets[14], timestamp - 540000);
-            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[17 + index],
+                teeImages[index],
+                wallets[14],
+                timestamp - 540000
+            );
+
+            let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
                 wallets[17 + index]);
 
-            await executors.connect(signers[1]).registerExecutor(
+            await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
                 attestation,
                 jobCapacity,
+                storageCapacity,
+                env,
                 signTimestamp,
                 signedDigest,
-                stakeAmount,
-                env
+                stakeAmount
             );
         }
         // RELAY JOB
         await usdc_token.transfer(addrs[3], 10n ** 6n);
         await usdc_token.connect(signers[3]).approve(jobs.target, 10n ** 6n);
 
+        let noOfNodesToSelect = 3,
+            globalMaxStoreSize = 1e6,
+            globalMinStoreDuration = 10,
+            globalMaxStoreDuration = 1e6,
+            acknowledgementTimeout = 120,
+            markAliveTimeout = 500,
+            secretStoreFeeRate = 10,
+            stakingPaymentPool = addrs[2];
+
+        const SecretManager = await ethers.getContractFactory("SecretManager");
+        secretManager = await upgrades.deployProxy(
+            SecretManager,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    usdc_token.target,
+                    noOfNodesToSelect,
+                    globalMaxStoreSize,
+                    globalMinStoreDuration,
+                    globalMaxStoreDuration,
+                    acknowledgementTimeout,
+                    markAliveTimeout,
+                    secretStoreFeeRate,
+                    stakingPaymentPool,
+                    teeManager.target,
+                    executors.target,
+                    secretStore.target
+                ]
+            },
+        ) as unknown as SecretManager;
+
+        await secretStore.setSecretManager(secretManager.target);
+        await usdc_token.approve(secretManager.target, parseUnits("10000", 6));
+        await jobs.setSecretManager(secretManager.target);
+        await jobs.setTeeManager(teeManager.target);
+
+        // CREATE SECRET
+        let sizeLimit = 1000,
+            endTimestamp = await time.latest() + 800,
+            usdcDeposit = parseUnits("30", 6);
+        await secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, [addrs[3]]);
+
+        // ACKNOWLEDGE SECRET
+        let secretId = 1;
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        for (let i = 0; i < selectedStores.length; i++) {
+            let index = addrs.indexOf(selectedStores[i].enclaveAddress);
+            const wallet = wallets[index];
+            let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallet);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        }
 
         let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
             codeInputs = solidityPacked(["string"], ["codeInput"]),
             deadline = 10000;
-        await jobs.connect(signers[3]).createJob(env, codeHash, codeInputs, deadline);
+        await jobs.connect(signers[3]).createJob(env, secretId, codeHash, codeInputs, deadline);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -877,15 +1210,18 @@ describe("Jobs - Output", function () {
         );
         await expect(tx).to.emit(jobs, "JobResponded")
             .and.to.emit(jobs, "JobResultCallbackCalled").withArgs(jobId, true);
-        // check active jobs for submitter
+        // check active jobs and reputation for submitter
         let executor = await executors.executors(addrs[17]);
         expect(executor.activeJobs).to.eq(0);
-        // check active job for pending submitter
+        expect(executor.reputation).to.eq(1010);
+        // check active jobs and reputation for pending submitter
         executor = await executors.executors(addrs[18]);
         expect(executor.activeJobs).to.eq(1);
+        expect(executor.reputation).to.eq(1000);
 
         executor = await executors.executors(addrs[19]);
         expect(executor.activeJobs).to.eq(1);
+        expect(executor.reputation).to.eq(1000);
 
         // check usdc balance of executor
         expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n * 4n / 9n);
@@ -895,8 +1231,8 @@ describe("Jobs - Output", function () {
         expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n ** 6n - 100n * 2n);
         // check stakes of all executors
         for (let index = 17; index < 20; index++) {
-            const executor = await executors.executors(addrs[index]);
-            expect(executor.stakeAmount).to.eq(10n ** 19n);
+            const teeNode = await teeManager.teeNodes(addrs[index]);
+            expect(teeNode.stakeAmount).to.eq(10n ** 19n);
         }
     });
 
@@ -933,15 +1269,18 @@ describe("Jobs - Output", function () {
         );
         await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobResultCallbackCalled");
 
-        // check active jobs for submitter
+        // check active jobs and reputation for submitter
         let executor = await executors.executors(addrs[17]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(1010);
         executor = await executors.executors(addrs[18]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(995);
 
-        // check active job for pending submitter
+        // check active jobs and reputation for pending submitter
         executor = await executors.executors(addrs[19]);
         expect(executor.activeJobs).to.eq(1);
+        expect(executor.reputation).to.eq(1000);
 
         // check usdc balance of executor
         expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n * 7n / 9n);
@@ -951,8 +1290,8 @@ describe("Jobs - Output", function () {
         expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n ** 6n - 100n * 2n);
         // check stakes of all executors
         for (let index = 17; index < 20; index++) {
-            const executor = await executors.executors(addrs[index]);
-            expect(executor.stakeAmount).to.eq(10n ** 19n);
+            const teeNode = await teeManager.teeNodes(addrs[index]);
+            expect(teeNode.stakeAmount).to.eq(10n ** 19n);
         }
     });
 
@@ -1001,15 +1340,18 @@ describe("Jobs - Output", function () {
         );
         await expect(tx).to.emit(jobs, "JobResponded").to.not.emit(jobs, "JobResultCallbackCalled");
 
-        // check active jobs for submitter
+        // check active jobs and reputation for submitter
         let executor = await executors.executors(addrs[17]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(1010);
 
         executor = await executors.executors(addrs[18]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(995);
 
         executor = await executors.executors(addrs[19]);
         expect(executor.activeJobs).to.eq(0);
+        expect(executor.reputation).to.eq(995);
 
         // check usdc balance of executor
         expect(await usdc_token.balanceOf(addrs[1])).to.eq(100n);
@@ -1019,22 +1361,24 @@ describe("Jobs - Output", function () {
         expect(await usdc_token.balanceOf(addrs[3])).to.eq(10n ** 6n - 100n * 2n);
         // check stakes of all executors
         for (let index = 17; index < 20; index++) {
-            const executor = await executors.executors(addrs[index]);
-            expect(executor.stakeAmount).to.eq(10n ** 19n);
+            const teeNode = await teeManager.teeNodes(addrs[index]);
+            expect(teeNode.stakeAmount).to.eq(10n ** 19n);
         }
     });
 
     it("verify job result callback", async function () {
         // deploy job user
-        const JobsUser = await ethers.getContractFactory("JobsUser");
-        let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
+        const SecretJobsUser = await ethers.getContractFactory("SecretJobsUser");
+        let jobsUser = await SecretJobsUser.deploy(jobs.target, usdc_token.target) as unknown as SecretJobsUser;
         let env = 1,
+            secretId = 1,
             codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
             codeInputs = solidityPacked(["string"], ["codeInput"]),
             usdcDeposit = 1000000,
             deadline = 10000;
         await usdc_token.transfer(jobsUser.target, 10n ** 6n);
-        await jobsUser.createJob(env, codeHash, codeInputs, deadline, usdcDeposit);
+        await secretManager.setSecretAllowedAddresses(secretId, [jobsUser.target]);
+        await jobsUser.createJob(env, secretId, codeHash, codeInputs, deadline, usdcDeposit);
 
         let jobId = 1,
             output = solidityPacked(["string"], ["it is the output"]),
@@ -1127,25 +1471,31 @@ describe("Jobs - Output", function () {
 
     it("cannot submit output from unselected executor node", async function () {
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             stakeAmount = 10,
             timestamp = await time.latest() * 1000,
             env = 1;
 
         let signTimestamp = await time.latest() - 540;
-        // Executor index using wallet 17 + index as enclave address
-        let [attestationSign, attestation] = await createAttestation(pubkeys[20], image4,
-            wallets[14], timestamp - 540000);
-        let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[20],
+            image4,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let signedDigest = await registerTeeNodeSignature(addrs[1], jobCapacity, storageCapacity, env, signTimestamp,
             wallets[20]);
 
-        await executors.connect(signers[1]).registerExecutor(
+        await teeManager.connect(signers[1]).registerTeeNode(
             attestationSign,
             attestation,
             jobCapacity,
+            storageCapacity,
+            env,
             signTimestamp,
             signedDigest,
-            stakeAmount,
-            env
+            stakeAmount
         );
 
         let jobId = 0,
@@ -1172,7 +1522,7 @@ describe("Jobs - Output", function () {
             errorCode = 0,
             signTimestamp = await time.latest() - 540;
 
-        await executors.connect(signers[1]).drainExecutor(addrs[17]);
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[17]);
 
         let signedDigest = await createOutputSignature(jobId, output, totalTime, errorCode, signTimestamp, wallets[17]);
         await expect(jobs.connect(signers[1]).submitOutput(
@@ -1185,8 +1535,8 @@ describe("Jobs - Output", function () {
         ))
             .to.emit(jobs, "JobResponded");
 
-        let executor = await executors.executors(addrs[17]);
-        expect(executor.draining).to.be.true;
+        let teeNode = await teeManager.teeNodes(addrs[17]);
+        expect(teeNode.draining).to.be.true;
     });
 
     it("can submit output by selected executor node with totalTime > deadline", async function () {
@@ -1225,8 +1575,10 @@ describe("Jobs - Slashing", function () {
     let wallets: Wallet[];
     let pubkeys: string[];
     let attestationVerifier: AttestationVerifier;
+    let teeManager: TeeManager;
     let executors: Executors;
     let jobs: Jobs;
+    let secretManager: SecretManager;
     let staking_payment_pool: string;
     let usdc_payment_pool: string;
 
@@ -1255,12 +1607,11 @@ describe("Jobs - Slashing", function () {
             { kind: "uups" },
         ) as unknown as AttestationVerifier;
 
-        let executor_images = [image4, image5, image6, image7];
-
-        const Executors = await ethers.getContractFactory("contracts/serverless-v2/Executors.sol:Executors");
-        executors = await upgrades.deployProxy(
-            Executors,
-            [addrs[0], executor_images],
+        let teeImages = [image4, image5, image6, image7];
+        const TeeManager = await ethers.getContractFactory("TeeManager");
+        teeManager = await upgrades.deployProxy(
+            TeeManager,
+            [addrs[0], teeImages],
             {
                 kind: "uups",
                 initializer: "initialize",
@@ -1268,14 +1619,43 @@ describe("Jobs - Slashing", function () {
                     attestationVerifier.target,
                     600,
                     staking_token.target,
-                    10 ** 10,
+                    10,
                     10 ** 2,
                     10 ** 6
                 ]
             },
+        ) as unknown as TeeManager;
+
+        const Executors = await ethers.getContractFactory("contracts/secret-storage/Executors.sol:Executors");
+        executors = await upgrades.deployProxy(
+            Executors,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
         ) as unknown as Executors;
 
-        const Jobs = await ethers.getContractFactory("contracts/serverless-v2/Jobs.sol:Jobs");
+        const SecretStore = await ethers.getContractFactory("SecretStore");
+        let secretStore = await upgrades.deployProxy(
+            SecretStore,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    teeManager.target
+                ]
+            },
+        ) as unknown as SecretStore;
+
+        await teeManager.setExecutors(executors.target);
+        await teeManager.setSecretStore(secretStore.target);
+
+        const Jobs = await ethers.getContractFactory("contracts/secret-storage/job-allocation/Jobs.sol:Jobs");
         jobs = await upgrades.deployProxy(
             Jobs,
             [addrs[0]],
@@ -1289,13 +1669,16 @@ describe("Jobs - Slashing", function () {
                     100,
                     3,
                     staking_payment_pool,
-                    usdc_payment_pool,
-                    executors.target
+                    usdc_payment_pool
                 ]
             },
         ) as unknown as Jobs;
 
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+        await secretStore.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), jobs.target);
+
+        await jobs.setExecutors(executors.target);
+        await jobs.setSecretStore(secretStore.target);
 
         let env = 1,
             executionFeePerMs = 1,
@@ -1304,27 +1687,35 @@ describe("Jobs - Slashing", function () {
 
         // Grant role to jobs contract on executor
         await staking_token.transfer(addrs[1], 10n ** 20n);
-        await staking_token.connect(signers[1]).approve(executors.target, 10n ** 20n);
+        await staking_token.connect(signers[1]).approve(teeManager.target, 10n ** 20n);
 
         let jobCapacity = 20,
+            storageCapacity = 1e9,
             stakeAmount = 10n ** 19n;
         const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest() - 540;
         for (let index = 0; index < 3; index++) {
-            let signTimestamp = await time.latest() - 540;
             // Executor index using wallet 17 + index as enclave address
-            let [attestationSign, attestation] = await createAttestation(pubkeys[17 + index], executor_images[index],
-                wallets[14], timestamp - 540000);
-            let signedDigest = await createExecutorSignature(addrs[1], jobCapacity, env, signTimestamp,
-                wallets[17 + index]);
+            let [attestationSign, attestation] = await createAttestation(
+                pubkeys[17 + index],
+                teeImages[index],
+                wallets[14],
+                timestamp - 540000
+            );
 
-            await executors.connect(signers[1]).registerExecutor(
+            let signedDigest = await registerTeeNodeSignature(
+                addrs[1], jobCapacity, storageCapacity, env, signTimestamp, wallets[17 + index]
+            );
+
+            await teeManager.connect(signers[1]).registerTeeNode(
                 attestationSign,
                 attestation,
                 jobCapacity,
+                storageCapacity,
+                env,
                 signTimestamp,
                 signedDigest,
-                stakeAmount,
-                env
+                stakeAmount
             );
         }
 
@@ -1332,11 +1723,64 @@ describe("Jobs - Slashing", function () {
         await usdc_token.transfer(addrs[3], 10n ** 6n);
         await usdc_token.connect(signers[3]).approve(jobs.target, 10n ** 6n);
 
+        let noOfNodesToSelect = 3,
+            globalMaxStoreSize = 1e6,
+            globalMinStoreDuration = 10,
+            globalMaxStoreDuration = 1e6,
+            acknowledgementTimeout = 120,
+            markAliveTimeout = 500,
+            secretStoreFeeRate = 10,
+            stakingPaymentPool = addrs[2];
+
+        const SecretManager = await ethers.getContractFactory("SecretManager");
+        secretManager = await upgrades.deployProxy(
+            SecretManager,
+            [addrs[0]],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                constructorArgs: [
+                    usdc_token.target,
+                    noOfNodesToSelect,
+                    globalMaxStoreSize,
+                    globalMinStoreDuration,
+                    globalMaxStoreDuration,
+                    acknowledgementTimeout,
+                    markAliveTimeout,
+                    secretStoreFeeRate,
+                    stakingPaymentPool,
+                    teeManager.target,
+                    executors.target,
+                    secretStore.target
+                ]
+            },
+        ) as unknown as SecretManager;
+
+        await secretStore.setSecretManager(secretManager.target);
+        await usdc_token.approve(secretManager.target, parseUnits("10000", 6));
+        await jobs.setSecretManager(secretManager.target);
+        await jobs.setTeeManager(teeManager.target);
+
+        // CREATE SECRET
+        let sizeLimit = 1000,
+            endTimestamp = await time.latest() + 800,
+            usdcDeposit = parseUnits("30", 6);
+        await secretManager.createSecret(env, sizeLimit, endTimestamp, usdcDeposit, [addrs[3]]);
+
+        // ACKNOWLEDGE SECRET
+        let secretId = 1;
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        for (let i = 0; i < selectedStores.length; i++) {
+            let index = addrs.indexOf(selectedStores[i].enclaveAddress);
+            const wallet = wallets[index];
+            let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallet);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        }
 
         let codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
             codeInputs = solidityPacked(["string"], ["codeInput"]),
             deadline = 10000;
-        await jobs.connect(signers[3]).createJob(env, codeHash, codeInputs, deadline);
+        await jobs.connect(signers[3]).createJob(env, secretId, codeHash, codeInputs, deadline);
     });
 
     takeSnapshotBeforeAndAfterEveryTest(async () => { });
@@ -1352,6 +1796,7 @@ describe("Jobs - Slashing", function () {
         // check job does not exists
         let job = await jobs.jobs(jobId);
         expect(job.execStartTime).to.be.eq(0);
+        expect(await (await executors.executors(addrs[17])).reputation).to.eq(990);
 
         // check slashed amount that job owner is getting
         expect(await staking_token.balanceOf(addrs[3])).to.be.eq(3n * 10n ** 15n);
@@ -1382,7 +1827,7 @@ describe("Jobs - Slashing", function () {
     });
 
     it("can slash after executor initiates drain", async function () {
-        await executors.connect(signers[1]).drainExecutor(addrs[17]);
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[17]);
 
         await time.increase(await time.latest() + 100000);
         let jobId = 0;
@@ -1390,8 +1835,9 @@ describe("Jobs - Slashing", function () {
         await expect(jobs.slashOnExecutionTimeout(jobId))
             .to.emit(jobs, "SlashedOnExecutionTimeout");
 
-        let executor = await executors.executors(addrs[17]);
-        expect(executor.draining).to.be.true;
+        let teeNode = await teeManager.teeNodes(addrs[17]);
+        expect(teeNode.draining).to.be.true;
+        expect(await (await executors.executors(addrs[17])).reputation).to.eq(990);
     });
 
     it("slash after only one executor submits output", async function () {
@@ -1511,15 +1957,17 @@ describe("Jobs - Slashing", function () {
 
     it("verify job failed callback", async function () {
         // deploy job user
-        const JobsUser = await ethers.getContractFactory("JobsUser");
-        let jobsUser = await JobsUser.deploy(jobs.target, usdc_token.target) as unknown as JobsUser;
+        const SecretJobsUser = await ethers.getContractFactory("SecretJobsUser");
+        let jobsUser = await SecretJobsUser.deploy(jobs.target, usdc_token.target) as unknown as SecretJobsUser;
         let env = 1,
+            secretId = 1,
             codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
             codeInputs = solidityPacked(["string"], ["codeInput"]),
             usdcDeposit = 1000000,
             deadline = 10000;
         await usdc_token.transfer(jobsUser.target, 10n ** 6n);
-        await jobsUser.createJob(env, codeHash, codeInputs, deadline, usdcDeposit);
+        await secretManager.setSecretAllowedAddresses(secretId, [jobsUser.target]);
+        await jobsUser.createJob(env, secretId, codeHash, codeInputs, deadline, usdcDeposit);
 
         await time.increase(await time.latest() + 100000);
         let jobId = 1;
@@ -1543,6 +1991,67 @@ type Attestation = {
     PCR1: BytesLike,
     PCR2: BytesLike,
     timestampInMilliseconds: number,
+}
+
+async function registerTeeNodeSignature(
+    owner: string,
+    jobCapacity: number,
+    storageCapacity: number,
+    env: number,
+    signTimestamp: number,
+    sourceEnclaveWallet: Wallet
+): Promise<string> {
+    const domain = {
+        name: 'marlin.oyster.TeeManager',
+        version: '1',
+    };
+
+    const types = {
+        Register: [
+            { name: 'owner', type: 'address' },
+            { name: 'jobCapacity', type: 'uint256' },
+            { name: 'storageCapacity', type: 'uint256' },
+            { name: 'env', type: 'uint8' },
+            { name: 'signTimestamp', type: 'uint256' }
+        ]
+    };
+
+    const value = {
+        owner,
+        jobCapacity,
+        storageCapacity,
+        env,
+        signTimestamp
+    };
+
+    const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+    return ethers.Signature.from(sign).serialized;
+}
+
+async function createAcknowledgeSignature(
+    secretId: number,
+    signTimestamp: number,
+    sourceEnclaveWallet: Wallet
+): Promise<string> {
+    const domain = {
+        name: 'marlin.oyster.SecretManager',
+        version: '1',
+    };
+
+    const types = {
+        Acknowledge: [
+            { name: 'secretId', type: 'uint256' },
+            { name: 'signTimestamp', type: 'uint256' }
+        ]
+    };
+
+    const value = {
+        secretId,
+        signTimestamp
+    };
+
+    const sign = await sourceEnclaveWallet.signTypedData(domain, types, value);
+    return ethers.Signature.from(sign).serialized;
 }
 
 async function createAttestation(
@@ -1650,7 +2159,9 @@ async function createOutputSignature(
 }
 
 function walletForIndex(idx: number): Wallet {
-    let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
+    let wallet = ethers.HDNodeWallet.fromPhrase(
+        "test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString()
+    );
 
     return new Wallet(wallet.privateKey);
 }
