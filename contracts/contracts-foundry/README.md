@@ -1,66 +1,34 @@
-## Foundry
+# Oyster contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This project contains contracts associated with the Oyster platform. It uses [Foundry](https://getfoundry.sh/) for development and testing.
 
-Foundry consists of:
+## Setup
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+#### Install Foundry
 
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```bash
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
 ```
 
-### Test
+#### Install dependencies
 
-```shell
-$ forge test
+```bash
+forge install
 ```
 
-### Format
+## Build
 
-```shell
-$ forge fmt
+```bash
+forge build
 ```
 
-### Gas Snapshots
+## Test
 
-```shell
-$ forge snapshot
+```bash
+forge test
 ```
 
-### Anvil
+## License
 
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+This project is licensed under the MIT license. See [LICENSE.txt](./LICENSE.txt).
