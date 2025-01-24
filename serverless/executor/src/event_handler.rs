@@ -18,11 +18,14 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 use tokio_stream::Stream;
 
-use crate::constant::*;
+use crate::constant::{
+    EXECUTION_ENV_ID, GAS_LIMIT_BUFFER, HTTP_CALL_RETRY_DELAY, RESEND_GAS_PRICE_INCREMENT_PERCENT,
+    RESEND_TXN_INTERVAL,
+};
 use crate::job_handler::handle_job;
-use crate::model::*;
+use crate::model::{AppState, JobsTxnMetadata, JobsTxnSendError, PendingTxnData};
 use crate::timeout_handler::handle_timeout;
-use crate::utils::*;
+use crate::utils::{estimate_gas_and_price, generate_txn, parse_send_error};
 
 // Start listening to Job requests emitted by the Jobs contract if enclave is registered else listen for Executor registered events first
 pub async fn events_listener(app_state: State<AppState>, starting_block: U64) {

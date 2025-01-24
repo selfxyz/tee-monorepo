@@ -309,13 +309,14 @@ async fn inject_and_store_secret(
     };
 
     // Exit if the secret data is not the same size as the limit received from the SecretManager contract
-    if secret_created.secret_metadata.size_limit != U256::from(decrypted_secret.len()) {
+    if secret_created.secret_metadata.size_limit < U256::from(decrypted_secret.len()) {
         app_state
             .secrets_created
             .lock()
             .unwrap()
             .insert(create_secret.secret_id, secret_created);
-        return HttpResponse::BadRequest().body("Secret data not of the expected size!\n");
+        return HttpResponse::BadRequest()
+            .body("Secret data bigger than the expected size limit!\n");
     }
 
     // Create and store the secret data in the filesystem
