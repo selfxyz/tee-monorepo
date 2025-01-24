@@ -4,7 +4,7 @@ use alloy::{
     signers::{local::PrivateKeySigner, SignerSync},
 };
 use anyhow::{Context, Result};
-use axum::{extract::State, http::StatusCode, routing::post, Router};
+use axum::{extract::State, http::StatusCode, routing::get, Router};
 use clap::Parser;
 use nucypher_core::{
     encrypt_for_dkg, ferveo::api::DkgPublicKey, AccessControlPolicy, Conditions, ProtocolObject,
