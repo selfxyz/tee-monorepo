@@ -49,6 +49,8 @@ contract KmsRootTestConstruction is Test {
         assertEq(address(_kmsRoot.verifier()), address(_verifier));
         assertEq(_kmsRoot.imageId(), _imageId);
         assertEq(_kmsRoot.pcrs(), _pcrs);
+        assertEq(_kmsRoot.rootKey(), _rootKey);
+        assertEq(_kmsRoot.MAX_AGE(), _maxAge);
     }
 }
 
