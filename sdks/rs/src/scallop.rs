@@ -548,8 +548,6 @@ pub async fn new_client_async_Noise_IX_25519_ChaChaPoly_BLAKE2b<
 
     //---- <- SERVERFIN end ----//
 
-    // at this point, one of the below is true
-    // contains is either None
     Ok(ScallopStream {
         noise,
         stream,
