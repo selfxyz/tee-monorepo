@@ -304,27 +304,6 @@ contract KmsRootTestVerify is Test {
         _timestampInMilliseconds = uint64(
             bound(_timestampInMilliseconds, 0, 2000)
         );
-        bytes32 _journalDigest = sha256(
-            abi.encodePacked(
-                _timestampInMilliseconds,
-                pcrs,
-                rootKey,
-                uint8(64),
-                _signerPubkey,
-                uint16(0)
-            )
-        );
-        vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
-        vm.mockCall(
-            address(verifier),
-            abi.encodeWithSelector(
-                IRiscZeroVerifier.verify.selector,
-                _seal,
-                imageId,
-                _journalDigest
-            ),
-            abi.encode()
-        );
         vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootTooOld.selector));
         vm.warp(4);
 
@@ -339,27 +318,6 @@ contract KmsRootTestVerify is Test {
         vm.assume(_signerPubkey.length != 64);
         _timestampInMilliseconds = uint64(
             bound(_timestampInMilliseconds, 2001, type(uint64).max)
-        );
-        bytes32 _journalDigest = sha256(
-            abi.encodePacked(
-                _timestampInMilliseconds,
-                pcrs,
-                rootKey,
-                uint8(64),
-                _signerPubkey,
-                uint16(0)
-            )
-        );
-        vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
-        vm.mockCall(
-            address(verifier),
-            abi.encodeWithSelector(
-                IRiscZeroVerifier.verify.selector,
-                _seal,
-                imageId,
-                _journalDigest
-            ),
-            abi.encode()
         );
         vm.expectRevert(
             abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector)
