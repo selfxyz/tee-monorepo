@@ -112,7 +112,7 @@ contract KmsRoot is Ownable {
             _timestampInMilliseconds > (block.timestamp - MAX_AGE) * 1000,
             KmsRootTooOld()
         );
-        require(_signerPubkey.length < 256, KmsRootLengthInvalid());
+        address _addr = _pubkeyToAddress(_signerPubkey);
         bytes32 _journalDigest = sha256(
             abi.encodePacked(
                 _timestampInMilliseconds,
@@ -125,7 +125,6 @@ contract KmsRoot is Ownable {
         );
         verifier.verify(_seal, imageId, _journalDigest);
 
-        address _addr = _pubkeyToAddress(_signerPubkey);
         isVerified[_addr] = true;
 
         emit KmsRootVerified(_addr);
