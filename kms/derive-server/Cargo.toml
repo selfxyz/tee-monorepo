@@ -12,7 +12,7 @@ hmac = "0.12.1"
 http-body-util = "0.1.2"
 hyper = { version = "1.5.2", features = ["full"] }
 hyper-util = { version = "0.1.10", features = ["tokio"] }
-oyster-sdk = "0.14.3"
+oyster-sdk = "0.14.4"
 reqwest = "0.12.12"
 serde = { version = "1.0.217", features = ["derive"] }
 sha2 = "0.10.8"
