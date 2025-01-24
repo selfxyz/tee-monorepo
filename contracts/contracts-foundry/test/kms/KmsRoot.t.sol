@@ -67,7 +67,7 @@ contract KmsRootTestUpdateVerifier is Test {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48);
+        pcrs = vm.randomBytes(48 * 3);
         rootKey = vm.randomBytes(48);
         maxAge = vm.randomUint();
         kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
@@ -113,7 +113,7 @@ contract KmsRootTestUpdateImageId is Test {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48);
+        pcrs = vm.randomBytes(48 * 3);
         rootKey = vm.randomBytes(48);
         maxAge = vm.randomUint();
         kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
@@ -159,7 +159,7 @@ contract KmsRootTestUpdatePcrs is Test {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48);
+        pcrs = vm.randomBytes(48 * 3);
         rootKey = vm.randomBytes(48);
         maxAge = vm.randomUint();
         kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
@@ -205,7 +205,7 @@ contract KmsRootTestUpdateRootKey is Test {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48);
+        pcrs = vm.randomBytes(48 * 3);
         rootKey = vm.randomBytes(48);
         maxAge = vm.randomUint();
         kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
@@ -251,7 +251,7 @@ contract KmsRootTestVerify is Test {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48);
+        pcrs = vm.randomBytes(48 * 3);
         rootKey = vm.randomBytes(48);
         maxAge = 2;
         kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
