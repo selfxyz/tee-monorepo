@@ -8,14 +8,6 @@ use sha2::Sha512;
 
 use crate::{scallop::AuthStoreState, AppState};
 
-// derivation format:
-// 1 byte
-//
-// why no version?
-// the current version is immutable
-// new versions will need to obtain new randomness
-// the PCRs of the current version are the version
-
 // derive keys after verifying attestations
 pub async fn derive(
     ConnectInfo(scallop_state): ConnectInfo<ScallopState<AuthStoreState>>,
