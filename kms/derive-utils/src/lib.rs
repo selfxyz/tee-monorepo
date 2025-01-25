@@ -41,6 +41,11 @@ pub fn to_secp256k1_secret(derived: [u8; 64]) -> Option<k256::SecretKey> {
     .ok()
 }
 
+pub fn to_secp256k1_public(derived: [u8; 64]) -> Option<k256::PublicKey> {
+    let secret = to_secp256k1_secret(derived)?;
+    Some(secret.public_key())
+}
+
 fn derive_enclave_seed_once(
     root: [u8; 64],
     pcr0: &[u8],
