@@ -83,7 +83,7 @@ fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
 mod tests {
     use hex_literal::hex;
 
-    use crate::derive_enclave_seed;
+    use crate::{derive_enclave_seed, derive_path_seed};
 
     #[test]
     fn test_derive_enclave_seed() {
@@ -96,6 +96,18 @@ mod tests {
         let expected = hex!("07daa9e8e6917e45658f826b68f925e043d54ae4040ef1bbcc54e9aaf29d72a9c8ab133a8a5ca8b6a86eaf355421a4b4d8c6e125a22a827df3c90d78696d07d7");
 
         let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
+
+        assert_eq!(seed, Some(expected));
+    }
+
+    #[test]
+    fn test_derive_path_seed() {
+        let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let path = hex!("0336b1a0838f0bd3");
+        // derived from an independent online implementation
+        let expected = hex!("77dd95c3ad1c4aec2370d79ad1cbab5399b0f893e203653c3a60a9a63f0c6f6d309cecab1007c4a893bc5e23180d5de25038420d70c309446c99581844f93fa0");
+
+        let seed = derive_path_seed(root, &path);
 
         assert_eq!(seed, Some(expected));
     }
