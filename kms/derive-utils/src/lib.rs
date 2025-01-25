@@ -1,5 +1,8 @@
 use hmac::Hmac;
 use hmac::Mac;
+use k256::SecretKey;
+use ruint::aliases::U256;
+use ruint::uint;
 use sha2::Sha512;
 
 pub fn derive_enclave_seed(
@@ -20,6 +23,22 @@ pub fn derive_enclave_seed(
 
 pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
     derive_path_seed_once(derive_path_seed_once(root, path)?, path)
+}
+
+pub fn to_secp256k1_secret(derived: [u8; 64]) -> Option<k256::SecretKey> {
+    // throw away last 32 bytes, assumes derived is random
+    // unlikely to ever matter, but bound it to [1, n)
+    // not perfectly random to mod but too negligible to care
+    SecretKey::from_slice(
+        &U256::from_be_bytes(derived)
+            .reduce_mod(uint!(
+                // secp256k1 n - 1
+                0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140_U256
+            ))
+            .wrapping_add(U256::from(1))
+            .to_be_bytes::<32>(),
+    )
+    .ok()
 }
 
 fn derive_enclave_seed_once(
