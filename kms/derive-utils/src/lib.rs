@@ -3,7 +3,9 @@ use hmac::Mac;
 use k256::SecretKey;
 use ruint::aliases::U256;
 use ruint::uint;
+use sha2::Digest;
 use sha2::Sha512;
+use sha3::Keccak256;
 
 pub fn derive_enclave_seed(
     root: [u8; 64],
@@ -44,6 +46,13 @@ pub fn to_secp256k1_secret(derived: [u8; 64]) -> Option<k256::SecretKey> {
 pub fn to_secp256k1_public(derived: [u8; 64]) -> Option<k256::PublicKey> {
     let secret = to_secp256k1_secret(derived)?;
     Some(secret.public_key())
+}
+
+pub fn to_secp256k1_address(derived: [u8; 64]) -> Option<[u8; 20]> {
+    let public = to_secp256k1_public(derived)?;
+    Keccak256::new_with_prefix(&public.to_sec1_bytes()[1..]).finalize()[12..]
+        .try_into()
+        .ok()
 }
 
 fn derive_enclave_seed_once(
