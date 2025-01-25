@@ -124,4 +124,30 @@ mod tests {
 
         assert_eq!(secret, Some(expected));
     }
+
+    #[test]
+    fn test_to_secp256k1_secret_max() {
+        let derived = hex!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        let expected = k256::SecretKey::from_slice(&hex!(
+            "000000000000000000000000000000014551231950b75fc4402da1732fc9bec0"
+        ))
+        .unwrap();
+
+        let secret = to_secp256k1_secret(derived);
+
+        assert_eq!(secret, Some(expected));
+    }
+
+    #[test]
+    fn test_to_secp256k1_secret_zero() {
+        let derived = hex!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+        let expected = k256::SecretKey::from_slice(&hex!(
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        ))
+        .unwrap();
+
+        let secret = to_secp256k1_secret(derived);
+
+        assert_eq!(secret, Some(expected));
+    }
 }
