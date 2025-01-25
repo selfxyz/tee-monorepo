@@ -84,7 +84,7 @@ fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
 mod tests {
     use hex_literal::hex;
 
-    use crate::{derive_enclave_seed, derive_path_seed, to_secp256k1_secret};
+    use crate::{derive_enclave_seed, derive_path_seed, to_secp256k1_address, to_secp256k1_secret};
 
     #[test]
     fn test_derive_enclave_seed() {
@@ -150,5 +150,16 @@ mod tests {
         let secret = to_secp256k1_secret(derived);
 
         assert_eq!(secret, Some(expected));
+    }
+
+    #[test]
+    fn test_to_secp256k1_address() {
+        let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        // derived from an independent online implementation
+        let expected = hex!("92148e8f84096d0dfe7e66a025d14d1e2594ddc2");
+
+        let address = to_secp256k1_address(derived);
+
+        assert_eq!(address, Some(expected));
     }
 }
