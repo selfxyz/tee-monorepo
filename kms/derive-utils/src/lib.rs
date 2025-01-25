@@ -32,7 +32,7 @@ pub fn to_secp256k1_secret(derived: [u8; 64]) -> Option<k256::SecretKey> {
     // unlikely to ever matter, but bound it to [1, n)
     // not perfectly random to mod but too negligible to care
     SecretKey::from_slice(
-        &U256::from_be_bytes(derived)
+        &U256::from_be_bytes::<32>(derived[..32].try_into().ok()?)
             .reduce_mod(uint!(
                 // secp256k1 n - 1
                 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140_U256
