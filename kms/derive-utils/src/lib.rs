@@ -1,5 +1,6 @@
 use hmac::Hmac;
 use hmac::Mac;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::SecretKey;
 use ruint::aliases::U256;
 use ruint::uint;
@@ -50,7 +51,7 @@ pub fn to_secp256k1_public(derived: [u8; 64]) -> Option<k256::PublicKey> {
 
 pub fn to_secp256k1_address(derived: [u8; 64]) -> Option<[u8; 20]> {
     let public = to_secp256k1_public(derived)?;
-    Keccak256::new_with_prefix(&public.to_sec1_bytes()[1..]).finalize()[12..]
+    Keccak256::new_with_prefix(&public.to_encoded_point(false).to_bytes()[1..]).finalize()[12..]
         .try_into()
         .ok()
 }
