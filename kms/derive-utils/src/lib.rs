@@ -78,3 +78,25 @@ fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
 
     Some(mac.finalize().into_bytes().into())
 }
+
+#[cfg(test)]
+mod tests {
+    use hex_literal::hex;
+
+    use crate::derive_enclave_seed;
+
+    #[test]
+    fn test_derive_enclave_seed() {
+        let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let pcr0 = hex!("107a6d53ba665ae961bb407bccf8b8bc95fa048e1eb59e012caac30e0ba2d58928ab78c18983e44c9660b01a8abadb91");
+        let pcr1 = hex!("c4c764a379f18de9633c69d81173f2ef1510bb84926fab60f77b54885b67d1a9e3c3d716c7991f16dd2c4a8bc4c8eca5");
+        let pcr2 = hex!("f0abae3d376be84340d12a9a5f6d989c1f5c56c59d04b41a3b5a72187fcb3d4090dd60229261c04281eb1d8d40c4b328");
+        let user_data = hex!("0336b1a0838f0bd3");
+        // derived from an independent online implementation
+        let expected = hex!("07daa9e8e6917e45658f826b68f925e043d54ae4040ef1bbcc54e9aaf29d72a9c8ab133a8a5ca8b6a86eaf355421a4b4d8c6e125a22a827df3c90d78696d07d7");
+
+        let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
+
+        assert_eq!(seed, Some(expected));
+    }
+}
