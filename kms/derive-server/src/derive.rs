@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
 };
 use hmac::{Hmac, Mac};
+use kms_derive_utils::derive_path_seed;
 use serde::Deserialize;
 use sha2::Sha512;
 
@@ -26,12 +27,7 @@ pub async fn derive(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 64]) {
-    let Ok(mut mac) = Hmac::<Sha512>::new_from_slice(&state.randomness) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, [0; 64]);
-    };
-    mac.update(params.path.as_bytes());
-
-    let derived_key = mac.finalize().into_bytes().into();
+    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
 
     (StatusCode::OK, derived_key)
 }
