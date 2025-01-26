@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 use alloy::{
     providers::{Provider, ProviderBuilder},
@@ -13,9 +13,10 @@ use taco::decrypt;
 use tokio::{
     fs::{self, read},
     net::TcpListener,
+    spawn,
     time::sleep,
 };
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod derive;
@@ -130,8 +131,39 @@ async fn main() -> Result<()> {
 
     let app_state = AppState { randomness };
 
+    // Panic safety: we simply abort on panics and eschew any handling
+
+    let scallop_handle = spawn(run_forever(move || {
+        let app_state = app_state.clone();
+        let listen_addr = args.listen_addr.clone();
+        let attestation_endpoint = args.attestation_endpoint.clone();
+        let secret = secret.clone();
+        async move { run_scallop_server(app_state, listen_addr, attestation_endpoint, secret).await }
+    }));
+
+    // should never exit
+    tokio::try_join!(scallop_handle).expect("not supposed to ever exit");
+    panic!("not supposed to ever exit");
+}
+
+async fn run_forever<T: FnMut() -> F, F: Future<Output = Result<()>>>(mut task: T) {
+    loop {
+        if let Err(e) = task().await {
+            error!("{e:?}");
+        }
+
+        sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn run_scallop_server(
+    app_state: AppState,
+    listen_addr: String,
+    attestation_endpoint: String,
+    secret: [u8; 32],
+) -> Result<()> {
     let auther = Auther {
-        url: args.attestation_endpoint,
+        url: attestation_endpoint,
     };
 
     let auth_store = AuthStore {};
@@ -140,7 +172,7 @@ async fn main() -> Result<()> {
         .route("/derive", get(derive::derive))
         .with_state(app_state);
 
-    let tcp_listener = TcpListener::bind(&args.listen_addr)
+    let tcp_listener = TcpListener::bind(&listen_addr)
         .await
         .context("failed to bind listener")?;
 
@@ -151,7 +183,7 @@ async fn main() -> Result<()> {
         auther,
     };
 
-    info!("Listening on {}", args.listen_addr);
+    info!("Listening on {}", listen_addr);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<ScallopState<AuthStoreState>>(),
