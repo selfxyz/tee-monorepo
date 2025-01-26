@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
 };
 use hmac::{Hmac, Mac};
+use kms_derive_utils::derive_enclave_seed;
 use oyster::axum::ScallopState;
 use sha2::Sha512;
 
@@ -20,16 +21,8 @@ pub async fn derive(
         return (StatusCode::BAD_REQUEST, [0; 64]);
     }
 
-    let Ok(mut mac) = Hmac::<Sha512>::new_from_slice(&state.randomness) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, [0; 64]);
-    };
-    mac.update(&pcrs[0]);
-    mac.update(&pcrs[1]);
-    mac.update(&pcrs[2]);
-    mac.update(&(user_data.len() as u16).to_be_bytes());
-    mac.update(&user_data);
-
-    let derived_key = mac.finalize().into_bytes().into();
+    let derived_key =
+        derive_enclave_seed(state.randomness, &pcrs[0], &pcrs[1], &pcrs[2], &user_data);
 
     (StatusCode::OK, derived_key)
 }
