@@ -82,6 +82,20 @@ pub fn to_ed25519_solana_address(derived: [u8; 64]) -> String {
     public.to_base58()
 }
 
+// ENDIANNESS: Little endian
+pub fn to_x25519_secret(derived: [u8; 64]) -> [u8; 32] {
+    // throw away last 32 bytes, assumes derived is random
+    // SAFETY: can always take exactly 32 bytes, safe to unwrap
+    let mut secret: [u8; 32] = derived[0..32].try_into().unwrap();
+
+    // most libraries do clamping internally, do it here just to be safe
+    secret[0] &= 0b11111000; // unset last 3 bits
+    secret[31] &= 0b01111111; // clear first bit
+    secret[31] |= 0b01000000; // set second bit
+
+    secret
+}
+
 fn derive_enclave_seed_once(
     root: [u8; 64],
     pcr0: &[u8],
