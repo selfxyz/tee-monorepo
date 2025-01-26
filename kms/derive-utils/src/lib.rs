@@ -55,7 +55,7 @@ pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
 }
 
 // ENDIANNESS: Big endian
-pub fn to_secp256k1_address(derived: [u8; 64]) -> [u8; 20] {
+pub fn to_secp256k1_ethereum_address(derived: [u8; 64]) -> [u8; 20] {
     let public = to_secp256k1_public(derived);
     Keccak256::new_with_prefix(&public).finalize()[12..]
         .try_into()
@@ -109,7 +109,7 @@ mod tests {
 
     use crate::{
         derive_enclave_seed, derive_path_seed, to_ed25519_public, to_ed25519_secret,
-        to_secp256k1_address, to_secp256k1_public, to_secp256k1_secret,
+        to_secp256k1_ethereum_address, to_secp256k1_public, to_secp256k1_secret,
     };
 
     #[test]
@@ -186,7 +186,7 @@ mod tests {
         // derived from an independent online implementation
         let expected = hex!("92148e8f84096d0dfe7e66a025d14d1e2594ddc2");
 
-        let address = to_secp256k1_address(derived);
+        let address = to_secp256k1_ethereum_address(derived);
 
         assert_eq!(address, expected);
     }
