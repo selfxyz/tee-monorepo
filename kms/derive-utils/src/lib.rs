@@ -43,9 +43,13 @@ pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
         .to_be_bytes::<32>()
 }
 
-pub fn to_secp256k1_public(derived: [u8; 64]) -> Option<k256::PublicKey> {
-    let secret = to_secp256k1_secret(derived)?;
-    Some(secret.public_key())
+pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
+    // SAFETY: secret is the right size, safe to unwrap
+    let secret = SecretKey::from_slice(&to_secp256k1_secret(derived)).unwrap();
+    secret.public_key().to_encoded_point(false).as_bytes()[1..]
+        .try_into()
+        //SAFETY: encoded bytes should be 65 size, safe to unwrap
+        .unwrap()
 }
 
 pub fn to_secp256k1_address(derived: [u8; 64]) -> Option<[u8; 20]> {
@@ -156,11 +160,11 @@ mod tests {
     fn test_to_secp256k1_public() {
         let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
         // derived from an independent online implementation
-        let expected = k256::PublicKey::from_sec1_bytes(&hex!("0419123e8d4b151f2b6b5f25a6d22b50a29522bc828b64c0764cf8e743dffe87d64af1c7457e17dffa208f986b347340295ecb8433d47d3b2221f81a619cef0a0b")).unwrap();
+        let expected = hex!("19123e8d4b151f2b6b5f25a6d22b50a29522bc828b64c0764cf8e743dffe87d64af1c7457e17dffa208f986b347340295ecb8433d47d3b2221f81a619cef0a0b");
 
-        let address = to_secp256k1_public(derived);
+        let public_key = to_secp256k1_public(derived);
 
-        assert_eq!(address, Some(expected));
+        assert_eq!(public_key, expected);
     }
 
     #[test]
