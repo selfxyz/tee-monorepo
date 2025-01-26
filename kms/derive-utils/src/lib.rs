@@ -129,7 +129,7 @@ mod tests {
     use crate::{
         derive_enclave_seed, derive_path_seed, to_ed25519_public, to_ed25519_secret,
         to_ed25519_solana_address, to_secp256k1_ethereum_address, to_secp256k1_public,
-        to_secp256k1_secret,
+        to_secp256k1_secret, to_x25519_secret,
     };
 
     #[test]
@@ -241,5 +241,15 @@ mod tests {
         let public = to_ed25519_solana_address(derived);
 
         assert_eq!(public, expected);
+    }
+
+    #[test]
+    fn test_to_x25519_secret() {
+        let derived = hex!("4790382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let expected = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cd72");
+
+        let secret = to_x25519_secret(derived);
+
+        assert_eq!(secret, expected);
     }
 }
