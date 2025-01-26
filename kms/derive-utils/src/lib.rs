@@ -96,6 +96,12 @@ pub fn to_x25519_secret(derived: [u8; 64]) -> [u8; 32] {
     secret
 }
 
+// ENDIANNESS: Little endian
+pub fn to_x25519_public(derived: [u8; 64]) -> [u8; 32] {
+    let secret = x25519_dalek::StaticSecret::from(to_x25519_secret(derived));
+    x25519_dalek::PublicKey::from(&secret).to_bytes()
+}
+
 fn derive_enclave_seed_once(
     root: [u8; 64],
     pcr0: &[u8],
