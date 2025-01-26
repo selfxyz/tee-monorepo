@@ -48,19 +48,19 @@ struct Args {
     signer: String,
 
     /// Porter URI
-    #[arg(long)]
+    #[arg(long, default_value = "https://porter.nucypher.io/decrypt")]
     porter: String,
 
     /// Ritual id
-    #[arg(long)]
+    #[arg(long, default_value = "40")]
     ritual: u32,
 
     /// Coordinator address
-    #[arg(long)]
+    #[arg(long, default_value = "0xE74259e3dafe30bAA8700238e324b47aC98FE755")]
     coordinator: String,
 
     /// RPC URL
-    #[arg(long)]
+    #[arg(long, default_value = "https://polygon-rpc.com")]
     rpc: String,
 
     /// Attestation endpoint
@@ -72,11 +72,11 @@ struct Args {
     secret_path: String,
 
     /// DKG threshold
-    #[arg(long)]
+    #[arg(long, default_value = "16")]
     threshold: u16,
 
     /// Initial delay to allow for attestation verification
-    #[arg(long, default_value = "0")]
+    #[arg(long, default_value = "1800")]
     delay: u64,
 }
 
