@@ -64,11 +64,17 @@ pub fn to_secp256k1_address(derived: [u8; 64]) -> [u8; 20] {
 }
 
 // ENDIANNESS: Technically what is returned is a seed without endianness
-// libraries hash and clamp it to derive a secret, popular libraries use the seed as is
+// libraries hash and clamp it to derive a secret, popular libraries use little endian
 pub fn to_ed25519_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
     // SAFETY: can always take exactly 32 bytes, safe to unwrap
     derived[0..32].try_into().unwrap()
+}
+
+// ENDIANNESS: Little endian
+pub fn to_ed25519_public(derived: [u8; 64]) -> [u8; 32] {
+    let secret = ed25519_dalek::SigningKey::from(to_ed25519_secret(derived));
+    secret.verifying_key().to_bytes()
 }
 
 fn derive_enclave_seed_once(
