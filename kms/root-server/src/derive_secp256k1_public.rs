@@ -1,14 +1,11 @@
 use axum::{
-    extract::{ConnectInfo, Query, State},
+    extract::{Query, State},
     http::StatusCode,
 };
-use hmac::{Hmac, Mac};
 use kms_derive_utils::{derive_enclave_seed, derive_path_seed, to_secp256k1_public};
-use oyster::axum::ScallopState;
 use serde::Deserialize;
-use sha2::Sha512;
 
-use crate::{scallop::AuthStoreState, AppState};
+use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct Params {
