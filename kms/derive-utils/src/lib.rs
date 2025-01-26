@@ -28,6 +28,7 @@ pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> [u8; 64] {
     derive_path_seed_once(derive_path_seed_once(root, path), path)
 }
 
+// ENDIANNESS: Big endian
 pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
     // unlikely to ever matter if derived is random, but bound it to [1, n-1]
@@ -43,6 +44,7 @@ pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
         .to_be_bytes::<32>()
 }
 
+// ENDIANNESS: Big endian
 pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
     // SAFETY: secret is the right size, safe to unwrap
     let secret = SecretKey::from_slice(&to_secp256k1_secret(derived)).unwrap();
@@ -52,6 +54,7 @@ pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
         .unwrap()
 }
 
+// ENDIANNESS: Big endian
 pub fn to_secp256k1_address(derived: [u8; 64]) -> [u8; 20] {
     let public = to_secp256k1_public(derived);
     Keccak256::new_with_prefix(&public).finalize()[12..]
@@ -60,6 +63,8 @@ pub fn to_secp256k1_address(derived: [u8; 64]) -> [u8; 20] {
         .unwrap()
 }
 
+// ENDIANNESS: Technically what is returned is a seed without endianness
+// libraries hash and clamp it to derive a secret, popular libraries use little endian
 pub fn to_ed25519_secret(derived: [u8; 64]) -> ed25519_dalek::SigningKey {
     // throw away last 32 bytes, assumes derived is random
     ed25519_dalek::SigningKey::from_bytes(derived[0..32].try_into().unwrap())
