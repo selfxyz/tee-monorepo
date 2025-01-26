@@ -24,6 +24,7 @@ mod derive_ed25519_address_solana;
 mod derive_ed25519_public;
 mod derive_secp256k1_address_ethereum;
 mod derive_secp256k1_public;
+mod derive_x25519_public;
 mod scallop;
 mod taco;
 
@@ -223,6 +224,10 @@ async fn run_public_server(app_state: AppState, listen_addr: String) -> Result<(
         .route(
             "/derive/ed25519/address/solana",
             get(derive_ed25519_address_solana::derive_ed25519_address_solana),
+        )
+        .route(
+            "/derive/x25519/public",
+            get(derive_x25519_public::derive_x25519_public),
         )
         .with_state(app_state);
 
