@@ -48,15 +48,16 @@ pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
     let secret = SecretKey::from_slice(&to_secp256k1_secret(derived)).unwrap();
     secret.public_key().to_encoded_point(false).as_bytes()[1..]
         .try_into()
-        //SAFETY: encoded bytes should be 65 size, safe to unwrap
+        //SAFETY: encoded bytes should be 65 size, we take from 1, safe to unwrap
         .unwrap()
 }
 
-pub fn to_secp256k1_address(derived: [u8; 64]) -> Option<[u8; 20]> {
-    let public = to_secp256k1_public(derived)?;
-    Keccak256::new_with_prefix(&public.to_encoded_point(false).to_bytes()[1..]).finalize()[12..]
+pub fn to_secp256k1_address(derived: [u8; 64]) -> [u8; 20] {
+    let public = to_secp256k1_public(derived);
+    Keccak256::new_with_prefix(&public).finalize()[12..]
         .try_into()
-        .ok()
+        // SAFETY: keccak256 should return a 32 byte digest, we take last 20, safe to unwrap
+        .unwrap()
 }
 
 pub fn to_ed25519_secret(derived: [u8; 64]) -> ed25519_dalek::SigningKey {
@@ -175,6 +176,6 @@ mod tests {
 
         let address = to_secp256k1_address(derived);
 
-        assert_eq!(address, Some(expected));
+        assert_eq!(address, expected);
     }
 }
