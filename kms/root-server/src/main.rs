@@ -31,9 +31,13 @@ struct Args {
     #[arg(long, default_value = "/app/init-params")]
     randomness_file: String,
 
-    /// Listening address
+    /// Scallop listening address
     #[arg(long, default_value = "0.0.0.0:1100")]
-    listen_addr: String,
+    scallop_listen_addr: String,
+
+    /// Public listening address
+    #[arg(long, default_value = "0.0.0.0:1101")]
+    public_listen_addr: String,
 
     /// Path to file with private key signer
     #[arg(long, default_value = "/app/secp256k1.sec")]
@@ -129,20 +133,27 @@ async fn main() -> Result<()> {
         .try_into()
         .map_err(|_| anyhow!("failed to parse secret file"))?;
 
-    let app_state = AppState { randomness };
+    let scallop_app_state = AppState { randomness };
+    let public_app_state = scallop_app_state.clone();
 
     // Panic safety: we simply abort on panics and eschew any handling
 
     let scallop_handle = spawn(run_forever(move || {
-        let app_state = app_state.clone();
-        let listen_addr = args.listen_addr.clone();
+        let app_state = scallop_app_state.clone();
+        let listen_addr = args.scallop_listen_addr.clone();
         let attestation_endpoint = args.attestation_endpoint.clone();
         let secret = secret.clone();
         async move { run_scallop_server(app_state, listen_addr, attestation_endpoint, secret).await }
     }));
 
+    let public_handle = spawn(run_forever(move || {
+        let app_state = public_app_state.clone();
+        let listen_addr = args.public_listen_addr.clone();
+        async move { run_public_server(app_state, listen_addr).await }
+    }));
+
     // should never exit
-    tokio::try_join!(scallop_handle).expect("not supposed to ever exit");
+    tokio::try_join!(scallop_handle, public_handle).expect("not supposed to ever exit");
     panic!("not supposed to ever exit");
 }
 
@@ -190,6 +201,22 @@ async fn run_scallop_server(
     )
     .await
     .context("failed to serve")
+}
+
+async fn run_public_server(app_state: AppState, listen_addr: String) -> Result<()> {
+    let app = Router::new()
+        .route(
+            "/derive/secp256k1/public",
+            get(derive_secp256k1_public::derive_secp256k1_public),
+        )
+        .with_state(app_state);
+
+    let listener = TcpListener::bind(&listen_addr)
+        .await
+        .context("failed to bind listener")?;
+
+    info!("Listening on {}", listen_addr);
+    axum::serve(listener, app).await.context("failed to serve")
 }
 
 fn setup_logging() {

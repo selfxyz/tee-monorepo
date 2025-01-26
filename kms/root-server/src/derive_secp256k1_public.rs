@@ -11,7 +11,7 @@ use sha2::Sha512;
 use crate::{scallop::AuthStoreState, AppState};
 
 #[derive(Deserialize)]
-struct Params {
+pub struct Params {
     pcr0: String,
     pcr1: String,
     pcr2: String,
