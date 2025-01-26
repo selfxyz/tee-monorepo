@@ -20,6 +20,7 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod derive;
+mod derive_ed25519_public;
 mod derive_secp256k1_address_ethereum;
 mod derive_secp256k1_public;
 mod scallop;
@@ -213,6 +214,10 @@ async fn run_public_server(app_state: AppState, listen_addr: String) -> Result<(
         .route(
             "/derive/secp256k1/address/ethereum",
             get(derive_secp256k1_address_ethereum::derive_secp256k1_address_ethereum),
+        )
+        .route(
+            "/derive/ed25519/public",
+            get(derive_ed25519_public::derive_ed25519_public),
         )
         .with_state(app_state);
 
