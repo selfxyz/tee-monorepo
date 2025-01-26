@@ -19,6 +19,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod derive;
+mod derive_secp256k1;
 mod scallop;
 mod taco;
 
