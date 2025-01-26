@@ -28,20 +28,19 @@ pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> [u8; 64] {
     derive_path_seed_once(derive_path_seed_once(root, path), path)
 }
 
-pub fn to_secp256k1_secret(derived: [u8; 64]) -> Option<k256::SecretKey> {
+pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
     // unlikely to ever matter, but bound it to [1, n)
     // not perfectly random to mod but too negligible to care
-    SecretKey::from_slice(
-        &U256::from_be_bytes::<32>(derived[..32].try_into().ok()?)
-            .reduce_mod(uint!(
-                // secp256k1 n - 1
-                0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140_U256
-            ))
-            .wrapping_add(U256::from(1))
-            .to_be_bytes::<32>(),
-    )
-    .ok()
+
+    // SAFETY: can always take exactly 32 bytes, safe to unwrap
+    U256::from_be_bytes::<32>(derived[..32].try_into().unwrap())
+        .reduce_mod(uint!(
+            // secp256k1 n - 1
+            0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140_U256
+        ))
+        .wrapping_add(U256::from(1))
+        .to_be_bytes::<32>()
 }
 
 pub fn to_secp256k1_public(derived: [u8; 64]) -> Option<k256::PublicKey> {
@@ -126,40 +125,31 @@ mod tests {
     #[test]
     fn test_to_secp256k1_secret() {
         let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
-        let expected = k256::SecretKey::from_slice(&hex!(
-            "4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf3"
-        ))
-        .unwrap();
+        let expected = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf3");
 
         let secret = to_secp256k1_secret(derived);
 
-        assert_eq!(secret, Some(expected));
+        assert_eq!(secret, expected);
     }
 
     #[test]
     fn test_to_secp256k1_secret_max() {
         let derived = hex!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        let expected = k256::SecretKey::from_slice(&hex!(
-            "000000000000000000000000000000014551231950b75fc4402da1732fc9bec0"
-        ))
-        .unwrap();
+        let expected = hex!("000000000000000000000000000000014551231950b75fc4402da1732fc9bec0");
 
         let secret = to_secp256k1_secret(derived);
 
-        assert_eq!(secret, Some(expected));
+        assert_eq!(secret, expected);
     }
 
     #[test]
     fn test_to_secp256k1_secret_zero() {
         let derived = hex!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
-        let expected = k256::SecretKey::from_slice(&hex!(
-            "0000000000000000000000000000000000000000000000000000000000000001"
-        ))
-        .unwrap();
+        let expected = hex!("0000000000000000000000000000000000000000000000000000000000000001");
 
         let secret = to_secp256k1_secret(derived);
 
-        assert_eq!(secret, Some(expected));
+        assert_eq!(secret, expected);
     }
 
     #[test]
