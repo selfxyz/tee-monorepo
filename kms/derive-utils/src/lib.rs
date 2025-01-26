@@ -24,8 +24,8 @@ pub fn derive_enclave_seed(
     )
 }
 
-pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
-    derive_path_seed_once(derive_path_seed_once(root, path)?, path)
+pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> [u8; 64] {
+    derive_path_seed_once(derive_path_seed_once(root, path), path)
 }
 
 pub fn to_secp256k1_secret(derived: [u8; 64]) -> Option<k256::SecretKey> {
@@ -79,11 +79,12 @@ fn derive_enclave_seed_once(
     mac.finalize().into_bytes().into()
 }
 
-fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
-    let mut mac = Hmac::<Sha512>::new_from_slice(&root).ok()?;
+fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> [u8; 64] {
+    // SAFETY: cannot error, safe to unwrap
+    let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
     mac.update(&path);
 
-    Some(mac.finalize().into_bytes().into())
+    mac.finalize().into_bytes().into()
 }
 
 #[cfg(test)]
@@ -119,7 +120,7 @@ mod tests {
 
         let seed = derive_path_seed(root, &path);
 
-        assert_eq!(seed, Some(expected));
+        assert_eq!(seed, expected);
     }
 
     #[test]
