@@ -2,10 +2,8 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
 };
-use hmac::{Hmac, Mac};
 use kms_derive_utils::derive_path_seed;
 use serde::Deserialize;
-use sha2::Sha512;
 
 use crate::AppState;
 
