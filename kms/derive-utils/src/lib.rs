@@ -1,3 +1,4 @@
+use base58::ToBase58;
 use hmac::Hmac;
 use hmac::Mac;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -73,6 +74,12 @@ pub fn to_ed25519_secret(derived: [u8; 64]) -> [u8; 32] {
 pub fn to_ed25519_public(derived: [u8; 64]) -> [u8; 32] {
     let secret = ed25519_dalek::SigningKey::from(to_ed25519_secret(derived));
     secret.verifying_key().to_bytes()
+}
+
+pub fn to_ed25519_solana_address(derived: [u8; 64]) -> String {
+    let public = to_ed25519_public(derived);
+
+    public.to_base58()
 }
 
 fn derive_enclave_seed_once(
