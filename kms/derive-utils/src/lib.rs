@@ -56,6 +56,11 @@ pub fn to_secp256k1_address(derived: [u8; 64]) -> Option<[u8; 20]> {
         .ok()
 }
 
+pub fn to_ed25519_secret(derived: [u8; 64]) -> ed25519_dalek::SigningKey {
+    // throw away last 32 bytes, assumes derived is random
+    ed25519_dalek::SigningKey::from_bytes(derived[0..32].try_into().unwrap())
+}
+
 fn derive_enclave_seed_once(
     root: [u8; 64],
     pcr0: &[u8],
