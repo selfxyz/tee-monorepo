@@ -2,10 +2,8 @@ use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
-use hmac::{Hmac, Mac};
 use kms_derive_utils::derive_enclave_seed;
 use oyster::axum::ScallopState;
-use sha2::Sha512;
 
 use crate::{scallop::AuthStoreState, AppState};
 
