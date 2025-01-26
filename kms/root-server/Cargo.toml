@@ -14,6 +14,7 @@ clap = { version = "4.5.26", features = ["derive"] }
 hex = "0.4.3"
 hmac = "0.12.1"
 k256 = "0.13.4"
+kms-derive-utils = { version = "0.1.0", path = "../derive-utils" }
 nucypher-core = "0.14.0"
 oyster-sdk = { version = "0.14.4", features = ["axum"] }
 rand = "0.8.5"
