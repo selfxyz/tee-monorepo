@@ -67,6 +67,7 @@ pub fn to_secp256k1_address(derived: [u8; 64]) -> [u8; 20] {
 // libraries hash and clamp it to derive a secret, popular libraries use the seed as is
 pub fn to_ed25519_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
+    // SAFETY: can always take exactly 32 bytes, safe to unwrap
     derived[0..32].try_into().unwrap()
 }
 
@@ -101,8 +102,8 @@ mod tests {
     use hex_literal::hex;
 
     use crate::{
-        derive_enclave_seed, derive_path_seed, to_secp256k1_address, to_secp256k1_public,
-        to_secp256k1_secret,
+        derive_enclave_seed, derive_path_seed, to_ed25519_secret, to_secp256k1_address,
+        to_secp256k1_public, to_secp256k1_secret,
     };
 
     #[test]
@@ -180,6 +181,17 @@ mod tests {
         let expected = hex!("92148e8f84096d0dfe7e66a025d14d1e2594ddc2");
 
         let address = to_secp256k1_address(derived);
+
+        assert_eq!(address, expected);
+    }
+
+    #[test]
+    fn test_to_ed25519_secret() {
+        let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        // derived from an independent online implementation
+        let expected = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2");
+
+        let address = to_ed25519_secret(derived);
 
         assert_eq!(address, expected);
     }
