@@ -14,9 +14,9 @@ pub fn derive_enclave_seed(
     pcr1: &[u8],
     pcr2: &[u8],
     user_data: &[u8],
-) -> Option<[u8; 64]> {
+) -> [u8; 64] {
     derive_enclave_seed_once(
-        derive_enclave_seed_once(root, pcr0, pcr1, pcr2, user_data)?,
+        derive_enclave_seed_once(root, pcr0, pcr1, pcr2, user_data),
         pcr0,
         pcr1,
         pcr2,
@@ -67,15 +67,16 @@ fn derive_enclave_seed_once(
     pcr1: &[u8],
     pcr2: &[u8],
     user_data: &[u8],
-) -> Option<[u8; 64]> {
-    let mut mac = Hmac::<Sha512>::new_from_slice(&root).ok()?;
+) -> [u8; 64] {
+    // SAFETY: cannot error, safe to unwrap
+    let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
     mac.update(&pcr0);
     mac.update(&pcr1);
     mac.update(&pcr2);
     mac.update(&(user_data.len() as u16).to_be_bytes());
     mac.update(&user_data);
 
-    Some(mac.finalize().into_bytes().into())
+    mac.finalize().into_bytes().into()
 }
 
 fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> Option<[u8; 64]> {
@@ -106,7 +107,7 @@ mod tests {
 
         let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
 
-        assert_eq!(seed, Some(expected));
+        assert_eq!(seed, expected);
     }
 
     #[test]
