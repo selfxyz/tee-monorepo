@@ -30,13 +30,13 @@ pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> [u8; 64] {
 
 pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
-    // unlikely to ever matter, but bound it to [1, n)
+    // unlikely to ever matter if derived is random, but bound it to [1, n-1]
     // not perfectly random to mod but too negligible to care
 
     // SAFETY: can always take exactly 32 bytes, safe to unwrap
     U256::from_be_bytes::<32>(derived[..32].try_into().unwrap())
         .reduce_mod(uint!(
-            // secp256k1 n - 1
+            // secp256k1 n-1, we want this to be [0, n-2]
             0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140_U256
         ))
         .wrapping_add(U256::from(1))
