@@ -114,7 +114,8 @@ mod tests {
 
     use crate::{
         derive_enclave_seed, derive_path_seed, to_ed25519_public, to_ed25519_secret,
-        to_secp256k1_ethereum_address, to_secp256k1_public, to_secp256k1_secret,
+        to_ed25519_solana_address, to_secp256k1_ethereum_address, to_secp256k1_public,
+        to_secp256k1_secret,
     };
 
     #[test]
@@ -186,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_secp256k1_address() {
+    fn test_to_secp256k1_ethereum_address() {
         let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
         // derived from an independent online implementation
         let expected = "0x92148e8f84096d0dfe7e66a025d14d1e2594ddc2";
@@ -213,6 +214,17 @@ mod tests {
         let expected = hex!("980d98f6a6629647c840311b9d55e8808a75e16fd04468c115de3c4dbd6c249d");
 
         let public = to_ed25519_public(derived);
+
+        assert_eq!(public, expected);
+    }
+
+    #[test]
+    fn test_to_ed25519_solana_address() {
+        let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        // derived from an independent online implementation
+        let expected = "BEYzkmcGNdhqHAPKQ7oz89n1RbAumm2kwtX113pPuCax";
+
+        let public = to_ed25519_solana_address(derived);
 
         assert_eq!(public, expected);
     }
