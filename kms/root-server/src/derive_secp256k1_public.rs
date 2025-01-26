@@ -1,35 +1,48 @@
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Query, State},
     http::StatusCode,
 };
 use hmac::{Hmac, Mac};
+use kms_derive_utils::{derive_enclave_seed, derive_path_seed, to_secp256k1_public};
 use oyster::axum::ScallopState;
+use serde::Deserialize;
 use sha2::Sha512;
 
 use crate::{scallop::AuthStoreState, AppState};
 
-// derive keys after verifying attestations
-pub async fn derive_secp256k1_public(
-    ConnectInfo(scallop_state): ConnectInfo<ScallopState<AuthStoreState>>,
-    State(state): State<AppState>,
-) -> (StatusCode, [u8; 64]) {
-    // safe to unwrap since the server should always have an authstore
-    let (pcrs, user_data) = scallop_state.0.unwrap();
+#[derive(Deserialize)]
+struct Params {
+    pcr0: String,
+    pcr1: String,
+    pcr2: String,
+    user_data: String,
+    path: String,
+}
 
+// derive public key based on params
+pub async fn derive_secp256k1_public(
+    State(state): State<AppState>,
+    Query(params): Query<Params>,
+) -> (StatusCode, [u8; 64]) {
+    let Ok(pcr0) = hex::decode(params.pcr0) else {
+        return (StatusCode::BAD_REQUEST, [0; 64]);
+    };
+    let Ok(pcr1) = hex::decode(params.pcr1) else {
+        return (StatusCode::BAD_REQUEST, [0; 64]);
+    };
+    let Ok(pcr2) = hex::decode(params.pcr2) else {
+        return (StatusCode::BAD_REQUEST, [0; 64]);
+    };
+    let Ok(user_data) = hex::decode(params.user_data) else {
+        return (StatusCode::BAD_REQUEST, [0; 64]);
+    };
     if user_data.len() > 65535 {
         return (StatusCode::BAD_REQUEST, [0; 64]);
     }
 
-    let Ok(mut mac) = Hmac::<Sha512>::new_from_slice(&state.randomness) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, [0; 64]);
-    };
-    mac.update(&pcrs[0]);
-    mac.update(&pcrs[1]);
-    mac.update(&pcrs[2]);
-    mac.update(&(user_data.len() as u16).to_be_bytes());
-    mac.update(&user_data);
+    let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
+    let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
+    let public = to_secp256k1_public(path_key);
 
-    let derived_key = mac.finalize().into_bytes().into();
-
-    (StatusCode::OK, derived_key)
+    (StatusCode::OK, public)
 }
