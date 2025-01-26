@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_to_x25519_secret() {
-        let derived = hex!("4790382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let derived = hex!("4790382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdb2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
         let expected = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cd72");
 
         let secret = to_x25519_secret(derived);
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_to_x25519_public() {
-        let derived = hex!("4790382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let derived = hex!("4790382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdb2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
         // derived from an independent online implementation
         let expected = hex!("7e80b46b5f95e629ef1b24b42d3af5dc4e6dd50046376d316956573db2e7d623");
 
