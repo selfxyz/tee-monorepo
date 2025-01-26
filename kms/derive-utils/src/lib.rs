@@ -54,13 +54,11 @@ pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
         .unwrap()
 }
 
-// ENDIANNESS: Big endian
-pub fn to_secp256k1_ethereum_address(derived: [u8; 64]) -> [u8; 20] {
+pub fn to_secp256k1_ethereum_address(derived: [u8; 64]) -> String {
     let public = to_secp256k1_public(derived);
-    Keccak256::new_with_prefix(&public).finalize()[12..]
-        .try_into()
-        // SAFETY: keccak256 should return a 32 byte digest, we take last 20, safe to unwrap
-        .unwrap()
+    let address = &Keccak256::new_with_prefix(&public).finalize()[12..];
+
+    format!("0x{}", hex::encode(address))
 }
 
 // ENDIANNESS: Technically what is returned is a seed without endianness
@@ -184,7 +182,7 @@ mod tests {
     fn test_to_secp256k1_address() {
         let derived = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
         // derived from an independent online implementation
-        let expected = hex!("92148e8f84096d0dfe7e66a025d14d1e2594ddc2");
+        let expected = "0x92148e8f84096d0dfe7e66a025d14d1e2594ddc2";
 
         let address = to_secp256k1_ethereum_address(derived);
 
