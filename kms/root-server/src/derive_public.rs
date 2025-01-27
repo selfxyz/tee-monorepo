@@ -46,21 +46,9 @@ pub async fn derive_secp256k1_public(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 64]) {
-    let Ok(pcr0) = hex::decode(params.pcr0) else {
+    let Some(path_key) = params.derive_path_seed(state.randomness) else {
         return (StatusCode::BAD_REQUEST, [0; 64]);
     };
-    let Ok(pcr1) = hex::decode(params.pcr1) else {
-        return (StatusCode::BAD_REQUEST, [0; 64]);
-    };
-    let Ok(pcr2) = hex::decode(params.pcr2) else {
-        return (StatusCode::BAD_REQUEST, [0; 64]);
-    };
-    let Ok(user_data) = hex::decode(params.user_data) else {
-        return (StatusCode::BAD_REQUEST, [0; 64]);
-    };
-
-    let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
-    let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
     let public = to_secp256k1_public(path_key);
 
     (StatusCode::OK, public)
@@ -71,21 +59,9 @@ pub async fn derive_secp256k1_address_ethereum(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, String) {
-    let Ok(pcr0) = hex::decode(params.pcr0) else {
+    let Some(path_key) = params.derive_path_seed(state.randomness) else {
         return (StatusCode::BAD_REQUEST, String::new());
     };
-    let Ok(pcr1) = hex::decode(params.pcr1) else {
-        return (StatusCode::BAD_REQUEST, String::new());
-    };
-    let Ok(pcr2) = hex::decode(params.pcr2) else {
-        return (StatusCode::BAD_REQUEST, String::new());
-    };
-    let Ok(user_data) = hex::decode(params.user_data) else {
-        return (StatusCode::BAD_REQUEST, String::new());
-    };
-
-    let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
-    let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
     let address = to_secp256k1_ethereum_address(path_key);
 
     (StatusCode::OK, address)
@@ -96,21 +72,9 @@ pub async fn derive_ed25519_public(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let Ok(pcr0) = hex::decode(params.pcr0) else {
+    let Some(path_key) = params.derive_path_seed(state.randomness) else {
         return (StatusCode::BAD_REQUEST, [0; 32]);
     };
-    let Ok(pcr1) = hex::decode(params.pcr1) else {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    };
-    let Ok(pcr2) = hex::decode(params.pcr2) else {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    };
-    let Ok(user_data) = hex::decode(params.user_data) else {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    };
-
-    let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
-    let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
     let public = to_ed25519_public(path_key);
 
     (StatusCode::OK, public)
@@ -121,24 +85,12 @@ pub async fn derive_ed25519_address_solana(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, String) {
-    let Ok(pcr0) = hex::decode(params.pcr0) else {
+    let Some(path_key) = params.derive_path_seed(state.randomness) else {
         return (StatusCode::BAD_REQUEST, String::new());
     };
-    let Ok(pcr1) = hex::decode(params.pcr1) else {
-        return (StatusCode::BAD_REQUEST, String::new());
-    };
-    let Ok(pcr2) = hex::decode(params.pcr2) else {
-        return (StatusCode::BAD_REQUEST, String::new());
-    };
-    let Ok(user_data) = hex::decode(params.user_data) else {
-        return (StatusCode::BAD_REQUEST, String::new());
-    };
+    let address = to_ed25519_solana_address(path_key);
 
-    let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
-    let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
-    let public = to_ed25519_solana_address(path_key);
-
-    (StatusCode::OK, public)
+    (StatusCode::OK, address)
 }
 
 // derive public key based on params
@@ -146,21 +98,9 @@ pub async fn derive_x25519_public(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let Ok(pcr0) = hex::decode(params.pcr0) else {
+    let Some(path_key) = params.derive_path_seed(state.randomness) else {
         return (StatusCode::BAD_REQUEST, [0; 32]);
     };
-    let Ok(pcr1) = hex::decode(params.pcr1) else {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    };
-    let Ok(pcr2) = hex::decode(params.pcr2) else {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    };
-    let Ok(user_data) = hex::decode(params.user_data) else {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    };
-
-    let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
-    let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
     let public = to_x25519_public(path_key);
 
     (StatusCode::OK, public)
