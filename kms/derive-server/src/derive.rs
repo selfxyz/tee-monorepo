@@ -7,14 +7,6 @@ use serde::Deserialize;
 
 use crate::AppState;
 
-// derivation format:
-// 1 byte
-//
-// why no version?
-// the current version is immutable
-// new versions will need to obtain new randomness
-// the PCRs of the current version are the version
-
 #[derive(Deserialize)]
 pub struct Params {
     path: String,
