@@ -10,7 +10,7 @@ use sha2::Sha512;
 use sha3::Keccak256;
 
 /// Derives a 64-byte seed for an enclave using PCR measurements and user data.
-/// The derivation is performed twice for additional security.
+/// The derivation is performed twice for additional security around length extension.
 ///
 /// # Arguments
 /// * `root` - A 64-byte root seed
@@ -47,7 +47,7 @@ pub fn derive_enclave_seed(
 }
 
 /// Derives a 64-byte seed for a given path using a root seed.
-/// The derivation is performed twice for additional security.
+/// The derivation is performed twice for additional security around length extension.
 ///
 /// # Arguments
 /// * `root` - A 64-byte root seed
@@ -58,8 +58,8 @@ pub fn derive_enclave_seed(
 /// use kms_derive_utils::derive_path_seed;
 ///
 /// let root = [0u8; 64];
-/// let path = *b"something";
-/// let seed = derive_path_seed(root, &path);
+/// let path = b"something";
+/// let seed = derive_path_seed(root, path);
 /// ```
 pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> [u8; 64] {
     derive_path_seed_once(derive_path_seed_once(root, path), path)
