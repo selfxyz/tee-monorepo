@@ -35,7 +35,7 @@ Usage: kms-derive-server [OPTIONS] --kms-endpoint <KMS_ENDPOINT> --pcr0 <PCR0> -
 
 Options:
       --kms-endpoint <KMS_ENDPOINT>
-          Path to encrypted randomness file
+          KMS endpoint
       --listen-addr <LISTEN_ADDR>
           Listening address [default: 127.0.0.1:1100]
       --attestation-endpoint <ATTESTATION_ENDPOINT>

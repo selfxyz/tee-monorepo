@@ -14,7 +14,7 @@ mod scallop;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Path to encrypted randomness file
+    /// KMS endpoint
     #[arg(long)]
     kms_endpoint: String,
 

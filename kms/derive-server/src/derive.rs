@@ -24,7 +24,7 @@ pub async fn derive(
     (StatusCode::OK, derived_key)
 }
 
-// derive keys based on derivation path
+// derive secp256k1 keys based on derivation path
 pub async fn derive_secp256k1(
     State(state): State<AppState>,
     Query(params): Query<Params>,
@@ -35,7 +35,7 @@ pub async fn derive_secp256k1(
     (StatusCode::OK, secret)
 }
 
-// derive keys based on derivation path
+// derive ed25519 keys based on derivation path
 pub async fn derive_ed25519(
     State(state): State<AppState>,
     Query(params): Query<Params>,
@@ -46,7 +46,7 @@ pub async fn derive_ed25519(
     (StatusCode::OK, secret)
 }
 
-// derive keys based on derivation path
+// derive x25519 keys based on derivation path
 pub async fn derive_x25519(
     State(state): State<AppState>,
     Query(params): Query<Params>,
