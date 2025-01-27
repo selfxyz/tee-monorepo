@@ -22,6 +22,7 @@ use tracing_subscriber::EnvFilter;
 mod derive;
 mod derive_ed25519_address_solana;
 mod derive_ed25519_public;
+mod derive_public;
 mod derive_secp256k1_address_ethereum;
 mod derive_secp256k1_public;
 mod derive_x25519_public;
@@ -211,23 +212,23 @@ async fn run_public_server(app_state: AppState, listen_addr: String) -> Result<(
     let app = Router::new()
         .route(
             "/derive/secp256k1/public",
-            get(derive_secp256k1_public::derive_secp256k1_public),
+            get(derive_public::derive_secp256k1_public),
         )
         .route(
             "/derive/secp256k1/address/ethereum",
-            get(derive_secp256k1_address_ethereum::derive_secp256k1_address_ethereum),
+            get(derive_public::derive_secp256k1_address_ethereum),
         )
         .route(
             "/derive/ed25519/public",
-            get(derive_ed25519_public::derive_ed25519_public),
+            get(derive_public::derive_ed25519_public),
         )
         .route(
             "/derive/ed25519/address/solana",
-            get(derive_ed25519_address_solana::derive_ed25519_address_solana),
+            get(derive_public::derive_ed25519_address_solana),
         )
         .route(
             "/derive/x25519/public",
-            get(derive_x25519_public::derive_x25519_public),
+            get(derive_public::derive_x25519_public),
         )
         .with_state(app_state);
 
