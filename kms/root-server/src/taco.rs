@@ -233,6 +233,10 @@ Expiration Time: {}",
         .filter_map(Result::ok)
         .collect::<Vec<_>>();
 
+    if decrypted_shares.len() < threshold as usize {
+        return Err(anyhow!("not enough decrypted shares"));
+    }
+
     let shared_secret = combine_shares_simple(&decrypted_shares);
 
     let msg = message_kit.decrypt_with_shared_secret(&shared_secret)?;
