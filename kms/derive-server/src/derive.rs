@@ -21,3 +21,36 @@ pub async fn derive(
 
     (StatusCode::OK, derived_key)
 }
+
+// derive keys based on derivation path
+pub async fn derive_secp256k1(
+    State(state): State<AppState>,
+    Query(params): Query<Params>,
+) -> (StatusCode, [u8; 32]) {
+    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let secret = to_secp256k1_secret(derived_key);
+
+    (StatusCode::OK, secret)
+}
+
+// derive keys based on derivation path
+pub async fn derive_ed25519(
+    State(state): State<AppState>,
+    Query(params): Query<Params>,
+) -> (StatusCode, [u8; 32]) {
+    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let secret = to_ed25519_secret(derived_key);
+
+    (StatusCode::OK, secret)
+}
+
+// derive keys based on derivation path
+pub async fn derive_x25519(
+    State(state): State<AppState>,
+    Query(params): Query<Params>,
+) -> (StatusCode, [u8; 32]) {
+    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let secret = to_x25519_secret(derived_key);
+
+    (StatusCode::OK, secret)
+}
