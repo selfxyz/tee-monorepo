@@ -33,9 +33,6 @@ pub async fn derive_ed25519_address_solana(
     let Ok(user_data) = hex::decode(params.user_data) else {
         return (StatusCode::BAD_REQUEST, String::new());
     };
-    if user_data.len() > 65535 {
-        return (StatusCode::BAD_REQUEST, String::new());
-    }
 
     let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
     let path_key = derive_path_seed(enclave_key, params.path.as_bytes());

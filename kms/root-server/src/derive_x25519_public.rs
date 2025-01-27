@@ -33,9 +33,6 @@ pub async fn derive_x25519_public(
     let Ok(user_data) = hex::decode(params.user_data) else {
         return (StatusCode::BAD_REQUEST, [0; 32]);
     };
-    if user_data.len() > 65535 {
-        return (StatusCode::BAD_REQUEST, [0; 32]);
-    }
 
     let enclave_key = derive_enclave_seed(state.randomness, &pcr0, &pcr1, &pcr2, &user_data);
     let path_key = derive_path_seed(enclave_key, params.path.as_bytes());
