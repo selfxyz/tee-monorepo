@@ -19,6 +19,28 @@ pub struct Params {
     path: String,
 }
 
+impl Params {
+    fn derive_path_seed(&self, randomness: [u8; 64]) -> Option<[u8; 64]> {
+        let Ok(pcr0) = hex::decode(&self.pcr0) else {
+            return None;
+        };
+        let Ok(pcr1) = hex::decode(&self.pcr1) else {
+            return None;
+        };
+        let Ok(pcr2) = hex::decode(&self.pcr2) else {
+            return None;
+        };
+        let Ok(user_data) = hex::decode(&self.user_data) else {
+            return None;
+        };
+
+        let enclave_key = derive_enclave_seed(randomness, &pcr0, &pcr1, &pcr2, &user_data);
+        let path_key = derive_path_seed(enclave_key, self.path.as_bytes());
+
+        Some(path_key)
+    }
+}
+
 // derive public key based on params
 pub async fn derive_secp256k1_public(
     State(state): State<AppState>,
