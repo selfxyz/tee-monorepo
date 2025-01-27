@@ -190,8 +190,7 @@ Expiration Time: {}",
 
     let resp = Client::new().post(porter).json(&porter_req).send().await?;
     if resp.status() != StatusCode::OK {
-        let bytes = resp.bytes().await?;
-        return Err(anyhow!(String::from_utf8_lossy(&bytes[..]).to_string()));
+        return Err(anyhow!(resp.text().await?));
     }
 
     let responses = resp
