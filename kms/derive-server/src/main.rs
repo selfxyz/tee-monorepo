@@ -8,9 +8,6 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod derive;
-mod derive_ed25519;
-mod derive_secp256k1;
-mod derive_x25519;
 mod fetch;
 mod scallop;
 
