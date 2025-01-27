@@ -62,11 +62,12 @@ iptables -A OUTPUT -p tcp -s $ip -m set --match-set portfilter src -m set ! --ma
 iptables -t nat -vL
 iptables -vL
 
-# generate identity key
-
 # your custom setup goes here
 /app/keygen-secp256k1 --secret /app/secp256k1.sec --public /app/secp256k1.pub
 /app/keygen-x25519 --secret /app/x25519.sec --public /app/x25519.pub
+
+# create an empty file for the secp256k1 attestation server
+touch /app/empty
 
 # starting supervisord
 cat /etc/supervisord.conf
