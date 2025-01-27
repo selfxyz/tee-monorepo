@@ -74,7 +74,7 @@ pub async fn inject_immutable_config(
         return (
             StatusCode::from_u16(status_code.as_u16()).unwrap(),
             format!(
-                "Failed to inject immutable config into the secret store: {}\n",
+                "Failed to inject immutable config into the secret store: {}",
                 response_body
             ),
         )
@@ -221,7 +221,7 @@ pub async fn inject_mutable_config(
         return (
             StatusCode::from_u16(status_code.as_u16()).unwrap(),
             format!(
-                "Failed to inject mutable config into the secret store: {}\n",
+                "Failed to inject mutable config into the secret store: {}",
                 response_body
             ),
         )

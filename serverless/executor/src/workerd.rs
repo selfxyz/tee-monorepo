@@ -133,7 +133,7 @@ pub async fn create_config_file(
     free_port: u16,
 ) -> Result<(), ServerlessError> {
     // Initialize the config data for user code execution by workerd runtime
-    let capnp_data = format!(
+    let mut capnp_data = format!(
         "
 using Workerd = import \"/workerd/workerd.capnp\";
 
@@ -152,6 +152,25 @@ const oysterWorker :Workerd.Worker = (
   compatibilityDate = \"2023-03-07\",
 );"
     );
+
+    if secret_id == "0" {
+        capnp_data = format!(
+            "
+    using Workerd = import \"/workerd/workerd.capnp\";
+    
+    const oysterConfig :Workerd.Config = (
+      services = [ (name = \"main\", worker = .oysterWorker) ],
+      sockets = [ ( name = \"http\", address = \"*:{free_port}\", http = (), service = \"main\" ) ]
+    );
+    
+    const oysterWorker :Workerd.Worker = (
+      modules = [
+        (name = \"main\", esModule = embed \"{tx_hash}-{slug}.js\")
+      ],
+      compatibilityDate = \"2023-03-07\",
+    );"
+        );
+    }
 
     // Write config to the desired file location
     Retry::spawn(

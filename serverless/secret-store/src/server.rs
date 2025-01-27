@@ -50,7 +50,7 @@ async fn inject_immutable_config(
     let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
     if *immutable_params_injected_guard == true {
         return HttpResponse::BadRequest()
-            .body("Immutable params already configured in the secret store!\n");
+            .body("Immutable params already configured!\n");
     }
 
     // Initialize owner address for the enclave
@@ -165,6 +165,7 @@ async fn get_secret_store_details(app_state: Data<AppState>) -> impl Responder {
         "enclave_public_key": format!("0x{}", hex::encode(&(app_state.enclave_signer.verifying_key().to_encoded_point(false).as_bytes())[1..])),
         "owner_address": *app_state.enclave_owner.lock().unwrap(),
         "gas_address": gas_address,
+        "ws_rpc_url": app_state.web_socket_url.read().unwrap().clone(),
     }))
 }
 
