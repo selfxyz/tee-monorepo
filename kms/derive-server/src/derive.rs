@@ -2,7 +2,9 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
 };
-use kms_derive_utils::derive_path_seed;
+use kms_derive_utils::{
+    derive_path_seed, to_ed25519_secret, to_secp256k1_secret, to_x25519_secret,
+};
 use serde::Deserialize;
 
 use crate::AppState;
