@@ -10,6 +10,7 @@ use tracing_subscriber::EnvFilter;
 mod derive;
 mod derive_ed25519;
 mod derive_secp256k1;
+mod derive_x25519;
 mod fetch;
 mod scallop;
 
@@ -100,6 +101,7 @@ async fn main() -> Result<()> {
         .route("/derive", get(derive::derive))
         .route("/derive/secp256k1", get(derive_secp256k1::derive_secp256k1))
         .route("/derive/ed25519", get(derive_ed25519::derive_ed25519))
+        .route("/derive/x25519", get(derive_x25519::derive_x25519))
         .with_state(app_state);
 
     let listener = TcpListener::bind(&args.listen_addr)
