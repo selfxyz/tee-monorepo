@@ -38,6 +38,10 @@ impl ScallopAuthStore for AuthStore {
             return None;
         };
 
+        if decoded.user_data.len() > 65535 {
+            return None;
+        }
+
         return Some((decoded.pcrs, decoded.user_data.into_boxed_slice()));
     }
 }
