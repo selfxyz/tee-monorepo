@@ -8,6 +8,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod derive;
+mod derive_secp256k1;
 mod fetch;
 mod scallop;
 
@@ -96,6 +97,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/derive", get(derive::derive))
+        .route("/derive/secp256k1", get(derive_secp256k1::derive_secp256k1))
         .with_state(app_state);
 
     let listener = TcpListener::bind(&args.listen_addr)
