@@ -9,6 +9,27 @@ use sha2::Digest;
 use sha2::Sha512;
 use sha3::Keccak256;
 
+/// Derives a 64-byte seed for an enclave using PCR measurements and user data.
+/// The derivation is performed twice for additional security.
+///
+/// # Arguments
+/// * `root` - A 64-byte root seed
+/// * `pcr0` - PCR0 measurement bytes
+/// * `pcr1` - PCR1 measurement bytes
+/// * `pcr2` - PCR2 measurement bytes
+/// * `user_data` - Additional user data bytes
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::derive_enclave_seed;
+///
+/// let root = [0u8; 64];
+/// let pcr0 = vec![1u8; 48];
+/// let pcr1 = vec![2u8; 48];
+/// let pcr2 = vec![3u8; 48];
+/// let user_data = vec![4u8; 8];
+/// let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
+/// ```
 pub fn derive_enclave_seed(
     root: [u8; 64],
     pcr0: &[u8],
@@ -25,11 +46,40 @@ pub fn derive_enclave_seed(
     )
 }
 
+/// Derives a 64-byte seed for a given path using a root seed.
+/// The derivation is performed twice for additional security.
+///
+/// # Arguments
+/// * `root` - A 64-byte root seed
+/// * `path` - Path bytes to derive from
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::derive_path_seed;
+///
+/// let root = [0u8; 64];
+/// let path = *b"something";
+/// let seed = derive_path_seed(root, &path);
+/// ```
 pub fn derive_path_seed(root: [u8; 64], path: &[u8]) -> [u8; 64] {
     derive_path_seed_once(derive_path_seed_once(root, path), path)
 }
 
-// ENDIANNESS: Big endian
+/// Converts a 64-byte derived seed into a 32-byte secp256k1 secret key.
+/// The key is guaranteed to be in the valid range [1, n-1] where n is the curve order.
+///
+/// ENDIANNESS: Big endian
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_secp256k1_secret;
+///
+/// let derived = [0u8; 64];
+/// let secret = to_secp256k1_secret(derived);
+/// ```
 pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
     // unlikely to ever matter if derived is random, but bound it to [1, n-1]
@@ -45,7 +95,20 @@ pub fn to_secp256k1_secret(derived: [u8; 64]) -> [u8; 32] {
         .to_be_bytes::<32>()
 }
 
-// ENDIANNESS: Big endian
+/// Derives a 64-byte uncompressed secp256k1 public key from a 64-byte seed.
+///
+/// ENDIANNESS: Big endian
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_secp256k1_public;
+///
+/// let derived = [0u8; 64];
+/// let public = to_secp256k1_public(derived);
+/// ```
 pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
     // SAFETY: secret is the right size, safe to unwrap
     let secret = SecretKey::from_slice(&to_secp256k1_secret(derived)).unwrap();
@@ -55,6 +118,19 @@ pub fn to_secp256k1_public(derived: [u8; 64]) -> [u8; 64] {
         .unwrap()
 }
 
+/// Derives an Ethereum address from a 64-byte seed.
+/// Returns the address as a hex string with "0x" prefix.
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_secp256k1_ethereum_address;
+///
+/// let derived = [0u8; 64];
+/// let address = to_secp256k1_ethereum_address(derived);
+/// ```
 pub fn to_secp256k1_ethereum_address(derived: [u8; 64]) -> String {
     let public = to_secp256k1_public(derived);
     let address = &Keccak256::new_with_prefix(&public).finalize()[12..];
@@ -62,27 +138,80 @@ pub fn to_secp256k1_ethereum_address(derived: [u8; 64]) -> String {
     format!("0x{}", hex::encode(address))
 }
 
-// ENDIANNESS: Technically what is returned is a seed without endianness
-// libraries hash and clamp it to derive a secret, popular libraries use little endian
+/// Converts a 64-byte derived seed into a 32-byte Ed25519 secret key.
+///
+/// ENDIANNESS: Technically what is returned is a seed without endianness.
+/// Libraries hash and clamp it to derive a secret, popular libraries use little endian.
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_ed25519_secret;
+///
+/// let derived = [0u8; 64];
+/// let secret = to_ed25519_secret(derived);
+/// ```
 pub fn to_ed25519_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
     // SAFETY: can always take exactly 32 bytes, safe to unwrap
     derived[0..32].try_into().unwrap()
 }
 
-// ENDIANNESS: Little endian
+/// Derives a 32-byte Ed25519 public key from a 64-byte seed.
+///
+/// ENDIANNESS: Little endian
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_ed25519_public;
+///
+/// let derived = [0u8; 64];
+/// let public = to_ed25519_public(derived);
+/// ```
 pub fn to_ed25519_public(derived: [u8; 64]) -> [u8; 32] {
     let secret = ed25519_dalek::SigningKey::from(to_ed25519_secret(derived));
     secret.verifying_key().to_bytes()
 }
 
+/// Derives a Solana address from a 64-byte seed.
+/// Returns the address as a base58 encoded string.
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_ed25519_solana_address;
+///
+/// let derived = [0u8; 64];
+/// let address = to_ed25519_solana_address(derived);
+/// ```
 pub fn to_ed25519_solana_address(derived: [u8; 64]) -> String {
     let public = to_ed25519_public(derived);
 
     public.to_base58()
 }
 
-// ENDIANNESS: Little endian
+/// Converts a 64-byte derived seed into a 32-byte X25519 secret key.
+/// Applies proper clamping to ensure the key meets X25519 requirements.
+///
+/// ENDIANNESS: Little endian
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_x25519_secret;
+///
+/// let derived = [0u8; 64];
+/// let secret = to_x25519_secret(derived);
+/// ```
 pub fn to_x25519_secret(derived: [u8; 64]) -> [u8; 32] {
     // throw away last 32 bytes, assumes derived is random
     // SAFETY: can always take exactly 32 bytes, safe to unwrap
@@ -96,7 +225,20 @@ pub fn to_x25519_secret(derived: [u8; 64]) -> [u8; 32] {
     secret
 }
 
-// ENDIANNESS: Little endian
+/// Derives a 32-byte X25519 public key from a 64-byte seed.
+///
+/// ENDIANNESS: Little endian
+///
+/// # Arguments
+/// * `derived` - A 64-byte derived seed
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::to_x25519_public;
+///
+/// let derived = [0u8; 64];
+/// let public = to_x25519_public(derived);
+/// ```
 pub fn to_x25519_public(derived: [u8; 64]) -> [u8; 32] {
     let secret = x25519_dalek::StaticSecret::from(to_x25519_secret(derived));
     x25519_dalek::PublicKey::from(&secret).to_bytes()
