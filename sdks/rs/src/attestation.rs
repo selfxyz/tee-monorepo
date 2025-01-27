@@ -21,6 +21,7 @@ pub struct AttestationDecoded {
     pub pcrs: [[u8; 48]; 3],
     pub root_public_key: Vec<u8>,
     pub public_key: Vec<u8>,
+    pub user_data: Vec<u8>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -41,6 +42,7 @@ pub struct AttestationExpectations {
     // (max age, current timestamp)
     pub age: Option<(usize, usize)>,
     pub pcrs: Option<[[u8; 48]; 3]>,
+    pub user_data: Option<Vec<u8>>,
     pub root_public_key: Option<Vec<u8>>,
 }
 
@@ -53,6 +55,7 @@ pub fn verify(
         timestamp: 0,
         root_public_key: Vec::new(),
         public_key: Vec::new(),
+        user_data: Vec::new(),
     };
 
     // parse attestation doc
@@ -99,6 +102,18 @@ pub fn verify(
 
     // return the enclave key
     result.public_key = parse_enclave_key(&mut attestation_doc)?;
+
+    // return the user data
+    result.user_data = parse_user_data(&mut attestation_doc)?;
+
+    // check user data if exists
+    if let Some(user_data) = expectations.user_data {
+        if result.user_data != user_data {
+            return Err(AttestationError::VerifyFailed(
+                "user data mismatch".into(),
+            ));
+        }
+    }
 
     Ok(result)
 }
@@ -299,6 +314,24 @@ fn parse_enclave_key(
     })?;
 
     Ok(public_key)
+}
+
+fn parse_user_data(
+    attestation_doc: &mut BTreeMap<Value, Value>,
+) -> Result<Vec<u8>, AttestationError> {
+    let user_data = attestation_doc
+        .remove(&"user_data".to_owned().into())
+        .ok_or(AttestationError::ParseFailed(
+            "user data not found in attestation doc".to_owned(),
+        ))?;
+    let user_data = (match user_data {
+        Value::Bytes(b) => Ok(b),
+        _ => Err(AttestationError::ParseFailed(
+            "user data decode failure".to_owned(),
+        )),
+    })?;
+
+    Ok(user_data)
 }
 
 pub async fn get(endpoint: Uri) -> Result<Vec<u8>, AttestationError> {

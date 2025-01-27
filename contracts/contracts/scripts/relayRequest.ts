@@ -1,7 +1,5 @@
-import { getBytes, parseUnits, solidityPacked, Wallet } from "ethers";
+import { getBytes, Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { Relay, UserSample } from "../typechain-types";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 type EnvConfig = {
     [key: number]: {
@@ -20,9 +18,9 @@ const envConfig: EnvConfig = {
 async function main() {
     //Create Enclave Image object
     const img = {
-        PCR0 : getBytes("0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462"),
-        PCR1 : getBytes("0xbcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f"),
-        PCR2 : getBytes("0x20caae8a6a69d9b1aecdf01a0b9c5f3eafd1f06cb51892bf47cef476935bfe77b5b75714b68a69146d650683a217c5b3"),
+        PCR0: getBytes("0xcfa7554f87ba13620037695d62a381a2d876b74c2e1b435584fe5c02c53393ac1c5cd5a8b6f92e866f9a65af751e0462"),
+        PCR1: getBytes("0xbcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f"),
+        PCR2: getBytes("0x20caae8a6a69d9b1aecdf01a0b9c5f3eafd1f06cb51892bf47cef476935bfe77b5b75714b68a69146d650683a217c5b3"),
     };
 
     let wallet = walletForIndex(0);
@@ -72,7 +70,7 @@ async function main() {
             admin_addr
         ],
         {
-            kind : "uups"
+            kind: "uups"
         });
     let av_addr = attestationverifier.target;
     console.log("AttestationVerifier Deployed address: ", av_addr);
@@ -92,9 +90,9 @@ async function main() {
             [img]
         ],
         {
-            initializer : "initialize",
-            kind : "uups",
-            constructorArgs : [
+            initializer: "initialize",
+            kind: "uups",
+            constructorArgs: [
                 av_addr,
                 signMaxAge,
                 usdc_token_addr,
@@ -145,9 +143,9 @@ async function main() {
             [img]
         ],
         {
-            initializer : "initialize",
-            kind : "uups",
-            constructorArgs : [
+            initializer: "initialize",
+            kind: "uups",
+            constructorArgs: [
                 av_addr,
                 signMaxAge,
                 staking_token_addr,
@@ -161,7 +159,7 @@ async function main() {
     console.log("Gateways Deployed address: ", gatewaysAddress);
 
     // Common Chain Executors Contract
-    let minStake = 10n**18n;
+    let minStake = 10n ** 18n;
     const Executors = await ethers.getContractFactory("Executors");
     console.log("Deploying Executors...")
     let executorsContract = await upgrades.deployProxy(
@@ -171,9 +169,9 @@ async function main() {
             [img]
         ],
         {
-            initializer : "initialize",
-            kind : "uups",
-            constructorArgs : [
+            initializer: "initialize",
+            kind: "uups",
+            constructorArgs: [
                 av_addr,
                 signMaxAge,
                 staking_token_addr,
@@ -196,8 +194,8 @@ async function main() {
             admin_addr,
         ],
         {
-            initializer : "initialize",
-            kind : "uups",
+            initializer: "initialize",
+            kind: "uups",
             constructorArgs: [
                 staking_token_addr,
                 usdc_token_addr,
@@ -215,30 +213,30 @@ async function main() {
     await executorsContract.grantRole(await executorsContract.JOBS_ROLE(), jobsAddress);
     await jobsContract.addGlobalEnv(env, executorFeePerMs, stakingRewardPerMs);
 
-     // Common Chain Gateway Jobs Contract
-     let relayBufferTime = 120;
-     const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
-     console.log("Deploying GatewayJobs...")
-     let gatewayJobs = await upgrades.deployProxy(
-         GatewayJobs,
-         [
-             admin_addr
-         ],
-         {
-             initializer : "initialize",
-             kind : "uups",
-             constructorArgs : [
-                 staking_token_addr,
-                 usdc_token_addr,
-                 signMaxAge,
-                 relayBufferTime,
-                 10n**16n, // 0.01 POND
-                 10n**16n, // 0.01 POND
-                 jobsAddress,
-                 gatewaysAddress,
-                 stakingPaymentPoolAddress
-             ]
-         });
+    // Common Chain Gateway Jobs Contract
+    let relayBufferTime = 120;
+    const GatewayJobs = await ethers.getContractFactory("GatewayJobs");
+    console.log("Deploying GatewayJobs...")
+    let gatewayJobs = await upgrades.deployProxy(
+        GatewayJobs,
+        [
+            admin_addr
+        ],
+        {
+            initializer: "initialize",
+            kind: "uups",
+            constructorArgs: [
+                staking_token_addr,
+                usdc_token_addr,
+                signMaxAge,
+                relayBufferTime,
+                10n ** 16n, // 0.01 POND
+                10n ** 16n, // 0.01 POND
+                jobsAddress,
+                gatewaysAddress,
+                stakingPaymentPoolAddress
+            ]
+        });
     let gatewayJobsAddress = gatewayJobs.target;
     console.log("GatewayJobs Deployed address: ", gatewayJobsAddress);
     await gatewaysContract.grantRole(await gatewaysContract.GATEWAY_JOBS_ROLE(), gatewayJobsAddress);
@@ -401,13 +399,13 @@ async function main() {
 // }
 
 function normalize(key: string): string {
-	return '0x' + key.substring(4);
+    return '0x' + key.substring(4);
 }
 
 function walletForIndex(idx: number): Wallet {
-	let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
+    let wallet = ethers.HDNodeWallet.fromPhrase("test test test test test test test test test test test junk", undefined, "m/44'/60'/0'/0/" + idx.toString());
 
-	return new Wallet(wallet.privateKey);
+    return new Wallet(wallet.privateKey);
 }
 
 main()
