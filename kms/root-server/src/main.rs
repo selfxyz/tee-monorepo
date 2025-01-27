@@ -20,12 +20,7 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod derive;
-mod derive_ed25519_address_solana;
-mod derive_ed25519_public;
 mod derive_public;
-mod derive_secp256k1_address_ethereum;
-mod derive_secp256k1_public;
-mod derive_x25519_public;
 mod scallop;
 mod taco;
 
