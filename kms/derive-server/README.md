@@ -30,34 +30,26 @@ Supported outputs:
 ## Usage
 
 ```
-$ ./target/release/kms-root-server --help
-Usage: kms-root-server [OPTIONS]
+$ ./target/release/kms-derive-server --help
+Usage: kms-derive-server [OPTIONS] --kms-endpoint <KMS_ENDPOINT> --pcr0 <PCR0> --pcr1 <PCR1> --pcr2 <PCR2> --user-data <USER_DATA>
 
 Options:
-      --randomness-file <RANDOMNESS_FILE>
-          Path to encrypted randomness file [default: /app/init-params]
-      --scallop-listen-addr <SCALLOP_LISTEN_ADDR>
-          Scallop listening address [default: 0.0.0.0:1100]
-      --public-listen-addr <PUBLIC_LISTEN_ADDR>
-          Public listening address [default: 0.0.0.0:1101]
-      --signer <SIGNER>
-          Path to file with private key signer [default: /app/secp256k1.sec]
-      --porter <PORTER>
-          Porter URI [default: https://porter.nucypher.io/decrypt]
-      --ritual <RITUAL>
-          Ritual id [default: 40]
-      --coordinator <COORDINATOR>
-          Coordinator address [default: 0xE74259e3dafe30bAA8700238e324b47aC98FE755]
-      --rpc <RPC>
-          RPC URL [default: https://polygon-rpc.com]
+      --kms-endpoint <KMS_ENDPOINT>
+          Path to encrypted randomness file
+      --listen-addr <LISTEN_ADDR>
+          Listening address [default: 127.0.0.1:1100]
       --attestation-endpoint <ATTESTATION_ENDPOINT>
           Attestation endpoint [default: http://127.0.0.1:1301/attestation/raw]
       --secret-path <SECRET_PATH>
           Path to X25519 secret file [default: /app/x25519.sec]
-      --threshold <THRESHOLD>
-          DKG threshold [default: 16]
-      --delay <DELAY>
-          Initial delay to allow for attestation verification [default: 1800]
+      --pcr0 <PCR0>
+          PCR0 of the root server
+      --pcr1 <PCR1>
+          PCR1 of the root server
+      --pcr2 <PCR2>
+          PCR2 of the root server
+      --user-data <USER_DATA>
+          user data of the root server
   -h, --help
           Print help
   -V, --version
