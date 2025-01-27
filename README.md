@@ -21,6 +21,7 @@ The repository is organized into projects:
 - [kernels](./kernels/): Linux kernels for different classes of enclave images and different use cases.
 - [kms/creator](./kms/creator): Encrypted randomness generator for the KMS root servers.
 - [kms/derive-utils](./kms/derive-utils): Library with key derivation utilities.
+- [kms/root-server](./kms/root-server): KMS root server with key derivation endpoints.
 - [networking/tcp-proxy](./networking/tcp-proxy/): TCP proxies that are part of the networking stack of Salmon images.
 - [networking/raw-proxy](./networking/raw-proxy/): Raw proxies that are part of the networking stack of Tuna images.
 - [networking/iperf3-enclave](./networking/iperf3-enclave/): Enclave image that packages iperf3 for benchmarking purposes.
