@@ -82,6 +82,9 @@
         kernels = kernels.tuna;
         root-server = kms.root-server.compressed;
       };
+      kms.derive-server = import ./kms/derive-server {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;
       };

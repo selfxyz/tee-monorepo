@@ -20,6 +20,7 @@ The repository is organized into projects:
 - [initialization/keygen](./initialization/keygen/): Keypair generators.
 - [kernels](./kernels/): Linux kernels for different classes of enclave images and different use cases.
 - [kms/creator](./kms/creator): Encrypted randomness generator for the KMS root servers.
+- [kms/derive-server](./kms/derive-server): KMS derive server with key derivation endpoints meant to be used in end-user enclaves.
 - [kms/derive-utils](./kms/derive-utils): Library with key derivation utilities.
 - [kms/root-server](./kms/root-server): KMS root server with key derivation endpoints.
 - [networking/tcp-proxy](./networking/tcp-proxy/): TCP proxies that are part of the networking stack of Salmon images.
