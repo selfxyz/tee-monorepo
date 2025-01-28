@@ -6,10 +6,6 @@ set -e
 /app/vet --url vsock://3:1300/instance/ip > /app/ip.txt
 cat /app/ip.txt
 
-# query job id for enclave and store
-/app/vet --url vsock://3:1300/oyster/job > /app/job.txt
-cat /app/job.txt
-
 ip=$(cat /app/ip.txt)
 
 # setting an address for loopback
