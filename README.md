@@ -20,7 +20,7 @@ The repository is organized into projects:
 - [initialization/keygen](./initialization/keygen/): Keypair generators.
 - [kernels](./kernels/): Linux kernels for different classes of enclave images and different use cases.
 - [kms/creator](./kms/creator): Encrypted randomness generator for the KMS root servers.
-- [kms/root-server-enclave](./kms/root-server-enclave): KMS creator enclave.
+- [kms/creator-enclave](./kms/creator-enclave): KMS creator enclave.
 - [kms/derive-server](./kms/derive-server): KMS derive server with key derivation endpoints meant to be used in end-user enclaves.
 - [kms/derive-server-enclave](./kms/derive-server-enclave): Example KMS derive server enclave mainly used for testing.
 - [kms/derive-utils](./kms/derive-utils): Library with key derivation utilities.
