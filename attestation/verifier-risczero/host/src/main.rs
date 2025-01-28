@@ -46,4 +46,10 @@ fn main() {
     let receipt = prove_info.receipt;
 
     println!("{:?}", receipt);
+
+    println!(
+        "Seal: {}",
+        hex::encode(&receipt.inner.groth16().unwrap().seal)
+    );
+    println!("{}", hex::encode(&receipt.journal.bytes));
 }
