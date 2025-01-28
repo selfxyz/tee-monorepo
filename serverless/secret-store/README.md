@@ -100,7 +100,7 @@ Immutable params configured!
 
 <b> Inject mutable configuration parameters into the application: </b>
 
-Currently there is only one such parameter and it is the gas private key used by the secret store enclave to send transactions to the common chain.
+Currently there are 2 such parameters - Gas private key used by the secret store enclave to send transactions to the common chain, and Alchemy API key for the web socket connection to the common chain.
 ```
 $ curl -X POST -H "Content-Type: application/json" -d '{"gas_key_hex": "{GAS_PRIVATE_KEY_HEX}", "ws_api_key": "{ALCHEMY_API_KEY}"}' <secret_store_node_ip:secret_store_node_port>/mutable-config
 Mutable params configured!
@@ -114,7 +114,7 @@ $ curl <secret_store_node_ip:secret_store_node_port>/store-details
 
 <b> Exporting registration details from the secret store node: </b>
 
-The owner can hit the below endpoint to get the registration details required to register the secret store enclave on the common chain **TeeManager** contract. The endpoint will also start the listening of such event notifications on the common chain inside the enclave node.
+The serverless executor service will request the below endpoint to get the registration details required to register the whole TEE enclave on the common chain **TeeManager** contract. This endpoint will also start the listening of such event notifications from the common chain inside the secret store service.
 ```
 $ curl <secret_store_node_ip:secret_store_node_port>/register-details
 {"storage_capacity":{SECRET_STORE_CAPACITY_BYTES}}
@@ -136,7 +136,7 @@ User can use the following binary to encrypt their secret data bytes with the se
 ```
 $ ./target/x86_64-unknown-linux-musl/release/oyster-secret-user-utility --secret-data-hex {SECRET_DATA_BYTES_HEX} --user-private-hex {USER_PRIVATE_KEY_HEX} --http-rpc-url {COMMON_CHAIN_HTTP_RPC_URL} --config-file {SECRET_STORE_ENCLAVES_INFO_JSON} --txn-hash {SECRET_CREATE_TRANSACTION_HASH}
 Secret data in bytes: {SECRET_DATA_DECODED_INTO_BYTES}
-Secret ID: 
+Secret ID: {SECRET_ID_FETCHED_FROM_CHAIN}
 Encrypted secret: {ENCRYPTED_SECRET_DATA_BYTES_HEX}
 Signature: {USER_SIGNATURE_OF_SECRET_ID_AND_ENCRYPTED_DATA}
 Secret injected successfully with acknowledgement: Object {"secret_id": String("{SECRET_ID}"), "sign_timestamp": Number({ENCLAVE_SIGN_TIMESTAMP}), "signature": String("{ENCLAVE_ACKNOWELDGEMENT_SIGNATURE}")}

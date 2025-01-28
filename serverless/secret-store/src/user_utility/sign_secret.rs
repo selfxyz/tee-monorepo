@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 
 use alloy::consensus::Transaction;
 use alloy::dyn_abi::DynSolValue;
@@ -7,6 +8,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{Filter, Log};
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
+use alloy::signers::utils::public_key_to_address;
 use alloy::sol_types::SolEvent;
 use alloy::transports::http::reqwest::{self, Url};
 use alloy::{hex, sol};
@@ -16,11 +18,19 @@ use config::{ConfigError, File};
 use ecies::encrypt;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::task::JoinSet;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 sol! {
-    event SecretCreated(uint256 indexed secretId, address indexed owner, uint256 sizeLimit, uint256 endTimestamp, uint256 usdcDeposit, address[] selectedEnclaves);
+    event SecretCreated(
+        uint256 indexed secretId,
+        address indexed owner,
+        uint256 sizeLimit,
+        uint256 endTimestamp,
+        uint256 usdcDeposit,
+        address[] selectedEnclaves
+    );
 }
 
 struct ConfigManager {
@@ -52,13 +62,6 @@ impl ConfigManager {
     }
 }
 
-#[derive(Deserialize, Debug)]
-struct SecretStoredAcknowledgement {
-    secret_id: U256,
-    sign_timestamp: u64,
-    signature: String,
-}
-
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -66,31 +69,141 @@ struct Cli {
     #[clap(long, value_parser)]
     http_rpc_url: String,
 
-    // Secret ID of the secret to encrpyt and sign
+    // Secret create transaction hash
     #[clap(long, value_parser)]
     txn_hash: B256,
 
-    // Serialized secret data
+    // Secret data file location
     #[clap(long, value_parser)]
-    secret_data_hex: String,
+    secret_data_file: String,
 
     // User's private key to sign the data
     #[clap(long, value_parser)]
     user_private_hex: String,
 
-    // Store enclaves info configuration
+    // Secret store enclaves info configuration file
     #[clap(long, value_parser)]
-    config_file: String,
+    secret_stores_data: String,
+}
+
+async fn inject_secret(
+    enclave_address: Address,
+    store_info: EnclaveInfo,
+    secret_id: U256,
+    secret_data_bytes: Vec<u8>,
+    user_private_key: SigningKey,
+) {
+    let enclave_public_key = hex::decode(store_info.public_key);
+    let Ok(enclave_public_key) = enclave_public_key else {
+        eprintln!(
+            "Failed to hex decode the enclave public key for address {}: {:?}\n",
+            enclave_address,
+            enclave_public_key.unwrap_err()
+        );
+        return;
+    };
+
+    // Encrypt secret data using the enclave 'secp256k1' public key
+    let encrypted_secret_data_bytes = encrypt(&enclave_public_key, secret_data_bytes.as_slice());
+    let Ok(encrypted_secret_data_bytes) = encrypted_secret_data_bytes else {
+        eprintln!(
+            "Failed to encrypt the secret data using public key of enclave {}: {:?}\n",
+            enclave_address,
+            encrypted_secret_data_bytes.unwrap_err()
+        );
+        return;
+    };
+
+    let token_list = DynSolValue::Tuple(vec![
+        DynSolValue::Uint(secret_id, 256),
+        DynSolValue::Bytes(encrypted_secret_data_bytes.clone()),
+    ]);
+
+    let data_hash = keccak256(token_list.abi_encode());
+
+    // Sign the digest using user private key
+    let sign = user_private_key.sign_prehash_recoverable(&data_hash.to_vec());
+    let Ok((rs, v)) = sign else {
+        eprintln!(
+            "Failed to sign the secret data message using user private key for enclave {}: {:?}\n",
+            enclave_address,
+            sign.unwrap_err()
+        );
+        return;
+    };
+    let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
+
+    let client = reqwest::Client::new();
+    let req_url = store_info.store_external_ip + "/inject-secret";
+    let request_json = json!({
+        "secret_id": secret_id,
+        "encrypted_secret_hex": hex::encode(encrypted_secret_data_bytes),
+        "signature_hex": hex::encode(signature),
+    });
+
+    let response = Retry::spawn(
+        ExponentialBackoff::from_millis(5).map(jitter).take(3),
+        || async {
+            client
+                .post(req_url.clone())
+                .json(&request_json.clone())
+                .send()
+                .await
+        },
+    )
+    .await;
+    let Ok(response) = response else {
+        eprintln!(
+            "Failed to send the request to secret store endpoint of enclave {}: {:?}\n",
+            enclave_address,
+            response.unwrap_err()
+        );
+        return;
+    };
+
+    if !response.status().is_success() {
+        let response_body = response.text().await;
+        let Ok(response_body) = response_body else {
+            eprintln!(
+                "Failed to parse the error response body from the secret inject response of enclave {}: {:?}\n",
+                enclave_address,
+                response_body.unwrap_err()
+            );
+            return;
+        };
+
+        eprintln!(
+            "Failed to inject secret into the secret store with address {}: {:?}\n",
+            enclave_address, response_body
+        );
+        return;
+    }
+
+    let secret_acknowledgement = response.json::<Value>().await;
+    let Ok(secret_acknowledgement) = secret_acknowledgement else {
+        eprintln!(
+            "Failed to parse the acknowledgement json from the secret store response of enclave {}: {:?}\n",
+            enclave_address,
+            secret_acknowledgement.unwrap_err()
+        );
+        return;
+    };
+
+    println!(
+        "Secret injected successfully into enclave {} with acknowledgement: {:?}",
+        enclave_address, secret_acknowledgement
+    );
+    return;
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config_manager = ConfigManager::new(&cli.config_file);
+    let config_manager = ConfigManager::new(&cli.secret_stores_data);
     let config = config_manager.load_config().unwrap();
 
-    let secret_data_bytes = hex::decode(cli.secret_data_hex)
-        .context("Failed to hex decode the secret data hex string")?;
+    let secret_data_bytes =
+        fs::read(cli.secret_data_file).context("Failed to read the secret data file")?;
     println!("Secret data in bytes: {:?}", secret_data_bytes);
 
     let user_private_key = SigningKey::from_slice(
@@ -104,14 +217,7 @@ async fn main() -> Result<()> {
     )
     .context("Invalid user signer key")?;
 
-    let user_address = Address::from_slice(
-        &keccak256(
-            &(user_private_key
-                .verifying_key()
-                .to_encoded_point(false)
-                .as_bytes())[1..],
-        )[12..],
-    );
+    let user_address = public_key_to_address(&user_private_key.verifying_key());
 
     let http_rpc_client = ProviderBuilder::new()
         .on_http(Url::parse(&cli.http_rpc_url).context("Failed to initialize http client")?);
@@ -179,137 +285,31 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Secret data length exceeds limit"));
     }
 
-    if decoded_log
-        .selectedEnclaves
-        .iter()
-        .any(|add| !config.stores.contains_key(add))
-    {
-        return Err(anyhow!("Enclave info doesn't exist for a selected enclave"));
-    }
-
-    let mut injection_tasks = vec![];
+    let mut inject_set = JoinSet::new();
 
     for addr in decoded_log.selectedEnclaves {
+        if !config.stores.contains_key(&addr) {
+            eprintln!("Enclave with address {} not present in config data", addr);
+            continue;
+        }
+
         let store_info = config.stores.get(&addr).unwrap().clone();
         let secret_data_bytes_clone = secret_data_bytes.clone();
         let user_private_key_clone = user_private_key.clone();
-        injection_tasks.push(tokio::spawn(async move {
+
+        inject_set.spawn(async move {
             inject_secret(
+                addr,
                 store_info,
                 decoded_log.secretId,
                 secret_data_bytes_clone,
                 user_private_key_clone,
             )
             .await
-        }));
+        });
     }
 
-    for task in injection_tasks {
-        let _ = task.await;
-    }
+    let _ = inject_set.join_all().await;
 
     Ok(())
-}
-
-async fn inject_secret(
-    store_info: EnclaveInfo,
-    secret_id: U256,
-    secret_data_bytes: Vec<u8>,
-    user_private_key: SigningKey,
-) {
-    let enclave_public_key = hex::decode(store_info.public_key);
-    let Ok(enclave_public_key) = enclave_public_key else {
-        eprintln!(
-            "Failed to hex decode the enclave public key: {:?}\n",
-            enclave_public_key.unwrap_err()
-        );
-        return;
-    };
-
-    // Encrypt secret data using the enclave 'secp256k1' public key
-    let encrypted_secret_data_bytes = encrypt(&enclave_public_key, secret_data_bytes.as_slice());
-    let Ok(encrypted_secret_data_bytes) = encrypted_secret_data_bytes else {
-        eprintln!(
-            "Failed to encrypt the secret data using enclave public key: {:?}\n",
-            encrypted_secret_data_bytes.unwrap_err()
-        );
-        return;
-    };
-
-    let token_list = DynSolValue::Tuple(vec![
-        DynSolValue::Uint(secret_id, 256),
-        DynSolValue::Bytes(encrypted_secret_data_bytes.clone()),
-    ]);
-
-    let data_hash = keccak256(token_list.abi_encode());
-
-    // Sign the digest using user private key
-    let sign = user_private_key.sign_prehash_recoverable(&data_hash.to_vec());
-    let Ok((rs, v)) = sign else {
-        eprintln!(
-            "Failed to sign the secret data message using user private key: {:?}\n",
-            sign.unwrap_err()
-        );
-        return;
-    };
-    let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
-
-    let client = reqwest::Client::new();
-    let req_url = store_info.store_external_ip + "/inject-secret";
-    let request_json = json!({
-        "secret_id": secret_id,
-        "encrypted_secret_hex": hex::encode(encrypted_secret_data_bytes),
-        "signature_hex": hex::encode(signature),
-    });
-
-    let response = Retry::spawn(
-        ExponentialBackoff::from_millis(5).map(jitter).take(3),
-        || async {
-            client
-                .post(req_url.clone())
-                .json(&request_json.clone())
-                .send()
-                .await
-        },
-    )
-    .await;
-    let Ok(response) = response else {
-        eprintln!(
-            "Failed to send the request to secret store endpoint: {:?}\n",
-            response.unwrap_err()
-        );
-        return;
-    };
-
-    if !response.status().is_success() {
-        let response_body = response.text().await;
-        let Ok(response_body) = response_body else {
-            eprintln!(
-                "Failed to parse the error response body from the secret inject response: {:?}\n",
-                response_body.unwrap_err()
-            );
-            return;
-        };
-
-        eprintln!(
-            "Failed to inject secret into the secret store: {:?}\n",
-            response_body
-        );
-        return;
-    }
-
-    let secret_acknowledgement = response.json::<Value>().await;
-    let Ok(secret_acknowledgement) = secret_acknowledgement else {
-        eprintln!(
-            "Failed to parse the acknowledgement json from the secret store response: {:?}\n",
-            secret_acknowledgement.unwrap_err()
-        );
-        return;
-    };
-
-    println!(
-        "Secret injected successfully with acknowledgement: {:?}",
-        secret_acknowledgement
-    );
-    return;
 }

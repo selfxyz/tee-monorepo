@@ -49,8 +49,7 @@ async fn inject_immutable_config(
 
     let mut immutable_params_injected_guard = app_state.immutable_params_injected.lock().unwrap();
     if *immutable_params_injected_guard == true {
-        return HttpResponse::BadRequest()
-            .body("Immutable params already configured!\n");
+        return HttpResponse::BadRequest().body("Immutable params already configured!\n");
     }
 
     // Initialize owner address for the enclave
@@ -309,7 +308,7 @@ async fn inject_and_store_secret(
         ));
     };
 
-    // Exit if the secret data is not the same size as the limit received from the SecretManager contract
+    // Exit if the secret data size is greater than the limit received from the SecretManager contract
     if secret_created.secret_metadata.size_limit < U256::from(decrypted_secret.len()) {
         app_state
             .secrets_created

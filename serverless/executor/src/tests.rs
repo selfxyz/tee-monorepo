@@ -150,7 +150,7 @@ pub mod serverless_executor_test {
         resp.assert_text("Owner address must be 20 bytes long!\n");
 
         // Mock secret store immutable configuration endpoint
-        let mock_state =
+        let (mock_params, mock_state) =
             mock_post_endpoint(app_state.secret_store_config_port, "/immutable-config").await;
 
         // Inject valid immutable config params
@@ -172,6 +172,15 @@ pub mod serverless_executor_test {
         resp.assert_status_ok();
         resp.assert_text("Immutable params configured!\n");
         assert_eq!(*app_state.enclave_owner.lock().unwrap(), valid_owner);
+        let secret_store_param = mock_params.lock().unwrap().clone();
+        if let Some(Value::String(actual)) = secret_store_param.get("owner_address_hex") {
+            assert_eq!(actual, &hex::encode(valid_owner));
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'owner_address_hex'"
+            );
+        }
 
         // Inject valid immutable config params again to test immutability
         {
@@ -191,6 +200,15 @@ pub mod serverless_executor_test {
 
         resp.assert_status_bad_request();
         resp.assert_text("Failed to inject immutable config into the secret store: Immutable params already configured!\n");
+        let secret_store_param = mock_params.lock().unwrap().clone();
+        if let Some(Value::String(actual)) = secret_store_param.get("owner_address_hex") {
+            assert_eq!(actual, &hex::encode(valid_owner_2));
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'owner_address_hex'"
+            );
+        }
     }
 
     #[tokio::test]
@@ -259,7 +277,7 @@ pub mod serverless_executor_test {
         resp.assert_text("API key contains invalid characters!\n");
 
         // Mock secret store mutable configuration endpoint
-        let mock_state =
+        let (mock_params, mock_state) =
             mock_post_endpoint(app_state.secret_store_config_port, "/mutable-config").await;
 
         // Inject invalid secret store gas private key hex string (invalid hex character)
@@ -279,6 +297,26 @@ pub mod serverless_executor_test {
 
         resp.assert_status_bad_request();
         resp.assert_text("Failed to inject mutable config into the secret store: Failed to hex decode the gas private key into 32 bytes: InvalidHexCharacter { c: 'z', index: 17 }\n");
+        let secret_store_param = mock_params.lock().unwrap().clone();
+        if let Some(Value::String(actual)) = secret_store_param.get("gas_key_hex") {
+            assert_eq!(
+                actual,
+                "fffffffffffffffffzffffffffffffffffffffffffffffgfffffffffffffffff"
+            );
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'gas_key_hex'"
+            );
+        }
+        if let Some(Value::String(actual)) = secret_store_param.get("ws_api_key") {
+            assert_eq!(actual, "ws_api_key");
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'ws_api_key'"
+            );
+        }
 
         // Inject invalid secret store gas private key hex string (not ecdsa valid key)
         {
@@ -297,6 +335,26 @@ pub mod serverless_executor_test {
 
         resp.assert_status_bad_request();
         resp.assert_text("Failed to inject mutable config into the secret store: Invalid gas private key provided: EcdsaError(signature::Error { source: None })\n");
+        let secret_store_param = mock_params.lock().unwrap().clone();
+        if let Some(Value::String(actual)) = secret_store_param.get("gas_key_hex") {
+            assert_eq!(
+                actual,
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            );
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'gas_key_hex'"
+            );
+        }
+        if let Some(Value::String(actual)) = secret_store_param.get("ws_api_key") {
+            assert_eq!(actual, "ws_api_key");
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'ws_api_key'"
+            );
+        }
 
         // Inject valid mutable config params
         {
@@ -330,6 +388,23 @@ pub mod serverless_executor_test {
             app_state.ws_rpc_url.read().unwrap().as_str(),
             WS_URL.to_owned() + "ws_api_key"
         );
+        let secret_store_param = mock_params.lock().unwrap().clone();
+        if let Some(Value::String(actual)) = secret_store_param.get("gas_key_hex") {
+            assert_eq!(actual, &hex::encode(secret_store_gas_wallet_key.to_bytes()));
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'gas_key_hex'"
+            );
+        }
+        if let Some(Value::String(actual)) = secret_store_param.get("ws_api_key") {
+            assert_eq!(actual, "ws_api_key");
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'ws_api_key'"
+            );
+        }
 
         // Inject valid mutable config params again to test mutability
         let executor_gas_wallet_key = SigningKey::random(&mut OsRng);
@@ -354,11 +429,27 @@ pub mod serverless_executor_test {
                 .address(),
             public_key_to_address(executor_gas_wallet_key.verifying_key())
         );
-
         assert_eq!(
             app_state.ws_rpc_url.read().unwrap().as_str(),
             WS_URL.to_owned() + "ws_api_key_2"
         );
+        let secret_store_param = mock_params.lock().unwrap().clone();
+        if let Some(Value::String(actual)) = secret_store_param.get("gas_key_hex") {
+            assert_eq!(actual, &hex::encode(secret_store_gas_wallet_key.to_bytes()));
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'gas_key_hex'"
+            );
+        }
+        if let Some(Value::String(actual)) = secret_store_param.get("ws_api_key") {
+            assert_eq!(actual, "ws_api_key_2");
+        } else {
+            assert!(
+                false,
+                "Failed to get secret store endpoint parameter 'ws_api_key'"
+            );
+        }
     }
 
     #[tokio::test]
@@ -794,6 +885,7 @@ pub mod serverless_executor_test {
 
         let jobs_created_logs = vec![get_job_created_log(
             1.into(),
+            0.into(),
             0.into(),
             EXECUTION_ENV_ID,
             code_hash,
@@ -1455,7 +1547,7 @@ pub mod serverless_executor_test {
     #[tokio::test]
     // Test job execution with secret Id
     async fn job_execution_with_secret_test() {
-        let app_state = generate_app_state().await;
+        let app_state = generate_app_state(false).await;
 
         // Create a temporary store directory inside the parent
         let temp_dir = Builder::new()
@@ -1553,7 +1645,7 @@ pub mod serverless_executor_test {
     #[tokio::test]
     // Test job execution with secret Id failing user deadline
     async fn job_execution_with_secret_timeout_test() {
-        let app_state = generate_app_state().await;
+        let app_state = generate_app_state(false).await;
 
         // Create a temporary store directory inside the parent
         let temp_dir = Builder::new()
@@ -1672,17 +1764,24 @@ pub mod serverless_executor_test {
         }
     }
 
-    async fn mock_post_endpoint(port: u16, endpoint: &str) -> Arc<Mutex<(StatusCode, String)>> {
+    async fn mock_post_endpoint(
+        port: u16,
+        endpoint: &str,
+    ) -> (Arc<Mutex<Value>>, Arc<Mutex<(StatusCode, String)>>) {
         let shared_state = Arc::new(Mutex::new((StatusCode::OK, String::new())));
+        let captured_params: Arc<Mutex<Value>> = Arc::new(Mutex::new(json!({})));
 
         let state_clone = shared_state.clone();
+        let captured_params_clone = captured_params.clone();
         let app = Router::new().route(
             endpoint,
-            post(move || {
-                let state = state_clone.clone();
+            post(move |Json(payload): Json<Value>| {
+                let state = state_clone;
+                let handler_state = captured_params_clone;
 
                 async move {
                     let (status_code, response_body) = &*state.lock().unwrap();
+                    *handler_state.lock().unwrap() = payload;
 
                     (status_code.clone(), response_body.clone()).into_response()
                 }
@@ -1698,7 +1797,7 @@ pub mod serverless_executor_test {
             }
         });
 
-        shared_state
+        (captured_params, shared_state)
     }
 
     async fn mock_get_endpoint(port: u16, endpoint: &str) -> Arc<Mutex<(StatusCode, Value)>> {
@@ -1709,7 +1808,7 @@ pub mod serverless_executor_test {
             .route(
                 endpoint,
                 get(move || {
-                    let state = state_clone.clone();
+                    let state = state_clone;
 
                     async move {
                         let (status_code, response_body) = &*state.lock().unwrap();
