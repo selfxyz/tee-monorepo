@@ -26,12 +26,13 @@ impl ScallopAuthStore for AuthStore {
         };
 
         let Ok(decoded) = attestation::verify(
-            attestation.to_vec(),
+            attestation,
             AttestationExpectations {
                 // TODO: hardcoded, make it a param
                 age: Some((300000, now)),
-                root_public_key: Some(AWS_ROOT_KEY.to_vec()),
-                // do not care about PCRs, will derive different keys for each set
+                root_public_key: Some(&AWS_ROOT_KEY),
+                // do not care about PCRs or user data
+                // will derive different keys for each set
                 ..Default::default()
             },
         ) else {
@@ -42,7 +43,7 @@ impl ScallopAuthStore for AuthStore {
             return None;
         }
 
-        return Some((decoded.pcrs, decoded.user_data.into_boxed_slice()));
+        return Some((decoded.pcrs, decoded.user_data));
     }
 }
 
