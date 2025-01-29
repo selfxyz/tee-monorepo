@@ -292,9 +292,9 @@ mod tests {
     use hex_literal::hex;
 
     use crate::{
-        derive_enclave_seed, derive_path_seed, to_ed25519_public, to_ed25519_secret,
-        to_ed25519_solana_address, to_secp256k1_ethereum_address, to_secp256k1_public,
-        to_secp256k1_secret, to_x25519_public, to_x25519_secret,
+        derive_enclave_seed, derive_enclave_seed_eth, derive_path_seed, to_ed25519_public,
+        to_ed25519_secret, to_ed25519_solana_address, to_secp256k1_ethereum_address,
+        to_secp256k1_public, to_secp256k1_secret, to_x25519_public, to_x25519_secret,
     };
 
     #[test]
@@ -308,6 +308,19 @@ mod tests {
         let expected = hex!("07daa9e8e6917e45658f826b68f925e043d54ae4040ef1bbcc54e9aaf29d72a9c8ab133a8a5ca8b6a86eaf355421a4b4d8c6e125a22a827df3c90d78696d07d7");
 
         let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
+
+        assert_eq!(seed, expected);
+    }
+
+    #[test]
+    fn test_derive_enclave_seed_eth() {
+        let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let chain_id = 0x1234;
+        let address = "0x92148e8f84096d0dfe7e66a025d14d1e2594ddc2";
+        // derived from an independent online implementation
+        let expected = hex!("2893103cf566e7d2df9da1aec5e6c3f66a1d03e4031d6cd22282bab6415fc4da8a16b299c1e570115f0ec4173fa1f192e22dea29e21c2328ace3773151eacdcb");
+
+        let seed = derive_enclave_seed_eth(root, chain_id, address);
 
         assert_eq!(seed, expected);
     }
