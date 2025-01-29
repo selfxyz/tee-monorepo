@@ -46,6 +46,23 @@ pub fn derive_enclave_seed(
     )
 }
 
+/// Derives a 64-byte seed for an enclave given a chain id and an address.
+/// The derivation is performed twice for additional security around length extension.
+///
+/// # Arguments
+/// * `root` - A 64-byte root seed
+/// * `chain_id` - Chain ID
+/// * `address` - Ethereum address as `0x` prefixed lowercase string
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::derive_enclave_seed_eth;
+///
+/// let root = [0u8; 64];
+/// let chain_id = 1;
+/// let address = "0xffffffffffffffffffffffffffffffffffffffff";
+/// let seed = derive_enclave_seed_eth(root, chain_id, address);
+/// ```
 pub fn derive_enclave_seed_eth(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
     derive_enclave_seed_eth_once(
         derive_enclave_seed_eth_once(root, chain_id, address),
