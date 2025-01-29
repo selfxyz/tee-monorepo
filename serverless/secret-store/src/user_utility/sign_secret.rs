@@ -65,24 +65,24 @@ impl ConfigManager {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    // Http rpc url
+    /// Http rpc url
     #[clap(long, value_parser)]
     http_rpc_url: String,
 
-    // Secret create transaction hash
+    /// Secret create transaction hash
     #[clap(long, value_parser)]
     txn_hash: B256,
 
-    // Secret data file location
+    /// Secret data file location
     #[clap(long, value_parser)]
     secret_data_file: String,
 
-    // User's private key to sign the data
+    /// User's private key to sign the data
     #[clap(long, value_parser)]
     user_private_hex: String,
 
-    // Secret store enclaves info configuration file
-    #[clap(long, value_parser)]
+    /// Secret store enclaves info configuration file
+    #[clap(long, value_parser, default_value = "./stores_data.json")]
     secret_stores_data: String,
 }
 
