@@ -1,0 +1,11 @@
+[package]
+name = "creator-verifier"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy-primitives = { version = "0.6", features = ["k256", "rlp"] }
+anyhow = "1.0"
+base64 = "0.22.1"
+clap = { version = "4.4", features = ["derive"] }
+hex = "0.4"
