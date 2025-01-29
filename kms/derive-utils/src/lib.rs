@@ -52,20 +52,22 @@ pub fn derive_enclave_seed(
 /// # Arguments
 /// * `root` - A 64-byte root seed
 /// * `chain_id` - Chain ID
-/// * `address` - Ethereum address as `0x` prefixed lowercase string
+/// * `address` - Address
 ///
 /// # Examples
 /// ```
-/// use kms_derive_utils::derive_enclave_seed_eth;
+/// use kms_derive_utils::derive_enclave_seed_contract;
 ///
 /// let root = [0u8; 64];
 /// let chain_id = 1;
 /// let address = "0xffffffffffffffffffffffffffffffffffffffff";
-/// let seed = derive_enclave_seed_eth(root, chain_id, address);
+/// let seed = derive_enclave_seed_contract(root, chain_id, address);
 /// ```
-pub fn derive_enclave_seed_eth(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
-    derive_enclave_seed_eth_once(
-        derive_enclave_seed_eth_once(root, chain_id, address),
+pub fn derive_enclave_seed_contract(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+    // normalize
+    let address = &address.to_lowercase();
+    derive_enclave_seed_contract_once(
+        derive_enclave_seed_contract_once(root, chain_id, address),
         chain_id,
         address,
     )
@@ -287,7 +289,7 @@ fn derive_enclave_seed_once(
     mac.finalize().into_bytes().into()
 }
 
-fn derive_enclave_seed_eth_once(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+fn derive_enclave_seed_contract_once(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
     // SAFETY: cannot error, safe to unwrap
     let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
     mac.update(&chain_id.to_le_bytes());
@@ -309,7 +311,7 @@ mod tests {
     use hex_literal::hex;
 
     use crate::{
-        derive_enclave_seed, derive_enclave_seed_eth, derive_path_seed, to_ed25519_public,
+        derive_enclave_seed, derive_enclave_seed_contract, derive_path_seed, to_ed25519_public,
         to_ed25519_secret, to_ed25519_solana_address, to_secp256k1_ethereum_address,
         to_secp256k1_public, to_secp256k1_secret, to_x25519_public, to_x25519_secret,
     };
@@ -337,7 +339,7 @@ mod tests {
         // derived from an independent online implementation
         let expected = hex!("2893103cf566e7d2df9da1aec5e6c3f66a1d03e4031d6cd22282bab6415fc4da8a16b299c1e570115f0ec4173fa1f192e22dea29e21c2328ace3773151eacdcb");
 
-        let seed = derive_enclave_seed_eth(root, chain_id, address);
+        let seed = derive_enclave_seed_contract(root, chain_id, address);
 
         assert_eq!(seed, expected);
     }
