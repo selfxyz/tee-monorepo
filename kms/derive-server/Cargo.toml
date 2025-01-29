@@ -13,7 +13,7 @@ http-body-util = "0.1.2"
 hyper = { version = "1.5.2", features = ["full"] }
 hyper-util = { version = "0.1.10", features = ["tokio"] }
 kms-derive-utils = { version = "0.1.0", path = "../derive-utils" }
-oyster-sdk = "0.14.4"
+oyster-sdk = "0.15.0"
 reqwest = "0.12.12"
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
