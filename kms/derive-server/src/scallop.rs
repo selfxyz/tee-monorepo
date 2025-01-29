@@ -17,7 +17,7 @@ pub struct AuthStore {
 impl ScallopAuthStore for AuthStore {
     type State = ();
 
-    fn verify(&mut self, attestation: &[u8], _key: Key) -> Option<Self::State> {
+    fn verify(&mut self, attestation: &[u8], key: Key) -> Option<Self::State> {
         let Ok(now) = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|x| x.as_millis() as usize)
@@ -26,13 +26,14 @@ impl ScallopAuthStore for AuthStore {
         };
 
         let Ok(_) = attestation::verify(
-            attestation.to_vec(),
+            attestation,
             AttestationExpectations {
                 // TODO: hardcoded, make it a param
                 age: Some((300000, now)),
-                root_public_key: Some(AWS_ROOT_KEY.to_vec()),
+                root_public_key: Some(&AWS_ROOT_KEY),
                 pcrs: Some(self.state.0),
-                user_data: Some(self.state.1.to_vec()),
+                user_data: Some(&self.state.1),
+                public_key: Some(&key),
                 ..Default::default()
             },
         ) else {
