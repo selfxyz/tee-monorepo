@@ -78,6 +78,9 @@
         kernels = kernels.tuna;
         creator = kms.creator.compressed;
       };
+      kms.creator-verifier = import ./kms/creator-verifier {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       kms.derive-server = import ./kms/derive-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
