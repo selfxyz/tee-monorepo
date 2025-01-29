@@ -46,6 +46,14 @@ pub fn derive_enclave_seed(
     )
 }
 
+pub fn derive_enclave_seed_eth(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+    derive_enclave_seed_eth_once(
+        derive_enclave_seed_eth_once(root, chain_id, address),
+        chain_id,
+        address,
+    )
+}
+
 /// Derives a 64-byte seed for a given path using a root seed.
 /// The derivation is performed twice for additional security around length extension.
 ///
@@ -258,6 +266,15 @@ fn derive_enclave_seed_once(
     mac.update(&pcr2);
     mac.update(&(user_data.len() as u16).to_be_bytes());
     mac.update(&user_data);
+
+    mac.finalize().into_bytes().into()
+}
+
+fn derive_enclave_seed_eth_once(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+    // SAFETY: cannot error, safe to unwrap
+    let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
+    mac.update(&chain_id.to_le_bytes());
+    mac.update(&address.as_bytes());
 
     mac.finalize().into_bytes().into()
 }
