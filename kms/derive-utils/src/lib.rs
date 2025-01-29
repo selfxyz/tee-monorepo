@@ -335,9 +335,22 @@ mod tests {
     fn test_derive_enclave_seed_eth() {
         let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
         let chain_id = 0x1234;
-        let address = "0x92148e8f84096d0dfe7e66a025d14d1e2594ddc2";
+        let address = "0x92148e8F84096d0Dfe7E66a025d14D1e2594DDc2";
         // derived from an independent online implementation
         let expected = hex!("2893103cf566e7d2df9da1aec5e6c3f66a1d03e4031d6cd22282bab6415fc4da8a16b299c1e570115f0ec4173fa1f192e22dea29e21c2328ace3773151eacdcb");
+
+        let seed = derive_enclave_seed_contract(root, chain_id, address);
+
+        assert_eq!(seed, expected);
+    }
+
+    #[test]
+    fn test_derive_enclave_seed_sol() {
+        let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let chain_id = 0x5678;
+        let address = "BEYzkmcGNdhqHAPKQ7oz89n1RbAumm2kwtX113pPuCax";
+        // derived from an independent online implementation
+        let expected = hex!("ac30d6400265019af7c7bca9386021ad9299c2094bc8ebdeef8f0143afd2740ae8d119478b336e7509e7d7cf2a9d6e9f8ffbb03aa78c4e3f59e9141e063f1421");
 
         let seed = derive_enclave_seed_contract(root, chain_id, address);
 
