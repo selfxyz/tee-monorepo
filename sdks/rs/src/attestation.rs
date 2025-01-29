@@ -37,14 +37,14 @@ pub enum AttestationError {
 }
 
 #[derive(Debug, Default)]
-pub struct AttestationExpectations {
+pub struct AttestationExpectations<'a> {
     pub timestamp: Option<usize>,
     // (max age, current timestamp)
     pub age: Option<(usize, usize)>,
     pub pcrs: Option<[[u8; 48]; 3]>,
-    pub public_key: Option<Vec<u8>>,
-    pub user_data: Option<Vec<u8>>,
-    pub root_public_key: Option<Vec<u8>>,
+    pub public_key: Option<&'a [u8]>,
+    pub user_data: Option<&'a [u8]>,
+    pub root_public_key: Option<&'a [u8]>,
 }
 
 pub fn verify(
