@@ -19,9 +19,9 @@ pub const AWS_ROOT_KEY: [u8; 96] = hex_literal::hex!("fc0254eba608c1f36870e29ada
 pub struct AttestationDecoded {
     pub timestamp: usize,
     pub pcrs: [[u8; 48]; 3],
-    pub root_public_key: Vec<u8>,
-    pub public_key: Vec<u8>,
-    pub user_data: Vec<u8>,
+    pub root_public_key: Box<[u8]>,
+    pub public_key: Box<[u8]>,
+    pub user_data: Box<[u8]>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,15 +48,15 @@ pub struct AttestationExpectations<'a> {
 }
 
 pub fn verify(
-    attestation_doc: Vec<u8>,
+    attestation_doc: &[u8],
     expectations: AttestationExpectations,
 ) -> Result<AttestationDecoded, AttestationError> {
     let mut result = AttestationDecoded {
         pcrs: [[0; 48]; 3],
         timestamp: 0,
-        root_public_key: Vec::new(),
-        public_key: Vec::new(),
-        user_data: Vec::new(),
+        root_public_key: Default::default(),
+        public_key: Default::default(),
+        user_data: Default::default(),
     };
 
     // parse attestation doc
@@ -90,11 +90,12 @@ pub fn verify(
     }
 
     // verify signature and cert chain
-    result.root_public_key = verify_root_of_trust(&mut attestation_doc, &cosesign1)?;
+    result.root_public_key =
+        verify_root_of_trust(&mut attestation_doc, &cosesign1)?.into_boxed_slice();
 
     // check root public key if exists
     if let Some(root_public_key) = expectations.root_public_key {
-        if result.root_public_key != root_public_key {
+        if result.root_public_key.as_ref() != root_public_key {
             return Err(AttestationError::VerifyFailed(
                 "root public key mismatch".into(),
             ));
@@ -102,11 +103,11 @@ pub fn verify(
     }
 
     // return the enclave key
-    result.public_key = parse_enclave_key(&mut attestation_doc)?;
+    result.public_key = parse_enclave_key(&mut attestation_doc)?.into_boxed_slice();
 
     // check enclave public key if exists
     if let Some(public_key) = expectations.public_key {
-        if result.public_key != public_key {
+        if result.public_key.as_ref() != public_key {
             return Err(AttestationError::VerifyFailed(
                 "enclave public key mismatch".into(),
             ));
@@ -114,11 +115,11 @@ pub fn verify(
     }
 
     // return the user data
-    result.user_data = parse_user_data(&mut attestation_doc)?;
+    result.user_data = parse_user_data(&mut attestation_doc)?.into_boxed_slice();
 
     // check user data if exists
     if let Some(user_data) = expectations.user_data {
-        if result.user_data != user_data {
+        if result.user_data.as_ref() != user_data {
             return Err(AttestationError::VerifyFailed("user data mismatch".into()));
         }
     }
