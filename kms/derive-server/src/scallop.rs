@@ -26,13 +26,13 @@ impl ScallopAuthStore for AuthStore {
         };
 
         let Ok(_) = attestation::verify(
-            attestation.to_vec(),
+            attestation,
             AttestationExpectations {
                 // TODO: hardcoded, make it a param
                 age: Some((300000, now)),
-                root_public_key: Some(AWS_ROOT_KEY.to_vec()),
+                root_public_key: Some(&AWS_ROOT_KEY),
                 pcrs: Some(self.state.0),
-                user_data: Some(self.state.1.to_vec()),
+                user_data: Some(&self.state.1),
                 ..Default::default()
             },
         ) else {
