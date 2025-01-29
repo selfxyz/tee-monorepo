@@ -90,8 +90,7 @@ pub fn verify(
     }
 
     // verify signature and cert chain
-    result.root_public_key =
-        verify_root_of_trust(&mut attestation_doc, &cosesign1)?.into_boxed_slice();
+    result.root_public_key = verify_root_of_trust(&mut attestation_doc, &cosesign1)?;
 
     // check root public key if exists
     if let Some(root_public_key) = expectations.root_public_key {
@@ -103,7 +102,7 @@ pub fn verify(
     }
 
     // return the enclave key
-    result.public_key = parse_enclave_key(&mut attestation_doc)?.into_boxed_slice();
+    result.public_key = parse_enclave_key(&mut attestation_doc)?;
 
     // check enclave public key if exists
     if let Some(public_key) = expectations.public_key {
@@ -115,7 +114,7 @@ pub fn verify(
     }
 
     // return the user data
-    result.user_data = parse_user_data(&mut attestation_doc)?.into_boxed_slice();
+    result.user_data = parse_user_data(&mut attestation_doc)?;
 
     // check user data if exists
     if let Some(user_data) = expectations.user_data {
@@ -196,7 +195,7 @@ fn parse_pcrs(
 fn verify_root_of_trust(
     attestation_doc: &mut BTreeMap<Value, Value>,
     cosesign1: &CoseSign1,
-) -> Result<Vec<u8>, AttestationError> {
+) -> Result<Box<[u8]>, AttestationError> {
     // verify attestation doc signature
     let enclave_certificate = attestation_doc
         .remove(&"certificate".to_owned().into())
@@ -236,12 +235,12 @@ fn verify_root_of_trust(
     })?;
     cabundle.reverse();
 
-    let root_public_key = verify_cert_chain(enclave_certificate, cabundle)?;
+    let root_public_key = verify_cert_chain(enclave_certificate, &cabundle)?;
 
     Ok(root_public_key)
 }
 
-fn verify_cert_chain(cert: X509, cabundle: Vec<Value>) -> Result<Vec<u8>, AttestationError> {
+fn verify_cert_chain(cert: X509, cabundle: &[Value]) -> Result<Box<[u8]>, AttestationError> {
     let certs = get_all_certs(cert, cabundle)?;
 
     for i in 0..(certs.len() - 1) {
@@ -290,10 +289,10 @@ fn verify_cert_chain(cert: X509, cabundle: Vec<Value>) -> Result<Vec<u8>, Attest
         )
         .map_err(|e| AttestationError::ParseFailed(format!("sec1: {e}")))?;
 
-    Ok(root_public_key_sec1[1..].to_vec())
+    Ok(root_public_key_sec1[1..].to_vec().into_boxed_slice())
 }
 
-fn get_all_certs(cert: X509, cabundle: Vec<Value>) -> Result<Vec<X509>, AttestationError> {
+fn get_all_certs(cert: X509, cabundle: &[Value]) -> Result<Box<[X509]>, AttestationError> {
     let mut all_certs = vec![cert];
     for cert in cabundle {
         let cert = (match cert {
@@ -304,12 +303,12 @@ fn get_all_certs(cert: X509, cabundle: Vec<Value>) -> Result<Vec<X509>, Attestat
             .map_err(|e| AttestationError::ParseFailed(format!("der: {e}")))?;
         all_certs.push(cert);
     }
-    Ok(all_certs)
+    Ok(all_certs.into_boxed_slice())
 }
 
 fn parse_enclave_key(
     attestation_doc: &mut BTreeMap<Value, Value>,
-) -> Result<Vec<u8>, AttestationError> {
+) -> Result<Box<[u8]>, AttestationError> {
     let public_key = attestation_doc
         .remove(&"public_key".to_owned().into())
         .ok_or(AttestationError::ParseFailed(
@@ -322,12 +321,12 @@ fn parse_enclave_key(
         )),
     })?;
 
-    Ok(public_key)
+    Ok(public_key.into_boxed_slice())
 }
 
 fn parse_user_data(
     attestation_doc: &mut BTreeMap<Value, Value>,
-) -> Result<Vec<u8>, AttestationError> {
+) -> Result<Box<[u8]>, AttestationError> {
     let user_data = attestation_doc
         .remove(&"user_data".to_owned().into())
         .ok_or(AttestationError::ParseFailed(
@@ -340,13 +339,13 @@ fn parse_user_data(
         )),
     })?;
 
-    Ok(user_data)
+    Ok(user_data.into_boxed_slice())
 }
 
-pub async fn get(endpoint: Uri) -> Result<Vec<u8>, AttestationError> {
+pub async fn get(endpoint: Uri) -> Result<Box<[u8]>, AttestationError> {
     let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
     let res = client.get(endpoint).await?;
     let body = res.collect().await?.to_bytes();
 
-    Ok(body.to_vec())
+    Ok(body.to_vec().into_boxed_slice())
 }
