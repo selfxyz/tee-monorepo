@@ -10,15 +10,15 @@ pub struct PcrArgs {
     pub pcr_json: Option<String>,
 
     /// PCR 0 value
-    #[arg(short = '0', long, conflicts_with = "pcr_json")]
+    #[arg(short = '0', long, conflicts_with = "pcr_json", requires_all = ["pcr1", "pcr2"])]
     pub pcr0: Option<String>,
 
     /// PCR 1 value
-    #[arg(short = '1', long, conflicts_with = "pcr_json")]
+    #[arg(short = '1', long, conflicts_with = "pcr_json", requires_all = ["pcr0", "pcr2"])]
     pub pcr1: Option<String>,
 
     /// PCR 2 value
-    #[arg(short = '2', long, conflicts_with = "pcr_json")]
+    #[arg(short = '2', long, conflicts_with = "pcr_json", requires_all = ["pcr0", "pcr1"])]
     pub pcr2: Option<String>,
 }
 
@@ -58,11 +58,6 @@ impl PcrArgs {
             None => {
                 // If any PCR is provided, all must be provided
                 let has_any = self.pcr0.is_some() || self.pcr1.is_some() || self.pcr2.is_some();
-                let has_all = self.pcr0.is_some() && self.pcr1.is_some() && self.pcr2.is_some();
-                if has_any && !has_all {
-                    return Err(anyhow!("If any 1 PCR value is provided, all PCRs (pcr0, pcr1, pcr2) must be provided"));
-                }
-
                 if !has_any {
                     return Ok(None);
                 }
@@ -71,11 +66,7 @@ impl PcrArgs {
                 let pcr1 = self.pcr1.as_ref().unwrap().clone();
                 let pcr2 = self.pcr2.as_ref().unwrap().clone();
 
-                if pcr0.is_empty() && pcr1.is_empty() && pcr2.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some((pcr0, pcr1, pcr2)))
-                }
+                Ok(Some((pcr0, pcr1, pcr2)))
             }
         }
     }
