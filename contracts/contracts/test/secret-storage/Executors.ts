@@ -791,7 +791,7 @@ describe("Executors - Select/Release/Slash", function () {
         await executors.initTree(env);
 
         // REGISTER NODES
-        let jobCapacity = 20,
+        let jobCapacity = 3,
             storageCapacity = 1e9,
             stakeAmount = 10n ** 19n,
             timestamp = await time.latest() * 1000,
@@ -849,12 +849,22 @@ describe("Executors - Select/Release/Slash", function () {
         expect(await executors.isNodePresentInTree(env, addrs[17])).to.be.true;
     });
 
-    it("cannot select executors other than selected stores", async function () {
-        await expect(executors.selectExecutionNodes(1, [], 1))
-            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
+    it("cannot select executors when a minimum no. of executors aren't available", async function () {
+        await expect(executors.selectExecutionNodes(1, [], 4))
+            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableResources");
 
-        await expect(executors.selectExecutionNodes(1, [addrs[15]], 2))
-            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableStores");
+        await expect(executors.selectExecutionNodes(1, [addrs[15]], 4))
+            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableResources");
+        
+        // reaching the max job capacity
+        for (let index = 0; index < 3; index++) {
+            await executors.selectExecutionNodes(1, [addrs[17]], 3);
+        }
+        await expect(executors.selectExecutionNodes(1, [], 1))
+            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableResources");
+
+        await expect(executors.selectExecutionNodes(1, [addrs[17]], 2))
+            .to.be.revertedWithCustomError(executors, "ExecutorsUnavailableResources");
     });
 
     it("cannot select executors without JOBS_ROLE", async function () {
@@ -868,25 +878,17 @@ describe("Executors - Select/Release/Slash", function () {
             .to.revertedWithCustomError(executors, "ExecutorsUnsupportedEnv");
     });
 
-    // TODO: will be required once we enable executor selection along with secret stores
-    // it("can select executors along with the already selected stores", async function () {
-    //     let jobCapacity = 20,
-    //         env = 1,
-    //         stakeAmount = 10n ** 19n;
-    //     await teeManager.registerExecutor(
-    //         addrs[16],
-    //         jobCapacity,
-    //         env,
-    //         stakeAmount
-    //     );
+    it("can select executors along with the already selected stores", async function () {
+        await teeManager.drainTeeNode(addrs[16]);
 
-    //     let noOfNodesToSelect = 2;
-    //     await expect(executors.selectExecutionNodes(env, [addrs[15]], noOfNodesToSelect))
-    //         .to.be.not.reverted;
+        let env = 1,
+            noOfNodesToSelect = 2;
+        await expect(executors.selectExecutionNodes(env, [addrs[15]], noOfNodesToSelect))
+            .to.be.not.reverted;
 
-    //     expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
-    //     expect((await executors.executors(addrs[16])).activeJobs).to.be.eq(1);
-    // });
+        expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
+        expect((await executors.executors(addrs[17])).activeJobs).to.be.eq(1);
+    });
 
     it("can release executor", async function () {
         await executors.selectExecutionNodes(1, [addrs[15]], 1);
