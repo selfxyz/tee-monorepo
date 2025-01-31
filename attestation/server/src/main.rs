@@ -15,9 +15,9 @@ struct Cli {
     #[arg(short, long)]
     pub_key: String,
 
-    /// path to init params file (e.g. /app/init-params)
+    /// path to user data file (e.g. /app/init-params-digest)
     #[arg(long)]
-    init_params: String,
+    user_data: String,
 }
 
 #[tokio::main]
@@ -29,19 +29,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let pub_key = std::fs::read(cli.pub_key)?.leak::<'static>();
     println!("pub key: {:02x?}", pub_key);
 
-    let init_params = std::fs::read(cli.init_params)
+    let user_data = std::fs::read(cli.user_data)
         .unwrap_or(Vec::new())
         .leak::<'static>();
 
     let app = Router::new()
         .route(
             "/attestation/raw",
-            get(|| async { oyster_attestation_server::get_attestation_doc(pub_key, init_params) }),
+            get(|| async { oyster_attestation_server::get_attestation_doc(pub_key, user_data) }),
         )
         .route(
             "/attestation/hex",
             get(|| async {
-                oyster_attestation_server::get_hex_attestation_doc(pub_key, init_params)
+                oyster_attestation_server::get_hex_attestation_doc(pub_key, user_data)
             }),
         );
     let listener = tokio::net::TcpListener::bind(&cli.ip_addr).await?;
