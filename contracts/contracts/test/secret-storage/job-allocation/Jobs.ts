@@ -894,6 +894,8 @@ describe("Jobs - Create", function () {
         expect(job.env).to.eq(env);
 
         let selectedExecutors = await jobs.getSelectedExecutors(jobId);
+        expect(selectedExecutors.length).to.eq(3);
+        expect(new Set(selectedExecutors).size).to.eq(3);
         for (let index = 0; index < selectedExecutors.length; index++) {
             const executor = selectedExecutors[index];
             expect([addrs[17], addrs[18], addrs[19], addrs[20]]).to.contain(executor);
