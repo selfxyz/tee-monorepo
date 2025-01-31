@@ -2,7 +2,7 @@ import { time } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from "chai";
 import { BytesLike, Signer, Wallet, ZeroAddress, keccak256, solidityPacked } from "ethers";
 import { ethers, upgrades } from "hardhat";
-import { AttestationAutherUpgradeable, AttestationVerifier, Executors, TeeManagerMock } from "../../typechain-types";
+import { AttestationAutherUpgradeable, AttestationVerifier, Executors, ExecutorsUser, TeeManagerMock } from "../../typechain-types";
 import { takeSnapshotBeforeAndAfterEveryTest } from "../../utils/testSuite";
 import { testERC165 } from '../helpers/erc165';
 
@@ -761,6 +761,7 @@ describe("Executors - Select/Release/Slash", function () {
     let pubkeys: string[];
     let teeManager: TeeManagerMock;
     let executors: Executors;
+    let executorsUser: ExecutorsUser;
 
     before(async function () {
         signers = await ethers.getSigners();
@@ -784,8 +785,12 @@ describe("Executors - Select/Release/Slash", function () {
             },
         ) as unknown as Executors;
 
+        const ExecutorsUser = await ethers.getContractFactory("ExecutorsUser");
+        executorsUser = await ExecutorsUser.deploy(executors.target) as unknown as ExecutorsUser;
+
         await teeManager.setExecutors(executors.target);
         await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), addrs[0]);
+        await executors.grantRole(keccak256(ethers.toUtf8Bytes("JOBS_ROLE")), executorsUser.target);
 
         let env = 1;
         await executors.initTree(env);
@@ -824,22 +829,27 @@ describe("Executors - Select/Release/Slash", function () {
     it("can select executors", async function () {
         let env = 1;
         // can select 1 node
-        await expect(executors.selectExecutionNodes(env, [addrs[15]], 1))
-            .to.be.not.reverted;
+        await expect(executorsUser.selectExecutionNodes(env, [addrs[15]], 1))
+            .to.emit(executorsUser, "ExecutorsUserNodesSelected")
+            .withArgs([addrs[15]]);
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
 
         // can select multiple nodes
-        await expect(executors.selectExecutionNodes(env, [addrs[15], addrs[16]], 2))
-            .to.be.not.reverted;
+        await expect(executorsUser.selectExecutionNodes(env, [addrs[15], addrs[16]], 2))
+            .to.emit(executorsUser, "ExecutorsUserNodesSelected")
+            .withArgs((args: string[]) => {
+                return args.length === 2 && args.includes(addrs[15]) && args.includes(addrs[16]);
+            });
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(2);
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
         expect((await executors.executors(addrs[16])).activeJobs).to.be.eq(1);
         expect(await executors.isNodePresentInTree(env, addrs[16])).to.be.true;
 
         // can select topN nodes out of multiple nodes (here 16th and 17th nodes will be selcted as they have higher stakes)
-        await expect(executors.selectExecutionNodes(env, [addrs[15], addrs[16], addrs[17]], 2))
-            .to.be.not.reverted;
+        await expect(executorsUser.selectExecutionNodes(env, [addrs[15], addrs[16], addrs[17]], 2))
+            .to.emit(executorsUser, "ExecutorsUserNodesSelected")
+            .withArgs([addrs[16], addrs[17]]);
 
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(2);
         expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
@@ -883,11 +893,14 @@ describe("Executors - Select/Release/Slash", function () {
 
         let env = 1,
             noOfNodesToSelect = 2;
-        await expect(executors.selectExecutionNodes(env, [addrs[15]], noOfNodesToSelect))
-            .to.be.not.reverted;
+        await expect(executorsUser.selectExecutionNodes(env, [addrs[15]], noOfNodesToSelect))
+            .to.emit(executorsUser, "ExecutorsUserNodesSelected")
+            .withArgs([addrs[15], addrs[17]]);
 
         expect((await executors.executors(addrs[15])).activeJobs).to.be.eq(1);
         expect((await executors.executors(addrs[17])).activeJobs).to.be.eq(1);
+        expect(await executors.isNodePresentInTree(env, addrs[15])).to.be.true;
+        expect(await executors.isNodePresentInTree(env, addrs[17])).to.be.true;
     });
 
     it("can release executor", async function () {
@@ -923,8 +936,9 @@ describe("Executors - Select/Release/Slash", function () {
     it("can slash executor", async function () {
         await executors.selectExecutionNodes(1, [addrs[15]], 1);
 
-        await expect(executors.slashExecutor(addrs[15]))
-            .to.be.not.reverted;
+        await expect(executorsUser.slashExecutor(addrs[15]))
+            .to.emit(executorsUser, "ExecutorsUserNodeSlashed")
+            .withArgs(0);
 
         const executor = await executors.executors(addrs[15]);
         expect(executor.activeJobs).to.eq(0);

@@ -368,7 +368,12 @@ contract TreeMapUpgradeable is Initializable {
         if (_N > _nodeCount) _N = _nodeCount;
         if (_N == 0) return new address[](0);
 
-        MemoryNode[] memory _selectedPathTree = new MemoryNode[](14);
+        MemoryNode[] memory _selectedPathTree;
+        assembly {
+            _selectedPathTree := mload(0x40)
+            mstore(0x40, add(_selectedPathTree, 2688))
+            mstore(_selectedPathTree, 83)
+        }
 
         Node memory _root = $.envTree[_env].nodes[1];
         _selectedPathTree[1] = MemoryNode(1, 0, 0, 0, 0, 0);
