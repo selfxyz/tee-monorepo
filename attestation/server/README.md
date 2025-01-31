@@ -33,14 +33,14 @@ Supported outputs:
 $ ./target/release/oyster-attestation-server --help
 http server for handling attestation document requests
 
-Usage: oyster-attestation-server --ip-addr <IP_ADDR> --pub-key <PUB_KEY> --init-params <INIT_PARAMS>
+Usage: oyster-attestation-server --ip-addr <IP_ADDR> --pub-key <PUB_KEY> --user-data <USER_DATA>
 
 Options:
-  -i, --ip-addr <IP_ADDR>          ip address of the server (e.g. 127.0.0.1:1300)
-  -p, --pub-key <PUB_KEY>          path to public key file (e.g. /app/id.pub)
-      --init-params <INIT_PARAMS>  path to init params file (e.g. /app/init-params)
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -i, --ip-addr <IP_ADDR>      ip address of the server (e.g. 127.0.0.1:1300)
+  -p, --pub-key <PUB_KEY>      path to public key file (e.g. /app/id.pub)
+      --user-data <USER_DATA>  path to user data file (e.g. /app/init-params-digest)
+  -h, --help                   Print help
+  -V, --version                Print version
 ```
 
 ## Endpoints
