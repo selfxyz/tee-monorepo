@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use libsodium_sys::{
@@ -12,6 +12,7 @@ use libsodium_sys::{
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use tracing::error;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -33,14 +34,24 @@ fn main() -> Result<()> {
         )
         .init();
 
+    run().inspect_err(|e| error!("{e:?}"))
+}
+
+fn run() -> Result<()> {
     // parse args
     let args = Args::parse();
 
     // parse init params
-    let init_params = serde_json::from_str::<InitParams>(&read_to_string(args.init_params_path)?)?;
+    let init_params = serde_json::from_str::<InitParams>(
+        &read_to_string(args.init_params_path)
+            .map(|x| if x == "" { "[]".to_owned() } else { x })
+            .unwrap_or("[]".to_owned()),
+    )
+    .context("failed to parse init params")?;
 
     // fetch key
-    let sk = fetch_encryption_key(&args.derive_endpoint)?;
+    let sk =
+        fetch_encryption_key(&args.derive_endpoint).context("failed to fetch encryption key")?;
     let mut pk = [0u8; 32];
 
     // SAFETY: pk and sk are the right size
@@ -50,18 +61,24 @@ fn main() -> Result<()> {
     let hash = init_params
         .into_iter()
         .map(|init_param| -> Result<Option<[u8; 32]>> {
-            let path = canonicalize("/init-params/".to_owned() + &init_param.path)?;
+            let path = canonicalize("/init-params/".to_owned() + &init_param.path)
+                .context("failed to canonicalize path")?;
             // ensure all files are contained within this directory
             if !path.starts_with(Path::new("/init-params/")) {
                 bail!("invalid path");
             }
 
             // we want to fail closed, hence detect errors as well
-            if path.try_exists()? {
+            if path
+                .try_exists()
+                .context("failed to check if path exists")?
+            {
                 bail!("file already exists");
             }
 
-            let mut contents = BASE64_STANDARD.decode(init_param.contents.as_bytes())?;
+            let mut contents = BASE64_STANDARD
+                .decode(init_param.contents.as_bytes())
+                .context("failed to decode contents")?;
 
             if init_param.should_decrypt {
                 // contents is expected to contain the message at the beginning
@@ -97,7 +114,7 @@ fn main() -> Result<()> {
                 );
             }
 
-            write(&path, &contents)?;
+            write(&path, &contents).context("failed to write contents")?;
 
             if init_param.should_attest {
                 let mut hasher = Sha256::new();
@@ -112,7 +129,8 @@ fn main() -> Result<()> {
             }
         })
         // will short circuit if anything errors
-        .collect::<Result<Vec<_>>>()?
+        .collect::<Result<Vec<_>>>()
+        .context("failed to process init params")?
         .into_iter()
         // filter out Nones
         .filter_map(identity)
@@ -123,7 +141,7 @@ fn main() -> Result<()> {
         })
         .finalize();
 
-    write("/app/init-params-digest", hash)?;
+    write("/app/init-params-digest", hash).context("failed to write digest")?;
 
     Ok(())
 }
@@ -131,11 +149,14 @@ fn main() -> Result<()> {
 fn fetch_encryption_key(endpoint: &str) -> Result<[u8; 32]> {
     Ok(ureq::get(endpoint.to_owned() + "/derive/x25519")
         .query("path", "oyster.init-params")
-        .call()?
+        .call()
+        .context("failed to call derive server")?
         .body_mut()
-        .read_to_vec()?
+        .read_to_vec()
+        .context("failed to read body")?
         .as_slice()
-        .try_into()?)
+        .try_into()
+        .context("failed to parse reponse")?)
 }
 
 #[derive(Deserialize)]
