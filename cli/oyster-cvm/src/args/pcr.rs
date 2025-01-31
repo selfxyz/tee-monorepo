@@ -56,6 +56,7 @@ impl PcrArgs {
                 )))
             }
             None => {
+                // Only checking one PCR - requires_all enforces mutual presence of all PCRs
                 if self.pcr0.is_none() {
                     return Ok(None);
                 }
