@@ -56,9 +56,7 @@ impl PcrArgs {
                 )))
             }
             None => {
-                // If any PCR is provided, all must be provided
-                let has_any = self.pcr0.is_some() || self.pcr1.is_some() || self.pcr2.is_some();
-                if !has_any {
+                if self.pcr0.is_none() {
                     return Ok(None);
                 }
 
