@@ -368,7 +368,11 @@ contract TreeMapUpgradeable is Initializable {
         if (_N > _nodeCount) _N = _nodeCount;
         if (_N == 0) return new address[](0);
 
+        // WARNING - don't declare any memory variables before this point
+
         MemoryNode[] memory _selectedPathTree;
+        // assembly block sets memory for the MemoryNode array but does not zero initialize each value of each struct
+        // To ensure random values are never accessed for the MemoryNodes, we always initialize before using an array node
         assembly {
             _selectedPathTree := mload(0x40)
             mstore(0x40, add(_selectedPathTree, 2688))

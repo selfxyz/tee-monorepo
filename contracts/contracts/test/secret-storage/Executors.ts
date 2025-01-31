@@ -937,8 +937,9 @@ describe("Executors - Select/Release/Slash", function () {
         await executors.selectExecutionNodes(1, [addrs[15]], 1);
 
         await expect(executorsUser.slashExecutor(addrs[15]))
-            .to.emit(executorsUser, "ExecutorsUserNodeSlashed")
-            .withArgs(0);
+            .to.emit(teeManager, "TeeManagerMockExecutorSlashed")
+            .and.to.emit(executorsUser, "ExecutorsUserNodeSlashed")
+            .withArgs(10);
 
         const executor = await executors.executors(addrs[15]);
         expect(executor.activeJobs).to.eq(0);
