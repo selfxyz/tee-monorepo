@@ -91,6 +91,9 @@ sleep 2
 
 sleep 10
 
+# process init params into their constituent files
+/app/init-params-manager
+
 # Start the Docker daemon
 /app/supervisord ctl -c /etc/supervisord.conf start docker
 

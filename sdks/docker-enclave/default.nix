@@ -9,6 +9,7 @@
   attestation-server,
   vet,
   derive-server,
+  init-params-manager,
   kernels,
   compose ? ./. + "/docker-compose.yml",
   dockerImages ? [],
@@ -25,6 +26,7 @@
   attestationServer = "${attestation-server}/bin/oyster-attestation-server";
   keygenSecp256k1 = "${keygen}/bin/keygen-secp256k1";
   deriveServer = "${derive-server}/bin/kms-derive-server";
+  initParamsManager = "${init-params-manager}/bin/init-params-manager";
   vet' = "${vet}/bin/vet";
   kernel = kernels.kernel;
   kernelConfig = kernels.kernelConfig;
@@ -48,6 +50,7 @@
 		cp ${vet'} $out/app/vet
 		cp ${keygenSecp256k1} $out/app/keygen-secp256k1
 		cp ${deriveServer} $out/app/kms-derive-server
+		cp ${initParamsManager} $out/app/init-params-manager
 		cp ${setup} $out/app/setup.sh
 		chmod +x $out/app/*
 		cp ${supervisorConf} $out/etc/supervisord.conf
