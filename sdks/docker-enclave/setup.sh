@@ -86,6 +86,11 @@ echo "status"
 
 sleep 2
 
+# start derive server
+/app/supervisord ctl -c /etc/supervisord.conf start derive-server
+
+sleep 10
+
 # Start the Docker daemon
 /app/supervisord ctl -c /etc/supervisord.conf start docker
 

@@ -8,6 +8,7 @@
   raw-proxy,
   attestation-server,
   vet,
+  derive-server,
   kernels,
   compose ? ./. + "/docker-compose.yml",
   dockerImages ? [],
@@ -23,6 +24,7 @@
   vtiriProxy = "${raw-proxy}/bin/vsock-to-ip-raw-incoming";
   attestationServer = "${attestation-server}/bin/oyster-attestation-server";
   keygenSecp256k1 = "${keygen}/bin/keygen-secp256k1";
+  deriveServer = "${derive-server}/bin/kms-derive-server";
   vet' = "${vet}/bin/vet";
   kernel = kernels.kernel;
   kernelConfig = kernels.kernelConfig;
@@ -45,6 +47,7 @@
 		cp ${dnsproxy'} $out/app/dnsproxy
 		cp ${vet'} $out/app/vet
 		cp ${keygenSecp256k1} $out/app/keygen-secp256k1
+		cp ${deriveServer} $out/app/kms-derive-server
 		cp ${setup} $out/app/setup.sh
 		chmod +x $out/app/*
 		cp ${supervisorConf} $out/etc/supervisord.conf
