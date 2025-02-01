@@ -2,40 +2,6 @@
 
 set -e
 
-# Start the Docker daemon in the background
-/bin/dockerd --iptables=false &
-
-# Wait for Docker daemon to be ready
-until docker info >/dev/null 2>&1; do
-    echo "[setup.sh] Waiting for Docker daemon..."
-    sleep 1
-done
-
-# Load Docker images if any exist
-if [ "$(ls -A /app/docker-images 2>/dev/null)" ]; then
-    for image_tar in /app/docker-images/*.tar; do
-        if ! docker load -i "$image_tar"; then
-            echo "[setup.sh] ERROR: Failed to load Docker image from $image_tar"
-            exit 1
-        fi
-        echo "[setup.sh] Docker image loaded successfully from $image_tar."
-    done
-else
-    echo "[setup.sh] No Docker images to load"
-fi
-
-# Stop the Docker daemon
-if [ -f /var/run/docker.pid ]; then
-    kill $(cat /var/run/docker.pid)
-    # Wait for Docker to stop
-    while [ -f /var/run/docker.pid ]; do
-        sleep 1
-    done
-fi
-
-rm -f /var/run/docker.pid
-rm -f /var/run/docker.sock
-
 # query ip of instance and store
 /app/vet --url vsock://3:1300/instance/ip > /app/ip.txt
 cat /app/ip.txt && echo
@@ -95,12 +61,54 @@ iptables -A OUTPUT -p tcp -s $ip -m set --match-set portfilter src -m set ! --ma
 iptables -t nat -vL
 iptables -vL
 
+# Run supervisor first, no programs should be running yet
+cat /etc/supervisord.conf
+/app/supervisord &
+SUPERVISOR_PID=$!
+sleep 1
+echo "status"
+/app/supervisord ctl -c /etc/supervisord.conf status
+
+# start proxies
+/app/supervisord ctl -c /etc/supervisord.conf start ip-to-vsock-raw-outgoing
+/app/supervisord ctl -c /etc/supervisord.conf start vsock-to-ip-raw-incoming
+
+# start dnsproxy
+/app/supervisord ctl -c /etc/supervisord.conf start dnsproxy
+
 # generate identity key
 /app/keygen-ed25519 --secret /app/id.sec --public /app/id.pub
 /app/keygen-secp256k1 --secret /app/ecdsa.sec --public /app/ecdsa.pub
 
-# your custom setup goes here
+# start attestation servers
+/app/supervisord ctl -c /etc/supervisord.conf start attestation-server
+/app/supervisord ctl -c /etc/supervisord.conf start attestation-server-ecdsa
 
-# starting supervisord
-cat /etc/supervisord.conf
-/app/supervisord
+sleep 2
+
+# Start the Docker daemon
+/app/supervisord ctl -c /etc/supervisord.conf start docker
+
+# Wait for Docker daemon to be ready
+until docker info >/dev/null 2>&1; do
+    echo "[setup.sh] Waiting for Docker daemon..."
+    sleep 1
+done
+
+# Load Docker images if any exist
+if [ "$(ls -A /app/docker-images 2>/dev/null)" ]; then
+    for image_tar in /app/docker-images/*.tar; do
+        if ! docker load -i "$image_tar"; then
+            echo "[setup.sh] ERROR: Failed to load Docker image from $image_tar"
+            exit 1
+        fi
+        echo "[setup.sh] Docker image loaded successfully from $image_tar."
+    done
+else
+    echo "[setup.sh] No Docker images to load"
+fi
+
+# start docker compose
+/app/supervisord ctl -c /etc/supervisord.conf start compose
+
+wait $SUPERVISOR_PID
