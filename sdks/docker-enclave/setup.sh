@@ -13,6 +13,13 @@ cat /app/job.txt && echo
 # query init params for enclave and store
 /app/vet --url vsock://3:1300/oyster/init-params > /app/init-params
 
+# extract digest, skip if empty
+mkdir /init-params
+if [ ! -s /app/init-params ]; then
+    cat /app/init-params | jq '.digest' > /init-params/init-params-digest
+    cat /init-params-digest
+fi
+
 ip=$(cat /app/ip.txt)
 
 # setting an address for loopback
