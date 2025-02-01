@@ -46,7 +46,6 @@ cat /app/job.txt && echo
 
 # query init params for enclave and store
 /app/vet --url vsock://3:1300/oyster/init-params > /app/init-params
-/app/vet --url vsock://3:1300/oyster/extra-init-params > /app/extra-init-params
 
 ip=$(cat /app/ip.txt)
 
