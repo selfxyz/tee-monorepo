@@ -12,7 +12,7 @@ use libsodium_sys::{
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -42,12 +42,15 @@ fn run() -> Result<()> {
     let args = Args::parse();
 
     // parse init params
-    let init_params = serde_json::from_str::<InitParams>(
-        &read_to_string(args.init_params_path)
-            .map(|x| if x == "" { "[]".to_owned() } else { x })
-            .unwrap_or("[]".to_owned()),
-    )
-    .context("failed to parse init params")?;
+    let init_params_str = read_to_string(args.init_params_path)
+        .context("failed to read init params, should never happen")?;
+    if init_params_str == "" {
+        // ignore empty params
+        info!("empty init params");
+        return Ok(());
+    }
+    let init_params = serde_json::from_str::<InitParams>(&init_params_str)
+        .context("failed to parse init params")?;
 
     // fetch key
     let sk =
