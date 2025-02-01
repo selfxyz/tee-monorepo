@@ -58,7 +58,8 @@ fn run() -> Result<()> {
     // cannot fail, ignore return value
     unsafe { crypto_scalarmult_base(pk.as_mut_ptr(), sk.as_ptr()) };
 
-    let hash = init_params
+    let digest = init_params
+        .params
         .into_iter()
         .map(|init_param| -> Result<Option<[u8; 32]>> {
             let path = canonicalize("/init-params/".to_owned() + &init_param.path)
@@ -141,7 +142,14 @@ fn run() -> Result<()> {
         })
         .finalize();
 
-    write("/app/init-params-digest", hash).context("failed to write digest")?;
+    if digest.as_slice()
+        != BASE64_STANDARD
+            .decode(init_params.digest)
+            .context("failed to decode digest")?
+            .as_slice()
+    {
+        bail!("digest mismatch");
+    }
 
     Ok(())
 }
@@ -169,7 +177,11 @@ struct InitParam {
     should_decrypt: bool,
 }
 
-type InitParams = Vec<InitParam>;
+#[derive(Deserialize)]
+struct InitParams {
+    digest: String, // base64 encoded
+    params: Vec<InitParam>,
+}
 
 // blergh
 const fn _default_true() -> bool {
