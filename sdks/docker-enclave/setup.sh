@@ -77,7 +77,7 @@ echo "status"
 /app/supervisord ctl -c /etc/supervisord.conf start dnsproxy
 
 # generate identity key
-/app/keygen-ed25519 --secret /app/id.sec --public /app/id.pub
+/app/keygen-x25519 --secret /app/id.sec --public /app/id.pub
 /app/keygen-secp256k1 --secret /app/ecdsa.sec --public /app/ecdsa.pub
 
 # start attestation servers
