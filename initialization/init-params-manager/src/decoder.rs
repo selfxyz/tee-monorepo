@@ -9,6 +9,7 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use libsodium_sys::{
     crypto_box_MACBYTES, crypto_box_NONCEBYTES, crypto_box_open_easy, crypto_scalarmult_base,
+    sodium_init,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -40,6 +41,11 @@ fn main() -> Result<()> {
 fn run() -> Result<()> {
     // parse args
     let args = Args::parse();
+
+    // SAFETY: no params, return value is checked properly
+    if unsafe { sodium_init() } < 0 {
+        bail!("failed to init libsodium");
+    }
 
     // parse init params
     let init_params_str = read_to_string(args.init_params_path)
