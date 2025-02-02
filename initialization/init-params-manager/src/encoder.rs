@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::{absolute, Component, Path, PathBuf},
+    path::{Component, PathBuf},
 };
 
 use anyhow::{bail, Context, Result};
