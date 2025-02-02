@@ -179,10 +179,11 @@ fn run() -> Result<()> {
         params,
     };
 
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&init_params).context("failed to serialize init params")?
-    );
+    let json =
+        serde_json::to_string_pretty(&init_params).context("failed to serialize init params")?;
+
+    info!("JSON: {}", json);
+    info!("BASE64: {}", BASE64_STANDARD.encode(json));
 
     Ok(())
 }
