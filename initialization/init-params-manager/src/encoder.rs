@@ -62,7 +62,7 @@ fn run() -> Result<()> {
         .iter()
         .map(|param| {
             // extract components
-            let param_components = param.splitn(4, ":").collect::<Vec<_>>();
+            let param_components = param.splitn(5, ":").collect::<Vec<_>>();
             let should_attest = param_components[1] == "1";
 
             if should_attest {
@@ -117,7 +117,7 @@ fn run() -> Result<()> {
         .iter()
         .map(|param| {
             // extract components
-            let param_components = param.splitn(4, ":").collect::<Vec<_>>();
+            let param_components = param.splitn(5, ":").collect::<Vec<_>>();
             let should_attest = param_components[1] == "1";
             let should_encrypt = param_components[2] == "1";
             let contents = match param_components[3] {
