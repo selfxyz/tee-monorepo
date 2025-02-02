@@ -7,6 +7,10 @@ edition = "2021"
 name = "init-params-decoder"
 path = "src/decoder.rs"
 
+[[bin]]
+name = "init-params-encoder"
+path = "src/encoder.rs"
+
 [dependencies]
 anyhow = "1.0.95"
 base64 = "0.22.1"
