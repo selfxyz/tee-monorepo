@@ -1,7 +1,7 @@
 use std::{
     convert::identity,
-    fs::{canonicalize, read_to_string, write},
-    path::Path,
+    fs::{read_to_string, write},
+    path::{Component, Path, PathBuf},
 };
 
 use anyhow::{bail, Context, Result};
@@ -70,8 +70,15 @@ fn run() -> Result<()> {
         .params
         .into_iter()
         .map(|init_param| -> Result<Option<[u8; 32]>> {
-            let path = canonicalize("/init-params/".to_owned() + &init_param.path)
-                .context("failed to canonicalize path")?;
+            // everything should be normal components, no root or current or parent dirs
+            if PathBuf::from(&init_param.path)
+                .components()
+                .any(|x| !matches!(x, Component::Normal(_)))
+            {
+                bail!("invalid path")
+            }
+
+            let path = PathBuf::from("/init-params/".to_owned() + &init_param.path);
             // ensure all files are contained within this directory
             if !path.starts_with(Path::new("/init-params/")) {
                 bail!("invalid path");

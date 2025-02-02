@@ -1,4 +1,7 @@
-use std::fs::{self, canonicalize};
+use std::{
+    fs,
+    path::{absolute, Component, Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -69,11 +72,19 @@ fn run() -> Result<()> {
                 return Ok(None);
             }
 
-            let enclave_path = canonicalize("/init-params/".to_owned() + param_components[0])?;
+            // everything should be normal components, no root or current or parent dirs
+            if PathBuf::from(param_components[0])
+                .components()
+                .any(|x| !matches!(x, Component::Normal(_)))
+            {
+                bail!("invalid path")
+            }
+
+            let enclave_path = PathBuf::from("/init-params/".to_owned() + param_components[0]);
             let should_encrypt = param_components[2] == "1";
             let contents = match param_components[3] {
                 "utf8" => param_components[4].as_bytes().to_vec(),
-                "file" => fs::read(param_components[4])?,
+                "file" => fs::read(param_components[4]).context("failed to read file")?,
                 _ => bail!("unknown param type"),
             };
 
@@ -91,7 +102,8 @@ fn run() -> Result<()> {
 
             Ok(Some(hasher.finalize()))
         })
-        .collect::<Result<Vec<_>>>()?
+        .collect::<Result<Vec<_>>>()
+        .context("failed to compute individual digest")?
         .into_iter()
         .flatten()
         // accumulate futher into a single hash
@@ -122,7 +134,7 @@ fn run() -> Result<()> {
             let should_encrypt = param_components[2] == "1";
             let contents = match param_components[3] {
                 "utf8" => param_components[4].as_bytes().to_vec(),
-                "file" => fs::read(param_components[4])?,
+                "file" => fs::read(param_components[4]).context("failed to read file")?,
                 _ => bail!("unknown param type"),
             };
 
@@ -158,7 +170,8 @@ fn run() -> Result<()> {
 
             Ok(init_param)
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>>>()
+        .context("failed to build init params")?;
 
     // create final init params
     let init_params = InitParams {
@@ -166,7 +179,10 @@ fn run() -> Result<()> {
         params,
     };
 
-    println!("{}", serde_json::to_string_pretty(&init_params)?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&init_params).context("failed to serialize init params")?
+    );
 
     Ok(())
 }
