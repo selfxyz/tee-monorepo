@@ -70,6 +70,8 @@ fn run() -> Result<()> {
         .params
         .into_iter()
         .map(|init_param| -> Result<Option<[u8; 32]>> {
+            info!(init_param.path, "processing");
+
             // everything should be normal components, no root or current or parent dirs
             if PathBuf::from(&init_param.path)
                 .components()

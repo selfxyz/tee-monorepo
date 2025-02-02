@@ -68,7 +68,7 @@ fn run() -> Result<()> {
             let param_components = param.splitn(5, ":").collect::<Vec<_>>();
             let should_attest = param_components[1] == "1";
 
-            if should_attest {
+            if !should_attest {
                 return Ok(None);
             }
 
