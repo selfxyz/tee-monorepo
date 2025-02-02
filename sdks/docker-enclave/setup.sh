@@ -15,9 +15,10 @@ cat /app/job.txt && echo
 
 # extract digest, skip if empty
 mkdir /init-params
-if [ ! -s /app/init-params ]; then
-    cat /app/init-params | jq '.digest' > /init-params/init-params-digest
-    cat /init-params-digest
+ls -lath /app
+if [ -s /app/init-params ]; then
+    cat /app/init-params | jq -e -r '.digest' | base64 -d > /app/init-params-digest
+    cat /app/init-params-digest
 fi
 
 ip=$(cat /app/ip.txt)
