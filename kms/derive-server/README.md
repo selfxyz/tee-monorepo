@@ -116,4 +116,4 @@ GET /derive/x25519?path=<path>
 
 ## License
 
-This project is licensed under the GNU AGPLv3 or any later version. See [LICENSE.txt](./LICENSE.txt).
+This project is licensed under the Apache License, Version 2.0. See [LICENSE.txt](./LICENSE.txt).
