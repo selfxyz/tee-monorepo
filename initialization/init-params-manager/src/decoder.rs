@@ -1,10 +1,10 @@
 use std::{
     convert::identity,
-    fs::{read_to_string, write},
+    fs::{create_dir_all, read_to_string, write},
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use libsodium_sys::{
@@ -123,6 +123,8 @@ fn run() -> Result<()> {
                 contents.truncate(contents.len() - crypto_box_SEALBYTES as usize);
             }
 
+            create_dir_all(path.parent().ok_or(anyhow!("failed to get parent"))?)
+                .context("failed to create dirs")?;
             write(&path, &contents).context("failed to write contents")?;
 
             if init_param.should_attest {
