@@ -8,8 +8,7 @@ use anyhow::{bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use libsodium_sys::{
-    crypto_box_MACBYTES, crypto_box_NONCEBYTES, crypto_box_open_easy, crypto_scalarmult_base,
-    sodium_init,
+    crypto_box_SEALBYTES, crypto_box_seal_open, crypto_scalarmult_base, sodium_init,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -91,25 +90,18 @@ fn run() -> Result<()> {
                 .context("failed to decode contents")?;
 
             if init_param.should_decrypt {
-                // contents is expected to contain the message at the beginning
-                // and then the mac and then the nonce
-                if contents.len() < (crypto_box_NONCEBYTES + crypto_box_MACBYTES) as usize
-                    || contents.len() > 65535
-                {
+                if contents.len() > 65535 {
                     bail!("invalid content length");
                 }
-
-                let clen = contents.len() as u64 - crypto_box_NONCEBYTES as u64;
 
                 // SAFETY: contents is big enough for the decrypted message
                 // in-place decryption is supported by libsodium
                 // pk and sk are the right size
                 let res = unsafe {
-                    crypto_box_open_easy(
+                    crypto_box_seal_open(
                         contents.as_mut_ptr(),
                         contents.as_ptr(),
-                        clen,
-                        contents.as_ptr().offset(clen as isize),
+                        contents.len() as u64,
                         pk.as_ptr(),
                         sk.as_ptr(),
                     )
@@ -118,10 +110,8 @@ fn run() -> Result<()> {
                     bail!("failed to decrypt");
                 }
 
-                // successfully decrypted, truncate mac and nonce
-                contents.truncate(
-                    contents.len() - (crypto_box_NONCEBYTES + crypto_box_MACBYTES) as usize,
-                );
+                // successfully decrypted, truncate seal
+                contents.truncate(contents.len() - crypto_box_SEALBYTES as usize);
             }
 
             write(&path, &contents).context("failed to write contents")?;
