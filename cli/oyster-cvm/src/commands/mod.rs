@@ -1,5 +1,6 @@
 pub mod build;
 pub mod deploy;
+pub mod deposit;
 pub mod doctor;
 pub mod log;
 pub mod update;

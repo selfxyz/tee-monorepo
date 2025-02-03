@@ -96,6 +96,14 @@ Optional args:
 - `--with-log-id`(-w): Include log ID prefix in output (default: false)
 - `--quiet` (-q): Suppress connection status message (default: false)
 
+#### `deposit`
+Deposits additional USDC funds to an existing job.
+
+Required args:
+- `--job-id` (-j): The ID of the job to deposit funds to
+- `--amount` (-a): Amount to deposit in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
+- `--wallet-private-key`: Wallet private key for transaction signing
+
 ### Example
 
 ```bash
@@ -172,6 +180,19 @@ Optional args:
   --start-from abc123 \
   --with-log-id \
   --quiet
+
+# Deposit additional funds to a job
+./oyster-cvm deposit \
+  --job-id "0x123..." \
+  --amount 1000000 \
+  --wallet-private-key "your-private-key"
+
+# Sample output:
+[INFO] Starting deposit...
+[INFO] Depositing: 1.000000 USDC
+[INFO] USDC approval transaction: 0x3cc...e70
+[INFO] Deposit successful!
+[INFO] Transaction hash: 0x38b...008
 ```
 
 ## License
