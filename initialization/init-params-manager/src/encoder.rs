@@ -174,7 +174,7 @@ fn run() -> Result<()> {
         .context("failed to build init params")?;
 
     // create final init params
-    let init_params = InitParams {
+    let init_params = InitParamsList {
         digest: BASE64_STANDARD.encode(digest),
         params,
     };
@@ -220,7 +220,7 @@ struct InitParam {
 }
 
 #[derive(Serialize)]
-struct InitParams {
+struct InitParamsList {
     digest: String, // base64 encoded
     params: Vec<InitParam>,
 }
