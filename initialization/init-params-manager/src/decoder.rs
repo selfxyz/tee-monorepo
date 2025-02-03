@@ -1,7 +1,7 @@
 use std::{
     convert::identity,
     fs::{create_dir_all, read_to_string, write},
-    path::{Component, Path, PathBuf},
+    path::{Component, PathBuf},
 };
 
 use anyhow::{anyhow, bail, Context, Result};
