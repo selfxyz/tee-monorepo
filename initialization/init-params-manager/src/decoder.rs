@@ -54,7 +54,7 @@ fn run() -> Result<()> {
         info!("empty init params");
         return Ok(());
     }
-    let init_params = serde_json::from_str::<InitParams>(&init_params_str)
+    let init_params = serde_json::from_str::<InitParamsList>(&init_params_str)
         .context("failed to parse init params")?;
 
     // fetch key
@@ -184,7 +184,7 @@ struct InitParam {
 }
 
 #[derive(Deserialize)]
-struct InitParams {
+struct InitParamsList {
     digest: String, // base64 encoded
     params: Vec<InitParam>,
 }
