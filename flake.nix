@@ -44,6 +44,9 @@
       attestation.verifier = import ./attestation/verifier {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      initialization.init-params-manager = import ./initialization/init-params-manager {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       initialization.init-server = import ./initialization/init-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
@@ -158,6 +161,8 @@
         raw-proxy = networking.raw-proxy.compressed;
         attestation-server = attestation.server.compressed;
         vet = initialization.vet.compressed;
+        derive-server = kms.derive-server.compressed;
+        init-params-manager = initialization.init-params-manager.compressed;
         kernels = kernels.tuna;
       };
       cli.oyster-cvm = import ./cli/oyster-cvm {

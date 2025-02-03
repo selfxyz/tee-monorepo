@@ -1,24 +1,29 @@
 [package]
-name = "kms-derive-server"
+name = "init-params-manager"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 
+[[bin]]
+name = "init-params-decoder"
+path = "src/decoder.rs"
+
+[[bin]]
+name = "init-params-encoder"
+path = "src/encoder.rs"
+
 [dependencies]
 anyhow = "1.0.95"
-axum = "0.8.1"
+base64 = "0.22.1"
 clap = { version = "4.5.27", features = ["derive"] }
 hex = "0.4.3"
-http-body-util = "0.1.2"
-hyper = { version = "1.5.2", features = ["full"] }
-hyper-util = { version = "0.1.10", features = ["tokio"] }
-kms-derive-utils = { version = "0.1.0", path = "../derive-utils" }
-oyster-sdk = "0.15.0"
-reqwest = "0.12.12"
+libsodium-sys-stable = { version = "1.22.2", features = ["minimal"] }
 serde = { version = "1.0.217", features = ["derive"] }
-tokio = { version = "1.43.0", features = ["full"] }
+serde_json = "1.0.138"
+sha2 = "0.10.8"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+ureq = "3.0.3"
 
 [profile.release]
 strip = true
