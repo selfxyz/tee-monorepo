@@ -81,10 +81,6 @@ fn run() -> Result<()> {
             }
 
             let path = PathBuf::from("/init-params/".to_owned() + &init_param.path);
-            // ensure all files are contained within this directory
-            if !path.starts_with(Path::new("/init-params/")) {
-                bail!("invalid path");
-            }
 
             // we want to fail closed, hence detect errors as well
             if path
