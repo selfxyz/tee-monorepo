@@ -74,11 +74,23 @@ struct Args {
     /// Initial delay to allow for attestation verification
     #[arg(long, default_value = "1800")]
     delay: u64,
+
+    /// RPC url for address verification
+    #[arg(long)]
+    verification_rpc: String,
+
+    /// Chain id of the RPC
+    #[arg(long)]
+    chain_id: u64,
 }
 
 #[derive(Clone)]
 struct AppState {
     randomness: [u8; 64],
+    rpc: String,
+    // this could be fetched from the RPC
+    // we still hardcode this to limit impact of malicious RPCs
+    chain_id: u64,
 }
 
 #[tokio::main]
@@ -133,7 +145,11 @@ async fn main() -> Result<()> {
         .try_into()
         .map_err(|_| anyhow!("failed to parse secret file"))?;
 
-    let scallop_app_state = AppState { randomness };
+    let scallop_app_state = AppState {
+        randomness,
+        rpc: args.verification_rpc,
+        chain_id: args.chain_id,
+    };
     let public_app_state = scallop_app_state.clone();
 
     // Panic safety: we simply abort on panics and eschew any handling
