@@ -13,7 +13,7 @@ use crate::{scallop::AuthStoreState, AppState};
 sol!(
     #[sol(rpc)]
     interface IKMSVerifiable {
-        function oyster_kms_verify(bytes32 _key) external returns (bool);
+        function oysterKMSVerify(bytes32 _key) external returns (bool);
     }
 );
 
@@ -39,7 +39,7 @@ pub async fn derive(
 
     // SAFETY: transport should always have key associated, safe to unwrap
     let Ok(res) = contract
-        .oyster_kms_verify(scallop_state.0.unwrap().into())
+        .oysterKMSVerify(scallop_state.0.unwrap().into())
         .call()
         .await
     else {
