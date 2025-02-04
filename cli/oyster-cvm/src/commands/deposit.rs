@@ -6,7 +6,7 @@ use alloy::{
     sol,
     transports::http::Http,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use tracing::info;
 
@@ -44,20 +44,31 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
     let amount_u256 = U256::from(amount);
 
     // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
+    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)
+        .context("Failed to decode private key")?);
+    let signer = PrivateKeySigner::from_bytes(&private_key)
+        .context("Failed to create signer from private key")?;
     let wallet = EthereumWallet::from(signer);
 
     let provider = ProviderBuilder::new()
         .with_recommended_fillers()
         .wallet(wallet)
-        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
+        .on_http(ARBITRUM_ONE_RPC_URL.parse().context("Failed to parse RPC URL")?);
 
     // Create contract instance
-    let market = OysterMarket::new(OYSTER_MARKET_ADDRESS.parse()?, provider.clone());
+    let market = OysterMarket::new(
+        OYSTER_MARKET_ADDRESS
+            .parse()
+            .context("Failed to parse market address")?,
+        provider.clone(),
+    );
 
     // Check if job exists and get current balance
-    let job = market.jobs(job_id.parse()?).call().await?;
+    let job = market
+        .jobs(job_id.parse().context("Failed to parse job ID")?)
+        .call()
+        .await
+        .context("Failed to fetch job details")?;
     if job.owner == Address::ZERO {
         return Err(anyhow!("Job {} does not exist", job_id));
     }
@@ -71,16 +82,19 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
 
     // Call jobDeposit function
     let tx_hash = market
-        .jobDeposit(job_id.parse()?, amount_u256)
+        .jobDeposit(job_id.parse().context("Failed to parse job ID")?, amount_u256)
         .send()
-        .await?
+        .await
+        .context("Failed to send deposit transaction")?
         .watch()
-        .await?;
+        .await
+        .context("Failed to get transaction hash")?;
 
     // Verify transaction success
     let receipt = provider
         .get_transaction_receipt(tx_hash)
-        .await?
+        .await
+        .context("Failed to get transaction receipt")?
         .ok_or_else(|| anyhow!("Transaction receipt not found"))?;
 
     if !receipt.status() {
@@ -114,16 +128,22 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
 }
 
 async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Ethereum>) -> Result<()> {
-    let usdc_address: Address = USDC_ADDRESS.parse()?;
-    let market_address: Address = OYSTER_MARKET_ADDRESS.parse()?;
+    let usdc_address: Address = USDC_ADDRESS
+        .parse()
+        .context("Failed to parse USDC address")?;
+    let market_address: Address = OYSTER_MARKET_ADDRESS
+        .parse()
+        .context("Failed to parse market address")?;
 
     let usdc = USDC::new(usdc_address, provider);
     let tx_hash = usdc
         .approve(market_address, amount)
         .send()
-        .await?
+        .await
+        .context("Failed to send USDC approval transaction")?
         .watch()
-        .await?;
+        .await
+        .context("Failed to get USDC approval transaction hash")?;
 
     info!("USDC approval transaction: {:?}", tx_hash);
     Ok(())
