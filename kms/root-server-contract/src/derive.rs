@@ -1,22 +1,29 @@
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Query, State},
     http::StatusCode,
 };
-use kms_derive_utils::derive_enclave_seed;
+use kms_derive_utils::derive_enclave_seed_contract;
 use oyster::axum::ScallopState;
+use serde::Deserialize;
 
 use crate::{scallop::AuthStoreState, AppState};
+
+#[derive(Deserialize)]
+pub struct Params {
+    chain_id: u64,
+    address: String,
+}
 
 // derive keys after verifying attestations
 pub async fn derive(
     ConnectInfo(scallop_state): ConnectInfo<ScallopState<AuthStoreState>>,
     State(state): State<AppState>,
+    Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 64]) {
-    // safe to unwrap since the server should always have an authstore
-    let (pcrs, user_data) = scallop_state.0.unwrap();
+    // TODO: Verify if key is verified on the contract
 
     let derived_key =
-        derive_enclave_seed(state.randomness, &pcrs[0], &pcrs[1], &pcrs[2], &user_data);
+        derive_enclave_seed_contract(state.randomness, params.chain_id, &params.address);
 
     (StatusCode::OK, derived_key)
 }
