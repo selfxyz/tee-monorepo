@@ -10,7 +10,6 @@ use crate::{scallop::AuthStoreState, AppState};
 
 #[derive(Deserialize)]
 pub struct Params {
-    chain_id: u64,
     address: String,
 }
 
@@ -23,7 +22,7 @@ pub async fn derive(
     // TODO: Verify if key is verified on the contract
 
     let derived_key =
-        derive_enclave_seed_contract(state.randomness, params.chain_id, &params.address);
+        derive_enclave_seed_contract(state.randomness, state.chain_id, &params.address);
 
     (StatusCode::OK, derived_key)
 }
