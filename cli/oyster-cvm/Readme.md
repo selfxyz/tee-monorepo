@@ -104,6 +104,13 @@ Required args:
 - `--amount` (-a): Amount to deposit in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
 - `--wallet-private-key`: Wallet private key for transaction signing
 
+#### `stop`
+Stops an Oyster CVM instance.
+
+Required args:
+- `--job-id` (-j): The ID of the job to stop
+- `--wallet-private-key`: Wallet private key for transaction signing
+
 ### Example
 
 ```bash
@@ -193,6 +200,19 @@ Required args:
 [INFO] USDC approval transaction: 0x3cc...e70
 [INFO] Deposit successful!
 [INFO] Transaction hash: 0x38b...008
+
+# Stop an oyster instance
+./oyster-cvm stop \
+  --job-id "0x000..." \
+  --wallet-private-key "your-private-key"
+
+# Sample output:
+[INFO] Stopping oyster instance with:
+[INFO]   Job ID: 0x000...
+[INFO] Found job, initiating stop...
+[INFO] Stop transaction sent: 0x03...1d
+[INFO] Instance stopped successfully!
+[INFO] Transaction hash: 0x03...1d
 ```
 
 ## License

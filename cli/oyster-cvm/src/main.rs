@@ -184,6 +184,16 @@ enum Commands {
         #[arg(long)]
         wallet_private_key: String,
     },
+    /// Stop an Oyster CVM instance
+    Stop {
+        /// Job ID
+        #[arg(short = 'j', long, required = true)]
+        job_id: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+    },
 }
 
 #[tokio::main]
@@ -246,15 +256,15 @@ async fn main() -> Result<()> {
             extra_init_params,
         } => {
             let config = DeploymentConfig {
-                image_url: image_url,
-                region: region,
-                instance_type: instance_type,
-                bandwidth: bandwidth,
+                image_url,
+                region,
+                instance_type,
+                bandwidth,
                 duration: duration_in_minutes,
-                job_name: job_name,
+                job_name,
                 debug,
-                init_params: init_params,
-                extra_init_params: extra_init_params,
+                init_params,
+                extra_init_params,
             };
             commands::deploy::deploy_oyster_instance(config, &wallet_private_key, &operator).await
         }
@@ -264,13 +274,8 @@ async fn main() -> Result<()> {
             image_url,
             debug,
         } => {
-            commands::update::update_job(
-                &job_id,
-                &wallet_private_key,
-                image_url.as_deref(),
-                debug,
-            )
-            .await
+            commands::update::update_job(&job_id, &wallet_private_key, image_url.as_deref(), debug)
+                .await
         }
         Commands::Logs {
             ip,
@@ -283,10 +288,14 @@ async fn main() -> Result<()> {
             amount,
             wallet_private_key,
         } => commands::deposit::deposit_to_job(&job_id, amount, &wallet_private_key).await,
+        Commands::Stop {
+            job_id,
+            wallet_private_key,
+        } => commands::stop::stop_oyster_instance(&job_id, &wallet_private_key).await,
     };
 
-    if let Err(err) = &result {
-        tracing::error!("Error: {:#}", err);
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 

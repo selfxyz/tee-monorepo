@@ -3,6 +3,7 @@ pub mod deploy;
 pub mod deposit;
 pub mod doctor;
 pub mod log;
+pub mod stop;
 pub mod update;
 pub mod upload;
 pub mod verify;
