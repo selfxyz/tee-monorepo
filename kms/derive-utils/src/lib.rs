@@ -52,7 +52,7 @@ pub fn derive_enclave_seed(
 /// # Arguments
 /// * `root` - A 64-byte root seed
 /// * `chain_id` - Chain ID
-/// * `address` - Address
+/// * `address` - Address (e.g. Ethereum or Solana)
 ///
 /// # Examples
 /// ```
