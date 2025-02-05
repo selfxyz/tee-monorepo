@@ -33,10 +33,10 @@ Supported outputs:
 $ ./target/release/creator-verifier --help
 Verify creator signatures and recover public keys
 
-Usage: creator-verifier <HEX_STRING>
+Usage: creator-verifier <MESSAGE_HEX>
 
 Arguments:
-  <HEX_STRING>  Hex string containing message followed by 65-byte signature
+  <MESSAGE_HEX>  Hex string containing message followed by 65-byte signature
 
 Options:
   -h, --help     Print help
