@@ -81,7 +81,7 @@ struct Args {
 
     /// Chain id of the RPC
     #[arg(long)]
-    chain_id: u64,
+    verification_chain_id: u64,
 }
 
 #[derive(Clone)]
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
     let scallop_app_state = AppState {
         randomness,
         rpc: args.verification_rpc,
-        chain_id: args.chain_id,
+        chain_id: args.verification_chain_id,
     };
     let public_app_state = scallop_app_state.clone();
 

@@ -31,7 +31,7 @@ Supported outputs:
 
 ```
 $ ./target/release/kms-root-server-contract --help
-Usage: kms-root-server-contract [OPTIONS] --verification-rpc <VERIFICATION_RPC> --chain-id <CHAIN_ID>
+Usage: kms-root-server-contract [OPTIONS] --verification-rpc <VERIFICATION_RPC> --verification-chain-id <VERIFICATION_CHAIN_ID>
 
 Options:
       --randomness-file <RANDOMNESS_FILE>
@@ -60,7 +60,7 @@ Options:
           Initial delay to allow for attestation verification [default: 1800]
       --verification-rpc <VERIFICATION_RPC>
           RPC url for address verification
-      --chain-id <CHAIN_ID>
+      --verification-chain-id <VERIFICATION_CHAIN_ID>
           Chain id of the RPC
   -h, --help
           Print help
