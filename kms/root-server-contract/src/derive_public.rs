@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
 };
 use kms_derive_utils::{
-    derive_enclave_seed_contract, derive_path_seed, to_ed25519_public, to_ed25519_solana_address,
+    derive_enclave_contract_seed, derive_path_seed, to_ed25519_public, to_ed25519_solana_address,
     to_secp256k1_ethereum_address, to_secp256k1_public, to_x25519_public,
 };
 use serde::Deserialize;
@@ -18,7 +18,7 @@ pub struct Params {
 
 impl Params {
     fn derive_path_seed(&self, randomness: [u8; 64], chain_id: u64) -> Option<[u8; 64]> {
-        let enclave_key = derive_enclave_seed_contract(randomness, chain_id, &self.address);
+        let enclave_key = derive_enclave_contract_seed(randomness, chain_id, &self.address);
         let path_key = derive_path_seed(enclave_key, self.path.as_bytes());
 
         Some(path_key)

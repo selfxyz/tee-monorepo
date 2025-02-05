@@ -3,7 +3,7 @@ use axum::{
     extract::{ConnectInfo, Query, State},
     http::StatusCode,
 };
-use kms_derive_utils::derive_enclave_seed_contract;
+use kms_derive_utils::derive_enclave_contract_seed;
 use oyster::axum::ScallopState;
 use serde::Deserialize;
 use IKMSVerifiable::IKMSVerifiableInstance;
@@ -52,7 +52,7 @@ pub async fn derive(
     }
 
     let derived_key =
-        derive_enclave_seed_contract(state.randomness, state.chain_id, &params.address);
+        derive_enclave_contract_seed(state.randomness, state.chain_id, &params.address);
 
     (StatusCode::OK, derived_key)
 }
