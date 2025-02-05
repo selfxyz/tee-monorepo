@@ -29,7 +29,7 @@ mod taco;
 struct Args {
     /// Path to encrypted seed file
     #[arg(long, default_value = "/app/init-params")]
-    seed_file: String,
+    seed_path: String,
 
     /// Scallop listening address
     #[arg(long, default_value = "0.0.0.0:1100")]
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
         .await
         .context("failed to get chain id")?;
 
-    let encrypted_seed = fs::read(args.seed_file)
+    let encrypted_seed = fs::read(args.seed_path)
         .await
         .context("failed to read seed file")?;
     let seed = decrypt(

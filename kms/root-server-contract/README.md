@@ -34,7 +34,7 @@ $ ./target/release/kms-root-server-contract --help
 Usage: kms-root-server-contract [OPTIONS] --verification-rpc <VERIFICATION_RPC> --verification-chain-id <VERIFICATION_CHAIN_ID>
 
 Options:
-      --seed-file <SEED_FILE>
+      --seed-path <SEED_PATH>
           Path to encrypted seed file [default: /app/init-params]
       --scallop-listen-addr <SCALLOP_LISTEN_ADDR>
           Scallop listening address [default: 0.0.0.0:1100]
