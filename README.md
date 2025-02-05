@@ -27,6 +27,7 @@ The repository is organized into projects:
 - [kms/derive-server-enclave](./kms/derive-server-enclave): Example KMS derive server enclave mainly used for testing.
 - [kms/derive-utils](./kms/derive-utils): Library with key derivation utilities.
 - [kms/root-server](./kms/root-server): KMS root server with key derivation endpoints.
+- [kms/root-server-contract](./kms/root-server-contract): KMS root server with key derivation endpoints that works based on contract approvals.
 - [kms/root-server-enclave](./kms/root-server-enclave): KMS root server enclave.
 - [networking/tcp-proxy](./networking/tcp-proxy/): TCP proxies that are part of the networking stack of Salmon images.
 - [networking/raw-proxy](./networking/raw-proxy/): Raw proxies that are part of the networking stack of Tuna images.

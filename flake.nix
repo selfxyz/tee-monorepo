@@ -112,6 +112,20 @@
         kernels = kernels.tuna;
         root-server = kms.root-server.compressed;
       };
+      kms.root-server-contract = import ./kms/root-server-contract {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.root-server-arbone-enclave = import ./kms/root-server-arbone-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        root-server-contract = kms.root-server-contract.compressed;
+      };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;
       };
