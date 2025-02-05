@@ -27,9 +27,9 @@ mod taco;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Path to encrypted randomness file
+    /// Path to encrypted seed file
     #[arg(long, default_value = "/app/init-params")]
-    randomness_file: String,
+    seed_file: String,
 
     /// Scallop listening address
     #[arg(long, default_value = "0.0.0.0:1100")]
@@ -78,7 +78,7 @@ struct Args {
 
 #[derive(Clone)]
 struct AppState {
-    randomness: [u8; 64],
+    seed: [u8; 64],
 }
 
 #[tokio::main]
@@ -109,11 +109,11 @@ async fn main() -> Result<()> {
         .await
         .context("failed to get chain id")?;
 
-    let encrypted_randomness = fs::read(args.randomness_file)
+    let encrypted_seed = fs::read(args.seed_file)
         .await
-        .context("failed to read randomness file")?;
-    let randomness = decrypt(
-        &encrypted_randomness,
+        .context("failed to read seed file")?;
+    let seed = decrypt(
+        &encrypted_seed,
         args.ritual,
         &taco_nodes,
         args.threshold,
@@ -122,10 +122,10 @@ async fn main() -> Result<()> {
         chain_id,
     )
     .await
-    .context("failed to decrypt randomness")?
+    .context("failed to decrypt seed")?
     .as_ref()
     .try_into()
-    .context("randomness is not the right size")?;
+    .context("seed is not the right size")?;
 
     let secret: [u8; 32] = read(args.secret_path)
         .await
@@ -133,7 +133,7 @@ async fn main() -> Result<()> {
         .try_into()
         .map_err(|_| anyhow!("failed to parse secret file"))?;
 
-    let scallop_app_state = AppState { randomness };
+    let scallop_app_state = AppState { seed };
     let public_app_state = scallop_app_state.clone();
 
     // Panic safety: we simply abort on panics and eschew any handling

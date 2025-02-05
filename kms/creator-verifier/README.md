@@ -2,7 +2,7 @@
 
 # KMS Creator Verifier
 
-The KMS Creator Verifier verifies the generated encrypted randomness from the KMS Creator.
+The KMS Creator Verifier verifies the generated encrypted seed from the KMS Creator.
 
 ## Build
 

@@ -34,8 +34,8 @@ $ ./target/release/kms-root-server --help
 Usage: kms-root-server [OPTIONS]
 
 Options:
-      --randomness-file <RANDOMNESS_FILE>
-          Path to encrypted randomness file [default: /app/init-params]
+      --seed-file <SEED_FILE>
+          Path to encrypted seed file [default: /app/init-params]
       --scallop-listen-addr <SCALLOP_LISTEN_ADDR>
           Scallop listening address [default: 0.0.0.0:1100]
       --public-listen-addr <PUBLIC_LISTEN_ADDR>

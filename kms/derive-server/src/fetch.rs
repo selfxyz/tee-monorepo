@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 
 use crate::scallop::{AuthStore, Auther};
 
-pub async fn fetch_randomness(
+pub async fn fetch_seed(
     auther: Auther,
     auth_store: AuthStore,
     secret: [u8; 32],
@@ -51,7 +51,7 @@ pub async fn fetch_randomness(
     if response.status() != StatusCode::OK {
         return Err(anyhow!("request error"));
     }
-    let randomness: [u8; 64] = response
+    let seed: [u8; 64] = response
         .collect()
         .await
         .context("failed to collect body")?
@@ -60,5 +60,5 @@ pub async fn fetch_randomness(
         .try_into()
         .context("response is not the right size")?;
 
-    Ok(randomness)
+    Ok(seed)
 }

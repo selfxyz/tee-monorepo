@@ -51,8 +51,7 @@ pub async fn derive(
         return (StatusCode::UNAUTHORIZED, [0; 64]);
     }
 
-    let derived_key =
-        derive_enclave_contract_seed(state.randomness, state.chain_id, &params.address);
+    let derived_key = derive_enclave_contract_seed(state.seed, state.chain_id, &params.address);
 
     (StatusCode::OK, derived_key)
 }

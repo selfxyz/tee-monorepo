@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
-use fetch::fetch_randomness;
+use fetch::fetch_seed;
 use scallop::{AuthStore, Auther};
 use tokio::{fs::read, net::TcpListener};
 use tracing::info;
@@ -49,7 +49,7 @@ struct Args {
 
 #[derive(Clone)]
 struct AppState {
-    randomness: [u8; 64],
+    seed: [u8; 64],
 }
 
 #[tokio::main]
@@ -88,11 +88,11 @@ async fn main() -> Result<()> {
         state: ([pcr0, pcr1, pcr2], user_data),
     };
 
-    let randomness = fetch_randomness(auther, auth_store, secret, args.kms_endpoint)
+    let seed = fetch_seed(auther, auth_store, secret, args.kms_endpoint)
         .await
-        .context("failed to fetch randomness")?;
+        .context("failed to fetch seed")?;
 
-    let app_state = AppState { randomness };
+    let app_state = AppState { seed };
 
     let app = Router::new()
         .route("/derive", get(derive::derive))
