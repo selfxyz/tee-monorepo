@@ -106,12 +106,11 @@ Takes raw params either as UTF-8 strings or files and encodes them into an init 
 
 ```bash
 $ ./target/release/init-params-encoder-contract --help
-Usage: init-params-encoder-contract [OPTIONS] --kms-endpoint <KMS_ENDPOINT> --chain-id <CHAIN_ID> --address <ADDRESS>
+Usage: init-params-encoder-contract [OPTIONS] --kms-endpoint <KMS_ENDPOINT> --address <ADDRESS>
 
 Options:
       --init-params <INIT_PARAMS>    Init params list, supports the following forms: `<enclave path>:<should attest, 0 or 1>:<should encrypt, 0 or 1>:utf8:<string>` `<enclave path>:<should attest, 0 or 1>:<should encrypt, 0 or 1>:file:<local path>`
       --kms-endpoint <KMS_ENDPOINT>  KMS public endpoint
-      --chain-id <CHAIN_ID>          Chain Id
       --address <ADDRESS>            Contract address managing verification
   -h, --help                         Print help
 ```
@@ -121,7 +120,7 @@ Multiple init params can be specified by simply repeating `--init-params <INIT_P
 ### Example
 
 ```bash
-$ ./target/release/init-params-encoder-contract --kms-endpoint http://arbone-v1.kms.box:1101 --chain-id 1 --address 0x000000000000000000000000000000000000dead --init-params 'hello/hello:1:1:utf8:hello' --init-params 'Cargo.toml:1:1:file:./Cargo.toml'
+$ ./target/release/init-params-encoder-contract --kms-endpoint http://arbone-v1.kms.box:1101 --address 0x000000000000000000000000000000000000dead --init-params 'hello/hello:1:1:utf8:hello' --init-params 'Cargo.toml:1:1:file:./Cargo.toml'
 2025-02-02T10:37:43.720731Z  INFO init_params_encoder_contract: digest path="hello/hello" should_attest=true should_encrypt=true
 2025-02-02T10:37:43.720780Z  INFO init_params_encoder_contract: digest path="Cargo.toml" should_attest=true should_encrypt=true
 2025-02-02T10:37:43.804398Z  INFO init_params_encoder_contract: param path="hello/hello" should_attest=true should_encrypt=true
