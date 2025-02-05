@@ -24,10 +24,6 @@ struct Args {
     #[arg(long)]
     kms_endpoint: String,
 
-    /// Chain Id
-    #[arg(long)]
-    chain_id: u64,
-
     /// Contract address managing verification
     #[arg(long)]
     address: String,
@@ -110,8 +106,8 @@ fn run() -> Result<()> {
         .finalize();
 
     // fetch key
-    let pk = fetch_encryption_key(&args.kms_endpoint, args.chain_id, &args.address)
-        .context("failed to fetch key")?;
+    let pk =
+        fetch_encryption_key(&args.kms_endpoint, &args.address).context("failed to fetch key")?;
 
     // prepare init params
     let params = args
@@ -178,9 +174,8 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn fetch_encryption_key(endpoint: &str, chain_id: u64, address: &str) -> Result<[u8; 32]> {
+fn fetch_encryption_key(endpoint: &str, address: &str) -> Result<[u8; 32]> {
     Ok(ureq::get(endpoint.to_owned() + "/derive/x25519/public")
-        .query("chain_id", chain_id.to_string())
         .query("address", address)
         .query("path", "oyster.init-params")
         .call()
