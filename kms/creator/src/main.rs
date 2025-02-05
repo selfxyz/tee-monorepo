@@ -11,7 +11,10 @@ use nucypher_core::{
     ThresholdMessageKit,
 };
 use rand::{rngs::OsRng, RngCore};
-use tokio::{fs::read, net::TcpListener};
+use tokio::{
+    fs::{read, read_to_string},
+    net::TcpListener,
+};
 
 #[derive(Clone)]
 struct AppState {
@@ -102,9 +105,9 @@ struct Args {
     #[arg(long, default_value = "/app/secp256k1.sec")]
     signer: String,
 
-    /// Condition string for the key
+    /// File path for the condition for the seed
     #[arg(long)]
-    condition: String,
+    condition_path: String,
 
     /// DKG ceremony public key
     #[arg(long)]
@@ -127,7 +130,10 @@ async fn main() -> Result<()> {
     )
     .context("failed to parse dkg public key")?;
 
-    let conditions = Conditions::new(&args.condition);
+    let condition = read_to_string(args.condition_path)
+        .await
+        .context("failed to read condition file")?;
+    let conditions = Conditions::new(&condition);
 
     let app_state = AppState {
         conditions,
