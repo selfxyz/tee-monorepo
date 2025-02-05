@@ -24,17 +24,13 @@ struct Args {
     #[arg(long)]
     kms_endpoint: String,
 
-    /// PCR0
+    /// Chain Id
     #[arg(long)]
-    pcr0: String,
+    chain_id: u64,
 
-    /// PCR1
+    /// Contract address managing verification
     #[arg(long)]
-    pcr1: String,
-
-    /// PCR2
-    #[arg(long)]
-    pcr2: String,
+    address: String,
 }
 
 fn main() -> Result<()> {
@@ -114,14 +110,8 @@ fn run() -> Result<()> {
         .finalize();
 
     // fetch key
-    let pk = fetch_encryption_key(
-        &args.kms_endpoint,
-        &args.pcr0,
-        &args.pcr1,
-        &args.pcr2,
-        &hex::encode(digest),
-    )
-    .context("failed to fetch key")?;
+    let pk = fetch_encryption_key(&args.kms_endpoint, args.chain_id, &args.address)
+        .context("failed to fetch key")?;
 
     // prepare init params
     let params = args
@@ -188,18 +178,10 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn fetch_encryption_key(
-    endpoint: &str,
-    pcr0: &str,
-    pcr1: &str,
-    pcr2: &str,
-    user_data: &str,
-) -> Result<[u8; 32]> {
+fn fetch_encryption_key(endpoint: &str, chain_id: u64, address: &str) -> Result<[u8; 32]> {
     Ok(ureq::get(endpoint.to_owned() + "/derive/x25519/public")
-        .query("pcr0", pcr0)
-        .query("pcr1", pcr1)
-        .query("pcr2", pcr2)
-        .query("user_data", user_data)
+        .query("chain_id", chain_id.to_string())
+        .query("address", address)
         .query("path", "oyster.init-params")
         .call()
         .context("failed to call derive server")?
