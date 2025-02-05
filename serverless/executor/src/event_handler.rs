@@ -255,7 +255,7 @@ async fn send_execution_output(
             let txn = txn
                 .set_from(http_rpc_client.address())
                 .set_nonce(current_nonce)
-                .set_gas(gas_limit)
+                .set_gas(gas_limit + GAS_LIMIT_BUFFER)
                 .set_gas_price(gas_price)
                 .to_owned();
             let pending_txn = http_rpc_client.send_transaction(txn, None).await;

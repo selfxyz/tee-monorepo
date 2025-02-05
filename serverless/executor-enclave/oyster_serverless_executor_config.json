@@ -10,5 +10,5 @@
     "code_contract_addr": "0x44fe06d2940b8782a0a9a9ffd09c65852c0156b1",
     "enclave_signer_file": "/app/ecdsa.sec",
     "execution_buffer_time": 100,
-    "num_selected_executors": 1
+    "num_selected_executors": 3
 }

@@ -61,6 +61,7 @@ pub struct AppState {
     pub http_rpc_txn_manager: Mutex<Option<Arc<TxnManager>>>,
     pub enclave_registered: AtomicBool,
     pub events_listener_active: Mutex<bool>,
+    pub enclave_draining: AtomicBool,
     pub last_block_seen: AtomicU64,
     pub acknowledgement_timeout: u64,
     pub mark_alive_timeout: u64,

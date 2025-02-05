@@ -94,6 +94,7 @@ async fn main() -> Result<()> {
         http_rpc_txn_manager: None.into(),
         enclave_registered: false.into(),
         events_listener_active: false.into(),
+        enclave_draining: false.into(),
         last_block_seen: 0.into(),
         acknowledgement_timeout: config.acknowledgement_timeout,
         mark_alive_timeout: config.mark_alive_timeout,

@@ -29,6 +29,11 @@ pub async fn store_alive_monitor(app_state: Data<AppState>) {
             return;
         }
 
+        // If enclave is drained, skip the alive transaction because acknowledgments won't be accepted then
+        if app_state.enclave_draining.load(Ordering::SeqCst) {
+            continue;
+        }
+
         // Get the current sign timestamp for signing
         let sign_timestamp = SystemTime::now();
         let sign_timestamp = sign_timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs();
