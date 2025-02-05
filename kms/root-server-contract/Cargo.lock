@@ -2761,7 +2761,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kms-root-server"
+name = "kms-root-server-contract"
 version = "0.1.0"
 dependencies = [
  "alloy",
