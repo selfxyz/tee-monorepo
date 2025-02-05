@@ -6,6 +6,9 @@ set -e
 /app/vet --url vsock://3:1300/instance/ip > /app/ip.txt
 cat /app/ip.txt
 
+# query init params for enclave and store
+/app/vet --url vsock://3:1300/oyster/init-params > /app/init-params
+
 ip=$(cat /app/ip.txt)
 
 # setting an address for loopback
