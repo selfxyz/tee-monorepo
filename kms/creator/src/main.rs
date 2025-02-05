@@ -70,19 +70,15 @@ fn encrypt(
     Ok(hex::encode(resp))
 }
 
-// generate new randomness and encyrpt it against the DKG key
+// generate new seed and encrypt it against the DKG key
 async fn generate(State(state): State<AppState>) -> (StatusCode, String) {
-    // generate randomness
-    let mut randomness = [0u8; 64];
-    OsRng.fill_bytes(randomness.as_mut());
+    // generate seed
+    let mut seed = [0u8; 64];
+    OsRng.fill_bytes(seed.as_mut());
 
     // generate encrypted message
-    let Ok(encrypted) = encrypt(
-        &randomness,
-        &state.conditions,
-        state.dkg_public_key,
-        state.signer,
-    ) else {
+    let Ok(encrypted) = encrypt(&seed, &state.conditions, state.dkg_public_key, state.signer)
+    else {
         // NOTE: Explicitly do not do anything with the error message
         // lest it leaks something about the encryption process
         return (

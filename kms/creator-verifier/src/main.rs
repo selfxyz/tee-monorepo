@@ -12,15 +12,14 @@ use clap::Parser;
 struct Args {
     /// Hex-encoded message with 65-byte signature appended
     #[arg(help = "Hex string containing message followed by 65-byte signature")]
-    hex_string: String,
+    message_hex: String,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let hex_string = &args.hex_string;
 
     // Decode hex string
-    let bytes = hex::decode(hex_string).context("Failed to decode hex string")?;
+    let bytes = hex::decode(&args.message_hex).context("Failed to decode hex string")?;
 
     if bytes.len() <= 65 {
         anyhow::bail!("Input too short - must contain message plus 65 byte signature");

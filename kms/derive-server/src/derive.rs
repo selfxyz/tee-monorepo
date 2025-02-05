@@ -19,7 +19,7 @@ pub async fn derive(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 64]) {
-    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let derived_key = derive_path_seed(state.seed, params.path.as_bytes());
 
     (StatusCode::OK, derived_key)
 }
@@ -29,7 +29,7 @@ pub async fn derive_secp256k1(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let derived_key = derive_path_seed(state.seed, params.path.as_bytes());
     let secret = to_secp256k1_secret(derived_key);
 
     (StatusCode::OK, secret)
@@ -40,7 +40,7 @@ pub async fn derive_ed25519(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let derived_key = derive_path_seed(state.seed, params.path.as_bytes());
     let secret = to_ed25519_secret(derived_key);
 
     (StatusCode::OK, secret)
@@ -51,7 +51,7 @@ pub async fn derive_x25519(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let derived_key = derive_path_seed(state.randomness, params.path.as_bytes());
+    let derived_key = derive_path_seed(state.seed, params.path.as_bytes());
     let secret = to_x25519_secret(derived_key);
 
     (StatusCode::OK, secret)
