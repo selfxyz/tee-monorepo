@@ -101,6 +101,9 @@
       kms.root-server = import ./kms/root-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      kms.root-server-contract = import ./kms/root-server-contract {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       kms.root-server-enclave = import ./kms/root-server-enclave {
         inherit nixpkgs systemConfig nitro-util;
         supervisord = external.supervisord.compressed;
