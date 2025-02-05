@@ -86,6 +86,13 @@ GET /derive?address=<address>
 <binary data of the derived key in response>
 ```
 
+The `address` is expected to refer to a smart contract implementing the following interface:
+```
+interface IKMSVerifiable {
+    function oysterKMSVerify(bytes32 _key) external returns (bool);
+}
+```
+
 ## Public endpoints
 
 Unlike the scallop endpoints, these endpoints are availble to any caller. They are mainly intended to fetch public keys for derivation paths in advance before even running an enclave.
