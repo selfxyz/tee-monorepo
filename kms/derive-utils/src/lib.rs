@@ -56,18 +56,18 @@ pub fn derive_enclave_seed(
 ///
 /// # Examples
 /// ```
-/// use kms_derive_utils::derive_enclave_seed_contract;
+/// use kms_derive_utils::derive_enclave_contract_seed;
 ///
 /// let root = [0u8; 64];
 /// let chain_id = 1;
 /// let address = "0xffffffffffffffffffffffffffffffffffffffff";
-/// let seed = derive_enclave_seed_contract(root, chain_id, address);
+/// let seed = derive_enclave_contract_seed(root, chain_id, address);
 /// ```
-pub fn derive_enclave_seed_contract(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+pub fn derive_enclave_contract_seed(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
     // normalize
     let address = &address.to_lowercase();
-    derive_enclave_seed_contract_once(
-        derive_enclave_seed_contract_once(root, chain_id, address),
+    derive_enclave_contract_seed_once(
+        derive_enclave_contract_seed_once(root, chain_id, address),
         chain_id,
         address,
     )
@@ -289,7 +289,7 @@ fn derive_enclave_seed_once(
     mac.finalize().into_bytes().into()
 }
 
-fn derive_enclave_seed_contract_once(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+fn derive_enclave_contract_seed_once(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
     // SAFETY: cannot error, safe to unwrap
     let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
     mac.update(&chain_id.to_le_bytes());
@@ -311,7 +311,7 @@ mod tests {
     use hex_literal::hex;
 
     use crate::{
-        derive_enclave_seed, derive_enclave_seed_contract, derive_path_seed, to_ed25519_public,
+        derive_enclave_contract_seed, derive_enclave_seed, derive_path_seed, to_ed25519_public,
         to_ed25519_secret, to_ed25519_solana_address, to_secp256k1_ethereum_address,
         to_secp256k1_public, to_secp256k1_secret, to_x25519_public, to_x25519_secret,
     };
@@ -339,7 +339,7 @@ mod tests {
         // derived from an independent online implementation
         let expected = hex!("2893103cf566e7d2df9da1aec5e6c3f66a1d03e4031d6cd22282bab6415fc4da8a16b299c1e570115f0ec4173fa1f192e22dea29e21c2328ace3773151eacdcb");
 
-        let seed = derive_enclave_seed_contract(root, chain_id, address);
+        let seed = derive_enclave_contract_seed(root, chain_id, address);
 
         assert_eq!(seed, expected);
     }
@@ -352,7 +352,7 @@ mod tests {
         // derived from an independent online implementation
         let expected = hex!("ac30d6400265019af7c7bca9386021ad9299c2094bc8ebdeef8f0143afd2740ae8d119478b336e7509e7d7cf2a9d6e9f8ffbb03aa78c4e3f59e9141e063f1421");
 
-        let seed = derive_enclave_seed_contract(root, chain_id, address);
+        let seed = derive_enclave_contract_seed(root, chain_id, address);
 
         assert_eq!(seed, expected);
     }
