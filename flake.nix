@@ -44,6 +44,9 @@
       attestation.verifier = import ./attestation/verifier {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      initialization.init-params-manager = import ./initialization/init-params-manager {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       initialization.init-server = import ./initialization/init-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
@@ -67,6 +70,61 @@
       };
       kms.creator = import ./kms/creator {
         inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.creator-enclave = import ./kms/creator-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        creator = kms.creator.compressed;
+      };
+      kms.creator-verifier = import ./kms/creator-verifier {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.derive-server = import ./kms/derive-server {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.derive-server-enclave = import ./kms/derive-server-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        derive-server = kms.derive-server.compressed;
+      };
+      kms.root-server = import ./kms/root-server {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.root-server-enclave = import ./kms/root-server-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        root-server = kms.root-server.compressed;
+      };
+      kms.root-server-contract = import ./kms/root-server-contract {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.root-server-arbone-enclave = import ./kms/root-server-arbone-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        root-server-contract = kms.root-server-contract.compressed;
       };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;
@@ -117,6 +175,8 @@
         raw-proxy = networking.raw-proxy.compressed;
         attestation-server = attestation.server.compressed;
         vet = initialization.vet.compressed;
+        derive-server = kms.derive-server.compressed;
+        init-params-manager = initialization.init-params-manager.compressed;
         kernels = kernels.tuna;
       };
       cli.oyster-cvm = import ./cli/oyster-cvm {

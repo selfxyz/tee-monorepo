@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use clap::Parser;
+use hyper::StatusCode;
 use hyper::{
     client::connect::{Connected, Connection},
     Body, Uri,
@@ -104,8 +105,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = hyper::Client::builder().build::<_, Body>(connector);
 
-    let response_bytes =
-        hyper::body::to_bytes(client.get(cli.url.try_into()?).await?.into_body()).await?;
+    let response = client.get(cli.url.try_into()?).await?;
+
+    if response.status() != StatusCode::OK {
+        return Err("response not ok".into());
+    }
+
+    let response_bytes = hyper::body::to_bytes(response.into_body()).await?;
 
     tokio::io::stdout().write_all(&response_bytes).await?;
 
