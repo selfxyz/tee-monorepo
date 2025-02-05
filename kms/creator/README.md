@@ -37,15 +37,15 @@ Supported outputs:
 
 ```
 $ ./target/release/kms-creator --help
-Usage: kms-creator [OPTIONS] --condition <CONDITION> --dkg-public-key <DKG_PUBLIC_KEY>
+Usage: kms-creator [OPTIONS] --condition-path <CONDITION_PATH> --dkg-public-key <DKG_PUBLIC_KEY>
 
 Options:
       --listen-addr <LISTEN_ADDR>
           DKG listening address [default: 0.0.0.0:1100]
       --signer <SIGNER>
           Path to file with private key signer [default: /app/secp256k1.sec]
-      --condition <CONDITION>
-          Condition string for the key
+      --condition-path <CONDITION_PATH>
+          File path for the condition for the seed
       --dkg-public-key <DKG_PUBLIC_KEY>
           DKG ceremony public key
   -h, --help
