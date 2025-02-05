@@ -9,7 +9,7 @@
   attestation-server,
   vet,
   kernels,
-  root-server,
+  root-server-contract,
 }: let
   system = systemConfig.system;
   nitro = nitro-util.lib.${system};
@@ -23,7 +23,7 @@
   vtiriProxy = "${raw-proxy}/bin/vsock-to-ip-raw-incoming";
   attestationServer = "${attestation-server}/bin/oyster-attestation-server";
   vet' = "${vet}/bin/vet";
-  rootServer' = "${root-server}/bin/kms-root-server";
+  rootServerContract = "${root-server-contract}/bin/kms-root-server-contract";
   kernel = kernels.kernel;
   kernelConfig = kernels.kernelConfig;
   nsmKo = kernels.nsmKo;
@@ -44,7 +44,7 @@
 		cp ${attestationServer} $out/app/attestation-server
 		cp ${dnsproxy'} $out/app/dnsproxy
 		cp ${vet'} $out/app/vet
-		cp ${rootServer'} $out/app/kms-root-server
+		cp ${rootServerContract} $out/app/kms-root-server-contract
 		cp ${setup} $out/app/setup.sh
 		chmod +x $out/app/*
 		cp ${supervisorConf} $out/etc/supervisord.conf
