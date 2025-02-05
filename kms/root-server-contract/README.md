@@ -1,8 +1,8 @@
 ![Marlin Oyster Logo](./logo.svg)
 
-# KMS Root Server
+# KMS Root Server - Contract based
 
-The KMS Root Server provides derivation endpoints to derive secrets and/or corresponding public keys. The root seed is provided through a file containing randomenss encrypted against a DKG key.
+This KMS Root Server provides derivation endpoints to derive secrets and/or corresponding public keys based on approval in a contract. The root seed is provided through a file containing randomenss encrypted against a DKG key.
 
 ## Build
 
@@ -15,7 +15,7 @@ cargo build --release
 Reproducible builds can be done using Nix. The monorepo provides a Nix flake which includes this project and can be used to trigger builds:
 
 ```bash
-nix build -v .#<flavor>.kms.root-server.<output>
+nix build -v .#<flavor>.kms.root-server-contract.<output>
 ```
 
 Supported flavors:
@@ -30,8 +30,8 @@ Supported outputs:
 ## Usage
 
 ```
-$ ./target/release/kms-root-server --help
-Usage: kms-root-server [OPTIONS]
+$ ./target/release/kms-root-server-contract --help
+Usage: kms-root-server-contract [OPTIONS] --verification-rpc <VERIFICATION_RPC> --chain-id <CHAIN_ID>
 
 Options:
       --randomness-file <RANDOMNESS_FILE>
@@ -58,6 +58,10 @@ Options:
           DKG threshold [default: 16]
       --delay <DELAY>
           Initial delay to allow for attestation verification [default: 1800]
+      --verification-rpc <VERIFICATION_RPC>
+          RPC url for address verification
+      --chain-id <CHAIN_ID>
+          Chain id of the RPC
   -h, --help
           Print help
   -V, --version
@@ -77,7 +81,7 @@ The root server exposes some endpoints that are only accessible to Scallop-enabl
 #### Usage
 
 ```
-GET /derive
+GET /derive?address=<address>
 
 <binary data of the derived key in response>
 ```
@@ -95,7 +99,7 @@ Unlike the scallop endpoints, these endpoints are availble to any caller. They a
 #### Usage
 
 ```
-GET /derive/secp256k1/public?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user_data>&path=<path>
+GET /derive/secp256k1/public?address=<address>&path=<path>
 
 <binary data of the derived public key in response>
 ```
@@ -109,7 +113,7 @@ GET /derive/secp256k1/public?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user
 #### Usage
 
 ```
-GET /derive/secp256k1/address/ethereum?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user_data>&path=<path>
+GET /derive/secp256k1/address/ethereum?address=<address>&path=<path>
 
 0x92148e8f84096d0dfe7e66a025d14d1e2594ddc2
 ```
@@ -123,7 +127,7 @@ GET /derive/secp256k1/address/ethereum?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_
 #### Usage
 
 ```
-GET /derive/ed25519/public?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user_data>&path=<path>
+GET /derive/ed25519/public?address=<address>&path=<path>
 
 <binary data of the derived public key in response>
 ```
@@ -137,7 +141,7 @@ GET /derive/ed25519/public?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user_d
 #### Usage
 
 ```
-GET /derive/ed25519/address/solana?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user_data>&path=<path>
+GET /derive/ed25519/address/solana?address=<address>&path=<path>
 
 BEYzkmcGNdhqHAPKQ7oz89n1RbAumm2kwtX113pPuCax
 ```
@@ -151,7 +155,7 @@ BEYzkmcGNdhqHAPKQ7oz89n1RbAumm2kwtX113pPuCax
 #### Usage
 
 ```
-GET /derive/x25519/public?pcr0=<pcr0>&pcr1=<pcr1>&pcr2=<pcr2>&user_data=<user_data>&path=<path>
+GET /derive/x25519/public?address=<address>&path=<path>
 
 <binary data of the derived public key in response>
 ```
