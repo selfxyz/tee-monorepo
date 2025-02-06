@@ -124,11 +124,11 @@ mod tests {
         let parsed: VerifyAttestationResponse =
             serde_json::from_slice(&body).expect("failed to parse response");
 
-        assert_eq!(parsed.signature, "7889358915cdc6e2992e2c0e38684687f5e68aa41f4c3054b1423325605287a159d471ae596661ce0ffe8bf9e1ee4ef840ad9df82520454d5b7f431c83f1d7a01b");
+        assert_eq!(parsed.signature, "1901d2f64fd27ca9dd7240e6e3782dd989f824942fa050bb8f5dee81d31a70c438b41b2a322d4ffe079320da9259bb4eb45366c643911b20761b2f39c49477ac1b");
         assert_eq!(parsed.public_key, "57febcf9e7f5081d3d24182817df526a1c9c3df7e46b64613acd13f9aa53b81de888a8562ba7b4a0e42c48d24d7e444ffcba311ceddb5068eca2ea899379ab50");
         assert_eq!(
             parsed.image_id,
-            "e183ff5b78a1a7c2f14706acfe91e10581fca8f75bb450a97c897c1f16be85d9"
+            "66108020995009b982f24f929900dc974a9a610d6d5a5b9b29209c1bc5154a21"
         );
         assert_eq!(parsed.verifier_public_key, hex::encode(secp256k1_public));
         assert_eq!(parsed.timestamp, 1723012689640);
@@ -175,11 +175,11 @@ mod tests {
         let parsed: VerifyAttestationResponse =
             serde_json::from_slice(&body).expect("failed to parse response");
 
-        assert_eq!(parsed.signature, "5cff4fb9982e3cc56e03d05cfdc36660f2aac5a6dca0fbf573a9c9d60e554a1f586fe7ea6439da4d0cf69f5a61959d97ae38bd4280e5860181bcf4367a1189f31c");
+        assert_eq!(parsed.signature, "86ff271ec63c8e8f7010b1edaa70d75f1ca88bdda66463a7cd2a237a53369e20385ad493e37760a017663b4a49c9329b02f91559eabfb7164e8e48d57de760791b");
         assert_eq!(parsed.public_key, "57febcf9e7f5081d3d24182817df526a1c9c3df7e46b64613acd13f9aa53b81de888a8562ba7b4a0e42c48d24d7e444ffcba311ceddb5068eca2ea899379ab50");
         assert_eq!(
             parsed.image_id,
-            "e183ff5b78a1a7c2f14706acfe91e10581fca8f75bb450a97c897c1f16be85d9"
+            "66108020995009b982f24f929900dc974a9a610d6d5a5b9b29209c1bc5154a21"
         );
         assert_eq!(parsed.verifier_public_key, hex::encode(secp256k1_public));
         assert_eq!(parsed.timestamp, 1723012992231);
