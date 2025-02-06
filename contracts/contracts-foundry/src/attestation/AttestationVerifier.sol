@@ -14,8 +14,8 @@ contract AttestationVerifier is
 {
     //-------------------------------- Declarations start --------------------------------//
 
-    bytes32 public constant APPROVER_ROLE = keccak256("APPROVER");
-    bytes32 public constant REVOKER_ROLE = keccak256("REVOKER");
+    bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
+    bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
 
     IRiscZeroVerifier public verifier;
     bytes32 public imageId;
@@ -49,6 +49,21 @@ contract AttestationVerifier is
     //-------------------------------- Errors end --------------------------------//
 
     //-------------------------------- Events start --------------------------------//
+
+    event AttestationVerifierUpdatedVerifier(
+        IRiscZeroVerifier indexed verifier,
+        IRiscZeroVerifier indexed old
+    );
+    event AttestationVerifierUpdatedImageId(
+        bytes32 indexed imageId,
+        bytes32 indexed old
+    );
+    event AttestationVerifierUpdatedPcrs(bytes indexed pcrs, bytes indexed old);
+    event AttestationVerifierUpdatedRootKey(
+        bytes indexed rootKey,
+        bytes indexed old
+    );
+    event AttestationVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
 
     event EnclaveImageWhitelisted(
         bytes32 indexed imageId,
@@ -86,7 +101,10 @@ contract AttestationVerifier is
         _grantRole(APPROVER_ROLE, _approver);
         _grantRole(REVOKER_ROLE, _revoker);
 
-        // TODO: set risczero params
+        _updateVerifier(_verifier);
+        _updateImageId(_imageId);
+        _updateRootKey(_rootKey);
+        _updateMaxAge(_maxAge);
 
         _whitelistEnclaveImage(_enclaveImage);
     }
@@ -94,6 +112,26 @@ contract AttestationVerifier is
     //-------------------------------- Constructor end --------------------------------//
 
     //-------------------------------- Admin methods start --------------------------------//
+
+    function _updateVerifier(IRiscZeroVerifier _verifier) internal {
+        emit AttestationVerifierUpdatedVerifier(_verifier, verifier);
+        verifier = _verifier;
+    }
+
+    function _updateImageId(bytes32 _imageId) internal {
+        emit AttestationVerifierUpdatedImageId(_imageId, imageId);
+        imageId = _imageId;
+    }
+
+    function _updateRootKey(bytes memory _rootKey) internal {
+        emit AttestationVerifierUpdatedRootKey(_rootKey, rootKey);
+        rootKey = _rootKey;
+    }
+
+    function _updateMaxAge(bytes memory _maxAge) internal {
+        emit AttestationVerifierUpdatedMaxAge(_maxAge, maxAge);
+        maxAge = _maxAge;
+    }
 
     function _pubKeyToAddress(
         bytes memory pubKey
