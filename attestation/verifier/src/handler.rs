@@ -32,13 +32,13 @@ struct HexAttestation {
 
 #[derive(Serialize, Deserialize)]
 pub struct VerifyAttestationResponse {
-    signature: String,
-    secp256k1_public: String,
-    pcr0: String,
-    pcr1: String,
-    pcr2: String,
-    timestamp: usize,
-    verifier_secp256k1_public: String,
+    pub signature: String,
+    pub secp256k1_public: String,
+    pub pcr0: String,
+    pub pcr1: String,
+    pub pcr2: String,
+    pub timestamp: usize,
+    pub verifier_secp256k1_public: String,
 }
 
 #[derive(Error)]
