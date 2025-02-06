@@ -105,6 +105,7 @@ sol! {
         bytes PCR0;
         bytes PCR1;
         bytes PCR2;
+        bytes userData;
         uint256 timestampInMilliseconds;
     }
 }
@@ -114,6 +115,7 @@ fn compute_signature(
     pcr0: &[u8],
     pcr1: &[u8],
     pcr2: &[u8],
+    user_data: &[u8],
     timestamp: usize,
     signer: &PrivateKeySigner,
 ) -> Result<[u8; 65], UserError> {
@@ -122,6 +124,7 @@ fn compute_signature(
         PCR0: pcr0.to_owned().into(),
         PCR1: pcr1.to_owned().into(),
         PCR2: pcr2.to_owned().into(),
+        userData: user_data.to_owned().into(),
         timestampInMilliseconds: U256::from(timestamp),
     };
     let hash = attestation.eip712_signing_hash(&DOMAIN);
@@ -152,6 +155,7 @@ fn verify(
         &decoded.pcrs[0],
         &decoded.pcrs[1],
         &decoded.pcrs[2],
+        &decoded.user_data,
         decoded.timestamp,
         signer,
     )?;
