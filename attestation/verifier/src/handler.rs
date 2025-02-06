@@ -53,6 +53,8 @@ pub enum UserError {
     SignatureGeneration(#[source] alloy::signers::Error),
     #[error("invalid recovery id")]
     InvalidRecovery(#[source] TryFromIntError),
+    #[error("user data too big")]
+    UserDataTooBig,
 }
 
 impl From<UserError> for (StatusCode, String) {
@@ -64,6 +66,7 @@ impl From<UserError> for (StatusCode, String) {
                 AttestationVerification(_) => StatusCode::UNAUTHORIZED,
                 SignatureGeneration(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 InvalidRecovery(_) => StatusCode::UNAUTHORIZED,
+                UserDataTooBig => StatusCode::BAD_REQUEST,
             },
             format!("{:?}", value),
         )
@@ -104,15 +107,24 @@ sol! {
     }
 }
 
-fn compute_image_id(pcr0: &[u8], pcr1: &[u8], pcr2: &[u8], user_data: &[u8]) -> B256 {
+fn compute_image_id(
+    pcr0: &[u8],
+    pcr1: &[u8],
+    pcr2: &[u8],
+    user_data: &[u8],
+) -> Result<B256, UserError> {
+    if user_data.len() > 65535 {
+        return Err(UserError::UserDataTooBig);
+    }
+
     let mut hasher = Keccak256::new();
     hasher.update(pcr0);
     hasher.update(pcr1);
     hasher.update(pcr2);
-    hasher.update(user_data.len().to_le_bytes());
+    hasher.update((user_data.len() as u16).to_be_bytes());
     hasher.update(user_data);
 
-    hasher.finalize()
+    Ok(hasher.finalize())
 }
 
 fn compute_signature(
@@ -154,7 +166,7 @@ fn verify(
         &decoded.pcrs[1],
         &decoded.pcrs[2],
         &decoded.user_data,
-    );
+    )?;
     let signature = compute_signature(
         &decoded.public_key.as_ref(),
         image_id,
