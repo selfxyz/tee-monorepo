@@ -35,4 +35,5 @@ codegen-units = 1
 
 [dev-dependencies]
 http-body-util = "0.1.2"
+serde_json = "1.0.138"
 tower = "0.5.2"
