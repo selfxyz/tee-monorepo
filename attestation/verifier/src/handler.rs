@@ -37,7 +37,7 @@ struct HexAttestation {
 #[derive(Serialize, Deserialize)]
 pub struct VerifyAttestationResponse {
     pub signature: String,
-    pub secp256k1_public: String,
+    pub public_key: String,
     pub pcr0: String,
     pub pcr1: String,
     pub pcr2: String,
@@ -157,7 +157,7 @@ fn verify(
 
     Ok(VerifyAttestationResponse {
         signature: hex::encode(signature),
-        secp256k1_public: hex::encode(decoded.public_key),
+        public_key: hex::encode(decoded.public_key),
         pcr0: hex::encode(decoded.pcrs[0]),
         pcr1: hex::encode(decoded.pcrs[1]),
         pcr2: hex::encode(decoded.pcrs[2]),
