@@ -6,7 +6,6 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
-// use actix_web::{error, http::StatusCode, post, web, Responder};
 use ethers::types::U256;
 use oyster::attestation::{
     verify as verify_attestation, AttestationError, AttestationExpectations,

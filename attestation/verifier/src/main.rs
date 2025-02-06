@@ -2,7 +2,6 @@ mod handler;
 
 use std::fs;
 
-// use actix_web::{web, App, HttpServer};
 use anyhow::{Context, Result};
 use axum::{routing::post, serve, Router};
 use clap::Parser;
@@ -73,9 +72,6 @@ async fn main() -> Result<()> {
 // Update the sample attestations in the 'test/' directory before running tests for fresh timestamp
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    // use actix_web::{test, web, App};
-
     use axum::{
         http::{Method, Request, StatusCode},
         routing::post,
