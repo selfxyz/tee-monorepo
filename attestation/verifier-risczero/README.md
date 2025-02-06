@@ -41,14 +41,10 @@ It takes in a URL to an attestation server producing binary attestations.
 
 The journal contains bytes in the following order:
 - 8 byte timestamp in milliseconds from the attestation
-- 48 byte PCR0
-- 48 byte PCR1
-- 48 byte PCR2
 - 96 byte public key from the root certificate
 - 1 byte length of the public key from the attestation
 - N byte public key from the attestation
-- 2 byte length of the user data
-- N byte user data
+- 32 byte image id computed by hashing the PCRs and user data from the attestation
 
 ## Directory Structure
 
