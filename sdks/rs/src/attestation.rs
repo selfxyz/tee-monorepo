@@ -340,6 +340,7 @@ fn parse_user_data(
         ))?;
     let user_data = (match user_data {
         Value::Bytes(b) => Ok(b),
+        Value::Null => Ok(vec![]),
         _ => Err(AttestationError::ParseFailed(
             "user data decode failure".to_owned(),
         )),
