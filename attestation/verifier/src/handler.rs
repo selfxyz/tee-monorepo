@@ -2,7 +2,11 @@ use std::num::TryFromIntError;
 use std::time::{SystemTimeError, UNIX_EPOCH};
 use std::{error::Error, time::SystemTime};
 
-use actix_web::{error, http::StatusCode, post, web, Responder};
+use axum::body::Bytes;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::Json;
+// use actix_web::{error, http::StatusCode, post, web, Responder};
 use ethers::types::U256;
 use oyster::attestation::{
     verify as verify_attestation, AttestationError, AttestationExpectations,
@@ -50,22 +54,19 @@ pub enum UserError {
     InvalidSystemTime(#[source] SystemTimeError),
 }
 
-impl error::ResponseError for UserError {
-    fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
-        actix_web::HttpResponse::build(self.status_code())
-            .insert_header(actix_web::http::header::ContentType::plaintext())
-            .body(format!("{self:?}"))
-    }
-
-    fn status_code(&self) -> actix_web::http::StatusCode {
+impl From<UserError> for (StatusCode, String) {
+    fn from(value: UserError) -> Self {
         use UserError::*;
-        match self {
-            AttestationDecode(_) => StatusCode::BAD_REQUEST,
-            AttestationVerification(_) => StatusCode::UNAUTHORIZED,
-            MessageGeneration(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            InvalidRecovery(_) => StatusCode::UNAUTHORIZED,
-            InvalidSystemTime(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
+        (
+            match &value {
+                AttestationDecode(_) => StatusCode::BAD_REQUEST,
+                AttestationVerification(_) => StatusCode::UNAUTHORIZED,
+                MessageGeneration(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                InvalidRecovery(_) => StatusCode::UNAUTHORIZED,
+                InvalidSystemTime(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            },
+            format!("{:?}", value),
+        )
     }
 }
 
@@ -136,7 +137,7 @@ fn verify(
     attestation: Vec<u8>,
     secret: &secp256k1::SecretKey,
     public: &[u8; 64],
-) -> actix_web::Result<impl Responder, UserError> {
+) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
     let decoded = verify_attestation(
         attestation,
         AttestationExpectations {
@@ -174,7 +175,7 @@ fn verify(
         .map_err(UserError::InvalidRecovery)?;
     let recid = hex::encode([recid + 27]);
 
-    Ok(web::Json(VerifyAttestationResponse {
+    Ok(VerifyAttestationResponse {
         signature: sig + &recid,
         secp256k1_public: hex::encode(decoded.public_key),
         pcr0: hex::encode(decoded.pcrs[0]),
@@ -182,27 +183,26 @@ fn verify(
         pcr2: hex::encode(decoded.pcrs[2]),
         timestamp: decoded.timestamp,
         verifier_secp256k1_public: hex::encode(public),
-    }))
+    }
+    .into())
 }
 
-#[post("/verify/raw")]
 async fn verify_raw(
-    req: web::Bytes,
-    state: web::Data<AppState>,
-) -> actix_web::Result<impl Responder, UserError> {
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
     verify(
-        req.to_vec(),
+        body.to_vec(),
         &state.secp256k1_secret,
         &state.secp256k1_public,
     )
 }
 
-#[post("/verify/hex")]
 async fn verify_hex(
-    req: web::Bytes,
-    state: web::Data<AppState>,
-) -> actix_web::Result<impl Responder, UserError> {
-    let attestation = hex::decode(&req).map_err(UserError::AttestationDecode)?;
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
+    let attestation = hex::decode(&body).map_err(UserError::AttestationDecode)?;
 
     verify(
         attestation,
