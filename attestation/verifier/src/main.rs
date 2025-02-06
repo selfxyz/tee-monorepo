@@ -125,11 +125,12 @@ mod tests {
         let parsed: VerifyAttestationResponse =
             serde_json::from_slice(&body).expect("failed to parse response");
 
-        assert_eq!(parsed.signature, "80836a2534fadf0b1adef2135434207eeecfd360819907e925d469a8179eddad4ef1de22cae8398f84bc8df640feef08a5854c77982639c3a242da1c210f535c1c");
+        assert_eq!(parsed.signature, "0478cbd09731c8eaff0a24f0422d9546a365b4031004740a7871af5b2e02dc3834d15cda9be9df6c6e5055884371a049af0be82bafc316a798e12104413f8ca21b");
         assert_eq!(parsed.public_key, "57febcf9e7f5081d3d24182817df526a1c9c3df7e46b64613acd13f9aa53b81de888a8562ba7b4a0e42c48d24d7e444ffcba311ceddb5068eca2ea899379ab50");
         assert_eq!(parsed.pcr0, "5fec1b73727425848d725d68f4a062c634061a035067bd0b9a6dc73e25ed5013dfe7ccbf8a7e9857eceb0841c4cb6ae6");
         assert_eq!(parsed.pcr1, "bcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f");
         assert_eq!(parsed.pcr2, "ae41ca22df64a32d729667160a7f218e59e31586809e121ff2c446a36dc5354ba4e0f74dce737be3298cf82c364692e7");
+        assert_eq!(parsed.user_data, "");
         assert_eq!(
             parsed.verifier_secp256k1_public,
             hex::encode(secp256k1_public)
@@ -178,11 +179,12 @@ mod tests {
         let parsed: VerifyAttestationResponse =
             serde_json::from_slice(&body).expect("failed to parse response");
 
-        assert_eq!(parsed.signature, "3661e773c787950fecf0242250875cf900eee87269ef9320c1b42375a1cc2c4a210d540e2fa90ad37ec81b230b4fb88648ccb868998d9ed77d72c8a8c473a7001c");
+        assert_eq!(parsed.signature, "3f04df61582088f41938bb3a9555ec2e938dbf1631bd3af27350832ff2be9ff106d958eb72f1b25a2777498013cc8fd5f6ab526b50d9cc49f5761c467acb21a51c");
         assert_eq!(parsed.public_key, "57febcf9e7f5081d3d24182817df526a1c9c3df7e46b64613acd13f9aa53b81de888a8562ba7b4a0e42c48d24d7e444ffcba311ceddb5068eca2ea899379ab50");
         assert_eq!(parsed.pcr0, "5fec1b73727425848d725d68f4a062c634061a035067bd0b9a6dc73e25ed5013dfe7ccbf8a7e9857eceb0841c4cb6ae6");
         assert_eq!(parsed.pcr1, "bcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f");
         assert_eq!(parsed.pcr2, "ae41ca22df64a32d729667160a7f218e59e31586809e121ff2c446a36dc5354ba4e0f74dce737be3298cf82c364692e7");
+        assert_eq!(parsed.user_data, "");
         assert_eq!(
             parsed.verifier_secp256k1_public,
             hex::encode(secp256k1_public)
