@@ -2804,7 +2804,6 @@ dependencies = [
  "axum",
  "clap",
  "hex",
- "hex-literal",
  "http-body-util",
  "oyster-sdk",
  "serde",

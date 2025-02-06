@@ -18,7 +18,6 @@ anyhow = "1.0.93"
 axum = "0.8.1"
 clap = { version = "4.5.21", features = ["derive"] }
 hex = "0.4.3"
-hex-literal = "0.4.1"
 oyster-sdk = "0.15.1"
 serde = { version = "1.0.215", features = ["derive"] }
 thiserror = "2.0.3"
