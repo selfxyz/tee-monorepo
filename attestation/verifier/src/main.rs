@@ -2,6 +2,7 @@ mod handler;
 
 use std::fs;
 
+use alloy::signers::local::PrivateKeySigner;
 use anyhow::{Context, Result};
 use axum::{routing::post, serve, Router};
 use clap::Parser;
@@ -37,7 +38,7 @@ async fn main() -> Result<()> {
             cli.secp256k1_secret
         )
     })?;
-    let secp256k1_secret = secp256k1::SecretKey::from_slice(&secp256k1_secret)
+    let secp256k1_secret = PrivateKeySigner::from_slice(&secp256k1_secret)
         .context("unable to decode secp256k1_secret key from slice")?;
 
     let secp256k1_public = fs::read(cli.secp256k1_public.clone()).with_context(|| {
@@ -72,6 +73,7 @@ async fn main() -> Result<()> {
 // Update the sample attestations in the 'test/' directory before running tests for fresh timestamp
 #[cfg(test)]
 mod tests {
+    use alloy::signers::local::PrivateKeySigner;
     use axum::{
         http::{Method, Request, StatusCode},
         routing::post,
@@ -87,7 +89,7 @@ mod tests {
         let secp256k1_secret = std::fs::read("./src/test/secp256k1.sec").unwrap();
         let secp256k1_public = std::fs::read("./src/test/secp256k1.pub").unwrap();
 
-        let secp256k1_secret = secp256k1::SecretKey::from_slice(&secp256k1_secret).unwrap();
+        let secp256k1_secret = PrivateKeySigner::from_slice(&secp256k1_secret).unwrap();
         let secp256k1_public: [u8; 64] = secp256k1_public.try_into().unwrap();
 
         let attestation = std::fs::read("./src/test/attestation.bin").unwrap();
@@ -140,7 +142,7 @@ mod tests {
         let secp256k1_secret = std::fs::read("./src/test/secp256k1.sec").unwrap();
         let secp256k1_public = std::fs::read("./src/test/secp256k1.pub").unwrap();
 
-        let secp256k1_secret = secp256k1::SecretKey::from_slice(&secp256k1_secret).unwrap();
+        let secp256k1_secret = PrivateKeySigner::from_slice(&secp256k1_secret).unwrap();
         let secp256k1_public: [u8; 64] = secp256k1_public.try_into().unwrap();
 
         let attestation = std::fs::read("./src/test/attestation.hex").unwrap();
