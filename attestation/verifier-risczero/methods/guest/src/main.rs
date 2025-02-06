@@ -7,6 +7,7 @@ use p384::ecdsa::signature::Verifier;
 use p384::ecdsa::Signature;
 use p384::ecdsa::VerifyingKey;
 use sha2::Digest;
+use sha2::Sha256;
 use x509_cert::der::Decode;
 
 // Design notes:
@@ -31,6 +32,9 @@ fn main() {
 }
 
 fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
+    // hasher for accumulating an image id
+    let mut image_id_hasher = Sha256::new();
+
     // assert initial fields
     assert_eq!(
         attestation[0..8],
@@ -85,7 +89,7 @@ fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
     // assert pcrs key
     assert_eq!(attestation[offset + 33], 0x64); // text of size 4
     assert_eq!(&attestation[offset + 34..offset + 38], b"pcrs");
-    // commit pcrs 0, 1 and 2
+    // accumulate pcrs 0, 1 and 2
     assert_eq!(attestation[offset + 38], 0xb0); // pcrs is a map of size 16
 
     offset += 39;
@@ -98,17 +102,17 @@ fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
         ]
     );
     println!("PCR0: {:?}", &attestation[offset + 3..offset + 51]);
-    commit_slice(&attestation[offset + 3..offset + 51]);
+    image_id_hasher.update(&attestation[offset + 3..offset + 51]);
 
     offset += 51;
     assert_eq!(attestation[offset..offset + 3], [0x01, 0x58, 0x30]);
     println!("PCR1: {:?}", &attestation[offset + 3..offset + 51]);
-    commit_slice(&attestation[offset + 3..offset + 51]);
+    image_id_hasher.update(&attestation[offset + 3..offset + 51]);
 
     offset += 51;
     assert_eq!(attestation[offset..offset + 3], [0x02, 0x58, 0x30]);
     println!("PCR2: {:?}", &attestation[offset + 3..offset + 51]);
-    commit_slice(&attestation[offset + 3..offset + 51]);
+    image_id_hasher.update(&attestation[offset + 3..offset + 51]);
 
     // skip rest of the pcrs, 3 to 15
     offset += 51;
@@ -378,9 +382,12 @@ fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
         (size, &attestation[offset + 13..offset + 13 + size as usize])
     };
     println!("User data: {} bytes: {:?}", user_data_size, user_data);
-    // commit 2 byte length, then data
-    commit_slice(&user_data_size.to_be_bytes());
-    commit_slice(user_data);
+    // accumulate 2 byte length, then data
+    image_id_hasher.update(&user_data_size.to_be_bytes());
+    image_id_hasher.update(user_data);
+
+    // commit image id
+    commit_slice(&image_id_hasher.finalize());
 
     // prepare COSE verification hash
     let mut hasher = sha2::Sha384::new();
