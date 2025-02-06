@@ -34,4 +34,5 @@ panic = "abort"
 codegen-units = 1
 
 [dev-dependencies]
+http-body-util = "0.1.2"
 tower = "0.5.2"
