@@ -1,6 +1,5 @@
+use std::error::Error;
 use std::num::TryFromIntError;
-use std::time::{SystemTimeError, UNIX_EPOCH};
-use std::{error::Error, time::SystemTime};
 
 use axum::body::Bytes;
 use axum::extract::State;
@@ -50,8 +49,6 @@ pub enum UserError {
     MessageGeneration(#[source] secp256k1::Error),
     #[error("invalid recovery id")]
     InvalidRecovery(#[source] TryFromIntError),
-    #[error("system time error, clocks might be incorrect")]
-    InvalidSystemTime(#[source] SystemTimeError),
 }
 
 impl From<UserError> for (StatusCode, String) {
@@ -63,7 +60,6 @@ impl From<UserError> for (StatusCode, String) {
                 AttestationVerification(_) => StatusCode::UNAUTHORIZED,
                 MessageGeneration(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 InvalidRecovery(_) => StatusCode::UNAUTHORIZED,
-                InvalidSystemTime(_) => StatusCode::INTERNAL_SERVER_ERROR,
             },
             format!("{:?}", value),
         )
