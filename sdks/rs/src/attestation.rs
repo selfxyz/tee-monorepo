@@ -90,7 +90,8 @@ pub fn verify(
     }
 
     // verify signature and cert chain
-    result.root_public_key = verify_root_of_trust(&mut attestation_doc, &cosesign1)?;
+    result.root_public_key =
+        verify_root_of_trust(&mut attestation_doc, &cosesign1, result.timestamp)?;
 
     // check root public key if exists
     if let Some(root_public_key) = expectations.root_public_key {
@@ -195,6 +196,7 @@ fn parse_pcrs(
 fn verify_root_of_trust(
     attestation_doc: &mut BTreeMap<Value, Value>,
     cosesign1: &CoseSign1,
+    timestamp: usize,
 ) -> Result<Box<[u8]>, AttestationError> {
     // verify attestation doc signature
     let enclave_certificate = attestation_doc
@@ -235,12 +237,16 @@ fn verify_root_of_trust(
     })?;
     cabundle.reverse();
 
-    let root_public_key = verify_cert_chain(enclave_certificate, &cabundle)?;
+    let root_public_key = verify_cert_chain(enclave_certificate, &cabundle, timestamp)?;
 
     Ok(root_public_key)
 }
 
-fn verify_cert_chain(cert: X509, cabundle: &[Value]) -> Result<Box<[u8]>, AttestationError> {
+fn verify_cert_chain(
+    cert: X509,
+    cabundle: &[Value],
+    timestamp: usize,
+) -> Result<Box<[u8]>, AttestationError> {
     let certs = get_all_certs(cert, cabundle)?;
 
     for i in 0..(certs.len() - 1) {
@@ -258,8 +264,8 @@ fn verify_cert_chain(cert: X509, cabundle: &[Value]) -> Result<Box<[u8]>, Attest
                 "issuer or subject {i}".into(),
             ));
         }
-        let current_time =
-            Asn1Time::days_from_now(0).map_err(|e| AttestationError::ParseFailed(e.to_string()))?;
+        let current_time = Asn1Time::from_unix(timestamp as i64 / 1000)
+            .map_err(|e| AttestationError::ParseFailed(e.to_string()))?;
         if certs[i].not_after() < current_time || certs[i].not_before() > current_time {
             return Err(AttestationError::VerifyFailed("timestamp {i}".into()));
         }
@@ -334,6 +340,7 @@ fn parse_user_data(
         ))?;
     let user_data = (match user_data {
         Value::Bytes(b) => Ok(b),
+        Value::Null => Ok(vec![]),
         _ => Err(AttestationError::ParseFailed(
             "user data decode failure".to_owned(),
         )),
@@ -348,4 +355,65 @@ pub async fn get(endpoint: Uri) -> Result<Box<[u8]>, AttestationError> {
     let body = res.collect().await?.to_bytes();
 
     Ok(body.to_vec().into_boxed_slice())
+}
+
+#[cfg(test)]
+mod tests {
+    use hex_literal::hex;
+
+    use crate::attestation::AttestationExpectations;
+
+    use super::verify;
+
+    #[test]
+    fn test_none_specified() {
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/aws.bin")
+                .unwrap();
+
+        let decoded = verify(&attestation, Default::default()).unwrap();
+
+        assert_eq!(decoded.timestamp, 0x00000193bef3f3b0);
+        assert_eq!(decoded.pcrs[0], hex!("189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6"));
+        assert_eq!(decoded.pcrs[1], hex!("5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16"));
+        assert_eq!(decoded.pcrs[2], hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"));
+        assert_eq!(decoded.user_data, [0u8; 0].into());
+        assert_eq!(decoded.public_key.as_ref(), hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"));
+        assert_eq!(decoded.root_public_key.as_ref(), hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4"));
+    }
+
+    #[test]
+    fn test_all_specified() {
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/aws.bin")
+                .unwrap();
+
+        let decoded = verify(
+            &attestation,
+            AttestationExpectations {
+                timestamp: Some(0x00000193bef3f3b0),
+                age: Some((
+                    300000,
+                    0x00000193bef3f3b0 + 300000,
+                )),
+                pcrs: Some([
+                    hex!("189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6"),
+                    hex!("5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16"),
+                    hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"),
+                ]),
+                public_key: Some(&hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb")),
+                user_data: Some(&[0; 0]),
+                root_public_key: Some(&hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4")),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(decoded.timestamp, 0x00000193bef3f3b0);
+        assert_eq!(decoded.pcrs[0], hex!("189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6"));
+        assert_eq!(decoded.pcrs[1], hex!("5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16"));
+        assert_eq!(decoded.pcrs[2], hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"));
+        assert_eq!(decoded.user_data, [0u8; 0].into());
+        assert_eq!(decoded.public_key.as_ref(), hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"));
+        assert_eq!(decoded.root_public_key.as_ref(), hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4"));
+    }
 }
