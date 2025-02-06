@@ -12,6 +12,10 @@ path = "src/decoder.rs"
 name = "init-params-encoder"
 path = "src/encoder.rs"
 
+[[bin]]
+name = "init-params-encoder-contract"
+path = "src/encoder-contract.rs"
+
 [dependencies]
 anyhow = "1.0.95"
 base64 = "0.22.1"
