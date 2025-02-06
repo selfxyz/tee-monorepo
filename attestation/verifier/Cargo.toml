@@ -15,6 +15,7 @@ path = "src/cli_attestation_verifier.rs"
 [dependencies]
 actix-web = "4.9.0"
 anyhow = "1.0.93"
+axum = "0.8.1"
 clap = { version = "4.5.21", features = ["derive"] }
 ethers = "2.0.14"
 hex = "0.4.3"
