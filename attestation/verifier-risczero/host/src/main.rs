@@ -49,7 +49,13 @@ fn main() {
 
     println!(
         "Seal: {}",
-        hex::encode(&receipt.inner.groth16().unwrap().seal)
+        hex::encode(
+            receipt
+                .inner
+                .groth16()
+                .map(|x| x.seal.as_slice())
+                .unwrap_or(b"probably dev mode?")
+        )
     );
     println!("Journal: {}", hex::encode(&receipt.journal.bytes));
 }
