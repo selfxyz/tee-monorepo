@@ -14,6 +14,7 @@ use oyster::attestation::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[derive(Clone)]
 pub struct AppState {
     pub secp256k1_secret: secp256k1::SecretKey,
     pub secp256k1_public: [u8; 64],
@@ -30,7 +31,7 @@ struct HexAttestation {
 }
 
 #[derive(Serialize, Deserialize)]
-struct VerifyAttestationResponse {
+pub struct VerifyAttestationResponse {
     signature: String,
     secp256k1_public: String,
     pcr0: String,
@@ -187,7 +188,7 @@ fn verify(
     .into())
 }
 
-async fn verify_raw(
+pub async fn verify_raw(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
@@ -198,7 +199,7 @@ async fn verify_raw(
     )
 }
 
-async fn verify_hex(
+pub async fn verify_hex(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {

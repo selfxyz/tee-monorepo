@@ -2,9 +2,11 @@ mod handler;
 
 use std::fs;
 
-use actix_web::{web, App, HttpServer};
+// use actix_web::{web, App, HttpServer};
 use anyhow::{Context, Result};
+use axum::{routing::post, serve, Router};
 use clap::Parser;
+use handler::{verify_hex, verify_raw, AppState};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -26,7 +28,7 @@ struct Cli {
     port: u16,
 }
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -50,21 +52,20 @@ async fn main() -> Result<()> {
         .try_into()
         .context("invalid public key length")?;
 
-    let server = HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(handler::AppState {
-                secp256k1_secret,
-                secp256k1_public,
-            }))
-            .service(handler::verify_raw)
-            .service(handler::verify_hex)
-    })
-    .bind((cli.ip.clone(), cli.port))
-    .context("unable to start the server")?
-    .run();
+    let app = Router::new()
+        .route("/verify/raw", post(verify_raw))
+        .route("/verify/hex", post(verify_hex))
+        .with_state(AppState {
+            secp256k1_secret,
+            secp256k1_public,
+        });
+    let listener = tokio::net::TcpListener::bind((cli.ip.as_str(), cli.port))
+        .await
+        .context("failed to bind listener")?;
 
     println!("api server running at {}:{}", cli.ip, cli.port);
-    server.await.context("error while running server")?;
 
-    Ok(())
+    serve(listener, app)
+        .await
+        .context("error while running server")
 }
