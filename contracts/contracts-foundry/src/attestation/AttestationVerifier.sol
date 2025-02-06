@@ -33,42 +33,24 @@ contract AttestationVerifier is
 
     //-------------------------------- Declarations end --------------------------------//
 
-    constructor() {
-        _disableInitializers();
-    }
+    //-------------------------------- Constructor start --------------------------------//
 
-    //-------------------------------- Initializer start --------------------------------//
-
-    error AttestationVerifierNoImageProvided();
-    error AttestationVerifierInitLengthMismatch();
-    error AttestationVerifierInvalidAdmin();
-
-    function initialize(
-        EnclaveImage[] memory images,
-        bytes[] memory enclaveKeys,
-        address _admin
-    ) external initializer {
-        // The images and their enclave keys are whitelisted without verification that enclave keys are created within
-        // the enclave. This is to initialize chain of trust and will be replaced with a more robust solution.
-        if (!(images.length != 0)) revert AttestationVerifierNoImageProvided();
-        if (!(images.length == enclaveKeys.length))
-            revert AttestationVerifierInitLengthMismatch();
-        if (!(_admin != address(0))) revert AttestationVerifierInvalidAdmin();
-
-        __Context_init_unchained();
-        __ERC165_init_unchained();
-        __AccessControl_init_unchained();
-        __UUPSUpgradeable_init_unchained();
-
+    constructor(
+        address _admin,
+        IRiscZeroVerifier _verifier,
+        bytes32 _imageId,
+        bytes memory _rootKey,
+        uint256 _maxAge,
+        EnclaveImage memory _enclaveImage
+    ) {
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-        for (uint i = 0; i < enclaveKeys.length; i++) {
-            (bytes32 imageId, ) = _whitelistEnclaveImage(images[i]);
-            _whitelistEnclaveKey(enclaveKeys[i], imageId);
-        }
+        // TODO: set risczero params
+
+        _whitelistEnclaveImage(_enclaveImage);
     }
 
-    //-------------------------------- Initializer start --------------------------------//
+    //-------------------------------- Constructor end --------------------------------//
 
     //-------------------------------- Admin methods start --------------------------------//
 
