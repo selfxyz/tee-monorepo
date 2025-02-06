@@ -8,6 +8,7 @@ interface IAttestationVerifier {
         bytes PCR0;
         bytes PCR1;
         bytes PCR2;
+        bytes userData;
         uint256 timestampInMilliseconds;
     }
 
@@ -15,6 +16,4 @@ interface IAttestationVerifier {
         bytes memory signature,
         Attestation memory attestation
     ) external view;
-
-    function verify(bytes memory data) external view;
 }
