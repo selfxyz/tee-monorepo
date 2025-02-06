@@ -17,14 +17,13 @@ contract AttestationVerifier is
         bytes PCR0;
         bytes PCR1;
         bytes PCR2;
+        bytes userData;
     }
 
     // ImageId -> image details
     mapping(bytes32 => EnclaveImage) public whitelistedImages;
     // enclaveAddress -> ImageId
     mapping(address => bytes32) public verifiedKeys;
-
-    uint256[48] private __gap_1;
 
     //-------------------------------- Declarations end --------------------------------//
 
