@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use ethers::types::U256;
 use oyster::attestation::{
-    verify as verify_attestation, AttestationError, AttestationExpectations,
+    verify as verify_attestation, AttestationError, AttestationExpectations, AWS_ROOT_KEY,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -16,7 +16,6 @@ use thiserror::Error;
 pub struct AppState {
     pub secp256k1_secret: secp256k1::SecretKey,
     pub secp256k1_public: [u8; 64],
-    pub root_public_key: Box<[u8]>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -134,12 +133,11 @@ fn verify(
     attestation: &[u8],
     secret: &secp256k1::SecretKey,
     public: &[u8; 64],
-    root_public: &[u8],
 ) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
     let decoded = verify_attestation(
         attestation,
         AttestationExpectations {
-            root_public_key: Some(root_public),
+            root_public_key: Some(&AWS_ROOT_KEY),
             ..Default::default()
         },
     )
@@ -187,7 +185,6 @@ pub async fn verify_raw(
         &body.to_vec(),
         &state.secp256k1_secret,
         &state.secp256k1_public,
-        &state.root_public_key,
     )
 }
 
@@ -201,6 +198,5 @@ pub async fn verify_hex(
         &attestation,
         &state.secp256k1_secret,
         &state.secp256k1_public,
-        &state.root_public_key,
     )
 }

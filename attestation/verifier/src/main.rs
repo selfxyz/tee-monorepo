@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use axum::{routing::post, serve, Router};
 use clap::Parser;
 use handler::{verify_hex, verify_raw, AppState};
-use oyster::attestation::AWS_ROOT_KEY;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -58,7 +57,6 @@ async fn main() -> Result<()> {
         .with_state(AppState {
             secp256k1_secret,
             secp256k1_public,
-            root_public_key: AWS_ROOT_KEY.into(),
         });
     let listener = tokio::net::TcpListener::bind((cli.ip.as_str(), cli.port))
         .await
@@ -80,7 +78,6 @@ mod tests {
         Router,
     };
     use http_body_util::{BodyExt, Full};
-    use oyster::attestation::AWS_ROOT_KEY;
     use tower::ServiceExt;
 
     use crate::handler::{verify_hex, verify_raw, AppState, VerifyAttestationResponse};
@@ -101,7 +98,6 @@ mod tests {
             .with_state(AppState {
                 secp256k1_secret,
                 secp256k1_public,
-                root_public_key: AWS_ROOT_KEY.into(),
             });
 
         let response = app
@@ -155,7 +151,6 @@ mod tests {
             .with_state(AppState {
                 secp256k1_secret,
                 secp256k1_public,
-                root_public_key: AWS_ROOT_KEY.into(),
             });
 
         let response = app
