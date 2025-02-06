@@ -26,7 +26,7 @@ fn main() -> Result<()> {
         hex::decode(attestation).context("Failed to decode attestation hex string")?;
 
     let decoded = verify_attestation(
-        attestation,
+        &attestation,
         AttestationExpectations {
             age: Some((
                 300000,
