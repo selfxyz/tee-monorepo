@@ -80,6 +80,7 @@ mod tests {
         Router,
     };
     use http_body_util::{BodyExt, Full};
+    use oyster::attestation::AWS_ROOT_KEY;
     use tower::ServiceExt;
 
     use crate::handler::{verify_hex, verify_raw, AppState, VerifyAttestationResponse};
@@ -100,6 +101,7 @@ mod tests {
             .with_state(AppState {
                 secp256k1_secret,
                 secp256k1_public,
+                root_public_key: AWS_ROOT_KEY.into(),
             });
 
         let response = app
@@ -153,6 +155,7 @@ mod tests {
             .with_state(AppState {
                 secp256k1_secret,
                 secp256k1_public,
+                root_public_key: AWS_ROOT_KEY.into(),
             });
 
         let response = app
