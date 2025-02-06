@@ -11,11 +11,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/IAttestationVerifier.sol";
 
 contract AttestationVerifier is
-    Initializable, // initializer
-    ContextUpgradeable, // _msgSender, _msgData
-    ERC165Upgradeable, // supportsInterface
     AccessControlUpgradeable, // RBAC
-    UUPSUpgradeable, // public upgrade
     IAttestationVerifier // interface
 {
     // in case we add more contracts in the inheritance chain
