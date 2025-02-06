@@ -30,7 +30,7 @@ contract AttestationVerifier is
     }
 
     // ImageId -> image details
-    mapping(bytes32 => EnclaveImage) public whitelistedImages;
+    mapping(bytes32 => bool) public whitelistedImages;
     // enclaveAddress -> ImageId
     mapping(address => bytes32) public verifiedKeys;
 
@@ -104,12 +104,6 @@ contract AttestationVerifier is
 
         bytes32 hash = keccak256(pubKey);
         return address(uint160(uint256(hash)));
-    }
-
-    function pubKeyToAddress(
-        bytes memory pubKey
-    ) public pure returns (address) {
-        return _pubKeyToAddress(pubKey);
     }
 
     function _whitelistEnclaveImage(
