@@ -2992,6 +2992,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.3",
  "tokio",
+ "tower",
 ]
 
 [[package]]
