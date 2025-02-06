@@ -43,7 +43,7 @@ pub struct VerifyAttestationResponse {
     pub pcr2: String,
     pub user_data: String,
     pub timestamp: usize,
-    pub verifier_secp256k1_public: String,
+    pub verifier_public_key: String,
 }
 
 #[derive(Error)]
@@ -168,7 +168,7 @@ fn verify(
         pcr2: hex::encode(decoded.pcrs[2]),
         user_data: hex::encode(decoded.user_data),
         timestamp: decoded.timestamp,
-        verifier_secp256k1_public: hex::encode(public),
+        verifier_public_key: hex::encode(public),
     }
     .into())
 }

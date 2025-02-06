@@ -131,10 +131,7 @@ mod tests {
         assert_eq!(parsed.pcr1, "bcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f");
         assert_eq!(parsed.pcr2, "ae41ca22df64a32d729667160a7f218e59e31586809e121ff2c446a36dc5354ba4e0f74dce737be3298cf82c364692e7");
         assert_eq!(parsed.user_data, "");
-        assert_eq!(
-            parsed.verifier_secp256k1_public,
-            hex::encode(secp256k1_public)
-        );
+        assert_eq!(parsed.verifier_public_key, hex::encode(secp256k1_public));
         assert_eq!(parsed.timestamp, 1723012689640);
     }
 
@@ -185,10 +182,7 @@ mod tests {
         assert_eq!(parsed.pcr1, "bcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f");
         assert_eq!(parsed.pcr2, "ae41ca22df64a32d729667160a7f218e59e31586809e121ff2c446a36dc5354ba4e0f74dce737be3298cf82c364692e7");
         assert_eq!(parsed.user_data, "");
-        assert_eq!(
-            parsed.verifier_secp256k1_public,
-            hex::encode(secp256k1_public)
-        );
+        assert_eq!(parsed.verifier_public_key, hex::encode(secp256k1_public));
         assert_eq!(parsed.timestamp, 1723012992231);
     }
 }
