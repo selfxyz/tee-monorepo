@@ -70,7 +70,6 @@ async fn main() -> Result<()> {
         .context("error while running server")
 }
 
-// Update the sample attestations in the 'test/' directory before running tests for fresh timestamp
 #[cfg(test)]
 mod tests {
     use alloy::signers::local::PrivateKeySigner;
