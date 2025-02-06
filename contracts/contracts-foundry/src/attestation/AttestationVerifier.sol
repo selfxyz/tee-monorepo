@@ -11,6 +11,23 @@ contract AttestationVerifier is
     AccessControl, // RBAC
     IAttestationVerifier // interface
 {
+    //-------------------------------- Declarations start --------------------------------//
+
+    struct EnclaveImage {
+        bytes PCR0;
+        bytes PCR1;
+        bytes PCR2;
+    }
+
+    // ImageId -> image details
+    mapping(bytes32 => EnclaveImage) public whitelistedImages;
+    // enclaveAddress -> ImageId
+    mapping(address => bytes32) public verifiedKeys;
+
+    uint256[48] private __gap_1;
+
+    //-------------------------------- Declarations end --------------------------------//
+
     constructor() {
         _disableInitializers();
     }
@@ -47,23 +64,6 @@ contract AttestationVerifier is
     }
 
     //-------------------------------- Initializer start --------------------------------//
-
-    //-------------------------------- Declarations start --------------------------------//
-
-    struct EnclaveImage {
-        bytes PCR0;
-        bytes PCR1;
-        bytes PCR2;
-    }
-
-    // ImageId -> image details
-    mapping(bytes32 => EnclaveImage) public whitelistedImages;
-    // enclaveAddress -> ImageId
-    mapping(address => bytes32) public verifiedKeys;
-
-    uint256[48] private __gap_1;
-
-    //-------------------------------- Declarations end --------------------------------//
 
     //-------------------------------- Admin methods start --------------------------------//
 
