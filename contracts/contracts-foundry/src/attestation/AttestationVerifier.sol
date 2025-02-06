@@ -54,19 +54,18 @@ contract AttestationVerifier is
         bytes32 indexed imageId,
         bytes PCR0,
         bytes PCR1,
-        bytes PCR2
+        bytes PCR2,
+        bytes userData
     );
     event EnclaveImageRevoked(bytes32 indexed imageId);
     event EnclaveKeyWhitelisted(
         address indexed enclaveAddress,
-        bytes32 indexed imageId,
-        bytes enclavePubKey
+        bytes32 indexed imageId
     );
     event EnclaveKeyRevoked(address indexed enclaveAddress);
     event EnclaveKeyVerified(
         address indexed enclaveAddress,
-        bytes32 indexed imageId,
-        bytes enclavePubKey
+        bytes32 indexed imageId
     );
 
     //-------------------------------- Events end --------------------------------//
