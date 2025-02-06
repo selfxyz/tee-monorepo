@@ -11,37 +11,9 @@ contract AttestationVerifier is
     AccessControl, // RBAC
     IAttestationVerifier // interface
 {
-    // in case we add more contracts in the inheritance chain
-    uint256[500] private __gap_0;
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    // disable all initializers and reinitializers
-    // safeguard against takeover of the logic contract
     constructor() {
         _disableInitializers();
     }
-
-    //-------------------------------- Overrides start --------------------------------//
-
-    error AttestationVerifierCannotRemoveAllAdmins();
-
-    function supportsInterface(
-        bytes4 interfaceId
-    )
-        public
-        view
-        virtual
-        override(ERC165Upgradeable, AccessControlUpgradeable)
-        returns (bool)
-    {
-        return super.supportsInterface(interfaceId);
-    }
-
-    function _authorizeUpgrade(
-        address /*account*/
-    ) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
-
-    //-------------------------------- Overrides end --------------------------------//
 
     //-------------------------------- Initializer start --------------------------------//
 
@@ -324,14 +296,6 @@ contract AttestationVerifier is
         bytes memory signature,
         Attestation memory attestation
     ) external view {
-        _verify(signature, attestation);
-    }
-
-    function verify(bytes memory data) external view {
-        (bytes memory signature, Attestation memory attestation) = abi.decode(
-            data,
-            (bytes, Attestation)
-        );
         _verify(signature, attestation);
     }
 
