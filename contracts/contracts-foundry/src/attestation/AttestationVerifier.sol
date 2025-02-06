@@ -2,10 +2,10 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./interfaces/IAttestationVerifier.sol";
+import "../../lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import "../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
+
+import "./IAttestationVerifier.sol";
 
 contract AttestationVerifier is
     AccessControl, // RBAC
