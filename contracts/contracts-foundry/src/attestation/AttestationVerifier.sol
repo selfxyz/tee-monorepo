@@ -14,6 +14,9 @@ contract AttestationVerifier is
 {
     //-------------------------------- Declarations start --------------------------------//
 
+    bytes32 public constant APPROVER_ROLE = keccak256("APPROVER");
+    bytes32 public constant REVOKER_ROLE = keccak256("REVOKER");
+
     IRiscZeroVerifier public verifier;
     bytes32 public imageId;
     bytes public rootKey;
@@ -37,6 +40,8 @@ contract AttestationVerifier is
 
     constructor(
         address _admin,
+        address _approver,
+        address _revoker,
         IRiscZeroVerifier _verifier,
         bytes32 _imageId,
         bytes memory _rootKey,
@@ -44,6 +49,8 @@ contract AttestationVerifier is
         EnclaveImage memory _enclaveImage
     ) {
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(APPROVER_ROLE, _approver);
+        _grantRole(REVOKER_ROLE, _revoker);
 
         // TODO: set risczero params
 
