@@ -2697,7 +2697,6 @@ dependencies = [
  "hex",
  "hex-literal",
  "http-body-util",
- "libsodium-sys-stable",
  "oyster-sdk",
  "secp256k1",
  "serde",
