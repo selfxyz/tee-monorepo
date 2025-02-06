@@ -35,29 +35,31 @@
   setup = ./. + "/setup.sh";
   supervisorConf = ./. + "/supervisord.conf";
   app = pkgs.runCommand "app" {} ''
-		echo Preparing the app folder
-		pwd
-		mkdir -p $out
-		mkdir -p $out/app
-		mkdir -p $out/etc
-    mkdir -p $out/app/docker-images
-		cp ${supervisord'} $out/app/supervisord
-		cp ${keygenX25519} $out/app/keygen-x25519
-		cp ${itvroProxy} $out/app/ip-to-vsock-raw-outgoing
-		cp ${vtiriProxy} $out/app/vsock-to-ip-raw-incoming
-		cp ${attestationServer} $out/app/attestation-server
-		cp ${dnsproxy'} $out/app/dnsproxy
-		cp ${vet'} $out/app/vet
-		cp ${keygenSecp256k1} $out/app/keygen-secp256k1
-		cp ${deriveServer} $out/app/kms-derive-server
-		cp ${initParamsDecoder} $out/app/init-params-decoder
-		cp ${setup} $out/app/setup.sh
-		chmod +x $out/app/*
-		cp ${supervisorConf} $out/etc/supervisord.conf
-		cp ${compose} $out/app/docker-compose.yml
-    ${if builtins.length dockerImages == 0 
+    echo Preparing the app folder
+    pwd
+    mkdir -p $out
+    mkdir -p $out/app
+    mkdir -p $out/etc
+      mkdir -p $out/app/docker-images
+    cp ${supervisord'} $out/app/supervisord
+    cp ${keygenX25519} $out/app/keygen-x25519
+    cp ${itvroProxy} $out/app/ip-to-vsock-raw-outgoing
+    cp ${vtiriProxy} $out/app/vsock-to-ip-raw-incoming
+    cp ${attestationServer} $out/app/attestation-server
+    cp ${dnsproxy'} $out/app/dnsproxy
+    cp ${vet'} $out/app/vet
+    cp ${keygenSecp256k1} $out/app/keygen-secp256k1
+    cp ${deriveServer} $out/app/kms-derive-server
+    cp ${initParamsDecoder} $out/app/init-params-decoder
+    cp ${setup} $out/app/setup.sh
+    chmod +x $out/app/*
+    cp ${supervisorConf} $out/etc/supervisord.conf
+    cp ${compose} $out/app/docker-compose.yml
+      ${
+      if builtins.length dockerImages == 0
       then "# No docker images provided"
-      else builtins.concatStringsSep "\n" (map (img: "cp ${img} $out/app/docker-images/") dockerImages)}
+      else builtins.concatStringsSep "\n" (map (img: "cp ${img} $out/app/docker-images/") dockerImages)
+    }
   '';
   # kinda hacky, my nix-fu is not great, figure out a better way
   initPerms = pkgs.runCommand "initPerms" {} ''
