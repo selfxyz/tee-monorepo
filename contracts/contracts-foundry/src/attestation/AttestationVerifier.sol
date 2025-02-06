@@ -36,6 +36,41 @@ contract AttestationVerifier is
 
     //-------------------------------- Declarations end --------------------------------//
 
+    //-------------------------------- Errors start --------------------------------//
+
+    error AttestationVerifierPubkeyLengthInvalid();
+    error AttestationVerifierPCRsInvalid();
+
+    error AttestationVerifierImageNotWhitelisted();
+    error AttestationVerifierKeyNotVerified();
+
+    error AttestationVerifierAttestationTooOld();
+
+    //-------------------------------- Errors end --------------------------------//
+
+    //-------------------------------- Events start --------------------------------//
+
+    event EnclaveImageWhitelisted(
+        bytes32 indexed imageId,
+        bytes PCR0,
+        bytes PCR1,
+        bytes PCR2
+    );
+    event EnclaveImageRevoked(bytes32 indexed imageId);
+    event EnclaveKeyWhitelisted(
+        address indexed enclaveAddress,
+        bytes32 indexed imageId,
+        bytes enclavePubKey
+    );
+    event EnclaveKeyRevoked(address indexed enclaveAddress);
+    event EnclaveKeyVerified(
+        address indexed enclaveAddress,
+        bytes32 indexed imageId,
+        bytes enclavePubKey
+    );
+
+    //-------------------------------- Events end --------------------------------//
+
     //-------------------------------- Constructor start --------------------------------//
 
     constructor(
@@ -60,31 +95,6 @@ contract AttestationVerifier is
     //-------------------------------- Constructor end --------------------------------//
 
     //-------------------------------- Admin methods start --------------------------------//
-
-    error AttestationVerifierPubkeyLengthInvalid();
-    error AttestationVerifierPCRsInvalid();
-
-    error AttestationVerifierImageNotWhitelisted();
-    error AttestationVerifierKeyNotVerified();
-
-    event EnclaveImageWhitelisted(
-        bytes32 indexed imageId,
-        bytes PCR0,
-        bytes PCR1,
-        bytes PCR2
-    );
-    event EnclaveImageRevoked(bytes32 indexed imageId);
-    event EnclaveKeyWhitelisted(
-        address indexed enclaveAddress,
-        bytes32 indexed imageId,
-        bytes enclavePubKey
-    );
-    event EnclaveKeyRevoked(address indexed enclaveAddress);
-    event EnclaveKeyVerified(
-        address indexed enclaveAddress,
-        bytes32 indexed imageId,
-        bytes enclavePubKey
-    );
 
     function _pubKeyToAddress(
         bytes memory pubKey
@@ -198,8 +208,6 @@ contract AttestationVerifier is
     //-------------------------------- Open methods start -------------------------------//
 
     uint256 public constant MAX_AGE = 300;
-
-    error AttestationVerifierAttestationTooOld();
 
     function _verifyEnclaveKey(
         bytes memory signature,
