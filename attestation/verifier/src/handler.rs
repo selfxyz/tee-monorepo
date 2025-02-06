@@ -93,20 +93,6 @@ impl std::fmt::Debug for UserError {
     }
 }
 
-// keccak256(
-//     abi.encode(
-//         keccak256("EIP712Domain(string name,string version)"),
-//         keccak256("marlin.oyster.AttestationVerifier"),
-//         keccak256("1")
-//     )
-// )
-// const DOMAIN_SEPARATOR: [u8; 32] =
-// hex_literal::hex!("0de834feb03c214f785e75b2828ffeceb322312d4487e2fb9640ca5fc32542c7");
-
-// keccak256("Attestation(bytes enclavePubKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestampInMilliseconds)")
-// const ATTESTATION_TYPEHASH: [u8; 32] =
-// hex_literal::hex!("6889df476ca38f3f4b417c17eb496682eb401b4f41a2259741a78acc481ea805");
-
 const DOMAIN: Eip712Domain = eip712_domain! {
     name: "marlin.oyster.AttestationVerifier",
     version: "1",
