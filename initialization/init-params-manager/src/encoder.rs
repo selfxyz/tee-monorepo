@@ -68,16 +68,16 @@ fn run() -> Result<()> {
             let param_components = param.splitn(5, ":").collect::<Vec<_>>();
             let should_attest = param_components[1] == "1";
 
-            if !should_attest {
-                return Ok(None);
-            }
-
             // everything should be normal components, no root or current or parent dirs
             if PathBuf::from(param_components[0])
                 .components()
                 .any(|x| !matches!(x, Component::Normal(_)))
             {
                 bail!("invalid path")
+            }
+
+            if !should_attest {
+                return Ok(None);
             }
 
             let enclave_path = PathBuf::from("/init-params/".to_owned() + param_components[0]);
