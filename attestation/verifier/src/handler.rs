@@ -3,8 +3,12 @@ use std::num::TryFromIntError;
 
 use alloy::{
     dyn_abi::Eip712Domain,
-    primitives::{Keccak256, B256, U256},
-    signers::{local::PrivateKeySigner, SignerSync},
+    primitives::{B256, U256},
+    signers::{
+        k256::sha2::{Digest, Sha256},
+        local::PrivateKeySigner,
+        SignerSync,
+    },
     sol,
     sol_types::{eip712_domain, SolStruct},
 };
@@ -117,14 +121,14 @@ fn compute_image_id(
         return Err(UserError::UserDataTooBig);
     }
 
-    let mut hasher = Keccak256::new();
+    let mut hasher = Sha256::new();
     hasher.update(pcr0);
     hasher.update(pcr1);
     hasher.update(pcr2);
     hasher.update((user_data.len() as u16).to_be_bytes());
     hasher.update(user_data);
 
-    Ok(hasher.finalize())
+    Ok(B256::from_slice(&hasher.finalize()))
 }
 
 fn compute_signature(
