@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 
 import "../../lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
+import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 import "./IAttestationVerifier.sol";
 
@@ -12,6 +13,11 @@ contract AttestationVerifier is
     IAttestationVerifier // interface
 {
     //-------------------------------- Declarations start --------------------------------//
+
+    IRiscZeroVerifier public verifier;
+    bytes32 public imageId;
+    bytes public rootKey;
+    uint256 public maxAge;
 
     struct EnclaveImage {
         bytes PCR0;
