@@ -16,6 +16,7 @@ use thiserror::Error;
 pub struct AppState {
     pub secp256k1_secret: secp256k1::SecretKey,
     pub secp256k1_public: [u8; 64],
+    pub root_public_key: Box<[u8]>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -130,20 +131,22 @@ fn compute_digest(
 }
 
 fn verify(
-    attestation: Vec<u8>,
+    attestation: &[u8],
     secret: &secp256k1::SecretKey,
     public: &[u8; 64],
+    root_public: &[u8],
 ) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
     let decoded = verify_attestation(
         attestation,
         AttestationExpectations {
+            root_public_key: Some(root_public),
             ..Default::default()
         },
     )
     .map_err(UserError::AttestationVerification)?;
 
     let digest = compute_digest(
-        &decoded.public_key.as_slice(),
+        &decoded.public_key.as_ref(),
         &decoded.pcrs[0],
         &decoded.pcrs[1],
         &decoded.pcrs[2],
@@ -181,9 +184,10 @@ pub async fn verify_raw(
     body: Bytes,
 ) -> Result<Json<VerifyAttestationResponse>, (StatusCode, String)> {
     verify(
-        body.to_vec(),
+        &body.to_vec(),
         &state.secp256k1_secret,
         &state.secp256k1_public,
+        &state.root_public_key,
     )
 }
 
@@ -194,8 +198,9 @@ pub async fn verify_hex(
     let attestation = hex::decode(&body).map_err(UserError::AttestationDecode)?;
 
     verify(
-        attestation,
+        &attestation,
         &state.secp256k1_secret,
         &state.secp256k1_public,
+        &state.root_public_key,
     )
 }
