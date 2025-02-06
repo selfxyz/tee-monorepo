@@ -467,12 +467,6 @@ mod tests {
         let expected_journal = [
             // timestamp
             "00000193bef3f3b0",
-            // PCR0
-            "189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6",
-            // PCR1
-            "5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16",
-            // PCR2
-            "6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa",
             // root pubkey
             "fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b17607",
             "0ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4",
@@ -481,8 +475,8 @@ mod tests {
             // pubkey
             "e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd3",
             "6d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb",
-            // userdata len
-            "0000"
+            // image id
+            "10aff51b369137fcb2d71372829300c543b1f8c586d77080f00ba31140621b9c"
         ].join("");
 
         assert_eq!(
@@ -506,12 +500,6 @@ mod tests {
         let expected_journal = [
             // timestamp
             "00000193bf444e30",
-            // PCR0
-            "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-            // PCR1
-            "010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101",
-            // PCR2
-            "020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202",
             // root pubkey
             "6c79411ebaae7489a4e8355545c0346784b31df5d08cb1f7c0097836a82f67240f2a7201862880a1d09a0bb326637188",
             "fbbafab47a10abe3630fcf8c18d35d96532184985e582c0dce3dace8441f37b9cc9211dff935baae69e4872cc3494410",
@@ -519,10 +507,8 @@ mod tests {
             "04",
             // pubkey
             "12345678",
-            // userdata len
-            "0003",
-            // userdata
-            "abcdef"
+            // image id
+            "79fc2e5fd8deb77d38890bdb4e4b1a1bddb08b5854d81d97b24167b449ddd372"
         ].join("");
 
         assert_eq!(
