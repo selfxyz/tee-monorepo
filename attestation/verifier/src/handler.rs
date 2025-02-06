@@ -141,13 +141,6 @@ fn verify(
     let decoded = verify_attestation(
         attestation,
         AttestationExpectations {
-            age: Some((
-                300000,
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(UserError::InvalidSystemTime)?
-                    .as_millis() as usize,
-            )),
             ..Default::default()
         },
     )
