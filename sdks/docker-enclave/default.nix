@@ -40,7 +40,7 @@
     mkdir -p $out
     mkdir -p $out/app
     mkdir -p $out/etc
-      mkdir -p $out/app/docker-images
+    mkdir -p $out/app/docker-images
     cp ${supervisord'} $out/app/supervisord
     cp ${keygenX25519} $out/app/keygen-x25519
     cp ${itvroProxy} $out/app/ip-to-vsock-raw-outgoing
@@ -55,7 +55,7 @@
     chmod +x $out/app/*
     cp ${supervisorConf} $out/etc/supervisord.conf
     cp ${compose} $out/app/docker-compose.yml
-      ${
+    ${
       if builtins.length dockerImages == 0
       then "# No docker images provided"
       else builtins.concatStringsSep "\n" (map (img: "cp ${img} $out/app/docker-images/") dockerImages)
