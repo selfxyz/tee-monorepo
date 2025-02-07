@@ -139,11 +139,11 @@ contract AttestationVerifier is
         return true;
     }
 
-    function _revokeEnclaveImage(bytes32 imageId) internal returns (bool) {
-        if (!(whitelistedImages[imageId].PCR0.length != 0)) return false;
+    function _revokeEnclaveImage(bytes32 _imageId) internal returns (bool) {
+        if (!whitelistedImages[_imageId]) return false;
 
-        delete whitelistedImages[imageId];
-        emit EnclaveImageRevoked(imageId);
+        delete whitelistedImages[_imageId];
+        emit AttestationVerifierEnclaveImageRevoked(_imageId);
 
         return true;
     }
