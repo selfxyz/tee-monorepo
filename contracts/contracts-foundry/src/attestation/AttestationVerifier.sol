@@ -193,34 +193,28 @@ contract AttestationVerifier is
     );
 
     bytes32 private constant ATTESTATION_TYPEHASH =
-        keccak256("Attestation(bytes enclavePubKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestampInMilliseconds)");
+        keccak256("Attestation(bytes enclavePubKey,bytes32 imageId,uint256 timestampInMilliseconds)");
 
-    function _verify(bytes memory signature, Attestation memory attestation) internal view {
-        bytes32 hashStruct = keccak256(
+    function _verify(bytes memory _signature, Attestation memory _attestation) internal view {
+        bytes32 _hashStruct = keccak256(
             abi.encode(
                 ATTESTATION_TYPEHASH,
-                keccak256(attestation.enclavePubKey),
-                keccak256(attestation.PCR0),
-                keccak256(attestation.PCR1),
-                keccak256(attestation.PCR2),
-                attestation.timestampInMilliseconds
+                keccak256(_attestation.enclavePubKey),
+                _attestation.imageId,
+                _attestation.timestampInMilliseconds
             )
         );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, hashStruct));
+        bytes32 _digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, _hashStruct));
 
-        address signer = ECDSA.recover(digest, signature);
-        bytes32 imageId = verifiedKeys[signer];
+        address _signer = ECDSA.recover(_digest, _signature);
+        bytes32 _imageId = verifiedKeys[_signer];
 
-        if (!(imageId != bytes32(0))) {
-            revert AttestationVerifierKeyNotVerified();
-        }
-        if (!(whitelistedImages[imageId].PCR0.length != 0)) {
-            revert AttestationVerifierImageNotWhitelisted();
-        }
+        require(_imageId != bytes32(0), AttestationVerifierKeyNotVerified());
+        require(whitelistedImages[_imageId], AttestationVerifierImageNotWhitelisted());
     }
 
-    function verify(bytes memory signature, Attestation memory attestation) external view {
-        _verify(signature, attestation);
+    function verify(bytes memory _signature, Attestation memory _attestation) external view {
+        return _verify(_signature, _attestation);
     }
 
     //-------------------------------- Read only methods end -------------------------------//
