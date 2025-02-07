@@ -51,7 +51,7 @@ contract AttestationVerifier is
     event AttestationVerifierEnclaveImageWhitelisted(bytes32 indexed imageId);
     event AttestationVerifierEnclaveImageRevoked(bytes32 indexed imageId);
     event AttestationVerifierEnclaveKeyVerified(
-        address indexed enclaveAddress, bytes32 indexed imageId, address indexed enclavePubkey
+        address indexed enclaveAddress, bytes32 indexed imageId, bytes indexed enclavePubkey
     );
 
     //-------------------------------- Events end --------------------------------//
@@ -99,7 +99,7 @@ contract AttestationVerifier is
         rootKey = _rootKey;
     }
 
-    function _updateMaxAge(bytes memory _maxAge) internal {
+    function _updateMaxAge(uint256 _maxAge) internal {
         emit AttestationVerifierUpdatedMaxAge(_maxAge, maxAge);
         maxAge = _maxAge;
     }
@@ -149,38 +149,35 @@ contract AttestationVerifier is
         return _whitelistEnclaveImage(_imageId);
     }
 
-    function revokeEnclaveImage(bytes32 imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveImage(imageId);
+    function revokeEnclaveImage(bytes32 _imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _revokeEnclaveImage(_imageId);
     }
 
     //-------------------------------- Admin methods end --------------------------------//
 
     //-------------------------------- Open methods start -------------------------------//
 
-    uint256 public constant MAX_AGE = 300;
+    function _verifyEnclaveKey(bytes memory _signature, Attestation memory _attestation) internal returns (bool) {
+        require(
+            _attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAge,
+            AttestationVerifierAttestationTooOld()
+        );
+        bytes32 _imageId = _attestation.imageId;
+        require(whitelistedImages[_imageId], AttestationVerifierImageNotWhitelisted());
 
-    function _verifyEnclaveKey(bytes memory signature, Attestation memory attestation) internal returns (bool) {
-        if (!(attestation.timestampInMilliseconds / 1000 > block.timestamp - MAX_AGE)) {
-            revert AttestationVerifierAttestationTooOld();
-        }
-        bytes32 imageId = keccak256(abi.encodePacked(attestation.PCR0, attestation.PCR1, attestation.PCR2));
-        if (!(whitelistedImages[imageId].PCR0.length != 0)) {
-            revert AttestationVerifierImageNotWhitelisted();
-        }
+        _verify(_signature, _attestation);
 
-        _verify(signature, attestation);
+        address _enclaveAddress = _pubKeyToAddress(_attestation.enclavePubKey);
+        if (verifiedKeys[_enclaveAddress] != bytes32(0)) return false;
 
-        address enclaveAddress = pubKeyToAddress(attestation.enclavePubKey);
-        if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
-
-        verifiedKeys[enclaveAddress] = imageId;
-        emit EnclaveKeyVerified(enclaveAddress, imageId, attestation.enclavePubKey);
+        verifiedKeys[_enclaveAddress] = _imageId;
+        emit AttestationVerifierEnclaveKeyVerified(_enclaveAddress, _imageId, _attestation.enclavePubKey);
 
         return true;
     }
 
-    function verifyEnclaveKey(bytes memory signature, Attestation memory attestation) external returns (bool) {
-        return _verifyEnclaveKey(signature, attestation);
+    function verifyEnclaveKey(bytes memory _signature, Attestation memory _attestation) external returns (bool) {
+        return _verifyEnclaveKey(_signature, _attestation);
     }
 
     //-------------------------------- Open methods end -------------------------------//
