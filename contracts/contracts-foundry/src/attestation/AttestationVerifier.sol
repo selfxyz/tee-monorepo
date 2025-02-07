@@ -55,9 +55,9 @@ contract AttestationVerifier is
         IRiscZeroVerifier _verifier,
         bytes32 _guestId,
         bytes memory _rootKey,
-        uint256 _maxAge,
+        uint256 _maxAgeMs,
         bytes32 _imageId
-    ) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAge) {
+    ) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs) {
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(APPROVER_ROLE, _approver);
         _grantRole(REVOKER_ROLE, _revoker);
@@ -110,7 +110,7 @@ contract AttestationVerifier is
 
     function _verifyEnclaveKey(bytes memory _signature, Attestation memory _attestation) internal returns (bool) {
         require(
-            _attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAge,
+            _attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs,
             AttestationVerifierAttestationTooOld()
         );
         bytes32 _imageId = _attestation.imageId;

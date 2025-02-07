@@ -12,9 +12,13 @@ contract TestRiscZeroVerifier is RiscZeroVerifier {
 
     error NotAuthorized();
 
-    constructor(IRiscZeroVerifier _verifier, bytes32 _guestId, bytes memory _rootKey, uint256 _maxAge, bool _authorized)
-        RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAge)
-    {
+    constructor(
+        IRiscZeroVerifier _verifier,
+        bytes32 _guestId,
+        bytes memory _rootKey,
+        uint256 _maxAgeMs,
+        bool _authorized
+    ) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs) {
         authorized = _authorized;
     }
 
@@ -28,7 +32,7 @@ contract TestRiscZeroVerifier is RiscZeroVerifier {
 }
 
 contract RiscZeroVerifierTestConstruction is Test {
-    function test_Construction(IRiscZeroVerifier _verifier, bytes32 _guestId, bytes memory _rootKey, uint256 _maxAge)
+    function test_Construction(IRiscZeroVerifier _verifier, bytes32 _guestId, bytes memory _rootKey, uint256 _maxAgeMs)
         public
     {
         vm.expectEmit();
@@ -41,14 +45,15 @@ contract RiscZeroVerifierTestConstruction is Test {
         emit RiscZeroVerifier.RiscZeroVerifierUpdatedRootKey(_rootKey, new bytes(0));
 
         vm.expectEmit();
-        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAge, 0);
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, 0);
 
-        TestRiscZeroVerifier _riscZeroVerifier = new TestRiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAge, true);
+        TestRiscZeroVerifier _riscZeroVerifier =
+            new TestRiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs, true);
 
         assertEq(address(_riscZeroVerifier.verifier()), address(_verifier));
         assertEq(_riscZeroVerifier.guestId(), _guestId);
         assertEq(_riscZeroVerifier.rootKey(), _rootKey);
-        assertEq(_riscZeroVerifier.maxAge(), _maxAge);
+        assertEq(_riscZeroVerifier.maxAgeMs(), _maxAgeMs);
     }
 }
 
@@ -56,15 +61,15 @@ contract RiscZeroVerifierTestUpdateVerifier is Test {
     IRiscZeroVerifier verifier;
     bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
     TestRiscZeroVerifier riscZeroVerifier;
 
     function setUp() public {
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         guestId = bytes32(vm.randomUint());
         rootKey = vm.randomBytes(96);
-        maxAge = vm.randomUint();
-        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+        maxAgeMs = vm.randomUint();
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAgeMs, true);
     }
 
     function test_UpdateVerifier_Authorized(IRiscZeroVerifier _verifier) public {
@@ -88,15 +93,15 @@ contract RiscZeroVerifierTestUpdateGuestId is Test {
     IRiscZeroVerifier verifier;
     bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
     TestRiscZeroVerifier riscZeroVerifier;
 
     function setUp() public {
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         guestId = bytes32(vm.randomUint());
         rootKey = vm.randomBytes(96);
-        maxAge = vm.randomUint();
-        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+        maxAgeMs = vm.randomUint();
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAgeMs, true);
     }
 
     function test_UpdateGuestId_Authorized(bytes32 _guestId) public {
@@ -120,15 +125,15 @@ contract RiscZeroVerifierTestUpdateRootKey is Test {
     IRiscZeroVerifier verifier;
     bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
     TestRiscZeroVerifier riscZeroVerifier;
 
     function setUp() public {
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         guestId = bytes32(vm.randomUint());
         rootKey = vm.randomBytes(96);
-        maxAge = vm.randomUint();
-        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+        maxAgeMs = vm.randomUint();
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAgeMs, true);
     }
 
     function test_UpdateRootKey_Authorized(bytes calldata _rootKey) public {
@@ -152,31 +157,31 @@ contract RiscZeroVerifierTestUpdateMaxAge is Test {
     IRiscZeroVerifier verifier;
     bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
     TestRiscZeroVerifier riscZeroVerifier;
 
     function setUp() public {
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         guestId = bytes32(vm.randomUint());
         rootKey = vm.randomBytes(96);
-        maxAge = vm.randomUint();
-        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+        maxAgeMs = vm.randomUint();
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAgeMs, true);
     }
 
-    function test_UpdateMaxAge_Authorized(uint256 _maxAge) public {
+    function test_UpdateMaxAge_Authorized(uint256 _maxAgeMs) public {
         vm.expectEmit();
-        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAge, maxAge);
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, maxAgeMs);
 
-        riscZeroVerifier.updateMaxAge(_maxAge);
+        riscZeroVerifier.updateMaxAge(_maxAgeMs);
 
-        assertEq(riscZeroVerifier.maxAge(), _maxAge);
+        assertEq(riscZeroVerifier.maxAgeMs(), _maxAgeMs);
     }
 
-    function test_UpdateMaxAge_Unauthorized(uint256 _maxAge) public {
+    function test_UpdateMaxAge_Unauthorized(uint256 _maxAgeMs) public {
         riscZeroVerifier.setAuthorized(false);
         vm.expectRevert(TestRiscZeroVerifier.NotAuthorized.selector);
 
-        riscZeroVerifier.updateMaxAge(_maxAge);
+        riscZeroVerifier.updateMaxAge(_maxAgeMs);
     }
 }
 
@@ -184,15 +189,15 @@ contract RiscZeroVerifierTestVerify is Test {
     IRiscZeroVerifier verifier;
     bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
     TestRiscZeroVerifier riscZeroVerifier;
 
     function setUp() public {
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
         guestId = bytes32(vm.randomUint());
         rootKey = vm.randomBytes(96);
-        maxAge = 2000;
-        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+        maxAgeMs = 2000;
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAgeMs, true);
     }
 
     function test_Verify_Valid(

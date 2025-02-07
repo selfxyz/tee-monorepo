@@ -14,7 +14,7 @@ abstract contract RiscZeroVerifier {
     /// @notice Expected root public key of the attestation
     bytes public rootKey;
     /// @notice Maximum allowed age of attestations in milliseconds
-    uint256 public maxAge;
+    uint256 public maxAgeMs;
 
     /// @notice Thrown when attestation is too old
     error RiscZeroVerifierTooOld();
@@ -34,20 +34,20 @@ abstract contract RiscZeroVerifier {
     /// @param old Previous root key
     event RiscZeroVerifierUpdatedRootKey(bytes indexed rootKey, bytes indexed old);
     /// @notice Emitted when max age is updated
-    /// @param maxAge New maximum age
+    /// @param maxAgeMs New maximum age
     /// @param old Previous maximum age
-    event RiscZeroVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
+    event RiscZeroVerifierUpdatedMaxAge(uint256 maxAgeMs, uint256 old);
 
     /// @notice Initializes verification parameters
     /// @param _verifier Address of RiscZero verifier contract
     /// @param _guestId Expected guest image ID
     /// @param _rootKey Expected root public key
-    /// @param _maxAge Maximum allowed age in milliseconds
-    constructor(IRiscZeroVerifier _verifier, bytes32 _guestId, bytes memory _rootKey, uint256 _maxAge) {
+    /// @param _maxAgeMs Maximum allowed age in milliseconds
+    constructor(IRiscZeroVerifier _verifier, bytes32 _guestId, bytes memory _rootKey, uint256 _maxAgeMs) {
         _updateVerifier(_verifier);
         _updateGuestId(_guestId);
         _updateRootKey(_rootKey);
-        _updateMaxAge(_maxAge);
+        _updateMaxAge(_maxAgeMs);
     }
 
     /// @notice Hook for authorization logic for parameter updates
@@ -76,10 +76,10 @@ abstract contract RiscZeroVerifier {
     }
 
     /// @dev Internal setter for maximum age
-    /// @param _maxAge New maximum age in milliseconds
-    function _updateMaxAge(uint256 _maxAge) internal {
-        emit RiscZeroVerifierUpdatedMaxAge(_maxAge, maxAge);
-        maxAge = _maxAge;
+    /// @param _maxAgeMs New maximum age in milliseconds
+    function _updateMaxAge(uint256 _maxAgeMs) internal {
+        emit RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, maxAgeMs);
+        maxAgeMs = _maxAgeMs;
     }
 
     /// @notice Updates verifier contract address
@@ -108,10 +108,10 @@ abstract contract RiscZeroVerifier {
 
     /// @notice Updates maximum age
     /// @dev Callable only by authorized accounts
-    /// @param _maxAge New maximum age in milliseconds
-    function updateMaxAge(uint256 _maxAge) external {
+    /// @param _maxAgeMs New maximum age in milliseconds
+    function updateMaxAge(uint256 _maxAgeMs) external {
         _authorizeRiscZeroUpdate();
-        return _updateMaxAge(_maxAge);
+        return _updateMaxAge(_maxAgeMs);
     }
 
     /// @notice Verifies a RiscZero proof of attestation verification
@@ -124,7 +124,7 @@ abstract contract RiscZeroVerifier {
         external
         view
     {
-        require(_timestampInMilliseconds > block.timestamp * 1000 - maxAge, RiscZeroVerifierTooOld());
+        require(_timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs, RiscZeroVerifierTooOld());
         require(_pubkey.length <= 256, RiscZeroVerifierPubkeyTooLong());
         bytes32 _journalDigest =
             sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
