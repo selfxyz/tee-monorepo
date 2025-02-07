@@ -16,12 +16,7 @@ abstract contract RiscZeroVerifier {
     event RiscZeroVerifierUpdatedRootKey(bytes indexed rootKey, bytes indexed old);
     event RiscZeroVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
 
-    constructor(
-        IRiscZeroVerifier _verifier,
-        bytes32 _guestId,
-        bytes memory _rootKey,
-        uint256 _maxAge
-    ) {
+    constructor(IRiscZeroVerifier _verifier, bytes32 _guestId, bytes memory _rootKey, uint256 _maxAge) {
         _updateVerifier(_verifier);
         _updateGuestId(_guestId);
         _updateRootKey(_rootKey);
