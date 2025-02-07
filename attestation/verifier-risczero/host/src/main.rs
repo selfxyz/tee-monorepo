@@ -1,6 +1,6 @@
 use clap::Parser;
 use methods::{GUEST_ELF, GUEST_ID};
-use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
+use risc0_zkvm::{default_prover, is_dev_mode, ExecutorEnv, ProverOpts};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -49,13 +49,11 @@ fn main() {
 
     println!(
         "Seal: {}",
-        hex::encode(
-            receipt
-                .inner
-                .groth16()
-                .map(|x| x.seal.as_slice())
-                .unwrap_or(b"probably dev mode?")
-        )
+        if is_dev_mode() {
+            "not available in dev mode".to_owned()
+        } else {
+            hex::encode(&receipt.inner.groth16().unwrap().seal)
+        }
     );
     println!("Journal: {}", hex::encode(&receipt.journal.bytes));
 }
