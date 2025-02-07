@@ -22,10 +22,7 @@ contract KmsRootTestConstruction is Test {
         emit Ownable.OwnershipTransferred(address(0), _owner);
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedVerifier(
-            _verifier,
-            IRiscZeroVerifier(address(0))
-        );
+        emit KmsRoot.KmsRootUpdatedVerifier(_verifier, IRiscZeroVerifier(address(0)));
 
         vm.expectEmit();
         emit KmsRoot.KmsRootUpdatedImageId(_imageId, bytes32(0));
@@ -36,14 +33,7 @@ contract KmsRootTestConstruction is Test {
         vm.expectEmit();
         emit KmsRoot.KmsRootUpdatedRootKey(_rootKey, new bytes(0));
 
-        KmsRoot _kmsRoot = new KmsRoot(
-            _owner,
-            _verifier,
-            _imageId,
-            _pcrs,
-            _rootKey,
-            _maxAge
-        );
+        KmsRoot _kmsRoot = new KmsRoot(_owner, _verifier, _imageId, _pcrs, _rootKey, _maxAge);
 
         assertEq(_kmsRoot.owner(), _owner);
         assertEq(address(_kmsRoot.verifier()), address(_verifier));
@@ -83,18 +73,10 @@ contract KmsRootTestUpdateVerifier is Test {
         assertEq(address(kmsRoot.verifier()), address(_verifier));
     }
 
-    function test_UpdateVerifier_FromNonOwner(
-        IRiscZeroVerifier _verifier,
-        address _nonOwner
-    ) public {
+    function test_UpdateVerifier_FromNonOwner(IRiscZeroVerifier _verifier, address _nonOwner) public {
         vm.assume(_nonOwner != owner);
         vm.prank(_nonOwner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                _nonOwner
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
 
         kmsRoot.updateVerifier(_verifier);
     }
@@ -129,18 +111,10 @@ contract KmsRootTestUpdateImageId is Test {
         assertEq(kmsRoot.imageId(), _imageId);
     }
 
-    function test_UpdateImageId_FromNonOwner(
-        bytes32 _imageId,
-        address _nonOwner
-    ) public {
+    function test_UpdateImageId_FromNonOwner(bytes32 _imageId, address _nonOwner) public {
         vm.assume(_nonOwner != owner);
         vm.prank(_nonOwner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                _nonOwner
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
 
         kmsRoot.updateImageId(_imageId);
     }
@@ -175,18 +149,10 @@ contract KmsRootTestUpdatePcrs is Test {
         assertEq(kmsRoot.pcrs(), _pcrs);
     }
 
-    function test_UpdatePcrs_FromNonOwner(
-        bytes calldata _pcrs,
-        address _nonOwner
-    ) public {
+    function test_UpdatePcrs_FromNonOwner(bytes calldata _pcrs, address _nonOwner) public {
         vm.assume(_nonOwner != owner);
         vm.prank(_nonOwner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                _nonOwner
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
 
         kmsRoot.updatePcrs(_pcrs);
     }
@@ -221,18 +187,10 @@ contract KmsRootTestUpdateRootKey is Test {
         assertEq(kmsRoot.rootKey(), _rootKey);
     }
 
-    function test_UpdateRootKey_FromNonOwner(
-        bytes calldata _rootKey,
-        address _nonOwner
-    ) public {
+    function test_UpdateRootKey_FromNonOwner(bytes calldata _rootKey, address _nonOwner) public {
         vm.assume(_nonOwner != owner);
         vm.prank(_nonOwner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                _nonOwner
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
 
         kmsRoot.updateRootKey(_rootKey);
     }
@@ -257,32 +215,16 @@ contract KmsRootTestVerify is Test {
         kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
     }
 
-    function test_Verify_Valid(
-        bytes calldata _signerPubkey,
-        bytes calldata _seal,
-        uint64 _timestampInMilliseconds
-    ) public {
+    function test_Verify_Valid(bytes calldata _signerPubkey, bytes calldata _seal, uint64 _timestampInMilliseconds)
+        public
+    {
         vm.assume(_signerPubkey.length == 64);
-        _timestampInMilliseconds = uint64(
-            bound(_timestampInMilliseconds, 2001, type(uint64).max)
-        );
-        bytes32 _journalDigest = sha256(
-            abi.encodePacked(
-                _timestampInMilliseconds,
-                pcrs,
-                rootKey,
-                uint8(64),
-                _signerPubkey,
-                uint16(0)
-            )
-        );
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        bytes32 _journalDigest =
+            sha256(abi.encodePacked(_timestampInMilliseconds, pcrs, rootKey, uint8(64), _signerPubkey, uint16(0)));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
-        bytes memory _calldata = abi.encodeWithSelector(
-            IRiscZeroVerifier.verify.selector,
-            _seal,
-            imageId,
-            _journalDigest
-        );
+        bytes memory _calldata =
+            abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, imageId, _journalDigest);
         vm.mockCall(address(verifier), _calldata, abi.encode());
         vm.expectCall(address(verifier), _calldata, 1);
         address _addr = address(uint160(uint256(keccak256(_signerPubkey))));
@@ -295,15 +237,11 @@ contract KmsRootTestVerify is Test {
         assertTrue(kmsRoot.isVerified(_addr));
     }
 
-    function test_Verify_TooOld(
-        bytes calldata _signerPubkey,
-        bytes calldata _seal,
-        uint64 _timestampInMilliseconds
-    ) public {
+    function test_Verify_TooOld(bytes calldata _signerPubkey, bytes calldata _seal, uint64 _timestampInMilliseconds)
+        public
+    {
         vm.assume(_signerPubkey.length == 64);
-        _timestampInMilliseconds = uint64(
-            bound(_timestampInMilliseconds, 0, 2000)
-        );
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
         vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootTooOld.selector));
         vm.warp(4);
 
@@ -316,12 +254,8 @@ contract KmsRootTestVerify is Test {
         uint64 _timestampInMilliseconds
     ) public {
         vm.assume(_signerPubkey.length != 64);
-        _timestampInMilliseconds = uint64(
-            bound(_timestampInMilliseconds, 2001, type(uint64).max)
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector)
-        );
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector));
         vm.warp(4);
 
         kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
@@ -333,9 +267,7 @@ contract KmsRootTestVerify is Test {
         uint64 _timestampInMilliseconds
     ) public {
         vm.assume(_signerPubkey.length == 64);
-        _timestampInMilliseconds = uint64(
-            bound(_timestampInMilliseconds, 2001, type(uint64).max)
-        );
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
         vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
         vm.expectRevert("0x12345678");
         vm.warp(4);

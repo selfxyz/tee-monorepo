@@ -31,10 +31,7 @@ contract KmsRoot is Ownable {
     /// @notice Emitted when the verifier contract address is updated
     /// @param verifier New verifier contract address
     /// @param old Previous verifier contract address
-    event KmsRootUpdatedVerifier(
-        IRiscZeroVerifier indexed verifier,
-        IRiscZeroVerifier indexed old
-    );
+    event KmsRootUpdatedVerifier(IRiscZeroVerifier indexed verifier, IRiscZeroVerifier indexed old);
     /// @notice Emitted when the image ID is updated
     /// @param imageId New image ID
     /// @param old Previous image ID
@@ -103,24 +100,12 @@ contract KmsRoot is Ownable {
     /// @param _seal RISC Zero seal for verification
     /// @param _timestampInMilliseconds Timestamp of the attestation in milliseconds
     /// @dev Verifies the attestation and marks the derived address as verified if successful
-    function verify(
-        bytes calldata _signerPubkey,
-        bytes calldata _seal,
-        uint64 _timestampInMilliseconds
-    ) external {
-        require(
-            _timestampInMilliseconds > (block.timestamp - MAX_AGE) * 1000,
-            KmsRootTooOld()
-        );
+    function verify(bytes calldata _signerPubkey, bytes calldata _seal, uint64 _timestampInMilliseconds) external {
+        require(_timestampInMilliseconds > (block.timestamp - MAX_AGE) * 1000, KmsRootTooOld());
         address _addr = _pubkeyToAddress(_signerPubkey);
         bytes32 _journalDigest = sha256(
             abi.encodePacked(
-                _timestampInMilliseconds,
-                pcrs,
-                rootKey,
-                uint8(_signerPubkey.length),
-                _signerPubkey,
-                uint16(0)
+                _timestampInMilliseconds, pcrs, rootKey, uint8(_signerPubkey.length), _signerPubkey, uint16(0)
             )
         );
         verifier.verify(_seal, imageId, _journalDigest);
@@ -166,9 +151,7 @@ contract KmsRoot is Ownable {
     /// @param _pubkey Public key to convert
     /// @return Ethereum address derived from the public key
     /// @dev Expects a 64-byte public key and returns the keccak256 hash as an address
-    function _pubkeyToAddress(
-        bytes calldata _pubkey
-    ) internal pure returns (address) {
+    function _pubkeyToAddress(bytes calldata _pubkey) internal pure returns (address) {
         require(_pubkey.length == 64, KmsRootLengthInvalid());
 
         bytes32 _hash = keccak256(_pubkey);
