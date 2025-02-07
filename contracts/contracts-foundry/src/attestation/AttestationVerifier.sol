@@ -142,6 +142,30 @@ contract AttestationVerifier is
         return true;
     }
 
+    function updateVerifier(
+        IRiscZeroVerifier _verifier
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _updateVerifier(_verifier);
+    }
+
+    function updateGuestId(
+        bytes32 _guestId
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _updateGuestId(_guestId);
+    }
+
+    function updateRootKey(
+        bytes calldata _rootKey
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _updateRootKey(_rootKey);
+    }
+
+    function updateMaxAge(
+        uint256 _maxAge
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        return _updateMaxAge(_maxAge);
+    }
+
     function whitelistEnclaveImage(
         bytes32 _imageId
     ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
