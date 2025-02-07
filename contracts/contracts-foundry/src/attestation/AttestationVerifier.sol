@@ -59,12 +59,6 @@ contract AttestationVerifier is
     event AttestationVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
     event AttestationVerifierEnclaveImageWhitelisted(bytes32 indexed imageId);
     event AttestationVerifierEnclaveImageRevoked(bytes32 indexed imageId);
-    event AttestationVerifierEnclaveKeyWhitelisted(
-        address indexed enclaveAddress,
-        bytes32 indexed imageId,
-        address indexed enclavePubkey
-    );
-    event AttestationVerifierEnclaveKeyRevoked(address indexed enclaveAddress);
     event AttestationVerifierEnclaveKeyVerified(
         address indexed enclaveAddress,
         bytes32 indexed imageId,
@@ -144,31 +138,6 @@ contract AttestationVerifier is
 
         delete whitelistedImages[_imageId];
         emit AttestationVerifierEnclaveImageRevoked(_imageId);
-
-        return true;
-    }
-
-    function _whitelistEnclaveKey(
-        bytes memory enclavePubKey,
-        bytes32 imageId
-    ) internal returns (bool) {
-        if (!(whitelistedImages[imageId].PCR0.length != 0))
-            revert AttestationVerifierImageNotWhitelisted();
-
-        address enclaveAddress = _pubKeyToAddress(enclavePubKey);
-        if (!(verifiedKeys[enclaveAddress] == bytes32(0))) return false;
-
-        verifiedKeys[enclaveAddress] = imageId;
-        emit EnclaveKeyWhitelisted(enclaveAddress, imageId, enclavePubKey);
-
-        return true;
-    }
-
-    function _revokeEnclaveKey(address enclaveAddress) internal returns (bool) {
-        if (!(verifiedKeys[enclaveAddress] != bytes32(0))) return false;
-
-        delete verifiedKeys[enclaveAddress];
-        emit EnclaveKeyRevoked(enclaveAddress);
 
         return true;
     }
