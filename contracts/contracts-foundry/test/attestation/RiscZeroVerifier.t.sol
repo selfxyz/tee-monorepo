@@ -179,3 +179,84 @@ contract RiscZeroVerifierTestUpdateMaxAge is Test {
         riscZeroVerifier.updateMaxAge(_maxAge);
     }
 }
+
+contract RiscZeroVerifierTestVerify is Test {
+    IRiscZeroVerifier verifier;
+    bytes32 guestId;
+    bytes rootKey;
+    uint256 maxAge;
+    TestRiscZeroVerifier riscZeroVerifier;
+
+    function setUp() public {
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAge = 2000;
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+    }
+
+    function test_Verify_Valid(
+        bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_pubkey.length <= 256);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        bytes32 _journalDigest =
+            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
+        vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
+        bytes memory _calldata =
+            abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
+        vm.mockCall(address(verifier), _calldata, abi.encode());
+        vm.expectCall(address(verifier), _calldata, 1);
+        vm.warp(4);
+
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+    }
+
+    function test_Verify_TooOld(
+        bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_pubkey.length <= 256);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
+        vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
+        vm.warp(4);
+
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+    }
+
+    function test_Verify_TooLong(
+        bytes calldata _seal,
+        bytes memory _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) public {
+        // foundry does not generate data >256 length, concat to emulate it
+        vm.assume(_pubkey.length > 64);
+        _pubkey = bytes.concat(_pubkey, _pubkey, _pubkey, _pubkey);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierPubkeyTooLong.selector));
+        vm.warp(4);
+
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+    }
+
+    function test_Verify_InvalidSeal(
+        bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_pubkey.length <= 256);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
+        vm.expectRevert("0x12345678");
+        vm.warp(4);
+
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+    }
+}
