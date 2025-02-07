@@ -12,7 +12,6 @@ abstract contract RiscZeroVerifier {
 
     event RiscZeroVerifierUpdatedVerifier(IRiscZeroVerifier indexed verifier, IRiscZeroVerifier indexed old);
     event RiscZeroVerifierUpdatedGuestId(bytes32 indexed guestId, bytes32 indexed old);
-    event RiscZeroVerifierUpdatedPcrs(bytes indexed pcrs, bytes indexed old);
     event RiscZeroVerifierUpdatedRootKey(bytes indexed rootKey, bytes indexed old);
     event RiscZeroVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
 
