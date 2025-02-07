@@ -38,11 +38,6 @@ contract AttestationVerifier is
 
     //-------------------------------- Events start --------------------------------//
 
-    event AttestationVerifierUpdatedVerifier(IRiscZeroVerifier indexed verifier, IRiscZeroVerifier indexed old);
-    event AttestationVerifierUpdatedGuestId(bytes32 indexed guestId, bytes32 indexed old);
-    event AttestationVerifierUpdatedPcrs(bytes indexed pcrs, bytes indexed old);
-    event AttestationVerifierUpdatedRootKey(bytes indexed rootKey, bytes indexed old);
-    event AttestationVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
     event AttestationVerifierEnclaveImageWhitelisted(bytes32 indexed imageId);
     event AttestationVerifierEnclaveImageRevoked(bytes32 indexed imageId);
     event AttestationVerifierEnclaveKeyVerified(
