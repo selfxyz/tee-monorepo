@@ -57,13 +57,7 @@ contract AttestationVerifier is
         bytes indexed old
     );
     event AttestationVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
-    event AttestationVerifierEnclaveImageWhitelisted(
-        bytes32 indexed imageId,
-        bytes PCR0,
-        bytes PCR1,
-        bytes PCR2,
-        bytes userData
-    );
+    event AttestationVerifierEnclaveImageWhitelisted(bytes32 indexed imageId);
     event AttestationVerifierEnclaveImageRevoked(bytes32 indexed imageId);
     event AttestationVerifierEnclaveKeyWhitelisted(
         address indexed enclaveAddress,
