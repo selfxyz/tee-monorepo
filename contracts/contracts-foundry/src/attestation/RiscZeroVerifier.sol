@@ -11,6 +11,7 @@ abstract contract RiscZeroVerifier {
     uint256 public maxAge;
 
     error RiscZeroVerifierTooOld();
+    error RiscZeroVerifierPubkeyTooLong();
 
     event RiscZeroVerifierUpdatedVerifier(IRiscZeroVerifier indexed verifier, IRiscZeroVerifier indexed old);
     event RiscZeroVerifierUpdatedGuestId(bytes32 indexed guestId, bytes32 indexed old);
@@ -71,6 +72,7 @@ abstract contract RiscZeroVerifier {
         view
     {
         require(_timestampInMilliseconds > block.timestamp * 1000 - maxAge, RiscZeroVerifierTooOld());
+        require(_pubkey.length <= 256, RiscZeroVerifierPubkeyTooLong());
         bytes32 _journalDigest =
             sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
         verifier.verify(_seal, guestId, _journalDigest);
