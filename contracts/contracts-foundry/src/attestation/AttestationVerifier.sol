@@ -32,11 +32,8 @@ contract AttestationVerifier is
     //-------------------------------- Errors start --------------------------------//
 
     error AttestationVerifierPubkeyLengthInvalid();
-    error AttestationVerifierPCRsInvalid();
-
     error AttestationVerifierImageNotWhitelisted();
     error AttestationVerifierKeyNotVerified();
-
     error AttestationVerifierAttestationTooOld();
 
     //-------------------------------- Errors end --------------------------------//
@@ -155,7 +152,7 @@ contract AttestationVerifier is
 
     //-------------------------------- Admin methods end --------------------------------//
 
-    //-------------------------------- Open methods start -------------------------------//
+    //-------------------------------- Own methods start -------------------------------//
 
     function _verifyEnclaveKey(bytes memory _signature, Attestation memory _attestation) internal returns (bool) {
         require(
@@ -180,9 +177,9 @@ contract AttestationVerifier is
         return _verifyEnclaveKey(_signature, _attestation);
     }
 
-    //-------------------------------- Open methods end -------------------------------//
+    //-------------------------------- Own methods end -------------------------------//
 
-    //-------------------------------- Read only methods start -------------------------------//
+    //-------------------------------- Interface methods start -------------------------------//
 
     bytes32 public constant DOMAIN_SEPARATOR = keccak256(
         abi.encode(
@@ -217,5 +214,5 @@ contract AttestationVerifier is
         return _verify(_signature, _attestation);
     }
 
-    //-------------------------------- Read only methods end -------------------------------//
+    //-------------------------------- Interface methods end -------------------------------//
 }
