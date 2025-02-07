@@ -29,6 +29,12 @@ contract TestRiscZeroVerifier is RiscZeroVerifier {
     function _authorizeRiscZeroUpdate() internal virtual override {
         require(authorized, NotAuthorized());
     }
+
+    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
+        external
+    {
+        return _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+    }
 }
 
 contract RiscZeroVerifierTestConstruction is Test {
