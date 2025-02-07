@@ -9,8 +9,5 @@ interface IAttestationVerifier {
         uint256 timestampInMilliseconds;
     }
 
-    function verify(
-        bytes memory signature,
-        Attestation memory attestation
-    ) external view;
+    function verify(bytes memory signature, Attestation memory attestation) external view;
 }
