@@ -6,15 +6,16 @@ import {KmsRoot} from "../../src/kms/KmsRoot.sol";
 
 import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
+import {RiscZeroVerifier} from "../../src/attestation/RiscZeroVerifier.sol";
 
 contract KmsRootTestConstruction is Test {
     function test_Construction(
         address _owner,
         IRiscZeroVerifier _verifier,
-        bytes32 _imageId,
-        bytes memory _pcrs,
+        bytes32 _guestId,
         bytes memory _rootKey,
-        uint256 _maxAge
+        uint256 _maxAgeMs,
+        bytes32 _imageId
     ) public {
         vm.assume(_owner != address(0));
 
@@ -22,51 +23,51 @@ contract KmsRootTestConstruction is Test {
         emit Ownable.OwnershipTransferred(address(0), _owner);
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedVerifier(_verifier, IRiscZeroVerifier(address(0)));
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedVerifier(_verifier, IRiscZeroVerifier(address(0)));
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedImageId(_imageId, bytes32(0));
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedGuestId(_guestId, bytes32(0));
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedPcrs(_pcrs, new bytes(0));
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedRootKey(_rootKey, new bytes(0));
 
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedRootKey(_rootKey, new bytes(0));
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, 0);
 
-        KmsRoot _kmsRoot = new KmsRoot(_owner, _verifier, _imageId, _pcrs, _rootKey, _maxAge);
+        KmsRoot _kmsRoot = new KmsRoot(_owner, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId);
 
         assertEq(_kmsRoot.owner(), _owner);
         assertEq(address(_kmsRoot.verifier()), address(_verifier));
-        assertEq(_kmsRoot.imageId(), _imageId);
-        assertEq(_kmsRoot.pcrs(), _pcrs);
+        assertEq(_kmsRoot.guestId(), _guestId);
         assertEq(_kmsRoot.rootKey(), _rootKey);
-        assertEq(_kmsRoot.MAX_AGE(), _maxAge);
+        assertEq(_kmsRoot.maxAgeMs(), _maxAgeMs);
+        assertEq(_kmsRoot.imageId(), _imageId);
     }
 }
 
 contract KmsRootTestUpdateVerifier is Test {
     address owner;
     IRiscZeroVerifier verifier;
-    bytes32 imageId;
-    bytes pcrs;
+    bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
+    bytes32 imageId;
     KmsRoot kmsRoot;
 
     function setUp() public {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAgeMs = vm.randomUint();
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48 * 3);
-        rootKey = vm.randomBytes(48);
-        maxAge = vm.randomUint();
-        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
+        kmsRoot = new KmsRoot(owner, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
     function test_UpdateVerifier_FromOwner(IRiscZeroVerifier _verifier) public {
         vm.prank(owner);
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedVerifier(_verifier, verifier);
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedVerifier(_verifier, verifier);
 
         kmsRoot.updateVerifier(_verifier);
 
@@ -82,105 +83,67 @@ contract KmsRootTestUpdateVerifier is Test {
     }
 }
 
-contract KmsRootTestUpdateImageId is Test {
+contract KmsRootTestUpdateGuestId is Test {
     address owner;
     IRiscZeroVerifier verifier;
-    bytes32 imageId;
-    bytes pcrs;
+    bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
+    bytes32 imageId;
     KmsRoot kmsRoot;
 
     function setUp() public {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAgeMs = vm.randomUint();
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48 * 3);
-        rootKey = vm.randomBytes(48);
-        maxAge = vm.randomUint();
-        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
+        kmsRoot = new KmsRoot(owner, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
-    function test_UpdateImageId_FromOwner(bytes32 _imageId) public {
+    function test_UpdateGuestId_FromOwner(bytes32 _guestId) public {
         vm.prank(owner);
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedImageId(_imageId, imageId);
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedGuestId(_guestId, guestId);
 
-        kmsRoot.updateImageId(_imageId);
+        kmsRoot.updateGuestId(_guestId);
 
-        assertEq(kmsRoot.imageId(), _imageId);
+        assertEq(kmsRoot.guestId(), _guestId);
     }
 
-    function test_UpdateImageId_FromNonOwner(bytes32 _imageId, address _nonOwner) public {
+    function test_UpdateGuestId_FromNonOwner(bytes32 _guestId, address _nonOwner) public {
         vm.assume(_nonOwner != owner);
         vm.prank(_nonOwner);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
 
-        kmsRoot.updateImageId(_imageId);
-    }
-}
-
-contract KmsRootTestUpdatePcrs is Test {
-    address owner;
-    IRiscZeroVerifier verifier;
-    bytes32 imageId;
-    bytes pcrs;
-    bytes rootKey;
-    uint256 maxAge;
-    KmsRoot kmsRoot;
-
-    function setUp() public {
-        owner = makeAddr("owner");
-        verifier = IRiscZeroVerifier(makeAddr("verifier"));
-        imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48 * 3);
-        rootKey = vm.randomBytes(48);
-        maxAge = vm.randomUint();
-        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
-    }
-
-    function test_UpdatePcrs_FromOwner(bytes calldata _pcrs) public {
-        vm.prank(owner);
-        vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedPcrs(_pcrs, pcrs);
-
-        kmsRoot.updatePcrs(_pcrs);
-
-        assertEq(kmsRoot.pcrs(), _pcrs);
-    }
-
-    function test_UpdatePcrs_FromNonOwner(bytes calldata _pcrs, address _nonOwner) public {
-        vm.assume(_nonOwner != owner);
-        vm.prank(_nonOwner);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
-
-        kmsRoot.updatePcrs(_pcrs);
+        kmsRoot.updateGuestId(_guestId);
     }
 }
 
 contract KmsRootTestUpdateRootKey is Test {
     address owner;
     IRiscZeroVerifier verifier;
-    bytes32 imageId;
-    bytes pcrs;
+    bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
+    bytes32 imageId;
     KmsRoot kmsRoot;
 
     function setUp() public {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAgeMs = vm.randomUint();
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48 * 3);
-        rootKey = vm.randomBytes(48);
-        maxAge = vm.randomUint();
-        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
+        kmsRoot = new KmsRoot(owner, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
     function test_UpdateRootKey_FromOwner(bytes calldata _rootKey) public {
         vm.prank(owner);
         vm.expectEmit();
-        emit KmsRoot.KmsRootUpdatedRootKey(_rootKey, rootKey);
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedRootKey(_rootKey, rootKey);
 
         kmsRoot.updateRootKey(_rootKey);
 
@@ -196,82 +159,127 @@ contract KmsRootTestUpdateRootKey is Test {
     }
 }
 
-contract KmsRootTestVerify is Test {
+contract KmsRootTestUpdateMaxAge is Test {
     address owner;
     IRiscZeroVerifier verifier;
-    bytes32 imageId;
-    bytes pcrs;
+    bytes32 guestId;
     bytes rootKey;
-    uint256 maxAge;
+    uint256 maxAgeMs;
+    bytes32 imageId;
     KmsRoot kmsRoot;
 
     function setUp() public {
         owner = makeAddr("owner");
         verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAgeMs = vm.randomUint();
         imageId = bytes32(vm.randomUint());
-        pcrs = vm.randomBytes(48 * 3);
-        rootKey = vm.randomBytes(48);
-        maxAge = 2;
-        kmsRoot = new KmsRoot(owner, verifier, imageId, pcrs, rootKey, maxAge);
+        kmsRoot = new KmsRoot(owner, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
-    function test_Verify_Valid(bytes calldata _signerPubkey, bytes calldata _seal, uint64 _timestampInMilliseconds)
-        public
-    {
-        vm.assume(_signerPubkey.length == 64);
+    function test_UpdateMaxAge_FromOwner(uint256 _maxAgeMs) public {
+        vm.prank(owner);
+        vm.expectEmit();
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, maxAgeMs);
+
+        kmsRoot.updateMaxAge(_maxAgeMs);
+
+        assertEq(kmsRoot.maxAgeMs(), _maxAgeMs);
+    }
+
+    function test_UpdateMaxAge_FromNonOwner(uint256 _maxAgeMs, address _nonOwner) public {
+        vm.assume(_nonOwner != owner);
+        vm.prank(_nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, _nonOwner));
+
+        kmsRoot.updateMaxAge(_maxAgeMs);
+    }
+}
+
+contract KmsRootTestVerify is Test {
+    address owner;
+    IRiscZeroVerifier verifier;
+    bytes32 guestId;
+    bytes rootKey;
+    uint256 maxAgeMs;
+    bytes32 imageId;
+    KmsRoot kmsRoot;
+
+    function setUp() public {
+        owner = makeAddr("owner");
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAgeMs = 2000;
+        kmsRoot = new KmsRoot(owner, verifier, guestId, rootKey, maxAgeMs, imageId);
+    }
+
+    function test_Verify_Valid(
+        bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_pubkey.length == 64);
         _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, pcrs, rootKey, uint8(64), _signerPubkey, uint16(0)));
+            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(64), _pubkey, _imageId));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
-            abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, imageId, _journalDigest);
+            abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
         vm.mockCall(address(verifier), _calldata, abi.encode());
         vm.expectCall(address(verifier), _calldata, 1);
-        address _addr = address(uint160(uint256(keccak256(_signerPubkey))));
+        address _addr = address(uint160(uint256(keccak256(_pubkey))));
         vm.expectEmit();
         emit KmsRoot.KmsRootVerified(_addr);
         vm.warp(4);
 
-        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
 
         assertTrue(kmsRoot.isVerified(_addr));
     }
 
-    function test_Verify_TooOld(bytes calldata _signerPubkey, bytes calldata _seal, uint64 _timestampInMilliseconds)
-        public
-    {
-        vm.assume(_signerPubkey.length == 64);
+    function test_Verify_TooOld(
+        bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_pubkey.length == 64);
         _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
-        vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootTooOld.selector));
+        vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
     }
 
     function test_Verify_InvalidLength(
-        bytes calldata _signerPubkey,
         bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
         uint64 _timestampInMilliseconds
     ) public {
-        vm.assume(_signerPubkey.length != 64);
+        vm.assume(_pubkey.length != 64);
         _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
         vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector));
         vm.warp(4);
 
-        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
     }
 
     function test_Verify_InvalidSeal(
-        bytes calldata _signerPubkey,
         bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
         uint64 _timestampInMilliseconds
     ) public {
-        vm.assume(_signerPubkey.length == 64);
+        vm.assume(_pubkey.length == 64);
         _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
         vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
         vm.expectRevert("0x12345678");
         vm.warp(4);
 
-        kmsRoot.verify(_signerPubkey, _seal, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
     }
 }
