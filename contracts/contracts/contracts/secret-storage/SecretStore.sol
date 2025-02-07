@@ -207,7 +207,7 @@ contract SecretStore is
         // insert node in the tree
         if (
             secretStores[_enclaveAddress].storageOccupied <= 
-            (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+            (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_SECRET_SIZE())
         ) {
             _insert_unchecked(_env, _enclaveAddress, uint64(_stakeAmount / STAKE_ADJUSTMENT_FACTOR));
         }
@@ -227,7 +227,7 @@ contract SecretStore is
     ) internal {
         if (
             secretStores[_enclaveAddress].storageOccupied <= 
-            (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+            (secretStores[_enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_SECRET_SIZE())
         ) {
             // if prevStake is less than min stake, then insert node in tree, else update the node value in tree
             _upsert(_env, _enclaveAddress, uint64(_stake / STAKE_ADJUSTMENT_FACTOR));
@@ -397,7 +397,7 @@ contract SecretStore is
             // TODO: need to have some buffer space for each enclave
             if (
                 secretStores[enclaveAddress].storageOccupied > 
-                (secretStores[enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_STORE_SIZE())
+                (secretStores[enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_SECRET_SIZE())
             )
                 _deleteIfPresent(_env, enclaveAddress);
         }
