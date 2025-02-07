@@ -18,7 +18,7 @@ contract AttestationVerifier is
     bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
 
     IRiscZeroVerifier public verifier;
-    bytes32 public imageId;
+    bytes32 public guestId;
     bytes public rootKey;
     uint256 public maxAge;
 
@@ -54,8 +54,8 @@ contract AttestationVerifier is
         IRiscZeroVerifier indexed verifier,
         IRiscZeroVerifier indexed old
     );
-    event AttestationVerifierUpdatedImageId(
-        bytes32 indexed imageId,
+    event AttestationVerifierUpdatedGuestId(
+        bytes32 indexed guestId,
         bytes32 indexed old
     );
     event AttestationVerifierUpdatedPcrs(bytes indexed pcrs, bytes indexed old);
@@ -93,7 +93,7 @@ contract AttestationVerifier is
         address _approver,
         address _revoker,
         IRiscZeroVerifier _verifier,
-        bytes32 _imageId,
+        bytes32 _guestId,
         bytes memory _rootKey,
         uint256 _maxAge,
         EnclaveImage memory _enclaveImage
@@ -103,7 +103,7 @@ contract AttestationVerifier is
         _grantRole(REVOKER_ROLE, _revoker);
 
         _updateVerifier(_verifier);
-        _updateImageId(_imageId);
+        _updateGuestId(_guestId);
         _updateRootKey(_rootKey);
         _updateMaxAge(_maxAge);
 
@@ -119,9 +119,9 @@ contract AttestationVerifier is
         verifier = _verifier;
     }
 
-    function _updateImageId(bytes32 _imageId) internal {
-        emit AttestationVerifierUpdatedImageId(_imageId, imageId);
-        imageId = _imageId;
+    function _updateGuestId(bytes32 _guestId) internal {
+        emit AttestationVerifierUpdatedGuestId(_guestId, guestId);
+        guestId = _guestId;
     }
 
     function _updateRootKey(bytes memory _rootKey) internal {
