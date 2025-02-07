@@ -28,6 +28,8 @@ abstract contract RiscZeroVerifier {
         _updateMaxAge(_maxAge);
     }
 
+    function _authorizeRiscZeroUpdate() internal virtual;
+
     function _updateVerifier(IRiscZeroVerifier _verifier) internal {
         emit RiscZeroVerifierUpdatedVerifier(_verifier, verifier);
         verifier = _verifier;
@@ -48,19 +50,23 @@ abstract contract RiscZeroVerifier {
         maxAge = _maxAge;
     }
 
-    function updateVerifier(IRiscZeroVerifier _verifier) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateVerifier(IRiscZeroVerifier _verifier) external {
+        _authorizeRiscZeroUpdate();
         return _updateVerifier(_verifier);
     }
 
-    function updateGuestId(bytes32 _guestId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateGuestId(bytes32 _guestId) external {
+        _authorizeRiscZeroUpdate();
         return _updateGuestId(_guestId);
     }
 
-    function updateRootKey(bytes calldata _rootKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateRootKey(bytes calldata _rootKey) external {
+        _authorizeRiscZeroUpdate();
         return _updateRootKey(_rootKey);
     }
 
-    function updateMaxAge(uint256 _maxAge) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateMaxAge(uint256 _maxAge) external {
+        _authorizeRiscZeroUpdate();
         return _updateMaxAge(_maxAge);
     }
 }
