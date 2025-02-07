@@ -22,13 +22,6 @@ contract AttestationVerifier is
     bytes public rootKey;
     uint256 public maxAge;
 
-    struct EnclaveImage {
-        bytes PCR0;
-        bytes PCR1;
-        bytes PCR2;
-        bytes userData;
-    }
-
     // ImageId -> image details
     mapping(bytes32 => bool) public whitelistedImages;
     // enclaveAddress -> ImageId
