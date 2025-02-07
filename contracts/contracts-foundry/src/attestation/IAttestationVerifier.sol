@@ -5,10 +5,7 @@ pragma solidity ^0.8.0;
 interface IAttestationVerifier {
     struct Attestation {
         bytes enclavePubKey;
-        bytes PCR0;
-        bytes PCR1;
-        bytes PCR2;
-        bytes userData;
+        bytes32 imageId;
         uint256 timestampInMilliseconds;
     }
 
