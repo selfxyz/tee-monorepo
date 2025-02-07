@@ -64,23 +64,24 @@ contract AttestationVerifier is
         bytes indexed old
     );
     event AttestationVerifierUpdatedMaxAge(uint256 maxAge, uint256 old);
-
-    event EnclaveImageWhitelisted(
+    event AttestationVerifierEnclaveImageWhitelisted(
         bytes32 indexed imageId,
         bytes PCR0,
         bytes PCR1,
         bytes PCR2,
         bytes userData
     );
-    event EnclaveImageRevoked(bytes32 indexed imageId);
-    event EnclaveKeyWhitelisted(
+    event AttestationVerifierEnclaveImageRevoked(bytes32 indexed imageId);
+    event AttestationVerifierEnclaveKeyWhitelisted(
         address indexed enclaveAddress,
-        bytes32 indexed imageId
+        bytes32 indexed imageId,
+        address indexed enclavePubkey
     );
-    event EnclaveKeyRevoked(address indexed enclaveAddress);
-    event EnclaveKeyVerified(
+    event AttestationVerifierEnclaveKeyRevoked(address indexed enclaveAddress);
+    event AttestationVerifierEnclaveKeyVerified(
         address indexed enclaveAddress,
-        bytes32 indexed imageId
+        bytes32 indexed imageId,
+        address indexed enclavePubkey
     );
 
     //-------------------------------- Events end --------------------------------//
@@ -134,43 +135,46 @@ contract AttestationVerifier is
     }
 
     function _pubKeyToAddress(
-        bytes memory pubKey
+        bytes memory _pubKey
     ) internal pure returns (address) {
-        if (!(pubKey.length == 64))
-            revert AttestationVerifierPubkeyLengthInvalid();
+        require(_pubKey.length == 64, AttestationVerifierPubkeyLengthInvalid());
 
-        bytes32 hash = keccak256(pubKey);
-        return address(uint160(uint256(hash)));
+        bytes32 _hash = keccak256(_pubKey);
+        return address(uint160(uint256(_hash)));
     }
 
     function _whitelistEnclaveImage(
-        EnclaveImage memory image
+        EnclaveImage memory _image
     ) internal returns (bytes32, bool) {
-        if (
-            !(image.PCR0.length == 48 &&
-                image.PCR1.length == 48 &&
-                image.PCR2.length == 48)
-        ) revert AttestationVerifierPCRsInvalid();
+        require(_image.PCR0.length == 48, AttestationVerifierPCRsInvalid());
+        require(_image.PCR1.length == 48, AttestationVerifierPCRsInvalid());
+        require(_image.PCR2.length == 48, AttestationVerifierPCRsInvalid());
 
-        bytes32 imageId = keccak256(
-            abi.encodePacked(image.PCR0, image.PCR1, image.PCR2)
+        bytes32 _imageId = keccak256(
+            abi.encodePacked(
+                _image.PCR0,
+                _image.PCR1,
+                _image.PCR2,
+                _image.userData
+            )
         );
-        if (!(whitelistedImages[imageId].PCR0.length == 0))
-            return (imageId, false);
+        if (!(whitelistedImages[_imageId].PCR0.length == 0))
+            return (_imageId, false);
 
-        whitelistedImages[imageId] = EnclaveImage(
-            image.PCR0,
-            image.PCR1,
-            image.PCR2
+        whitelistedImages[_imageId] = EnclaveImage(
+            _image.PCR0,
+            _image.PCR1,
+            _image.PCR2
         );
-        emit EnclaveImageWhitelisted(
-            imageId,
-            image.PCR0,
-            image.PCR1,
-            image.PCR2
+        emit AttestationVerifierEnclaveImageWhitelisted(
+            _imageId,
+            _image.PCR0,
+            _image.PCR1,
+            _image.PCR2,
+            _image.userData
         );
 
-        return (imageId, true);
+        return (_imageId, true);
     }
 
     function _revokeEnclaveImage(bytes32 imageId) internal returns (bool) {
