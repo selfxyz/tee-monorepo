@@ -130,38 +130,13 @@ contract AttestationVerifier is
         return address(uint160(uint256(_hash)));
     }
 
-    function _whitelistEnclaveImage(
-        EnclaveImage memory _image
-    ) internal returns (bytes32, bool) {
-        require(_image.PCR0.length == 48, AttestationVerifierPCRsInvalid());
-        require(_image.PCR1.length == 48, AttestationVerifierPCRsInvalid());
-        require(_image.PCR2.length == 48, AttestationVerifierPCRsInvalid());
+    function _whitelistEnclaveImage(bytes32 _imageId) internal returns (bool) {
+        if (whitelistedImages[_imageId]) return false;
 
-        bytes32 _imageId = keccak256(
-            abi.encodePacked(
-                _image.PCR0,
-                _image.PCR1,
-                _image.PCR2,
-                _image.userData
-            )
-        );
-        if (!(whitelistedImages[_imageId].PCR0.length == 0))
-            return (_imageId, false);
+        whitelistedImages[_imageId] = true;
+        emit AttestationVerifierEnclaveImageWhitelisted(_imageId);
 
-        whitelistedImages[_imageId] = EnclaveImage(
-            _image.PCR0,
-            _image.PCR1,
-            _image.PCR2
-        );
-        emit AttestationVerifierEnclaveImageWhitelisted(
-            _imageId,
-            _image.PCR0,
-            _image.PCR1,
-            _image.PCR2,
-            _image.userData
-        );
-
-        return (_imageId, true);
+        return true;
     }
 
     function _revokeEnclaveImage(bytes32 imageId) internal returns (bool) {
