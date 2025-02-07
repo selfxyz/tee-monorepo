@@ -184,7 +184,7 @@ contract AttestationVerifier is
 
     //-------------------------------- Read only methods start -------------------------------//
 
-    bytes32 private constant DOMAIN_SEPARATOR = keccak256(
+    bytes32 public constant DOMAIN_SEPARATOR = keccak256(
         abi.encode(
             keccak256("EIP712Domain(string name,string version)"),
             keccak256("marlin.oyster.AttestationVerifier"),
@@ -192,7 +192,7 @@ contract AttestationVerifier is
         )
     );
 
-    bytes32 private constant ATTESTATION_TYPEHASH =
+    bytes32 public constant ATTESTATION_TYPEHASH =
         keccak256("Attestation(bytes enclavePubKey,bytes32 imageId,uint256 timestampInMilliseconds)");
 
     function _verify(bytes memory _signature, Attestation memory _attestation) internal view {
