@@ -147,3 +147,35 @@ contract RiscZeroVerifierTestUpdateRootKey is Test {
         riscZeroVerifier.updateRootKey(_rootKey);
     }
 }
+
+contract RiscZeroVerifierTestUpdateMaxAge is Test {
+    IRiscZeroVerifier verifier;
+    bytes32 guestId;
+    bytes rootKey;
+    uint256 maxAge;
+    TestRiscZeroVerifier riscZeroVerifier;
+
+    function setUp() public {
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAge = vm.randomUint();
+        riscZeroVerifier = new TestRiscZeroVerifier(verifier, guestId, rootKey, maxAge, true);
+    }
+
+    function test_UpdateMaxAge_Authorized(uint256 _maxAge) public {
+        vm.expectEmit();
+        emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAge, maxAge);
+
+        riscZeroVerifier.updateMaxAge(_maxAge);
+
+        assertEq(riscZeroVerifier.maxAge(), _maxAge);
+    }
+
+    function test_UpdateMaxAge_Unauthorized(uint256 _maxAge) public {
+        riscZeroVerifier.setAuthorized(false);
+        vm.expectRevert(TestRiscZeroVerifier.NotAuthorized.selector);
+
+        riscZeroVerifier.updateMaxAge(_maxAge);
+    }
+}
