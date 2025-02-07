@@ -83,7 +83,7 @@ contract AttestationVerifier is
         bytes32 _guestId,
         bytes memory _rootKey,
         uint256 _maxAge,
-        EnclaveImage memory _enclaveImage
+        bytes32 _imageId
     ) {
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(APPROVER_ROLE, _approver);
@@ -94,7 +94,7 @@ contract AttestationVerifier is
         _updateRootKey(_rootKey);
         _updateMaxAge(_maxAge);
 
-        _whitelistEnclaveImage(_enclaveImage);
+        _whitelistEnclaveImage(_imageId);
     }
 
     //-------------------------------- Constructor end --------------------------------//
