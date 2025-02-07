@@ -361,6 +361,27 @@ contract TreeMapUpgradeable is Initializable {
         }
     }
 
+    /**
+     * @dev Here, _selectedPathTree points to the 0x60 memory address, since array is uninitialised.
+     *
+     *      Since, we are initializing the array using assembly, _selectedPathTree needs to be set to the next free 
+     *      pointer that is value at 0x40 , hence following assembly statement
+     *
+     *      _selectedPathTree := mload(0x40)
+     *
+     *      Now, memory pointed by _selectedPathTree will be filled by length of array required, i.e. 83.
+     *
+     *      Need to allot a memory slot for each index to store the memory address of corresponding stored struct 
+     *      object. Hence free memory pointer need to be increased by 83 slots. Additionally, free memory pointer 
+     *      needs to be increased by one slot that was occupied to store the length of the array. That's why
+     *
+     *      mstore(0x40, add(_selectedPathTree, 2688))
+     *
+     *      2688 bytes = (1 + 83) slots * 32 bytes
+     *
+     *      Lastly, to store length of array
+     *      mstore(_selectedPathTree, 83)
+     */
     function _selectN(uint8 _env, uint256 _randomizer, uint256 _N) internal view returns (address[] memory _selectedNodes) {
         TreeMapStorage storage $ = _getTreeMapStorage();
 
