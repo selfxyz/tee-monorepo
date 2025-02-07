@@ -3,8 +3,12 @@ use std::num::TryFromIntError;
 
 use alloy::{
     dyn_abi::Eip712Domain,
-    primitives::U256,
-    signers::{local::PrivateKeySigner, SignerSync},
+    primitives::{B256, U256},
+    signers::{
+        k256::sha2::{Digest, Sha256},
+        local::PrivateKeySigner,
+        SignerSync,
+    },
     sol,
     sol_types::{eip712_domain, SolStruct},
 };
@@ -38,10 +42,7 @@ struct HexAttestation {
 pub struct VerifyAttestationResponse {
     pub signature: String,
     pub public_key: String,
-    pub pcr0: String,
-    pub pcr1: String,
-    pub pcr2: String,
-    pub user_data: String,
+    pub image_id: String,
     pub timestamp: usize,
     pub verifier_public_key: String,
 }
@@ -56,6 +57,8 @@ pub enum UserError {
     SignatureGeneration(#[source] alloy::signers::Error),
     #[error("invalid recovery id")]
     InvalidRecovery(#[source] TryFromIntError),
+    #[error("user data too big")]
+    UserDataTooBig,
 }
 
 impl From<UserError> for (StatusCode, String) {
@@ -67,6 +70,7 @@ impl From<UserError> for (StatusCode, String) {
                 AttestationVerification(_) => StatusCode::UNAUTHORIZED,
                 SignatureGeneration(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 InvalidRecovery(_) => StatusCode::UNAUTHORIZED,
+                UserDataTooBig => StatusCode::BAD_REQUEST,
             },
             format!("{:?}", value),
         )
@@ -102,29 +106,40 @@ const DOMAIN: Eip712Domain = eip712_domain! {
 sol! {
     struct Attestation {
         bytes enclavePubKey;
-        bytes PCR0;
-        bytes PCR1;
-        bytes PCR2;
-        bytes userData;
+        bytes32 imageId;
         uint256 timestampInMilliseconds;
     }
 }
 
-fn compute_signature(
-    enclave_pubkey: &[u8],
+fn compute_image_id(
     pcr0: &[u8],
     pcr1: &[u8],
     pcr2: &[u8],
     user_data: &[u8],
+) -> Result<B256, UserError> {
+    if user_data.len() > 65535 {
+        return Err(UserError::UserDataTooBig);
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(pcr0);
+    hasher.update(pcr1);
+    hasher.update(pcr2);
+    hasher.update((user_data.len() as u16).to_be_bytes());
+    hasher.update(user_data);
+
+    Ok(B256::from_slice(&hasher.finalize()))
+}
+
+fn compute_signature(
+    enclave_pubkey: &[u8],
+    image_id: B256,
     timestamp: usize,
     signer: &PrivateKeySigner,
 ) -> Result<[u8; 65], UserError> {
     let attestation = Attestation {
         enclavePubKey: enclave_pubkey.to_owned().into(),
-        PCR0: pcr0.to_owned().into(),
-        PCR1: pcr1.to_owned().into(),
-        PCR2: pcr2.to_owned().into(),
-        userData: user_data.to_owned().into(),
+        imageId: image_id,
         timestampInMilliseconds: U256::from(timestamp),
     };
     let hash = attestation.eip712_signing_hash(&DOMAIN);
@@ -150,12 +165,15 @@ fn verify(
     )
     .map_err(UserError::AttestationVerification)?;
 
-    let signature = compute_signature(
-        &decoded.public_key.as_ref(),
+    let image_id = compute_image_id(
         &decoded.pcrs[0],
         &decoded.pcrs[1],
         &decoded.pcrs[2],
         &decoded.user_data,
+    )?;
+    let signature = compute_signature(
+        &decoded.public_key.as_ref(),
+        image_id,
         decoded.timestamp,
         signer,
     )?;
@@ -163,10 +181,7 @@ fn verify(
     Ok(VerifyAttestationResponse {
         signature: hex::encode(signature),
         public_key: hex::encode(decoded.public_key),
-        pcr0: hex::encode(decoded.pcrs[0]),
-        pcr1: hex::encode(decoded.pcrs[1]),
-        pcr2: hex::encode(decoded.pcrs[2]),
-        user_data: hex::encode(decoded.user_data),
+        image_id: hex::encode(image_id),
         timestamp: decoded.timestamp,
         verifier_public_key: hex::encode(public),
     }
