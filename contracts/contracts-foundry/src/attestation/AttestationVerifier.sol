@@ -6,21 +6,19 @@ import {ECDSA} from "../../lib/openzeppelin-contracts/contracts/utils/cryptograp
 import {AccessControl} from "../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
-import "./IAttestationVerifier.sol";
+import {RiscZeroVerifier} from "./RiscZeroVerifier.sol";
+
+import {IAttestationVerifier} from "./IAttestationVerifier.sol";
 
 contract AttestationVerifier is
     AccessControl, // RBAC
+    RiscZeroVerifier, // RiscZero verifier
     IAttestationVerifier // interface
 {
     //-------------------------------- Declarations start --------------------------------//
 
     bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
     bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
-
-    IRiscZeroVerifier public verifier;
-    bytes32 public guestId;
-    bytes public rootKey;
-    uint256 public maxAge;
 
     // ImageId -> image details
     mapping(bytes32 => bool) public whitelistedImages;
@@ -64,15 +62,10 @@ contract AttestationVerifier is
         bytes memory _rootKey,
         uint256 _maxAge,
         bytes32 _imageId
-    ) {
+    ) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAge) {
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(APPROVER_ROLE, _approver);
         _grantRole(REVOKER_ROLE, _revoker);
-
-        _updateVerifier(_verifier);
-        _updateGuestId(_guestId);
-        _updateRootKey(_rootKey);
-        _updateMaxAge(_maxAge);
 
         _whitelistEnclaveImage(_imageId);
     }
@@ -81,25 +74,7 @@ contract AttestationVerifier is
 
     //-------------------------------- Admin methods start --------------------------------//
 
-    function _updateVerifier(IRiscZeroVerifier _verifier) internal {
-        emit AttestationVerifierUpdatedVerifier(_verifier, verifier);
-        verifier = _verifier;
-    }
-
-    function _updateGuestId(bytes32 _guestId) internal {
-        emit AttestationVerifierUpdatedGuestId(_guestId, guestId);
-        guestId = _guestId;
-    }
-
-    function _updateRootKey(bytes memory _rootKey) internal {
-        emit AttestationVerifierUpdatedRootKey(_rootKey, rootKey);
-        rootKey = _rootKey;
-    }
-
-    function _updateMaxAge(uint256 _maxAge) internal {
-        emit AttestationVerifierUpdatedMaxAge(_maxAge, maxAge);
-        maxAge = _maxAge;
-    }
+    function _authorizeRiscZeroUpdate() internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function _pubKeyToAddress(bytes memory _pubKey) internal pure returns (address) {
         require(_pubKey.length == 64, AttestationVerifierPubkeyLengthInvalid());
@@ -124,22 +99,6 @@ contract AttestationVerifier is
         emit AttestationVerifierEnclaveImageRevoked(_imageId);
 
         return true;
-    }
-
-    function updateVerifier(IRiscZeroVerifier _verifier) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        return _updateVerifier(_verifier);
-    }
-
-    function updateGuestId(bytes32 _guestId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        return _updateGuestId(_guestId);
-    }
-
-    function updateRootKey(bytes calldata _rootKey) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        return _updateRootKey(_rootKey);
-    }
-
-    function updateMaxAge(uint256 _maxAge) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        return _updateMaxAge(_maxAge);
     }
 
     function whitelistEnclaveImage(bytes32 _imageId) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
