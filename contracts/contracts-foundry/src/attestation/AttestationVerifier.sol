@@ -143,30 +143,15 @@ contract AttestationVerifier is
     }
 
     function whitelistEnclaveImage(
-        bytes memory PCR0,
-        bytes memory PCR1,
-        bytes memory PCR2
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bytes32, bool) {
-        return _whitelistEnclaveImage(EnclaveImage(PCR0, PCR1, PCR2));
+        bytes32 _imageId
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+        return _whitelistEnclaveImage(_imageId);
     }
 
     function revokeEnclaveImage(
         bytes32 imageId
     ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         return _revokeEnclaveImage(imageId);
-    }
-
-    function whitelistEnclaveKey(
-        bytes memory enclavePubKey,
-        bytes32 imageId
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _whitelistEnclaveKey(enclavePubKey, imageId);
-    }
-
-    function revokeEnclaveKey(
-        address enclaveAddress
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        return _revokeEnclaveKey(enclaveAddress);
     }
 
     //-------------------------------- Admin methods end --------------------------------//
