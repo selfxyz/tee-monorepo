@@ -2,12 +2,12 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "../../lib/forge-std/src/Test.sol";
-import {RiscZeroVerifier} from "../../src/attestation/RiscZeroVerifier.sol";
+import {RiscZeroVerifier, RiscZeroVerifierDefault} from "../../src/attestation/RiscZeroVerifier.sol";
 
 import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
-contract TestRiscZeroVerifier is RiscZeroVerifier {
+contract TestRiscZeroVerifier is RiscZeroVerifierDefault {
     bool public authorized;
 
     error NotAuthorized();
@@ -26,7 +26,7 @@ contract TestRiscZeroVerifier is RiscZeroVerifier {
         authorized = _authorized;
     }
 
-    function _authorizeRiscZeroUpdate() internal virtual override {
+    function _rzvAuthorizeUpdate() internal virtual override {
         require(authorized, NotAuthorized());
     }
 
