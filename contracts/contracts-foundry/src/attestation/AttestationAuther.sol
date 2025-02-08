@@ -25,14 +25,14 @@ abstract contract AttestationAuther {
 
     constructor(IAttestationVerifier _verifier, bytes32 _imageId, bytes32 _family) {
         verifier = _verifier;
-        _approve(_imageId, _family);
+        _approveImage(_imageId, _family);
     }
 
     function _authorizeAutherApprove() internal virtual;
     function _authorizeAutherRevoke() internal virtual;
     function _transformAutherPubkey(bytes memory _pubkey) internal virtual returns (bytes32);
 
-    function _approve(bytes32 _imageId, bytes32 _family) internal returns (bool) {
+    function _approveImage(bytes32 _imageId, bytes32 _family) internal returns (bool) {
         if (images[_imageId] != bytes32(0)) {
             require(images[_imageId] == _family, AttestationAutherFamilyMismatch());
 
@@ -45,7 +45,7 @@ abstract contract AttestationAuther {
         return true;
     }
 
-    function _revoke(bytes32 _imageId) internal returns (bool) {
+    function _revokeImage(bytes32 _imageId) internal returns (bool) {
         if (images[_imageId] == bytes32(0)) return false;
 
         emit AttestationAutherRevoked(_imageId, images[_imageId]);
@@ -54,14 +54,14 @@ abstract contract AttestationAuther {
         return true;
     }
 
-    function approve(bytes32 _imageId, bytes32 _family) external returns (bool) {
+    function approveImage(bytes32 _imageId, bytes32 _family) external returns (bool) {
         _authorizeAutherApprove();
-        return _approve(_imageId, _family);
+        return _approveImage(_imageId, _family);
     }
 
-    function revoke(bytes32 _imageId) external returns (bool) {
+    function revokeImage(bytes32 _imageId) external returns (bool) {
         _authorizeAutherRevoke();
-        return _revoke(_imageId);
+        return _revokeImage(_imageId);
     }
 
     function verifyEnclave(
