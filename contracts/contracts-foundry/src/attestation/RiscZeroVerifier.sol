@@ -143,3 +143,55 @@ abstract contract RiscZeroVerifier {
         _rzvGetVerifier().verify(_seal, _rzvGetGuestId(), _journalDigest);
     }
 }
+
+/// @title Default RiscZero based attestation verifier with storage
+abstract contract RiscZeroVerifierDefault is RiscZeroVerifier {
+    /// @notice Underlying RiscZero verifier contract
+    IRiscZeroVerifier public verifier;
+    /// @notice Expected guest image ID
+    bytes32 public guestId;
+    /// @notice Expected root public key of the attestation
+    bytes public rootKey;
+    /// @notice Maximum allowed age of attestations in milliseconds
+    uint256 public maxAgeMs;
+
+    /// @notice Hook for getting the underlying RiscZero verifier
+    function _rzvGetVerifier() internal view virtual override returns (IRiscZeroVerifier) {
+        return verifier;
+    }
+
+    /// @notice Hook for setting the underlying RiscZero verifier
+    function _rzvSetVerifier(IRiscZeroVerifier _verifier) internal virtual override {
+        verifier = _verifier;
+    }
+
+    /// @notice Hook for getting the expected guest id
+    function _rzvGetGuestId() internal view virtual override returns (bytes32) {
+        return guestId;
+    }
+
+    /// @notice Hook for setting the expected guest id
+    function _rzvSetGuestId(bytes32 _guestId) internal virtual override {
+        guestId = _guestId;
+    }
+
+    /// @notice Hook for getting the expected root key
+    function _rzvGetRootKey() internal view virtual override returns (bytes memory) {
+        return rootKey;
+    }
+
+    /// @notice Hook for setting the expected root key
+    function _rzvSetRootKey(bytes memory _rootKey) internal virtual override {
+        rootKey = _rootKey;
+    }
+
+    /// @notice Hook for getting the maximum allowed age of attestations in milliseconds
+    function _rzvGetMaxAgeMs() internal view virtual override returns (uint256) {
+        return maxAgeMs;
+    }
+
+    /// @notice Hook for setting the maximum allowed age of attestations in milliseconds
+    function _rzvSetMaxAgeMs(uint256 _maxAgeMs) internal virtual override {
+        maxAgeMs = _maxAgeMs;
+    }
+}
