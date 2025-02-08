@@ -7,14 +7,29 @@ import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZer
 /// @title RiscZero based attestation verifier
 /// @notice Contract for verifying RiscZero proofs of attestation verification
 abstract contract RiscZeroVerifier {
-    /// @notice Underlying RiscZero verifier contract
-    IRiscZeroVerifier public verifier;
-    /// @notice Expected guest image ID
-    bytes32 public guestId;
-    /// @notice Expected root public key of the attestation
-    bytes public rootKey;
-    /// @notice Maximum allowed age of attestations in milliseconds
-    uint256 public maxAgeMs;
+    /// @notice Hook for getting the underlying RiscZero verifier
+    function _rzvGetVerifier() internal virtual returns (IRiscZeroVerifier);
+    /// @notice Hook for setting the underlying RiscZero verifier
+    function _rzvSetVerifier(IRiscZeroVerifier) internal virtual;
+
+    /// @notice Hook for getting the expected guest id
+    function _rzvGetGuestId() internal virtual returns (bytes32);
+    /// @notice Hook for setting the expected guest id
+    function _rzvSetGuestId(bytes32) internal virtual;
+
+    /// @notice Hook for getting the expected root key
+    function _rzvGetRootKey() internal virtual returns (bytes memory);
+    /// @notice Hook for setting the expected root key
+    function _rzvSetRootKey(bytes memory) internal virtual;
+
+    /// @notice Hook for getting the maximum allowed age of attestations in milliseconds
+    function _rzvGetMaxAgeMs() internal virtual returns (uint256);
+    /// @notice Hook for setting the maximum allowed age of attestations in milliseconds
+    function _rzvSetMaxAgeMs(uint256) internal virtual;
+
+    /// @notice Hook for authorization logic for parameter updates
+    /// @dev Must be implemented by derived contracts to enforce access control
+    function _rzvAuthorizeUpdate() internal virtual;
 
     /// @notice Thrown when attestation is too old
     error RiscZeroVerifierTooOld();
@@ -50,43 +65,39 @@ abstract contract RiscZeroVerifier {
         _updateMaxAge(_maxAgeMs);
     }
 
-    /// @notice Hook for authorization logic for parameter updates
-    /// @dev Must be implemented by derived contracts to enforce access control
-    function _authorizeRiscZeroUpdate() internal virtual;
-
     /// @dev Internal setter for verifier contract
     /// @param _verifier New verifier contract address
     function _updateVerifier(IRiscZeroVerifier _verifier) internal {
-        emit RiscZeroVerifierUpdatedVerifier(_verifier, verifier);
-        verifier = _verifier;
+        emit RiscZeroVerifierUpdatedVerifier(_verifier, _rzvGetVerifier());
+        _rzvSetVerifier(_verifier);
     }
 
     /// @dev Internal setter for guest ID
     /// @param _guestId New guest ID
     function _updateGuestId(bytes32 _guestId) internal {
-        emit RiscZeroVerifierUpdatedGuestId(_guestId, guestId);
-        guestId = _guestId;
+        emit RiscZeroVerifierUpdatedGuestId(_guestId, _rzvGetGuestId());
+        _rzvSetGuestId(_guestId);
     }
 
     /// @dev Internal setter for root key
     /// @param _rootKey New root key
     function _updateRootKey(bytes memory _rootKey) internal {
-        emit RiscZeroVerifierUpdatedRootKey(_rootKey, rootKey);
-        rootKey = _rootKey;
+        emit RiscZeroVerifierUpdatedRootKey(_rootKey, _rzvGetRootKey());
+        _rzvSetRootKey(_rootKey);
     }
 
     /// @dev Internal setter for maximum age
     /// @param _maxAgeMs New maximum age in milliseconds
     function _updateMaxAge(uint256 _maxAgeMs) internal {
-        emit RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, maxAgeMs);
-        maxAgeMs = _maxAgeMs;
+        emit RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, _rzvGetMaxAgeMs());
+        _rzvSetMaxAgeMs(_maxAgeMs);
     }
 
     /// @notice Updates verifier contract address
     /// @dev Callable only by authorized accounts
     /// @param _verifier New verifier contract address
     function updateVerifier(IRiscZeroVerifier _verifier) external {
-        _authorizeRiscZeroUpdate();
+        _rzvAuthorizeUpdate();
         return _updateVerifier(_verifier);
     }
 
@@ -94,7 +105,7 @@ abstract contract RiscZeroVerifier {
     /// @dev Callable only by authorized accounts
     /// @param _guestId New guest ID
     function updateGuestId(bytes32 _guestId) external {
-        _authorizeRiscZeroUpdate();
+        _rzvAuthorizeUpdate();
         return _updateGuestId(_guestId);
     }
 
@@ -102,7 +113,7 @@ abstract contract RiscZeroVerifier {
     /// @dev Callable only by authorized accounts
     /// @param _rootKey New root key
     function updateRootKey(bytes calldata _rootKey) external {
-        _authorizeRiscZeroUpdate();
+        _rzvAuthorizeUpdate();
         return _updateRootKey(_rootKey);
     }
 
@@ -110,7 +121,7 @@ abstract contract RiscZeroVerifier {
     /// @dev Callable only by authorized accounts
     /// @param _maxAgeMs New maximum age in milliseconds
     function updateMaxAge(uint256 _maxAgeMs) external {
-        _authorizeRiscZeroUpdate();
+        _rzvAuthorizeUpdate();
         return _updateMaxAge(_maxAgeMs);
     }
 
@@ -124,10 +135,11 @@ abstract contract RiscZeroVerifier {
         internal
         view
     {
-        require(_timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs, RiscZeroVerifierTooOld());
+        require(_timestampInMilliseconds > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
         require(_pubkey.length <= 256, RiscZeroVerifierPubkeyTooLong());
-        bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
-        verifier.verify(_seal, guestId, _journalDigest);
+        bytes32 _journalDigest = sha256(
+            abi.encodePacked(_timestampInMilliseconds, _rzvGetRootKey(), uint8(_pubkey.length), _pubkey, _imageId)
+        );
+        _rzvGetVerifier().verify(_seal, _rzvGetGuestId(), _journalDigest);
     }
 }
