@@ -50,6 +50,7 @@ contract KmsRoot is Ownable, RiscZeroVerifier {
         return address(uint160(uint256(_hash)));
     }
 
+    /// @notice Authorizes the owner to execute parameter updates
     function _authorizeRiscZeroUpdate() internal virtual override onlyOwner {}
 
     /// @notice Verifies a KMS attestation
