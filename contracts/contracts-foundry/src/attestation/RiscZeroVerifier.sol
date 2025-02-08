@@ -120,7 +120,7 @@ abstract contract RiscZeroVerifier {
     /// @param _pubkey Attestation public key
     /// @param _imageId Enclave image ID
     /// @param _timestampInMilliseconds Attestation timestamp in milliseconds
-    function _verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
+    function _verify(bytes memory _seal, bytes memory _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
         internal
         view
     {
