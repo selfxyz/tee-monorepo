@@ -8,22 +8,22 @@ import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZer
 /// @notice Contract for verifying RiscZero proofs of attestation verification
 abstract contract RiscZeroVerifier {
     /// @notice Hook for getting the underlying RiscZero verifier
-    function _rzvGetVerifier() internal virtual returns (IRiscZeroVerifier);
+    function _rzvGetVerifier() internal view virtual returns (IRiscZeroVerifier);
     /// @notice Hook for setting the underlying RiscZero verifier
     function _rzvSetVerifier(IRiscZeroVerifier) internal virtual;
 
     /// @notice Hook for getting the expected guest id
-    function _rzvGetGuestId() internal virtual returns (bytes32);
+    function _rzvGetGuestId() internal view virtual returns (bytes32);
     /// @notice Hook for setting the expected guest id
     function _rzvSetGuestId(bytes32) internal virtual;
 
     /// @notice Hook for getting the expected root key
-    function _rzvGetRootKey() internal virtual returns (bytes memory);
+    function _rzvGetRootKey() internal view virtual returns (bytes memory);
     /// @notice Hook for setting the expected root key
     function _rzvSetRootKey(bytes memory) internal virtual;
 
     /// @notice Hook for getting the maximum allowed age of attestations in milliseconds
-    function _rzvGetMaxAgeMs() internal virtual returns (uint256);
+    function _rzvGetMaxAgeMs() internal view virtual returns (uint256);
     /// @notice Hook for setting the maximum allowed age of attestations in milliseconds
     function _rzvSetMaxAgeMs(uint256) internal virtual;
 
