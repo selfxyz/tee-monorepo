@@ -26,6 +26,8 @@ abstract contract AttestationAuther {
         _approve(_imageId);
     }
 
+    function _authorizeAutherApprove() internal virtual;
+    function _authorizeAutherRevoke() internal virtual;
     function _transformAutherPubkey(bytes memory _pubkey) internal virtual returns (bytes32);
 
     function _approve(bytes32 _imageId) internal returns (bool) {
@@ -46,8 +48,22 @@ abstract contract AttestationAuther {
         return true;
     }
 
-    function _verifyEnclave(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation) internal returns (bool) {
+    function approve(bytes32 _imageId) external returns (bool) {
+        _authorizeAutherApprove();
+        return _approve(_imageId);
+    }
+
+    function revoke(bytes32 _imageId) external returns (bool) {
+        _authorizeAutherRevoke();
+        return _revoke(_imageId);
+    }
+
+    function verifyEnclave(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation)
+        external
+        returns (bool)
+    {
         require(_attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs, AttestationAutherTooOld());
+
         bytes32 _imageId = _attestation.imageId;
         require(isApproved[_imageId], AttestationAutherNotApproved());
 
