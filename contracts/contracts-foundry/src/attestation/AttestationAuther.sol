@@ -8,49 +8,55 @@ import {IAttestationVerifier} from "./IAttestationVerifier.sol";
 
 abstract contract AttestationAuther {
     IAttestationVerifier public verifier;
-    // image id -> approved or not
-    mapping(bytes32 => bool) public isApproved;
+    // image id -> family
+    mapping(bytes32 => bytes32) public images;
     // enclave key, transformed -> image id
-    mapping(bytes32 => bytes32) public isVerified;
+    mapping(bytes32 => bytes32) public keys;
     uint256 public maxAgeMs;
 
-    error AttestationAutherTooOld();
-    error AttestationAutherNotApproved();
+    bytes32 public constant DEFAULT_FAMILY = keccak256("DEFAULT_FAMILY");
 
-    event AttestationAutherApproved(bytes32 indexed imageId);
-    event AttestationAutherRevoked(bytes32 indexed imageId);
+    error AttestationAutherTooOld();
+    error AttestationAutherFamilyMismatch();
+
+    event AttestationAutherApproved(bytes32 indexed imageId, bytes32 indexed family);
+    event AttestationAutherRevoked(bytes32 indexed imageId, bytes32 indexed family);
     event AttestationAutherVerified(bytes32 indexed enclaveKey, bytes32 indexed imageId, bytes indexed enclavePubkey);
 
-    constructor(IAttestationVerifier _verifier, bytes32 _imageId) {
+    constructor(IAttestationVerifier _verifier, bytes32 _imageId, bytes32 _family) {
         verifier = _verifier;
-        _approve(_imageId);
+        _approve(_imageId, _family);
     }
 
     function _authorizeAutherApprove() internal virtual;
     function _authorizeAutherRevoke() internal virtual;
     function _transformAutherPubkey(bytes memory _pubkey) internal virtual returns (bytes32);
 
-    function _approve(bytes32 _imageId) internal returns (bool) {
-        if (isApproved[_imageId]) return false;
+    function _approve(bytes32 _imageId, bytes32 _family) internal returns (bool) {
+        if (images[_imageId] != bytes32(0)) {
+            require(images[_imageId] == _family, AttestationAutherFamilyMismatch());
 
-        isApproved[_imageId] = true;
-        emit AttestationAutherApproved(_imageId);
+            return false;
+        }
+
+        images[_imageId] = _family;
+        emit AttestationAutherApproved(_imageId, _family);
 
         return true;
     }
 
     function _revoke(bytes32 _imageId) internal returns (bool) {
-        if (!isApproved[_imageId]) return false;
+        if (images[_imageId] == bytes32(0)) return false;
 
-        delete isApproved[_imageId];
-        emit AttestationAutherRevoked(_imageId);
+        emit AttestationAutherRevoked(_imageId, images[_imageId]);
+        delete images[_imageId];
 
         return true;
     }
 
-    function approve(bytes32 _imageId) external returns (bool) {
+    function approve(bytes32 _imageId, bytes32 _family) external returns (bool) {
         _authorizeAutherApprove();
-        return _approve(_imageId);
+        return _approve(_imageId, _family);
     }
 
     function revoke(bytes32 _imageId) external returns (bool) {
@@ -58,21 +64,22 @@ abstract contract AttestationAuther {
         return _revoke(_imageId);
     }
 
-    function verifyEnclave(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation)
-        external
-        returns (bool)
-    {
+    function verifyEnclave(
+        bytes memory _signature,
+        IAttestationVerifier.Attestation memory _attestation,
+        bytes32 _family
+    ) external returns (bool) {
         require(_attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs, AttestationAutherTooOld());
 
         bytes32 _imageId = _attestation.imageId;
-        require(isApproved[_imageId], AttestationAutherNotApproved());
+        require(images[_imageId] == _family, AttestationAutherFamilyMismatch());
 
         verifier.verify(_signature, _attestation);
 
         bytes32 _enclaveKey = _transformAutherPubkey(_attestation.enclavePubKey);
-        if (isVerified[_enclaveKey] != bytes32(0)) return false;
+        if (keys[_enclaveKey] != bytes32(0)) return false;
 
-        isVerified[_enclaveKey] = _imageId;
+        keys[_enclaveKey] = _imageId;
         emit AttestationAutherVerified(_enclaveKey, _imageId, _attestation.enclavePubKey);
 
         return true;
