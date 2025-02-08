@@ -5,11 +5,11 @@ pragma solidity ^0.8.0;
 import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
-import {RiscZeroVerifier} from "../attestation/RiscZeroVerifier.sol";
+import {RiscZeroVerifier, RiscZeroVerifierDefault} from "../attestation/RiscZeroVerifier.sol";
 
 /// @title KMS Root Contract
 /// @notice Manages list of KMS servers allowed to decrypt root key
-contract KmsRoot is Ownable, RiscZeroVerifier {
+contract KmsRoot is Ownable, RiscZeroVerifierDefault {
     /// @notice Enclave image ID
     bytes32 public imageId;
     /// @notice Mapping of addresses to their verification status
@@ -51,7 +51,7 @@ contract KmsRoot is Ownable, RiscZeroVerifier {
     }
 
     /// @notice Authorizes the owner to execute parameter updates
-    function _authorizeRiscZeroUpdate() internal virtual override onlyOwner {}
+    function _rzvAuthorizeUpdate() internal virtual override onlyOwner {}
 
     /// @notice Verifies a KMS attestation
     /// @param _seal Proof seal from RiscZero
