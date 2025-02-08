@@ -32,6 +32,7 @@ contract TestRiscZeroVerifier is RiscZeroVerifier {
 
     function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
         external
+        view
     {
         return _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
     }
