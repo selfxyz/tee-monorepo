@@ -78,3 +78,26 @@ abstract contract VerifiedKeys {
         require(_vkGetImageFamily(_imageId) != bytes32(0), VerifiedKeysNotVerified());
     }
 }
+
+abstract contract VerifiedKeysDefault is VerifiedKeys {
+    // image id -> family
+    mapping(bytes32 => bytes32) public images;
+    // enclave key, transformed -> image id
+    mapping(bytes32 => bytes32) public keys;
+
+    function _vkGetImageFamily(bytes32 _imageId) internal view virtual returns (bytes32) {
+        return images[_imageId];
+    }
+    
+    function _vkSetImageFamily(bytes32 _imageId, bytes32 _family) internal virtual {
+        images[_imageId] = _family;
+    }
+
+    function _vkGetEnclaveImage(bytes32 _key) internal view virtual returns (bytes32) {
+        return keys[_key];
+    }
+    
+    function _vkSetEnclaveImage(bytes32 _key, bytes32 _imageId) internal virtual {
+        keys[_key] = _imageId;
+    }
+}
