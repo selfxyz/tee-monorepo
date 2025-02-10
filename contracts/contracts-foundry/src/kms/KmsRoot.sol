@@ -6,21 +6,13 @@ import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 import {RiscZeroVerifier, RiscZeroVerifierDefault} from "../attestation/RiscZeroVerifier.sol";
+import {VerifiedKeys, VerifiedKeysDefault} from "../attestation/VerifiedKeys.sol";
 
 /// @title KMS Root Contract
 /// @notice Manages list of KMS servers allowed to decrypt root key
-contract KmsRoot is Ownable, RiscZeroVerifierDefault {
-    /// @notice Enclave image ID
-    bytes32 public imageId;
-    /// @notice Mapping of addresses to their verification status
-    mapping(address => bool) public isVerified;
-
+contract KmsRoot is Ownable, RiscZeroVerifierDefault, VerifiedKeysDefault {
     /// @notice Thrown when input length is invalid (public key must be 64 bytes)
     error KmsRootLengthInvalid();
-
-    /// @notice Emitted when an address is verified
-    /// @param addr The verified address
-    event KmsRootVerified(address indexed addr);
 
     /// @notice Initializes the KmsRoot contract
     /// @param _owner Address of the contract owner
@@ -35,23 +27,24 @@ contract KmsRoot is Ownable, RiscZeroVerifierDefault {
         bytes memory _rootKey,
         uint256 _maxAgeMs,
         bytes32 _imageId
-    ) Ownable(_owner) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs) {
-        imageId = _imageId;
-    }
-
-    /// @notice Converts a public key to an Ethereum address
-    /// @param _pubkey Public key to convert
-    /// @return Ethereum address derived from the public key
-    /// @dev Expects a 64-byte public key and returns the keccak256 hash as an address
-    function _pubkeyToAddress(bytes calldata _pubkey) internal pure returns (address) {
-        require(_pubkey.length == 64, KmsRootLengthInvalid());
-
-        bytes32 _hash = keccak256(_pubkey);
-        return address(uint160(uint256(_hash)));
-    }
+    )
+        Ownable(_owner)
+        RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs)
+        VerifiedKeys(_imageId, DEFAULT_FAMILY)
+    {}
 
     /// @notice Authorizes the owner to execute parameter updates
     function _rzvAuthorizeUpdate() internal virtual override onlyOwner {}
+
+    function _vkAuthorizeApprove() internal virtual override onlyOwner {}
+    function _vkAuthorizeRevoke() internal virtual override onlyOwner {}
+
+    function _vkTransformPubkey(bytes memory _pubkey) internal virtual override returns (bytes32) {
+        require(_pubkey.length == 64, KmsRootLengthInvalid());
+
+        bytes32 _hash = keccak256(_pubkey);
+        return bytes32(uint256(uint160(uint256(_hash))));
+    }
 
     /// @notice Verifies a KMS attestation
     /// @param _seal Proof seal from RiscZero
@@ -62,12 +55,7 @@ contract KmsRoot is Ownable, RiscZeroVerifierDefault {
     function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
         external
     {
-        address _addr = _pubkeyToAddress(_pubkey);
-
         _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
-
-        isVerified[_addr] = true;
-
-        emit KmsRootVerified(_addr);
+        _setKeyVerified(_pubkey, _imageId);
     }
 }
