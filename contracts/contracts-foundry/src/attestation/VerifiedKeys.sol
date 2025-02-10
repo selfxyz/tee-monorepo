@@ -17,6 +17,7 @@ abstract contract VerifiedKeys {
     bytes32 public constant DEFAULT_FAMILY = keccak256("DEFAULT_FAMILY");
 
     error VerifiedKeysFamilyMismatch();
+    error VerifiedKeysNotVerified();
 
     event VerifiedKeysApproved(bytes32 indexed imageId, bytes32 indexed family);
     event VerifiedKeysRevoked(bytes32 indexed imageId, bytes32 indexed family);
@@ -60,7 +61,7 @@ abstract contract VerifiedKeys {
         return _revokeImage(_imageId);
     }
 
-    function _setKeyVerified(bytes memory _enclavePubkey, bytes32 _imageId) external returns (bool) {
+    function _setKeyVerified(bytes memory _enclavePubkey, bytes32 _imageId) internal returns (bool) {
         bytes32 _key = _vkTransformPubkey(_enclavePubkey);
         if (_vkGetEnclaveImage(_key) != bytes32(0)) return false;
 
@@ -68,5 +69,12 @@ abstract contract VerifiedKeys {
         emit VerifiedKeysVerified(_key, _imageId, _enclavePubkey);
 
         return true;
+    }
+
+    function _ensureKeyVerified(bytes32 _key) internal view {
+        bytes32 _imageId = _vkGetEnclaveImage(_key);
+        require(_imageId != bytes32(0), VerifiedKeysNotVerified());
+        // to check revocations
+        require(_vkGetImageFamily(_imageId) != bytes32(0), VerifiedKeysNotVerified());
     }
 }
