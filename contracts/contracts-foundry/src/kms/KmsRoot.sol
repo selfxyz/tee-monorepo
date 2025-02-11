@@ -11,14 +11,18 @@ import {VerifiedKeys, VerifiedKeysDefault} from "../attestation/VerifiedKeys.sol
 /// @title KMS Root Contract
 /// @notice Manages list of KMS servers allowed to decrypt root key
 contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault {
+    /// @notice Approver role, for approving images
     bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
+    /// @notice Revoker role, for revoking images
     bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
 
     /// @notice Thrown when input length is invalid (public key must be 64 bytes)
     error KmsRootLengthInvalid();
 
     /// @notice Initializes the KmsRoot contract
-    /// @param _owner Address of the contract owner
+    /// @param _admin Address of the contract admin
+    /// @param _approver Address of the image approver
+    /// @param _revoker Address of the image revoker
     /// @param _verifier Address of the RISC Zero verifier contract
     /// @param _imageId Image ID for verification
     /// @param _rootKey Initial root key
@@ -38,13 +42,13 @@ contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault 
         _grantRole(REVOKER_ROLE, _revoker);
     }
 
-    /// @notice Authorizes the owner to execute parameter updates
+    /// @notice Authorizes the admin to execute parameter updates
     function _rzvAuthorizeUpdate() internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    /// @notice Authorize the owner to approve images
+    /// @notice Authorize the approver to approve images
     function _vkAuthorizeApprove() internal virtual override onlyRole(APPROVER_ROLE) {}
 
-    /// @notice Authorize the owner to revoke images
+    /// @notice Authorize the revoker to revoke images
     function _vkAuthorizeRevoke() internal virtual override onlyRole(REVOKER_ROLE) {}
 
     /// @notice Tranform the public key into an address before storage
