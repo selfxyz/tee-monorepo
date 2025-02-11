@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader};
+use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,7 +15,7 @@ use scopeguard::defer;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 
-use crate::constant::MAX_OUTPUT_BYTES_LENGTH;
+use crate::constant::{MAX_OUTPUT_BYTES_LENGTH, OUT_OF_MEMORY_SIG_KILL_CODE};
 use crate::model::{AppState, JobOutput, JobsTxnMetadata, JobsTxnType};
 use crate::workerd;
 use crate::workerd::ServerlessError::*;
@@ -25,6 +26,7 @@ use crate::workerd::ServerlessError::*;
 3 => Syntax error in the code extracted from the calldata
 4 => User timeout exceeded
 5 => Output size exceeds the limit
+6 => Code execution overloads cgroup memory
 */
 
 // Execute the job request using workerd runtime and 'cgroup' environment
@@ -231,6 +233,24 @@ async fn execute_job(
         }
 
         eprintln!("Failed to execute worker service to serve the user code: {stderr_output}");
+
+        let Ok(status) = child.lock().unwrap().wait() else {
+            eprintln!("Failed to wait on the cgroup process");
+            return None;
+        };
+
+        if status
+            .signal()
+            .is_some_and(|code| code == OUT_OF_MEMORY_SIG_KILL_CODE)
+        {
+            return Some(JobOutput {
+                output: Bytes::new(),
+                error_code: 6,
+                total_time: execution_timer_start.elapsed().as_millis().into(),
+                ..Default::default()
+            });
+        }
+
         return None;
     }
 

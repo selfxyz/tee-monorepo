@@ -1600,6 +1600,14 @@ pub mod serverless_executor_test {
         let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
 
         tokio::spawn(async move {
+            // Introduce time interval between events to be polled
+            let jobs_created_stream = pin!(tokio_stream::iter(jobs_created_logs.into_iter()).then(
+                |log| async move {
+                    sleep(Duration::from_millis(user_deadline)).await;
+                    log
+                }
+            ));
+
             let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
                 .then(|log| async move {
                     sleep(Duration::from_millis(user_deadline + 1000)).await;
@@ -1608,7 +1616,7 @@ pub mod serverless_executor_test {
 
             // Call the event handler for the contract logs
             handle_event_logs(
-                pin!(tokio_stream::iter(jobs_created_logs)),
+                jobs_created_stream,
                 jobs_responded_stream,
                 pin!(tokio_stream::empty()),
                 State {
@@ -1709,6 +1717,76 @@ pub mod serverless_executor_test {
         assert_eq!(responses.len(), 1);
 
         assert_response(responses[0].clone(), 0.into(), 4, "".into());
+    }
+
+    #[tokio::test]
+    // Test '6' error code, code execution overloads cgroup memory
+    async fn job_execution_out_of_memory_test() {
+        let app_state = generate_app_state(false).await;
+
+        // Create a temporary store directory inside the parent
+        let temp_dir = Builder::new()
+            .prefix("store")
+            .rand_bytes(0)
+            .tempdir_in("./")
+            .expect("Failed to create temporary store directory");
+
+        // Create a secret file with id 1 and length 35000000 (~ 35 MiB)
+        let file_path = temp_dir.path().join("1.bin");
+        std::fs::write(&file_path, Bytes::from_static(&[0u8; 35000000]))
+            .expect("Failed to write to file ./store/1.bin");
+
+        let code_hash = "5db45b92247332b2f4aaa2b6f18f91b0ad50728f9257471c56baa1d45355ac54";
+        let user_deadline = 10000;
+
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({})).unwrap().into();
+
+        // User code returning a string containing the secret data
+        let jobs_created_logs = vec![get_job_created_log(
+            1.into(),
+            0.into(),
+            1.into(),
+            EXECUTION_ENV_ID,
+            code_hash,
+            code_input_bytes.clone(),
+            user_deadline,
+            app_state.enclave_address,
+        )];
+
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
+                .then(|log| async move {
+                    sleep(Duration::from_millis(user_deadline + 1000)).await;
+                    log
+                }));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                pin!(tokio_stream::iter(jobs_created_logs)),
+                jobs_responded_stream,
+                pin!(tokio_stream::empty()),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        let mut responses: Vec<JobsTxnMetadata> = vec![];
+
+        // Receive and store the responses
+        while let Some(job_response) = rx.recv().await {
+            responses.push(job_response);
+        }
+
+        assert_eq!(responses.len(), 1);
+
+        assert_response(responses[0].clone(), 0.into(), 6, "".into());
     }
 
     fn get_job_created_log(

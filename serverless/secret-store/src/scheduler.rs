@@ -8,8 +8,7 @@ use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use tokio::time::interval;
 
 use crate::constants::{
-    DOMAIN_SEPARATOR, GARBAGE_CLEAN_JOB_INTERVAL_SECS, SECRET_EXPIRATION_BUFFER_SECS,
-    SEND_TRANSACTION_BUFFER_SECS,
+    DOMAIN_SEPARATOR, SECRET_EXPIRATION_BUFFER_SECS, SEND_TRANSACTION_BUFFER_SECS,
 };
 use crate::model::{AppState, SecretMetadata};
 use crate::utils::check_and_delete_file;
@@ -96,48 +95,39 @@ pub async fn store_alive_monitor(app_state: Data<AppState>) {
         {
             eprintln!("Failed to send store alive transaction: {:?}", err);
         };
+
+        // Call the garbage cleaner
+        garbage_cleaner(app_state.clone()).await;
     }
 }
 
 // Garbage cleaner for removing expired secrets
 pub async fn garbage_cleaner(app_state: Data<AppState>) {
-    // Set the periodic job interval
-    let mut interval = interval(Duration::from_secs(GARBAGE_CLEAN_JOB_INTERVAL_SECS));
+    // Clone and get the data of secrets stored inside the enclave at the moment
+    let secrets_stored: Vec<(U256, SecretMetadata)> = app_state
+        .secrets_stored
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(&id, secret)| (id, secret.clone()))
+        .collect();
 
-    loop {
-        interval.tick().await; // Wait for the next tick
+    for (secret_id, secret_metadata) in secrets_stored {
+        // If the secret ID has passed its end timestamp plus a buffer, remove it from the storage
+        if SystemTime::now()
+            > SystemTime::UNIX_EPOCH
+                + Duration::from_secs(
+                    secret_metadata.end_timestamp.to::<u64>() + SECRET_EXPIRATION_BUFFER_SECS,
+                )
+        {
+            let _ = app_state.secrets_stored.lock().unwrap().remove(&secret_id);
 
-        // If enclave is deregistered, stop the job because acknowledgments won't be accepted then
-        if !app_state.enclave_registered.load(Ordering::SeqCst) {
-            return;
-        }
-
-        // Clone and get the data of secrets stored inside the enclave at the moment
-        let secrets_stored: Vec<(U256, SecretMetadata)> = app_state
-            .secrets_stored
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(&id, secret)| (id, secret.clone()))
-            .collect();
-
-        for (secret_id, secret_metadata) in secrets_stored {
-            // If the secret ID has passed its end timestamp plus a buffer, remove it from the storage
-            if SystemTime::now()
-                > SystemTime::UNIX_EPOCH
-                    + Duration::from_secs(
-                        secret_metadata.end_timestamp.to::<u64>() + SECRET_EXPIRATION_BUFFER_SECS,
-                    )
-            {
-                let _ = app_state.secrets_stored.lock().unwrap().remove(&secret_id);
-
-                // Remove the secret stored in the filesystem
-                let secret_store_path = app_state.secret_store_path.clone();
-                tokio::spawn(async move {
-                    check_and_delete_file(secret_store_path + "/" + &secret_id.to_string() + ".bin")
-                        .await
-                });
-            }
+            // Remove the secret stored in the filesystem
+            let secret_store_path = app_state.secret_store_path.clone();
+            tokio::spawn(async move {
+                check_and_delete_file(secret_store_path + "/" + &secret_id.to_string() + ".bin")
+                    .await
+            });
         }
     }
 }

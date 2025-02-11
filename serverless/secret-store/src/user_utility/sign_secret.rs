@@ -204,7 +204,6 @@ async fn main() -> Result<()> {
 
     let secret_data_bytes =
         fs::read(cli.secret_data_file).context("Failed to read the secret data file")?;
-    println!("Secret data in bytes: {:?}", secret_data_bytes);
 
     let user_private_key = SigningKey::from_slice(
         hex::decode(

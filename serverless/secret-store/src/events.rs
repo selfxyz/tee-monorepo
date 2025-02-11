@@ -14,7 +14,7 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::constants::*;
 use crate::model::{AppState, SecretCreatedMetadata, SecretManagerContract, SecretMetadata};
-use crate::scheduler::{garbage_cleaner, store_alive_monitor};
+use crate::scheduler::store_alive_monitor;
 use crate::utils::*;
 
 // Start listening to events emitted by the 'SecretManager' contract if enclave is registered else listen for Store registered event first
@@ -148,12 +148,6 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
         let app_state_clone = app_state.clone();
         tokio::spawn(async move {
             store_alive_monitor(app_state_clone).await;
-        });
-
-        // Spawn task to remove expired secrets periodically
-        let app_state_clone = app_state.clone();
-        tokio::spawn(async move {
-            garbage_cleaner(app_state_clone).await;
         });
 
         handle_event_logs(secrets_stream, store_stream, app_state.clone()).await;

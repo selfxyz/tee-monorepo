@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use actix_web::http::Uri;
-use actix_web::web::Data;
+use actix_web::web::{Data, JsonConfig};
 use actix_web::{App, HttpServer};
 use alloy::primitives::Address;
 use alloy::providers::ProviderBuilder;
@@ -21,6 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tokio::fs;
 
+use constants::INJECT_SECRET_JSON_PAYLOAD_BUFFER;
 use model::{AppState, ConfigManager, SecretManagerContract};
 use server::*;
 use utils::verify_rpc_url;
@@ -121,14 +122,18 @@ async fn main() -> Result<()> {
     println!("Config server started on port {}", config.config_port);
 
     // Start actix server to expose the inject secret endpoint outside the enclave
-    let external_server = HttpServer::new(move || {
-        App::new()
-            .app_data(app_data.clone())
-            .service(inject_and_store_secret)
-    })
-    .bind(("0.0.0.0", args.external_port))
-    .context(format!("could not bind to port {}", args.external_port))?
-    .run();
+    let external_server =
+        HttpServer::new(move || {
+            App::new()
+                .app_data(app_data.clone())
+                .app_data(JsonConfig::default().limit(
+                    2 * config.global_max_store_size_bytes + INJECT_SECRET_JSON_PAYLOAD_BUFFER,
+                ))
+                .service(inject_and_store_secret)
+        })
+        .bind(("0.0.0.0", args.external_port))
+        .context(format!("could not bind to port {}", args.external_port))?
+        .run();
 
     println!(
         "Secret inject server started on port {}",
