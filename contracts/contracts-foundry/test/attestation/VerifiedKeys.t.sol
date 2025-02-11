@@ -142,7 +142,7 @@ contract VerifiedKeysTestSetKeyVerified is Test {
         verifiedKeys = new TestVerifiedKeys(imageId, family, true);
     }
 
-    function test_SetKeyVerified(bytes memory _pubkey) public {
+    function test_SetKeyVerified_New(bytes memory _pubkey) public {
         bytes32 _transformedKey = keccak256(_pubkey);
 
         vm.expectEmit();
@@ -152,6 +152,23 @@ contract VerifiedKeysTestSetKeyVerified is Test {
 
         assertTrue(result);
         assertEq(verifiedKeys.keys(_transformedKey), imageId);
+    }
+
+    function test_SetKeyVerified_Existing(bytes memory _pubkey) public {
+        bytes32 _transformedKey = keccak256(_pubkey);
+        verifiedKeys.setKeyVerified(_pubkey, imageId);
+
+        bool result = verifiedKeys.setKeyVerified(_pubkey, imageId);
+
+        assertFalse(result);
+        assertEq(verifiedKeys.keys(_transformedKey), imageId);
+    }
+
+    function test_SetKeyVerified_Mismatch(bytes memory _pubkey, bytes32 _otherImageId) public {
+        verifiedKeys.setKeyVerified(_pubkey, _otherImageId);
+        vm.expectRevert(VerifiedKeys.VerifiedKeysImageMismatch.selector);
+
+        verifiedKeys.setKeyVerified(_pubkey, imageId);
     }
 }
 
