@@ -45,6 +45,9 @@ abstract contract VerifiedKeys {
     /// @notice Error thrown when attempting to modify an image with mismatched family
     error VerifiedKeysFamilyMismatch();
 
+    /// @notice Error thrown when attempting to verify a key with mismatched image
+    error VerifiedKeysImageMismatch();
+
     /// @notice Error thrown when verifying an unregistered or revoked key
     error VerifiedKeysNotVerified();
 
@@ -127,7 +130,12 @@ abstract contract VerifiedKeys {
     /// @return bool True if verification was successful, false if key is already verified
     function _setKeyVerified(bytes memory _enclavePubkey, bytes32 _imageId) internal returns (bool) {
         bytes32 _key = _vkTransformPubkey(_enclavePubkey);
-        if (_vkGetEnclaveImage(_key) != bytes32(0)) return false;
+        bytes32 _currentImageId = _vkGetEnclaveImage(_key);
+        if (_currentImageId != bytes32(0)) {
+            require(_currentImageId == _imageId, VerifiedKeysImageMismatch());
+
+            return false;
+        }
 
         _vkSetEnclaveImage(_key, _imageId);
         emit VerifiedKeysVerified(_key, _imageId, _enclavePubkey);
