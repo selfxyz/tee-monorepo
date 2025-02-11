@@ -394,7 +394,6 @@ contract SecretStore is
             selectedEnclave.selectTimestamp = block.timestamp;
             selectedEnclaves[index] = selectedEnclave;
 
-            // TODO: need to have some buffer space for each enclave
             if (
                 secretStores[enclaveAddress].storageOccupied > 
                 (secretStores[enclaveAddress].storageCapacity - SECRET_MANAGER.GLOBAL_MAX_SECRET_SIZE())

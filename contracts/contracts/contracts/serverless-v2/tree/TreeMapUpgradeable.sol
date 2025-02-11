@@ -362,7 +362,11 @@ contract TreeMapUpgradeable is Initializable {
     }
 
     /**
-     * @dev Here, _selectedPathTree points to the 0x60 memory address, since array is uninitialised.
+     * @dev Using assembly here to declare the memory array, as it will save gas used for initializing all the array 
+     *      elements.
+     *      The function allows selecting at max 6 nodes out of (2^15 - 1) nodes.
+     *
+     *      Here, _selectedPathTree points to the 0x60 memory address, since array is uninitialised.
      *
      *      Since, we are initializing the array using assembly, _selectedPathTree needs to be set to the next free 
      *      pointer that is value at 0x40 , hence following assembly statement
