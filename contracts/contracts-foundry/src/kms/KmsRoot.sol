@@ -36,9 +36,13 @@ contract KmsRoot is Ownable, RiscZeroVerifierDefault, VerifiedKeysDefault {
     /// @notice Authorizes the owner to execute parameter updates
     function _rzvAuthorizeUpdate() internal virtual override onlyOwner {}
 
+    /// @notice Authorize the owner to approve images
     function _vkAuthorizeApprove() internal virtual override onlyOwner {}
+
+    /// @notice Authorize the owner to revoke images
     function _vkAuthorizeRevoke() internal virtual override onlyOwner {}
 
+    /// @notice Tranform the public key into an address before storage
     function _vkTransformPubkey(bytes memory _pubkey) internal virtual override returns (bytes32) {
         require(_pubkey.length == 64, KmsRootLengthInvalid());
 
