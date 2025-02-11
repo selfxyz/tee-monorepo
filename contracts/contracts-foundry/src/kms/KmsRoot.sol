@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {AccessControl} from "../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 import {RiscZeroVerifier, RiscZeroVerifierDefault} from "../attestation/RiscZeroVerifier.sol";
@@ -10,7 +10,10 @@ import {VerifiedKeys, VerifiedKeysDefault} from "../attestation/VerifiedKeys.sol
 
 /// @title KMS Root Contract
 /// @notice Manages list of KMS servers allowed to decrypt root key
-contract KmsRoot is Ownable, RiscZeroVerifierDefault, VerifiedKeysDefault {
+contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault {
+    bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
+    bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
+
     /// @notice Thrown when input length is invalid (public key must be 64 bytes)
     error KmsRootLengthInvalid();
 
@@ -21,26 +24,28 @@ contract KmsRoot is Ownable, RiscZeroVerifierDefault, VerifiedKeysDefault {
     /// @param _rootKey Initial root key
     /// @param _maxAgeMs Maximum age allowed for attestation timestamps
     constructor(
-        address _owner,
+        address _admin,
+        address _approver,
+        address _revoker,
         IRiscZeroVerifier _verifier,
         bytes32 _guestId,
         bytes memory _rootKey,
         uint256 _maxAgeMs,
         bytes32 _imageId
-    )
-        Ownable(_owner)
-        RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs)
-        VerifiedKeys(_imageId, DEFAULT_FAMILY)
-    {}
+    ) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs) VerifiedKeys(_imageId, DEFAULT_FAMILY) {
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(APPROVER_ROLE, _approver);
+        _grantRole(REVOKER_ROLE, _revoker);
+    }
 
     /// @notice Authorizes the owner to execute parameter updates
-    function _rzvAuthorizeUpdate() internal virtual override onlyOwner {}
+    function _rzvAuthorizeUpdate() internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /// @notice Authorize the owner to approve images
-    function _vkAuthorizeApprove() internal virtual override onlyOwner {}
+    function _vkAuthorizeApprove() internal virtual override onlyRole(APPROVER_ROLE) {}
 
     /// @notice Authorize the owner to revoke images
-    function _vkAuthorizeRevoke() internal virtual override onlyOwner {}
+    function _vkAuthorizeRevoke() internal virtual override onlyRole(REVOKER_ROLE) {}
 
     /// @notice Tranform the public key into an address before storage
     function _vkTransformPubkey(bytes memory _pubkey) internal virtual override returns (bytes32) {
