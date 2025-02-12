@@ -71,4 +71,12 @@ contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault 
         _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
         _setKeyVerified(_pubkey, _imageId);
     }
+
+    /// @notice Check if a key is verified
+    /// @dev Checks both key and image status
+    /// @param _addr Address to verify
+    function isVerified(address _addr) external view returns (bool) {
+        bytes32 _imageId = _vkGetEnclaveImage(bytes32(uint256(uint160(_addr))));
+        return _imageId != bytes32(0) && _vkGetImageFamily(_imageId) != bytes32(0);
+    }
 }
