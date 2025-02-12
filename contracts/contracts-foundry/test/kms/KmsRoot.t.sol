@@ -438,3 +438,65 @@ contract KmsRootTestVerify is Test {
         kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
     }
 }
+
+contract KmsRootTestIsKeyVerified is Test {
+    address admin;
+    address approver;
+    address revoker;
+    IRiscZeroVerifier verifier;
+    bytes32 guestId;
+    bytes rootKey;
+    uint256 maxAgeMs;
+    bytes32 imageId;
+    KmsRoot kmsRoot;
+
+    function setUp() public {
+        admin = makeAddr("admin");
+        approver = makeAddr("approver");
+        revoker = makeAddr("revoker");
+        verifier = IRiscZeroVerifier(makeAddr("verifier"));
+        guestId = bytes32(vm.randomUint());
+        rootKey = vm.randomBytes(96);
+        maxAgeMs = 2000;
+        imageId = bytes32(vm.randomUint());
+        kmsRoot = new KmsRoot(admin, approver, revoker, verifier, guestId, rootKey, maxAgeMs, imageId);
+    }
+
+    function test_IsKeyVerified_Verified(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampInMilliseconds)
+        public
+    {
+        vm.assume(_pubkey.length == 64);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        address _addr = address(uint160(uint256(keccak256(_pubkey))));
+        vm.mockCall(address(verifier), abi.encode(), abi.encode());
+        vm.warp(4);
+        kmsRoot.verify(_seal, _pubkey, imageId, _timestampInMilliseconds);
+
+        bool res = kmsRoot.isVerified(_addr);
+
+        assertTrue(res);
+    }
+
+    function test_IsKeyVerified_NotVerified(address _addr) public {
+        bool res = kmsRoot.isVerified(_addr);
+
+        assertFalse(res);
+    }
+
+    function test_IsKeyVerified_Revoked(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampInMilliseconds)
+        public
+    {
+        vm.assume(_pubkey.length == 64);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        address _addr = address(uint160(uint256(keccak256(_pubkey))));
+        vm.mockCall(address(verifier), abi.encode(), abi.encode());
+        vm.warp(4);
+        kmsRoot.verify(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        vm.prank(revoker);
+        kmsRoot.revokeImage(imageId);
+
+        bool res = kmsRoot.isVerified(_addr);
+
+        assertFalse(res);
+    }
+}
