@@ -134,6 +134,12 @@ enum Commands {
         #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
         root_public_key: String,
     },
+    /// List active jobs for a wallet address
+    List {
+        /// Wallet address to query jobs for
+        #[arg(short, long)]
+        address: String,
+    },
     /// Update existing deployments
     Update {
         /// Job ID
@@ -268,6 +274,7 @@ async fn main() -> Result<()> {
             };
             commands::deploy::deploy_oyster_instance(config, &wallet_private_key, &operator).await
         }
+        Commands::List { address } => commands::list::list_jobs(&address).await,
         Commands::Update {
             job_id,
             wallet_private_key,

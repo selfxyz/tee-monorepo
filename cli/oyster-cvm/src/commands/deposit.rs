@@ -44,8 +44,9 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
     let amount_u256 = U256::from(amount);
 
     // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)
-        .context("Failed to decode private key")?);
+    let private_key = FixedBytes::<32>::from_slice(
+        &hex::decode(wallet_private_key).context("Failed to decode private key")?,
+    );
     let signer = PrivateKeySigner::from_bytes(&private_key)
         .context("Failed to create signer from private key")?;
     let wallet = EthereumWallet::from(signer);
@@ -53,7 +54,11 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
     let provider = ProviderBuilder::new()
         .with_recommended_fillers()
         .wallet(wallet)
-        .on_http(ARBITRUM_ONE_RPC_URL.parse().context("Failed to parse RPC URL")?);
+        .on_http(
+            ARBITRUM_ONE_RPC_URL
+                .parse()
+                .context("Failed to parse RPC URL")?,
+        );
 
     // Create contract instance
     let market = OysterMarket::new(
@@ -82,7 +87,10 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
 
     // Call jobDeposit function
     let tx_hash = market
-        .jobDeposit(job_id.parse().context("Failed to parse job ID")?, amount_u256)
+        .jobDeposit(
+            job_id.parse().context("Failed to parse job ID")?,
+            amount_u256,
+        )
         .send()
         .await
         .context("Failed to send deposit transaction")?
