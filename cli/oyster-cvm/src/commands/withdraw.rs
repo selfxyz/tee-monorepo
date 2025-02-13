@@ -73,18 +73,16 @@ pub async fn withdraw_from_job(
 
     // Try to settle the job first
     info!("Attempting to settle job before withdrawal...");
-    match market.jobSettle(job_id_bytes).send().await {
-        Ok(pending_tx) => {
-            let tx_hash = pending_tx.watch().await?;
-            info!("Job settlement successful. Transaction hash: {:?}", tx_hash);
-        }
-        Err(e) => {
-            info!(
-                "Job settlement skipped: {}. This is normal if the job was recently settled.",
-                e
-            );
-        }
-    }
+    let pending_tx = market
+        .jobSettle(job_id_bytes)
+        .send()
+        .await
+        .context("Failed to settle job")?;
+    let tx_hash = pending_tx
+        .watch()
+        .await
+        .context("Failed to get transaction hash")?;
+    info!("Job settlement successful. Transaction hash: {:?}", tx_hash);
 
     // Fetch updated job details after settlement attempt
     let job = market
