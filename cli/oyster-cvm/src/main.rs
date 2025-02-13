@@ -137,7 +137,7 @@ enum Commands {
     /// List active jobs for a wallet address
     List {
         /// Wallet address to query jobs for
-        #[arg(short, long)]
+        #[arg(short, long, required = true)]
         address: String,
     },
     /// Update existing deployments
@@ -179,15 +179,15 @@ enum Commands {
     /// Deposit funds to an existing job
     Deposit {
         /// Job ID
-        #[arg(short, long)]
+        #[arg(short, long, required = true)]
         job_id: String,
 
         /// Amount to deposit in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
-        #[arg(short, long)]
+        #[arg(short, long, required = true)]
         amount: u64,
 
         /// Wallet private key for transaction signing
-        #[arg(long)]
+        #[arg(long, required = true)]
         wallet_private_key: String,
     },
     /// Stop an Oyster CVM instance
@@ -203,7 +203,7 @@ enum Commands {
     /// Withdraw funds from an existing job
     Withdraw {
         /// Job ID
-        #[arg(short, long)]
+        #[arg(short, long, required = true)]
         job_id: String,
 
         /// Amount to withdraw in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
@@ -215,7 +215,7 @@ enum Commands {
         max: bool,
 
         /// Wallet private key for transaction signing
-        #[arg(long)]
+        #[arg(long, required = true)]
         wallet_private_key: String,
     },
 }
@@ -326,7 +326,7 @@ async fn main() -> Result<()> {
     };
 
     if let Err(e) = result {
-        eprintln!("Error: {}", e);
+        tracing::error!("Error: {}", e);
         std::process::exit(1);
     }
 
