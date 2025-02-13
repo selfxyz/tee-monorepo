@@ -111,6 +111,18 @@ Required args:
 - `--job-id` (-j): The ID of the job to stop
 - `--wallet-private-key`: Wallet private key for transaction signing
 
+#### `withdraw`
+Withdraws USDC funds from an existing job. The command will first attempt to settle the job and then ensure a buffer balance is maintained for future operations.
+
+Required args:
+- `--job-id` (-j): The ID of the job to withdraw funds from
+- `--wallet-private-key`: Wallet private key for transaction signing
+- Either:
+  - `--amount` (-a): Amount to withdraw in USDC (minimum 0.000001 USDC)
+  - `--max`: Withdraw maximum available amount while maintaining required buffer
+
+Note: A buffer balance of 7 minutes worth of job rate will be maintained to ensure smooth operation.
+
 ### Example
 
 ```bash
@@ -213,6 +225,34 @@ Required args:
 [INFO] Stop transaction sent: 0x03...1d
 [INFO] Instance stopped successfully!
 [INFO] Transaction hash: 0x03...1d
+
+# Withdraw funds from a job (specific amount)
+./oyster-cvm withdraw \
+  --job-id "0x123..." \
+  --amount 1000000 \
+  --wallet-private-key "your-private-key"
+
+# Sample output:
+[INFO] Starting withdrawal process...
+[INFO] Current balance: 5.000000 USDC, Required buffer: 1.500000 USDC
+[INFO] Initiating withdrawal of 1.000000 USDC
+[INFO] Withdrawal transaction sent. Transaction hash: 0x3cc...e70
+[INFO] Withdrawal successful!
+
+# Withdraw maximum available funds from a job
+./oyster-cvm withdraw \
+  --job-id "0x123..." \
+  --max \
+  --wallet-private-key "your-private-key"
+
+# Sample output:
+[INFO] Starting withdrawal process...
+[INFO] Current balance: 5.000000 USDC, Required buffer: 1.500000 USDC
+[INFO] Maximum withdrawal requested
+[INFO] Initiating withdrawal of 3.500000 USDC
+[INFO] Withdrawal transaction sent. Transaction hash: 0x38b...008
+[INFO] Withdrawal successful!
+
 ```
 
 ## License

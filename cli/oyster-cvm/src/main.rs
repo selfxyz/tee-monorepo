@@ -200,6 +200,24 @@ enum Commands {
         #[arg(long, required = true)]
         wallet_private_key: String,
     },
+    /// Withdraw funds from an existing job
+    Withdraw {
+        /// Job ID
+        #[arg(short, long)]
+        job_id: String,
+
+        /// Amount to withdraw in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
+        #[arg(short, long, required_unless_present = "max")]
+        amount: Option<u64>,
+
+        /// Withdraw all remaining balance
+        #[arg(long)]
+        max: bool,
+
+        /// Wallet private key for transaction signing
+        #[arg(long)]
+        wallet_private_key: String,
+    },
 }
 
 #[tokio::main]
@@ -299,6 +317,12 @@ async fn main() -> Result<()> {
             job_id,
             wallet_private_key,
         } => commands::stop::stop_oyster_instance(&job_id, &wallet_private_key).await,
+        Commands::Withdraw {
+            job_id,
+            amount,
+            max,
+            wallet_private_key,
+        } => commands::withdraw::withdraw_from_job(&job_id, amount, max, &wallet_private_key).await,
     };
 
     if let Err(e) = result {
