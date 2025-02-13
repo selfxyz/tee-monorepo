@@ -6,16 +6,6 @@ use tracing::info;
 
 const INDEXER_URL: &str = "http://13.202.13.168:5000/graphql";
 
-fn format_usdc(value: &str) -> String {
-    if let Ok(num) = value.parse::<f64>() {
-        // Convert to USDC by dividing by 10^12
-        let usdc = num / 1_000_000_000_000.0;
-        format!("{:.2} USDC", usdc)
-    } else {
-        "N/A".to_string()
-    }
-}
-
 pub async fn list_jobs(wallet_address: &str) -> Result<()> {
     info!("Listing active jobs for wallet address: {}", wallet_address);
 
@@ -88,12 +78,28 @@ pub async fn list_jobs(wallet_address: &str) -> Result<()> {
                 let rate = node
                     .get("rate")
                     .and_then(Value::as_str)
-                    .map(format_usdc)
+                    .map(|r| {
+                        if let Ok(num) = r.parse::<f64>() {
+                            // Convert rate from USDC/second to USDC/hour
+                            let usdc = (num / 1_000_000_000_000_000_000.0) * 3600.0;
+                            format!("{:.4} USDC", usdc)
+                        } else {
+                            "N/A".to_string()
+                        }
+                    })
                     .unwrap_or_else(|| "N/A".to_string());
                 let balance = node
                     .get("balance")
                     .and_then(Value::as_str)
-                    .map(format_usdc)
+                    .map(|value| {
+                        if let Ok(num) = value.parse::<f64>() {
+                            // Convert balance to USDC by dividing by 10^6
+                            let usdc = num / 1_000_000.0;
+                            format!("{:.4} USDC", usdc)
+                        } else {
+                            "N/A".to_string()
+                        }
+                    })
                     .unwrap_or_else(|| "N/A".to_string());
                 let provider = node
                     .get("provider")

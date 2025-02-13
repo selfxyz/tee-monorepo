@@ -96,6 +96,21 @@ Optional args:
 - `--with-log-id`(-w): Include log ID prefix in output (default: false)
 - `--quiet` (-q): Suppress connection status message (default: false)
 
+#### `list`
+Lists all active jobs for a given wallet address.
+
+Required args:
+- `--wallet-address` (-w): The wallet address to list jobs for
+
+Sample output:
+```
++------------------+------------------+-------------+-----------+
+| ID               | RATE (USDC/hour) | BALANCE     | PROVIDER |
++------------------+------------------+-------------+-----------+
+| 0x123...         | 0.50            | 100.00 USDC | AWS      |
++------------------+------------------+-------------+-----------+
+```
+
 #### `deposit`
 Deposits additional USDC funds to an existing job.
 
@@ -252,6 +267,17 @@ Note: A buffer balance of 7 minutes worth of job rate will be maintained to ensu
 [INFO] Initiating withdrawal of 3.500000 USDC
 [INFO] Withdrawal transaction sent. Transaction hash: 0x38b...008
 [INFO] Withdrawal successful!
+
+# List active jobs for a wallet
+./oyster-cvm list --wallet-address "0x123..."
+
+# Sample output:
+[INFO] Listing active jobs for wallet address: 0x123...
++------------------+------------------+-------------+-----------+
+| ID               | RATE (USDC/hour) | BALANCE     | PROVIDER |
++------------------+------------------+-------------+-----------+
+| 0x123...         | 0.50            | 100.00 USDC | AWS      |
++------------------+------------------+-------------+-----------+
 
 ```
 
