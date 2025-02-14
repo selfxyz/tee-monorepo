@@ -126,8 +126,9 @@ async fn main() -> Result<()> {
         HttpServer::new(move || {
             App::new()
                 .app_data(app_data.clone())
+                // Increase JSON payload size to accommodate secret injection up to the maximum size configured in the contract
                 .app_data(JsonConfig::default().limit(
-                    2 * config.global_max_store_size_bytes + INJECT_SECRET_JSON_PAYLOAD_BUFFER,
+                    2 * config.global_max_secret_size_bytes + INJECT_SECRET_JSON_PAYLOAD_BUFFER,
                 ))
                 .service(inject_and_store_secret)
         })

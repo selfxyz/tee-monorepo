@@ -13,8 +13,8 @@ use crate::constants::{
 use crate::model::{AppState, SecretMetadata};
 use crate::utils::check_and_delete_file;
 
-// Periodic job for sending alive acknowledgement transaction
-pub async fn store_alive_monitor(app_state: Data<AppState>) {
+// Periodic job for sending alive acknowledgement transaction and removing expired secret files
+pub async fn remove_expired_secrets_and_mark_store_alive(app_state: Data<AppState>) {
     // Start the periodic job with interval 'MARK_ALIVE_TIMEOUT - SEND_TRANSACTION_BUFFER'
     let mut interval = interval(Duration::from_secs(
         app_state.mark_alive_timeout - SEND_TRANSACTION_BUFFER_SECS,
@@ -102,7 +102,7 @@ pub async fn store_alive_monitor(app_state: Data<AppState>) {
 }
 
 // Garbage cleaner for removing expired secrets
-pub async fn garbage_cleaner(app_state: Data<AppState>) {
+async fn garbage_cleaner(app_state: Data<AppState>) {
     // Clone and get the data of secrets stored inside the enclave at the moment
     let secrets_stored: Vec<(U256, SecretMetadata)> = app_state
         .secrets_stored

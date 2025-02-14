@@ -1742,10 +1742,92 @@ pub mod serverless_executor_test {
         let code_input_bytes: Bytes = serde_json::to_vec(&json!({})).unwrap().into();
 
         // User code returning a string containing the secret data
+        let jobs_created_logs = vec![
+            get_job_created_log(
+                1.into(),
+                0.into(),
+                1.into(),
+                EXECUTION_ENV_ID,
+                code_hash,
+                code_input_bytes.clone(),
+                user_deadline,
+                app_state.enclave_address,
+            ),
+            get_job_created_log(
+                1.into(),
+                1.into(),
+                1.into(),
+                EXECUTION_ENV_ID,
+                code_hash,
+                code_input_bytes.clone(),
+                user_deadline,
+                app_state.enclave_address,
+            ),
+        ];
+
+        let jobs_responded_logs = vec![
+            get_job_responded_log(1.into(), 0.into()),
+            get_job_responded_log(1.into(), 1.into()),
+        ];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            // Introduce time interval between events to be polled
+            let jobs_created_stream = pin!(tokio_stream::iter(jobs_created_logs.into_iter()).then(
+                |log| async move {
+                    sleep(Duration::from_millis(user_deadline)).await;
+                    log
+                }
+            ));
+
+            let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
+                .then(|log| async move {
+                    sleep(Duration::from_millis(user_deadline + 1000)).await;
+                    log
+                }));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                jobs_created_stream,
+                jobs_responded_stream,
+                pin!(tokio_stream::empty()),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        let mut responses: Vec<JobsTxnMetadata> = vec![];
+
+        // Receive and store the responses
+        while let Some(job_response) = rx.recv().await {
+            responses.push(job_response);
+        }
+
+        assert_eq!(responses.len(), 2);
+
+        assert_response(responses[0].clone(), 0.into(), 6, "".into());
+        assert_response(responses[1].clone(), 1.into(), 6, "".into());
+    }
+
+    #[tokio::test]
+    // Test code execution that overflows stack size
+    async fn job_execution_stack_overflow_test() {
+        let app_state = generate_app_state(false).await;
+
+        let code_hash = "140531f7fd083d81e3b310c8ae4a4b4ee9fee8e64c7f8cec933765c881448952";
+        let user_deadline = 5000;
+
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({})).unwrap().into();
+
+        // User code invokes deep recursion
         let jobs_created_logs = vec![get_job_created_log(
             1.into(),
             0.into(),
-            1.into(),
+            0.into(),
             EXECUTION_ENV_ID,
             code_hash,
             code_input_bytes.clone(),
@@ -1786,7 +1868,75 @@ pub mod serverless_executor_test {
 
         assert_eq!(responses.len(), 1);
 
-        assert_response(responses[0].clone(), 0.into(), 6, "".into());
+        assert_response(
+            responses[0].clone(),
+            0.into(),
+            0,
+            "Internal Server Error".into(),
+        );
+    }
+
+    #[tokio::test]
+    // Test code execution that bloats heap size
+    async fn job_execution_heap_bloat_test() {
+        let app_state = generate_app_state(false).await;
+
+        let code_hash = "09b81077b2596b065c1d7c8fe1a6bd3637919718b99c0198b3ac3532f527f87a";
+        let user_deadline = 5000;
+
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({})).unwrap().into();
+
+        // User code invokes excessive heap allocation
+        let jobs_created_logs = vec![get_job_created_log(
+            1.into(),
+            0.into(),
+            0.into(),
+            EXECUTION_ENV_ID,
+            code_hash,
+            code_input_bytes.clone(),
+            user_deadline,
+            app_state.enclave_address,
+        )];
+
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
+                .then(|log| async move {
+                    sleep(Duration::from_millis(user_deadline + 1000)).await;
+                    log
+                }));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                pin!(tokio_stream::iter(jobs_created_logs)),
+                jobs_responded_stream,
+                pin!(tokio_stream::empty()),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        let mut responses: Vec<JobsTxnMetadata> = vec![];
+
+        // Receive and store the responses
+        while let Some(job_response) = rx.recv().await {
+            responses.push(job_response);
+        }
+
+        assert_eq!(responses.len(), 1);
+
+        assert_response(
+            responses[0].clone(),
+            0.into(),
+            0,
+            "Internal Server Error".into(),
+        );
     }
 
     fn get_job_created_log(
@@ -1965,7 +2115,7 @@ pub mod serverless_executor_test {
         assert_eq!(job_response.job_id, id);
         assert!(job_response.job_output.is_some());
         let job_output = job_response.job_output.unwrap();
-
+        println!("{:?}", job_output.output);
         assert_eq!(job_output.error_code, error);
         assert_eq!(job_output.output, output);
     }

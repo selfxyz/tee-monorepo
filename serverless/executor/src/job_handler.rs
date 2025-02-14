@@ -1,5 +1,4 @@
 use std::io::{BufRead, BufReader};
-use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -15,7 +14,7 @@ use scopeguard::defer;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 
-use crate::constant::{MAX_OUTPUT_BYTES_LENGTH, OUT_OF_MEMORY_SIG_KILL_CODE};
+use crate::constant::MAX_OUTPUT_BYTES_LENGTH;
 use crate::model::{AppState, JobOutput, JobsTxnMetadata, JobsTxnType};
 use crate::workerd;
 use crate::workerd::ServerlessError::*;
@@ -234,21 +233,19 @@ async fn execute_job(
 
         eprintln!("Failed to execute worker service to serve the user code: {stderr_output}");
 
-        let Ok(status) = child.lock().unwrap().wait() else {
-            eprintln!("Failed to wait on the cgroup process");
-            return None;
-        };
-
-        if status
-            .signal()
-            .is_some_and(|code| code == OUT_OF_MEMORY_SIG_KILL_CODE)
-        {
-            return Some(JobOutput {
-                output: Bytes::new(),
-                error_code: 6,
-                total_time: execution_timer_start.elapsed().as_millis().into(),
-                ..Default::default()
-            });
+        match child.lock().unwrap().try_wait() {
+            Ok(Some(_)) => {
+                if app_state.cgroups.lock().unwrap().is_oom_killed(cgroup) {
+                    return Some(JobOutput {
+                        output: Bytes::new(),
+                        error_code: 6,
+                        total_time: execution_timer_start.elapsed().as_millis().into(),
+                        ..Default::default()
+                    });
+                }
+            }
+            Ok(None) => eprintln!("Cgroup {} process still running...!", cgroup),
+            Err(e) => eprintln!("Failed to check the cgroup process status: {:?}", e),
         }
 
         return None;
