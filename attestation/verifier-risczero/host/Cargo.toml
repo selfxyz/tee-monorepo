@@ -5,9 +5,13 @@ edition = "2021"
 
 [dependencies]
 methods = { path = "../methods" }
-risc0-zkvm = { version = "1.2.1", features = ["cuda"] }
+risc0-zkvm = { version = "1.2.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = "1.0"
 ureq = "2.10.1"
 clap = { version = "4.5.20", features = ["derive"] }
 hex = "0.4.3"
+
+[features]
+default = ["cuda"]
+cuda = ["risc0-zkvm/cuda"]

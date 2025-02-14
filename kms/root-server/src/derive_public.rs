@@ -20,7 +20,7 @@ pub struct Params {
 }
 
 impl Params {
-    fn derive_path_seed(&self, randomness: [u8; 64]) -> Option<[u8; 64]> {
+    fn derive_path_seed(&self, seed: [u8; 64]) -> Option<[u8; 64]> {
         let Ok(pcr0) = hex::decode(&self.pcr0) else {
             return None;
         };
@@ -34,7 +34,7 @@ impl Params {
             return None;
         };
 
-        let enclave_key = derive_enclave_seed(randomness, &pcr0, &pcr1, &pcr2, &user_data);
+        let enclave_key = derive_enclave_seed(seed, &pcr0, &pcr1, &pcr2, &user_data);
         let path_key = derive_path_seed(enclave_key, self.path.as_bytes());
 
         Some(path_key)
@@ -46,7 +46,7 @@ pub async fn derive_secp256k1_public(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 64]) {
-    let Some(path_key) = params.derive_path_seed(state.randomness) else {
+    let Some(path_key) = params.derive_path_seed(state.seed) else {
         return (StatusCode::BAD_REQUEST, [0; 64]);
     };
     let public = to_secp256k1_public(path_key);
@@ -59,7 +59,7 @@ pub async fn derive_secp256k1_address_ethereum(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, String) {
-    let Some(path_key) = params.derive_path_seed(state.randomness) else {
+    let Some(path_key) = params.derive_path_seed(state.seed) else {
         return (StatusCode::BAD_REQUEST, String::new());
     };
     let address = to_secp256k1_ethereum_address(path_key);
@@ -72,7 +72,7 @@ pub async fn derive_ed25519_public(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let Some(path_key) = params.derive_path_seed(state.randomness) else {
+    let Some(path_key) = params.derive_path_seed(state.seed) else {
         return (StatusCode::BAD_REQUEST, [0; 32]);
     };
     let public = to_ed25519_public(path_key);
@@ -85,7 +85,7 @@ pub async fn derive_ed25519_address_solana(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, String) {
-    let Some(path_key) = params.derive_path_seed(state.randomness) else {
+    let Some(path_key) = params.derive_path_seed(state.seed) else {
         return (StatusCode::BAD_REQUEST, String::new());
     };
     let address = to_ed25519_solana_address(path_key);
@@ -98,7 +98,7 @@ pub async fn derive_x25519_public(
     State(state): State<AppState>,
     Query(params): Query<Params>,
 ) -> (StatusCode, [u8; 32]) {
-    let Some(path_key) = params.derive_path_seed(state.randomness) else {
+    let Some(path_key) = params.derive_path_seed(state.seed) else {
         return (StatusCode::BAD_REQUEST, [0; 32]);
     };
     let public = to_x25519_public(path_key);

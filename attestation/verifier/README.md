@@ -29,6 +29,12 @@ Supported outputs:
 - `uncompressed`
 - `compressed`, using `upx`
 
+## Test
+
+```
+cargo test
+```
+
 ## Usage
 
 ```
@@ -127,7 +133,7 @@ $ curl <attestation_server_ip:attestation_server_port>/attestation/raw -vs | cur
 < date: Sun, 07 Apr 2024 06:36:44 GMT
 < 
 * Connection #0 to host <attestation_verifier_ip> left intact
-{"signature":"1aaffb1463cfbeb24401267d2ab2661a9695dd0fb294fc4f4e66ad98efa1ece63b79c0bfc5d79c8515abbfb4fa50994b848132d3374821ff09eb22c7af37395e1b","secp256k1_public":"e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb","pcr0":"189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6","pcr1":"5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16","pcr2":"6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa","timestamp":1712471793488,"verifier_secp256k1_public":"e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"}
+{"signature":"15383a7af2c33e80eba2637c9e3fb0c246ecedfbb183879f9dc9b18d25635b3871212cfab51db0fd75dded5be870febe19226c92d38425c37689fb7c1e86f74f1c","public_key":"435ed75cf1be0c58b97d372b153ad4e43101895e481e7dd7d27519605e859f34d7b5491586faa887257178bbb6daa1e212f35aa2a60308cd76df5db522abb139","image_id":"3fe8419454c44a36782f2b9a307cad84ee8c226e0351cb0861c50fb6b13a3a3e","timestamp":1738845553218,"verifier_public_key":"60b77877f624b4eaf776a6afef1dd727f969c7557b88b05cc27c51366eafd72a2328b054bd2f6cec47b3b82b61bbfc898b5b32d604446ebf59e50195345a8d98"}
 ```
 
 ### Hex
@@ -171,7 +177,7 @@ $ curl <attestation_server_ip:attestation_server_port>/attestation/hex -vs | cur
 < date: Sun, 07 Apr 2024 06:44:25 GMT
 < 
 * Connection #0 to host <attestation_verifier_ip> left intact
-{"signature":"4ed49c703e8deea8dabccbeeb8fe5625776dbbbef4cffbb9c31f84d21e7a0b6c63707aade102548cc05e6de3a49469b96c700f5b8709e75ec050061ac69dbb621c","secp256k1_public":"e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb","pcr0":"189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6","pcr1":"5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16","pcr2":"6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa","timestamp":1712472254392,"verifier_secp256k1_public":"e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"}
+{"signature":"15383a7af2c33e80eba2637c9e3fb0c246ecedfbb183879f9dc9b18d25635b3871212cfab51db0fd75dded5be870febe19226c92d38425c37689fb7c1e86f74f1c","public_key":"435ed75cf1be0c58b97d372b153ad4e43101895e481e7dd7d27519605e859f34d7b5491586faa887257178bbb6daa1e212f35aa2a60308cd76df5db522abb139","image_id":"3fe8419454c44a36782f2b9a307cad84ee8c226e0351cb0861c50fb6b13a3a3e","timestamp":1738845553218,"verifier_public_key":"60b77877f624b4eaf776a6afef1dd727f969c7557b88b05cc27c51366eafd72a2328b054bd2f6cec47b3b82b61bbfc898b5b32d604446ebf59e50195345a8d98"}
 ```
 
 ## Response format
@@ -179,23 +185,19 @@ $ curl <attestation_server_ip:attestation_server_port>/attestation/hex -vs | cur
 ```json
 {
     "signature": "...",
-    "secp256k1_public": "...",
-    "pcr0": "...",
-    "pcr1": "...",
-    "pcr2": "...",
+    "public_key": "...",
+    "image_id": "...",
     "timestamp": ...,
-    "verifier_secp256k1_public": "..."
+    "verifier_public_key": "..."
 }
 ```
 
 The verifier responds with JSON with the following fields:
 - `signature`: signature provided by the verifier
-- `secp256k1_public`: public key that was encoded in the attestation
-- `pcr0`: PCR0 that was encoded in the attestation
-- `pcr1`: PCR1 that was encoded in the attestation
-- `pcr2`: PCR2 that was encoded in the attestation
+- `public_key`: public key that was encoded in the attestation
+- `image_id`: hash of PCRs and user data encoded in the attestation
 - `timestamp`: timestamp that was encoded in the attestation
-- `verifier_secp256k1_public`: public key of the verifier corresponding to the signature
+- `verifier_public_key`: public key of the verifier corresponding to the signature
 
 ## Signature format
 
@@ -217,9 +219,7 @@ The `chainId`, `verifyingContract` and `salt` fields are omitted because we do n
 ```typescript
 struct Attestation {
     bytes enclavePubKey;
-    bytes PCR0;
-    bytes PCR1;
-    bytes PCR2;
+    bytes32 imageId;
     uint256 timestampInMilliseconds;
 }
 ```
@@ -239,16 +239,14 @@ bytes32 private constant DOMAIN_SEPARATOR =
     );
 
 bytes32 private constant ATTESTATION_TYPEHASH =
-    keccak256("Attestation(bytes enclavePubKey,bytes PCR0,bytes PCR1,bytes PCR2,uint256 timestampInMilliseconds)");
+    keccak256("Attestation(bytes enclavePubKey,bytes32 imageId,uint256 timestampInMilliseconds)");
 
 function _verify(bytes memory signature, Attestation memory attestation) internal view {
     bytes32 hashStruct = keccak256(
         abi.encode(
             ATTESTATION_TYPEHASH,
             keccak256(attestation.enclavePubKey),
-            keccak256(attestation.PCR0),
-            keccak256(attestation.PCR1),
-            keccak256(attestation.PCR2),
+            attestation.imageId,
             attestation.timestampInMilliseconds
         )
     );
@@ -258,12 +256,6 @@ function _verify(bytes memory signature, Attestation memory attestation) interna
 
     ...
 }
-```
-
-## Running unit tests
-Before pushing any changes, try to make sure that no existing functionalities are breaking by running the unit tests. Tests require fresh attestation so update the sample data present in `src/test/` directory by interacting with a running oyster enclave's attestation server (as described above).
-```
-cargo test
 ```
 
 ## License

@@ -33,7 +33,7 @@
   cgroupSetup = ./. + "/cgroupv2_setup.sh";
   execConf = ./. + "/oyster_serverless_executor_config.json";
   secretStoreConf = ./. + "/oyster_secret_store_config.json";
-  app = pkgs.runCommand "app" { nativeBuildInputs = [pkgs.gcc]; } ''
+  app = pkgs.runCommand "app" {nativeBuildInputs = [pkgs.gcc];} ''
     echo Preparing the app folder
     pwd
     mkdir -p $out
