@@ -2,86 +2,66 @@
 
 pragma solidity ^0.8.0;
 
-import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {AccessControl} from "../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
+import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
 import {IAttestationVerifier} from "./IAttestationVerifier.sol";
+import {RiscZeroVerifier, RiscZeroVerifierDefault} from "./RiscZeroVerifier.sol";
+import {VerifiedKeys, VerifiedKeysDefault} from "./VerifiedKeys.sol";
 
-abstract contract AttestationAuther {
-    IAttestationVerifier public verifier;
-    // image id -> family
-    mapping(bytes32 => bytes32) public images;
-    // enclave key, transformed -> image id
-    mapping(bytes32 => bytes32) public keys;
-    uint256 public maxAgeMs;
+contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault {
+    bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
+    bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
 
-    bytes32 public constant DEFAULT_FAMILY = keccak256("DEFAULT_FAMILY");
+    IAttestationVerifier public attestationVerifier;
 
     error AttestationAutherTooOld();
-    error AttestationAutherFamilyMismatch();
+    error AttestationAutherPubkeyInvalid();
 
-    event AttestationAutherApproved(bytes32 indexed imageId, bytes32 indexed family);
-    event AttestationAutherRevoked(bytes32 indexed imageId, bytes32 indexed family);
-    event AttestationAutherVerified(bytes32 indexed enclaveKey, bytes32 indexed imageId, bytes indexed enclavePubkey);
-
-    constructor(IAttestationVerifier _verifier, bytes32 _imageId, bytes32 _family) {
-        verifier = _verifier;
-        _approveImage(_imageId, _family);
+    constructor(
+        address _admin,
+        address _approver,
+        address _revoker,
+        IAttestationVerifier _attestationVerifier,
+        IRiscZeroVerifier _verifier,
+        bytes32 _guestId,
+        bytes memory _rootKey,
+        uint256 _maxAgeMs,
+        bytes32 _imageId,
+        bytes32 _family
+    ) RiscZeroVerifier(_verifier, _guestId, _rootKey, _maxAgeMs) VerifiedKeys(_imageId, _family) {
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(APPROVER_ROLE, _approver);
+        _grantRole(REVOKER_ROLE, _revoker);
+        attestationVerifier = _attestationVerifier;
     }
 
-    function _authorizeAutherApprove() internal virtual;
-    function _authorizeAutherRevoke() internal virtual;
-    function _transformAutherPubkey(bytes memory _pubkey) internal virtual returns (bytes32);
+    function _rzvAuthorizeUpdate() internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    function _approveImage(bytes32 _imageId, bytes32 _family) internal returns (bool) {
-        if (images[_imageId] != bytes32(0)) {
-            require(images[_imageId] == _family, AttestationAutherFamilyMismatch());
+    function _vkAuthorizeApprove() internal virtual override onlyRole(APPROVER_ROLE) {}
 
-            return false;
-        }
+    function _vkAuthorizeRevoke() internal virtual override onlyRole(REVOKER_ROLE) {}
 
-        images[_imageId] = _family;
-        emit AttestationAutherApproved(_imageId, _family);
+    function _vkTransformPubkey(bytes memory _pubkey) internal virtual override returns (bytes32) {
+        require(_pubkey.length == 64, AttestationAutherPubkeyInvalid());
 
-        return true;
-    }
-
-    function _revokeImage(bytes32 _imageId) internal returns (bool) {
-        if (images[_imageId] == bytes32(0)) return false;
-
-        emit AttestationAutherRevoked(_imageId, images[_imageId]);
-        delete images[_imageId];
-
-        return true;
-    }
-
-    function approveImage(bytes32 _imageId, bytes32 _family) external returns (bool) {
-        _authorizeAutherApprove();
-        return _approveImage(_imageId, _family);
-    }
-
-    function revokeImage(bytes32 _imageId) external returns (bool) {
-        _authorizeAutherRevoke();
-        return _revokeImage(_imageId);
+        bytes32 _hash = keccak256(_pubkey);
+        return bytes32(uint256(uint160(uint256(_hash))));
     }
 
     function verifyEnclave(
-        bytes memory _signature,
-        IAttestationVerifier.Attestation memory _attestation,
-        bytes32 _family
-    ) external returns (bool) {
+        bytes calldata _seal,
+        bytes calldata _pubkey,
+        bytes32 _imageId,
+        uint64 _timestampInMilliseconds
+    ) external {
+        _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        _setKeyVerified(_pubkey, _imageId);
+    }
+
+    function verifyEnclave(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation) external {
         require(_attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs, AttestationAutherTooOld());
-
-        bytes32 _imageId = _attestation.imageId;
-        require(images[_imageId] == _family, AttestationAutherFamilyMismatch());
-
-        verifier.verify(_signature, _attestation);
-
-        bytes32 _enclaveKey = _transformAutherPubkey(_attestation.enclavePubKey);
-        if (keys[_enclaveKey] != bytes32(0)) return false;
-
-        keys[_enclaveKey] = _imageId;
-        emit AttestationAutherVerified(_enclaveKey, _imageId, _attestation.enclavePubKey);
-
-        return true;
+        attestationVerifier.verify(_signature, _attestation);
+        _setKeyVerified(_attestation.enclavePubKey, _attestation.imageId);
     }
 }
