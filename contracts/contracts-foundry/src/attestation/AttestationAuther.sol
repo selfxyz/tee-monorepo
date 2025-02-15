@@ -45,8 +45,7 @@ contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKe
     function _vkTransformPubkey(bytes memory _pubkey) internal virtual override returns (bytes32) {
         require(_pubkey.length == 64, AttestationAutherPubkeyInvalid());
 
-        bytes32 _hash = keccak256(_pubkey);
-        return bytes32(uint256(uint160(uint256(_hash))));
+        return keccak256(_pubkey) & 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff;
     }
 
     function verifyEnclave(
