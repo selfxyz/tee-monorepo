@@ -146,11 +146,22 @@ abstract contract VerifiedKeys {
     /// @notice Ensures a key is verified
     /// @dev Checks both key and image status
     /// @param _key Transformed key to verify
-    function _ensureKeyVerified(bytes32 _key) internal view {
+    /// @param _expectedFamily Family the key should belong to
+    function _ensureKeyVerified(bytes32 _key, bytes32 _expectedFamily) internal view {
         bytes32 _imageId = _vkGetEnclaveImage(_key);
         require(_imageId != bytes32(0), VerifiedKeysNotVerified());
+        bytes32 _family = _vkGetImageFamily(_imageId);
         // to check revocations
-        require(_vkGetImageFamily(_imageId) != bytes32(0), VerifiedKeysNotVerified());
+        require(_expectedFamily != bytes32(0), VerifiedKeysNotVerified());
+        // check family
+        require(_expectedFamily == _family, VerifiedKeysNotVerified());
+    }
+
+    /// @notice Ensures a key is verified
+    /// @dev Calls _ensureKeyVerified with DEFAULT_FAMILY
+    /// @param _key Transformed key to verify
+    function _ensureKeyVerified(bytes32 _key) internal view {
+        _ensureKeyVerified(_key, DEFAULT_FAMILY);
     }
 }
 
