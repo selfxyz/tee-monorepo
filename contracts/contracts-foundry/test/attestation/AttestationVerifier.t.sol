@@ -10,19 +10,6 @@ import {IAttestationVerifier} from "../../src/attestation/IAttestationVerifier.s
 import {RiscZeroVerifier} from "../../src/attestation/RiscZeroVerifier.sol";
 import {VerifiedKeys} from "../../src/attestation/VerifiedKeys.sol";
 
-contract TestAttestationVerifier is AttestationVerifier {
-    constructor(
-        address _admin,
-        address _approver,
-        address _revoker,
-        IRiscZeroVerifier _verifier,
-        bytes32 _guestId,
-        bytes memory _rootKey,
-        uint256 _maxAgeMs,
-        bytes32 _imageId
-    ) AttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId) {}
-}
-
 contract AttestationVerifierTestConstruction is Test {
     function test_Construction(
         address _admin,
@@ -53,8 +40,8 @@ contract AttestationVerifierTestConstruction is Test {
         vm.expectEmit();
         emit IAccessControl.RoleGranted(keccak256("REVOKER_ROLE"), _revoker, address(this));
 
-        TestAttestationVerifier verifier =
-            new TestAttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId);
+        AttestationVerifier verifier =
+            new AttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId);
 
         assertEq(address(verifier.verifier()), address(_verifier));
         assertEq(verifier.guestId(), _guestId);
@@ -68,7 +55,7 @@ contract AttestationVerifierTestConstruction is Test {
 }
 
 contract AttestationVerifierTestVerify is Test {
-    TestAttestationVerifier verifier;
+    AttestationVerifier verifier;
     address admin = makeAddr("admin");
     address approver = makeAddr("approver");
     address revoker = makeAddr("revoker");
@@ -80,7 +67,7 @@ contract AttestationVerifierTestVerify is Test {
 
     function setUp() public {
         verifier =
-            new TestAttestationVerifier(admin, approver, revoker, riscZeroVerifier, guestId, rootKey, maxAgeMs, imageId);
+            new AttestationVerifier(admin, approver, revoker, riscZeroVerifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
     function test_Verify_ValidSignature() public {
