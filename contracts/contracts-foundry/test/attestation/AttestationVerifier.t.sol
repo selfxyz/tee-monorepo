@@ -21,9 +21,8 @@ contract TestAttestationVerifier is AttestationVerifier {
         bytes32 _guestId,
         bytes memory _rootKey,
         uint256 _maxAgeMs,
-        bytes32 _imageId,
-        bytes32 _family
-    ) AttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId, _family) {
+        bytes32 _imageId
+    ) AttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId) {
         shouldVerify = true;
     }
 
@@ -41,8 +40,7 @@ contract AttestationVerifierTestConstruction is Test {
         bytes32 _guestId,
         bytes memory _rootKey,
         uint256 _maxAgeMs,
-        bytes32 _imageId,
-        bytes32 _family
+        bytes32 _imageId
     ) public {
         vm.expectEmit();
         emit RiscZeroVerifier.RiscZeroVerifierUpdatedVerifier(_verifier, IRiscZeroVerifier(address(0)));
@@ -54,7 +52,7 @@ contract AttestationVerifierTestConstruction is Test {
         emit RiscZeroVerifier.RiscZeroVerifierUpdatedMaxAge(_maxAgeMs, 0);
 
         vm.expectEmit();
-        emit VerifiedKeys.VerifiedKeysApproved(_imageId, _family);
+        emit VerifiedKeys.VerifiedKeysApproved(_imageId, keccak256("DEFAULT_FAMILY"));
 
         vm.expectEmit();
         emit IAccessControl.RoleGranted(bytes32(0), _admin, address(this));
@@ -63,15 +61,14 @@ contract AttestationVerifierTestConstruction is Test {
         vm.expectEmit();
         emit IAccessControl.RoleGranted(keccak256("REVOKER_ROLE"), _revoker, address(this));
 
-        TestAttestationVerifier verifier = new TestAttestationVerifier(
-            _admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId, _family
-        );
+        TestAttestationVerifier verifier =
+            new TestAttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId);
 
         assertEq(address(verifier.verifier()), address(_verifier));
         assertEq(verifier.guestId(), _guestId);
         assertEq(verifier.rootKey(), _rootKey);
         assertEq(verifier.maxAgeMs(), _maxAgeMs);
-        assertEq(verifier.images(_imageId), _family);
+        assertEq(verifier.images(_imageId), keccak256("DEFAULT_FAMILY"));
         assertTrue(verifier.hasRole(verifier.DEFAULT_ADMIN_ROLE(), _admin));
         assertTrue(verifier.hasRole(verifier.APPROVER_ROLE(), _approver));
         assertTrue(verifier.hasRole(verifier.REVOKER_ROLE(), _revoker));
@@ -86,65 +83,78 @@ contract AttestationVerifierTestVerify is Test {
     IRiscZeroVerifier riscZeroVerifier = IRiscZeroVerifier(makeAddr("verifier"));
     bytes32 guestId = bytes32(uint256(1));
     bytes rootKey = hex"010203";
-    uint256 maxAgeMs = 1000;
+    uint256 maxAgeMs = 2000;
     bytes32 imageId = bytes32(uint256(2));
-    bytes32 family = bytes32(uint256(3));
 
     function setUp() public {
-        verifier = new TestAttestationVerifier(
-            admin, approver, revoker, riscZeroVerifier, guestId, rootKey, maxAgeMs, imageId, family
-        );
+        verifier =
+            new TestAttestationVerifier(admin, approver, revoker, riscZeroVerifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
-    function createAttestation(bytes memory pubkey, uint64 timestamp)
-        internal
-        view
-        returns (IAttestationVerifier.Attestation memory)
-    {
-        return IAttestationVerifier.Attestation({
-            enclavePubKey: pubkey,
-            imageId: imageId,
-            timestampInMilliseconds: timestamp
-        });
+    function test_Verify_ValidSignature() public {
+        // generated using attestation-verifier.test.js
+        bytes memory _pubkey =
+            hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
+        uint256 _timestamp = 0x4e43046b;
+        bytes memory _signature =
+            hex"b5a9242c39d6e01a6b204ad7495081b56ac9f6dfadc9eaa04c2f3052ab328fbc41fa56be313d0164ec7b0bc0696a191653bc8ddcc246a73dc375decfff8a90f61b";
+        IAttestationVerifier.Attestation memory attestation =
+            IAttestationVerifier.Attestation(_pubkey, imageId, _timestamp);
+        vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
+        vm.warp(_timestamp / 1000);
+        verifier.verifyEnclave(_signature, _pubkey, imageId, uint64(_timestamp));
+
+        verifier.verify(_signature, attestation);
     }
 
-    function test_Verify_ValidSignature(bytes memory signature, bytes memory pubkey, uint64 timestamp) public {
-        vm.assume(pubkey.length == 64);
-        timestamp = uint64(bound(timestamp, block.timestamp * 1000 - maxAgeMs + 1, type(uint64).max));
+    function test_Verify_InvalidSignature() public {
+        // generated using attestation-verifier.test.js
+        bytes memory _pubkey =
+            hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
+        uint256 _timestamp = 0x4e43046b;
+        // modified last - 1 byte
+        bytes memory _signature =
+            hex"b5a9242c39d6e01a6b204ad7495081b56ac9f6dfadc9eaa04c2f3052ab328fbc41fa56be313d0164ec7b0bc0696a191653bc8ddcc246a73dc375decfff8a90f51b";
+        IAttestationVerifier.Attestation memory attestation =
+            IAttestationVerifier.Attestation(_pubkey, imageId, _timestamp);
+        vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
+        vm.warp(_timestamp / 1000);
+        verifier.verifyEnclave(_signature, _pubkey, imageId, uint64(_timestamp));
+        vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
 
-        vm.prank(approver);
-        verifier.approveImage(imageId, family);
-
-        verifier.verify(signature, createAttestation(pubkey, timestamp));
+        verifier.verify(_signature, attestation);
     }
 
-    function test_Verify_InvalidSignature(bytes memory signature, bytes memory pubkey, uint64 timestamp) public {
-        vm.assume(pubkey.length == 64);
-        timestamp = uint64(bound(timestamp, block.timestamp * 1000 - maxAgeMs + 1, type(uint64).max));
+    function test_Verify_UnverifiedKey() public {
+        // generated using attestation-verifier.test.js
+        bytes memory _pubkey =
+            hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
+        uint256 _timestamp = 0x4e43046b;
+        bytes memory _signature =
+            hex"b5a9242c39d6e01a6b204ad7495081b56ac9f6dfadc9eaa04c2f3052ab328fbc41fa56be313d0164ec7b0bc0696a191653bc8ddcc246a73dc375decfff8a90f61b";
+        IAttestationVerifier.Attestation memory attestation =
+            IAttestationVerifier.Attestation(_pubkey, imageId, _timestamp);
+        vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
 
-        verifier.setShouldVerify(false);
-        vm.expectRevert("not verified");
-        verifier.verify(signature, createAttestation(pubkey, timestamp));
+        verifier.verify(_signature, attestation);
     }
 
-    function test_Verify_ExpiredSignature(bytes memory signature, bytes memory pubkey, uint64 timestamp) public {
-        vm.assume(pubkey.length == 64);
-        timestamp = uint64(bound(timestamp, 0, block.timestamp * 1000 - maxAgeMs));
-
-        vm.expectRevert("AttestationAutherTooOld()");
-        verifier.verify(signature, createAttestation(pubkey, timestamp));
-    }
-
-    function test_Verify_RevokedKey(bytes memory signature, bytes memory pubkey, uint64 timestamp) public {
-        vm.assume(pubkey.length == 64);
-        timestamp = uint64(bound(timestamp, block.timestamp * 1000 - maxAgeMs + 1, type(uint64).max));
-
-        vm.prank(approver);
-        verifier.approveImage(imageId, family);
+    function test_Verify_RevokedKey() public {
+        // generated using attestation-verifier.test.js
+        bytes memory _pubkey =
+            hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
+        uint256 _timestamp = 0x4e43046b;
+        bytes memory _signature =
+            hex"b5a9242c39d6e01a6b204ad7495081b56ac9f6dfadc9eaa04c2f3052ab328fbc41fa56be313d0164ec7b0bc0696a191653bc8ddcc246a73dc375decfff8a90f61b";
+        IAttestationVerifier.Attestation memory attestation =
+            IAttestationVerifier.Attestation(_pubkey, imageId, _timestamp);
+        vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
+        vm.warp(_timestamp / 1000);
+        verifier.verifyEnclave(_signature, _pubkey, imageId, uint64(_timestamp));
         vm.prank(revoker);
         verifier.revokeImage(imageId);
+        vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
 
-        vm.expectRevert("VerifiedKeysNotVerified()");
-        verifier.verify(signature, createAttestation(pubkey, timestamp));
+        verifier.verify(_signature, attestation);
     }
 }
