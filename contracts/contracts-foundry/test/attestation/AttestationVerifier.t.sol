@@ -11,8 +11,6 @@ import {RiscZeroVerifier} from "../../src/attestation/RiscZeroVerifier.sol";
 import {VerifiedKeys} from "../../src/attestation/VerifiedKeys.sol";
 
 contract TestAttestationVerifier is AttestationVerifier {
-    bool public shouldVerify;
-
     constructor(
         address _admin,
         address _approver,
@@ -22,13 +20,7 @@ contract TestAttestationVerifier is AttestationVerifier {
         bytes memory _rootKey,
         uint256 _maxAgeMs,
         bytes32 _imageId
-    ) AttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId) {
-        shouldVerify = true;
-    }
-
-    function setShouldVerify(bool _shouldVerify) external {
-        shouldVerify = _shouldVerify;
-    }
+    ) AttestationVerifier(_admin, _approver, _revoker, _verifier, _guestId, _rootKey, _maxAgeMs, _imageId) {}
 }
 
 contract AttestationVerifierTestConstruction is Test {
