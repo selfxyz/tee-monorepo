@@ -151,8 +151,6 @@ abstract contract VerifiedKeys {
         bytes32 _imageId = _vkGetEnclaveImage(_key);
         require(_imageId != bytes32(0), VerifiedKeysNotVerified());
         bytes32 _family = _vkGetImageFamily(_imageId);
-        // to check revocations
-        require(_expectedFamily != bytes32(0), VerifiedKeysNotVerified());
         // check family
         require(_expectedFamily == _family, VerifiedKeysNotVerified());
     }
