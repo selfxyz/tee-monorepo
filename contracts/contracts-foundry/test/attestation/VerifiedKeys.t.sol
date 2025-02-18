@@ -36,6 +36,10 @@ contract TestVerifiedKeys is VerifiedKeysDefault {
     function ensureKeyVerified(bytes32 _key) external view {
         _ensureKeyVerified(_key);
     }
+
+    function ensureKeyVerified(bytes32 _key, bytes32 _family) external view {
+        _ensureKeyVerified(_key, _family);
+    }
 }
 
 contract VerifiedKeysTestConstruction is Test {
@@ -172,14 +176,14 @@ contract VerifiedKeysTestSetKeyVerified is Test {
     }
 }
 
-contract VerifiedKeysTestEnsureKeyVerified is Test {
+contract VerifiedKeysTestEnsureKeyVerifiedDefaultFamily is Test {
     bytes32 imageId;
     bytes32 family;
     TestVerifiedKeys verifiedKeys;
 
     function setUp() public {
         imageId = bytes32(vm.randomUint());
-        family = bytes32(vm.randomUint());
+        family = keccak256("DEFAULT_FAMILY");
         verifiedKeys = new TestVerifiedKeys(imageId, family, true);
     }
 
@@ -204,5 +208,40 @@ contract VerifiedKeysTestEnsureKeyVerified is Test {
 
         vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
         verifiedKeys.ensureKeyVerified(key);
+    }
+}
+
+contract VerifiedKeysTestEnsureKeyVerifiedCustomFamily is Test {
+    bytes32 imageId;
+    bytes32 family;
+    TestVerifiedKeys verifiedKeys;
+
+    function setUp() public {
+        imageId = bytes32(vm.randomUint());
+        family = bytes32(vm.randomUint());
+        verifiedKeys = new TestVerifiedKeys(imageId, family, true);
+    }
+
+    function test_EnsureKeyVerified_Valid(bytes memory _pubkey) public {
+        bytes32 key = keccak256(_pubkey);
+        verifiedKeys.setKeyVerified(_pubkey, imageId);
+
+        verifiedKeys.ensureKeyVerified(key, family);
+    }
+
+    function test_EnsureKeyVerified_NotVerified(bytes memory _pubkey) public {
+        bytes32 key = keccak256(_pubkey);
+        vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
+
+        verifiedKeys.ensureKeyVerified(key, family);
+    }
+
+    function test_EnsureKeyVerified_Revoked(bytes memory _pubkey) public {
+        bytes32 key = keccak256(_pubkey);
+        verifiedKeys.setKeyVerified(_pubkey, imageId);
+        verifiedKeys.revokeImage(imageId);
+
+        vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
+        verifiedKeys.ensureKeyVerified(key, family);
     }
 }
