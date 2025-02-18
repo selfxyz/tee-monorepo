@@ -18,8 +18,7 @@ contract AttestationVerifier is AttestationAuther, IAttestationVerifier {
         bytes32 _guestId,
         bytes memory _rootKey,
         uint256 _maxAgeMs,
-        bytes32 _imageId,
-        bytes32 _family
+        bytes32 _imageId
     )
         AttestationAuther(
             _admin,
@@ -31,7 +30,7 @@ contract AttestationVerifier is AttestationAuther, IAttestationVerifier {
             _rootKey,
             _maxAgeMs,
             _imageId,
-            _family
+            DEFAULT_FAMILY
         )
     {}
 
