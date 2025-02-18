@@ -35,7 +35,7 @@ contract TestAttestationAuther is AttestationAuther, IAttestationVerifier {
     }
 
     function verify(bytes memory signature, Attestation memory attestation) external view {
-        require(shouldVerify, "not verified");
+        require(shouldVerify, "auther not verified");
     }
 }
 
@@ -550,6 +550,25 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
         auther.verifyEnclave(_signature, attestation);
 
         assertEq(auther.keys(_addr), imageId);
+    }
+
+    function test_VerifyEnclaveSignature_Invalid(
+        bytes memory _signature,
+        bytes memory _pubkey,
+        uint64 _timestampInMilliseconds
+    ) public {
+        vm.assume(_pubkey.length == 64);
+        auther.setShouldVerify(false);
+        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        IAttestationVerifier.Attestation memory attestation = IAttestationVerifier.Attestation({
+            enclavePubKey: _pubkey,
+            imageId: imageId,
+            timestampInMilliseconds: _timestampInMilliseconds
+        });
+        vm.expectRevert("auther not verified");
+        vm.warp(4);
+
+        auther.verifyEnclave(_signature, attestation);
     }
 
     function test_VerifyEnclaveSignature_Expired(
