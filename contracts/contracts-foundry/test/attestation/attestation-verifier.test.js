@@ -20,20 +20,20 @@ const TYPES = {
   ],
 };
 
-async function main() {
-  const signature = await walletClient.signTypedData({
-    account: privateKeyToAccount("0x900ae318f7deaf644fe51b89fb372c742cdcdf9baa606957c03b07cc0bd4d01d"),
-    domain: DOMAIN,
-    types: TYPES,
-    primaryType: 'Attestation',
-    message: {
-      enclavePubKey: "0xf0fe0d77cffb34d4b71cd8dd9c237d56edaa95945a621236f9893316cd6ed407d8b87ac388d0f210c5f3261e4c2b33e29b0045320e3c719554ea376e44cc5d6b",
-      imageId: "0xd8b87ac388d0f210c5f3261e4c2b33e29b0045320e3c719554ea376e44cc5d6b",
-      timestampInMilliseconds: "0x4e43046b",
-    }
-  });
+const account =
+  privateKeyToAccount("0xdc18850da3d958ffe330e8d87937622bb33964972c7030857b19369a6e81ed3d");
 
-  console.log('Generated signature:', signature);
-}
+const signature = await walletClient.signTypedData({
+  account,
+  domain: DOMAIN,
+  types: TYPES,
+  primaryType: 'Attestation',
+  message: {
+    enclavePubKey: "0x9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76",
+    imageId: "0x0000000000000000000000000000000000000000000000000000000000000002",
+    timestampInMilliseconds: 0x4e43046b,
+  }
+});
 
-main().catch(console.error);
+console.log('Generated signature:', signature);
+console.log('Pubkey:', account.publicKey);
