@@ -12,3 +12,10 @@ docs/
 
 # Dotenv file
 .env
+
+broadcast/
+
+node_modules
+
+lcov.info
+coverage/
