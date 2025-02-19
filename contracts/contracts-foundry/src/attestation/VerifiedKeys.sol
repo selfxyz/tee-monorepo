@@ -65,7 +65,7 @@ abstract contract VerifiedKeys {
     /// @param key Transformed key
     /// @param imageId Image id of the key
     /// @param pubkey Public key bytes
-    event VerifiedKeysVerified(bytes32 indexed key, bytes32 indexed imageId, bytes indexed pubkey);
+    event VerifiedKeysVerified(bytes32 indexed key, bytes32 indexed imageId, bytes pubkey);
 
     /// @notice Initializes contract with an initial approved image
     /// @param _imageId Image id to approve
