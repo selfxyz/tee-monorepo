@@ -81,7 +81,7 @@ contract AttestationVerifierTestVerify is Test {
             IAttestationVerifier.Attestation(_pubkey, imageId, _timestamp);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
-        verifier.verifyEnclave(_signature, _pubkey, imageId, uint64(_timestamp));
+        verifier.verifyEnclave(new bytes(0), _pubkey, imageId, uint64(_timestamp));
 
         verifier.verify(_signature, attestation);
     }
