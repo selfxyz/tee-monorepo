@@ -477,7 +477,7 @@ contract KmsRootTestIsKeyVerified is Test {
         assertTrue(res);
     }
 
-    function test_IsKeyVerified_NotVerified(address _addr) public {
+    function test_IsKeyVerified_NotVerified(address _addr) public view {
         bool res = kmsRoot.isVerified(_addr);
 
         assertFalse(res);

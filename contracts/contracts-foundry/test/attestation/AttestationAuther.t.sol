@@ -34,7 +34,7 @@ contract TestAttestationAuther is AttestationAuther, IAttestationVerifier {
         shouldVerify = _shouldVerify;
     }
 
-    function verify(bytes memory signature, Attestation memory attestation) external view {
+    function verify(bytes memory, Attestation memory) external view {
         require(shouldVerify, "auther not verified");
     }
 }
