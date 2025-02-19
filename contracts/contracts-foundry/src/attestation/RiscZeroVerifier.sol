@@ -47,7 +47,7 @@ abstract contract RiscZeroVerifier {
     /// @notice Emitted when root key is updated
     /// @param rootKey New root key
     /// @param old Previous root key
-    event RiscZeroVerifierUpdatedRootKey(bytes indexed rootKey, bytes indexed old);
+    event RiscZeroVerifierUpdatedRootKey(bytes rootKey, bytes old);
     /// @notice Emitted when max age is updated
     /// @param maxAgeMs New maximum age
     /// @param old Previous maximum age
