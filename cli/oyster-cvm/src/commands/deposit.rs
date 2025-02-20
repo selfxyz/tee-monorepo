@@ -1,25 +1,16 @@
 use alloy::{
-    network::{Ethereum, EthereumWallet},
+    network::EthereumWallet,
     primitives::{Address, FixedBytes, U256},
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
     sol,
-    transports::http::Http,
 };
 use crate::configs::global::{
-    ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS, 
-    USDC_ADDRESS, MIN_DEPOSIT_AMOUNT
+    ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS, MIN_DEPOSIT_AMOUNT
 };
+use crate::utils::usdc::{approve_usdc, format_usdc};
 use anyhow::{anyhow, Context, Result};
-use reqwest::Client;
 use tracing::info;
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    USDC,
-    "src/abis/token_abi.json"
-);
 
 sol!(
     #[allow(missing_docs)]
@@ -78,7 +69,7 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
     }
     info!(
         "Depositing: {:.6} USDC",
-        amount_u256.to::<u128>() as f64 / 1e6
+        format_usdc(amount_u256)
     );
 
     // First approve USDC transfer
@@ -114,27 +105,5 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
 
     info!("Deposit successful!");
 
-    Ok(())
-}
-
-async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Ethereum>) -> Result<()> {
-    let usdc_address: Address = USDC_ADDRESS
-        .parse()
-        .context("Failed to parse USDC address")?;
-    let market_address: Address = OYSTER_MARKET_ADDRESS
-        .parse()
-        .context("Failed to parse market address")?;
-
-    let usdc = USDC::new(usdc_address, provider);
-    let tx_hash = usdc
-        .approve(market_address, amount)
-        .send()
-        .await
-        .context("Failed to send USDC approval transaction")?
-        .watch()
-        .await
-        .context("Failed to get USDC approval transaction hash")?;
-
-    info!("USDC approval transaction: {:?}", tx_hash);
     Ok(())
 }

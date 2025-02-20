@@ -9,6 +9,7 @@ use crate::configs::global::{
     ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS,
     MIN_WITHDRAW_AMOUNT,
 };
+use crate::utils::usdc::format_usdc;
 use anyhow::{anyhow, Context, Result};
 use tracing::info;
 
@@ -199,9 +200,4 @@ pub async fn withdraw_from_job(
 
     info!("Withdrawal successful!");
     Ok(())
-}
-
-/// Formats a U256 value as USDC with 6 decimal places
-fn format_usdc(value: U256) -> f64 {
-    value.to::<u128>() as f64 / 1e6
 }

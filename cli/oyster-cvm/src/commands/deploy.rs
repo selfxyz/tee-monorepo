@@ -1,5 +1,6 @@
 use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS, USDC_ADDRESS};
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
+use crate::utils::usdc::{approve_usdc, format_usdc};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
@@ -131,7 +132,7 @@ pub async fn deploy_oyster_instance(
 
     info!(
         "Total cost: {:.6} USDC",
-        total_cost.to::<u128>() as f64 / 1e6
+        format_usdc(total_cost)
     );
     info!(
         "Total rate: {:.6} USDC/hour",
@@ -176,22 +177,6 @@ pub async fn deploy_oyster_instance(
     }
 
     info!("Enclave is ready! IP address: {}", ip_address);
-    Ok(())
-}
-
-async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Ethereum>) -> Result<()> {
-    let usdc_address: Address = USDC_ADDRESS.parse()?;
-    let market_address: Address = OYSTER_MARKET_ADDRESS.parse()?;
-
-    let usdc = USDC::new(usdc_address, provider);
-    let tx_hash = usdc
-        .approve(market_address, amount)
-        .send()
-        .await?
-        .watch()
-        .await?;
-
-    info!("USDC approval transaction: {:?}", tx_hash);
     Ok(())
 }
 
