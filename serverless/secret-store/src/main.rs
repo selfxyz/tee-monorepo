@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tokio::fs;
 
-use constants::INJECT_SECRET_JSON_PAYLOAD_BUFFER;
+use constants::INJECT_SECRET_JSON_PAYLOAD_SIZE_LIMIT;
 use model::{AppState, ConfigManager, SecretManagerContract};
 use server::*;
 use utils::verify_rpc_url;
@@ -122,19 +122,16 @@ async fn main() -> Result<()> {
     println!("Config server started on port {}", config.config_port);
 
     // Start actix server to expose the inject secret endpoint outside the enclave
-    let external_server =
-        HttpServer::new(move || {
-            App::new()
-                .app_data(app_data.clone())
-                // Increase JSON payload size to accommodate secret injection up to the maximum size configured in the contract
-                .app_data(JsonConfig::default().limit(
-                    2 * config.global_max_secret_size_bytes + INJECT_SECRET_JSON_PAYLOAD_BUFFER,
-                ))
-                .service(inject_and_store_secret)
-        })
-        .bind(("0.0.0.0", args.external_port))
-        .context(format!("could not bind to port {}", args.external_port))?
-        .run();
+    let external_server = HttpServer::new(move || {
+        App::new()
+            .app_data(app_data.clone())
+            // Increase JSON payload size limit to accommodate secret injection up to 1 MB
+            .app_data(JsonConfig::default().limit(INJECT_SECRET_JSON_PAYLOAD_SIZE_LIMIT))
+            .service(inject_and_store_secret)
+    })
+    .bind(("0.0.0.0", args.external_port))
+    .context(format!("could not bind to port {}", args.external_port))?
+    .run();
 
     println!(
         "Secret inject server started on port {}",

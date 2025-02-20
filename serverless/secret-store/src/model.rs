@@ -40,7 +40,6 @@ pub struct Config {
     pub enclave_signer_file: String,
     pub acknowledgement_timeout: u64,
     pub mark_alive_timeout: u64,
-    pub global_max_secret_size_bytes: usize,
 }
 
 // App data struct containing the necessary fields to run the secret store

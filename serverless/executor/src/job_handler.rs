@@ -25,7 +25,6 @@ use crate::workerd::ServerlessError::*;
 3 => Syntax error in the code extracted from the calldata
 4 => User timeout exceeded
 5 => Output size exceeds the limit
-6 => Code execution overloads cgroup memory
 */
 
 // Execute the job request using workerd runtime and 'cgroup' environment
@@ -232,21 +231,6 @@ async fn execute_job(
         }
 
         eprintln!("Failed to execute worker service to serve the user code: {stderr_output}");
-
-        match child.lock().unwrap().try_wait() {
-            Ok(Some(_)) => {
-                if app_state.cgroups.lock().unwrap().is_oom_killed(cgroup) {
-                    return Some(JobOutput {
-                        output: Bytes::new(),
-                        error_code: 6,
-                        total_time: execution_timer_start.elapsed().as_millis().into(),
-                        ..Default::default()
-                    });
-                }
-            }
-            Ok(None) => eprintln!("Cgroup {} process still running...!", cgroup),
-            Err(e) => eprintln!("Failed to check the cgroup process status: {:?}", e),
-        }
 
         return None;
     }
