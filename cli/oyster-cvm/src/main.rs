@@ -213,7 +213,7 @@ enum Commands {
         amount: Option<u64>,
 
         /// Withdraw all remaining balance
-        #[arg(long)]
+        #[arg(long, conflicts_with = "amount")]
         max: bool,
 
         /// Wallet private key for transaction signing
