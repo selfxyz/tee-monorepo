@@ -1,6 +1,6 @@
 use alloy::{
     network::EthereumWallet,
-    primitives::{keccak256, Address, FixedBytes, U256},
+    primitives::{Address, FixedBytes, U256},
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
     sol,
@@ -192,33 +192,13 @@ pub async fn withdraw_from_job(
         .ok_or_else(|| anyhow!("Transaction receipt not found"))?;
 
     if !receipt.status() {
-        info!("Transaction failed. Receipt: {:?}", receipt);
         return Err(anyhow!(
             "Withdraw transaction failed - check contract interaction"
         ));
     }
 
-    // Calculate event signature hash
-    let job_withdrew_signature = "JobWithdrew(bytes32,address,uint256)";
-    let job_withdrew_topic = keccak256(job_withdrew_signature.as_bytes());
-
-    // Look for JobWithdrew event
-    for log in receipt.inner.logs().iter() {
-        if log.topics()[0] == job_withdrew_topic {
-            info!("Withdrawal successful!");
-            return Ok(());
-        }
-    }
-
-    // If we can't find the JobWithdrew event
-    info!("No JobWithdrew event found. All topics:");
-    for log in receipt.inner.logs().iter() {
-        info!("Event topics: {:?}", log.topics());
-    }
-
-    Err(anyhow!(
-        "JobWithdrew event not found in transaction receipt"
-    ))
+    info!("Withdrawal successful!");
+    Ok(())
 }
 
 /// Formats a U256 value as USDC with 6 decimal places

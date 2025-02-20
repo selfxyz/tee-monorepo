@@ -1,6 +1,6 @@
 use alloy::{
     network::{Ethereum, EthereumWallet},
-    primitives::{keccak256, Address, FixedBytes, U256},
+    primitives::{Address, FixedBytes, U256},
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
     sol,
@@ -97,6 +97,8 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
         .await
         .context("Failed to get transaction hash")?;
 
+    info!("Deposit transaction hash: {:?}", tx_hash);
+
     // Verify transaction success
     let receipt = provider
         .get_transaction_receipt(tx_hash)
@@ -110,26 +112,7 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
         ));
     }
 
-    // Calculate event signature hash
-    let job_deposited_signature = "JobDeposited(bytes32,address,uint256)";
-    let job_deposited_topic = keccak256(job_deposited_signature.as_bytes());
-
-    // Look for JobDeposited event
-    let mut found_event = false;
-    for log in receipt.inner.logs().iter() {
-        if log.topics()[0] == job_deposited_topic {
-            found_event = true;
-            info!("Deposit successful!");
-            info!("Transaction hash: {:?}", tx_hash);
-            break;
-        }
-    }
-
-    if !found_event {
-        return Err(anyhow!(
-            "JobDeposited event not found in transaction receipt"
-        ));
-    }
+    info!("Deposit successful!");
 
     Ok(())
 }
