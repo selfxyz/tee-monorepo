@@ -1,4 +1,5 @@
 use crate::types::StorageProvider;
+use crate::configs::global::{PINATA_UPLOAD_URL, PINATA_GATEWAY_URL};
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::Value;
@@ -42,7 +43,7 @@ async fn upload_to_pinata(
         .context("Failed to build HTTP client")?;
 
     let response = client
-        .post("https://api.pinata.cloud/pinning/pinFileToIPFS")
+        .post(PINATA_UPLOAD_URL)
         .header("pinata_api_key", api_key)
         .header("pinata_secret_api_key", secret_key)
         .multipart(form)
@@ -64,7 +65,7 @@ async fn upload_to_pinata(
     let hash = json["IpfsHash"]
         .as_str()
         .context("Failed to get IPFS hash from response")?;
-    let url = format!("https://gateway.pinata.cloud/ipfs/{}", hash);
+    let url = format!("{}/{}", PINATA_GATEWAY_URL, hash);
     info!("Successfully uploaded to Pinata: {}", url);
     Ok(url)
 }

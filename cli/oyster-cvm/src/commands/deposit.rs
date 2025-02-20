@@ -6,14 +6,13 @@ use alloy::{
     sol,
     transports::http::Http,
 };
+use crate::configs::global::{
+    ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS, 
+    USDC_ADDRESS, MIN_DEPOSIT_AMOUNT
+};
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use tracing::info;
-
-const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
-const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
-const MIN_DEPOSIT_AMOUNT: u64 = 1; // Minimum 0.000001 USDC
 
 sol!(
     #[allow(missing_docs)]

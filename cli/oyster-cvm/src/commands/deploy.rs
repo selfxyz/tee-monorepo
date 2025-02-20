@@ -1,4 +1,5 @@
 use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS, USDC_ADDRESS};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
@@ -15,11 +16,7 @@ use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tracing::info;
 
-const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-
-const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
-const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
-
+// Retry Configuration
 const IP_CHECK_RETRIES: u32 = 20;
 const IP_CHECK_INTERVAL: u64 = 15;
 const ATTESTATION_RETRIES: u32 = 20;

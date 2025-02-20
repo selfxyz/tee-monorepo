@@ -4,8 +4,10 @@ use oyster::attestation::AWS_ROOT_KEY;
 
 mod args;
 mod commands;
+mod configs;
 mod types;
 mod utils;
+use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 
 use crate::args::pcr::PcrArgs;
 use crate::commands::deploy::DeploymentConfig;
@@ -119,7 +121,7 @@ enum Commands {
         pcr: PcrArgs,
 
         /// Attestation Port (default: 1300)
-        #[arg(short = 'p', long, default_value = "1300")]
+        #[arg(short = 'p', long, default_value_t = DEFAULT_ATTESTATION_PORT)]
         attestation_port: u16,
 
         /// Maximum age of attestation (in milliseconds) (default: 300000)

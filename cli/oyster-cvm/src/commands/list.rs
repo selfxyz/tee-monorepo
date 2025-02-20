@@ -1,10 +1,9 @@
 use anyhow::{Context, Result};
+use crate::configs::global::INDEXER_URL;
 use prettytable::{row, Table};
 use reqwest;
 use serde_json::{json, Value};
 use tracing::info;
-
-const INDEXER_URL: &str = "http://13.202.13.168:5000/graphql";
 
 pub async fn list_jobs(wallet_address: &str) -> Result<()> {
     info!("Listing active jobs for wallet address: {}", wallet_address);

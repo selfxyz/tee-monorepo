@@ -5,12 +5,14 @@ use alloy::{
     signers::local::PrivateKeySigner,
     sol,
 };
+use crate::configs::global::{
+    ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS,
+    MIN_WITHDRAW_AMOUNT,
+};
 use anyhow::{anyhow, Context, Result};
 use tracing::info;
 
-const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
-const MIN_WITHDRAW_AMOUNT: u64 = 1; // Minimum 0.000001 USDC
+// Withdrawal Settings
 const BUFFER_MINUTES: u64 = 7; // Required buffer time in minutes
 const SCALING_FACTOR: u128 = 1_000_000_000_000; // 1e12 scaling factor for contract values
 
