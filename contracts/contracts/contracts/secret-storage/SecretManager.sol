@@ -927,6 +927,8 @@ contract SecretManager is
     ) external view returns (address[] memory) {
         if(userStorage[_secretId].owner != _jobOwner && !hasSecretAllowedAddress(_secretId, _jobOwner))
             revert SecretManagerUserNotAllowed();
+        if(block.timestamp >= userStorage[_secretId].endTimestamp)
+            revert SecretManagerAlreadyTerminated();
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         address[] memory selectedStores = new address[](len);

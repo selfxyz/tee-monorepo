@@ -2472,6 +2472,12 @@ describe("SecretManager - Other functions", function () {
             .to.be.revertedWithCustomError(secretManager, "SecretManagerUserNotAllowed");
     });
 
+    it('cannot verify user and get selected stores after the end timestamp', async function () {
+        await time.increase(810);
+        await expect(secretManager.verifyUserAndGetSelectedStores(1, addrs[0]))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerAlreadyTerminated");
+    });
+
     it('cannot verify user and get selected stores for unacknowledged secret', async function () {
         // CREATE SECRET
         let env = 1,
