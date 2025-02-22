@@ -1,3 +1,4 @@
+use crate::commands::log::stream_logs;
 use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
 use alloy::{
     network::{Ethereum, EthereumWallet},
@@ -14,7 +15,6 @@ use std::str::FromStr;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tracing::info;
-use crate::commands::log::stream_logs;
 
 const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
 
@@ -179,12 +179,12 @@ pub async fn deploy_oyster_instance(
     }
 
     info!("Enclave is ready! IP address: {}", ip_address);
-    
+
     if config.debug && !config.no_stream {
         info!("Debug mode enabled - starting log streaming...");
         stream_logs(&ip_address, Some("0"), true, false).await?;
     }
-    
+
     Ok(())
 }
 
