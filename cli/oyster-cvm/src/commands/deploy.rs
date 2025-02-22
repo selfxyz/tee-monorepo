@@ -53,7 +53,6 @@ pub struct DeploymentConfig {
     pub debug: bool,
     pub no_stream: bool,
     pub init_params: String,
-    pub extra_init_params: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -153,7 +152,6 @@ pub async fn deploy_oyster_instance(
         &config.job_name,
         config.debug,
         &config.init_params,
-        &config.extra_init_params,
     );
 
     // Approve USDC and create job
@@ -376,7 +374,6 @@ fn create_metadata(
     name: &str,
     debug: bool,
     init_params: &str,
-    extra_init_params: &str,
 ) -> String {
     serde_json::json!({
         "instance": instance,
@@ -388,7 +385,6 @@ fn create_metadata(
         "family": "tuna",
         "debug": debug,
         "init_params": init_params,
-        "extra_init_params": extra_init_params,
     })
     .to_string()
 }
