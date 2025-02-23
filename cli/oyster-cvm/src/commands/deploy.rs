@@ -49,7 +49,10 @@ sol!(
 #[derive(Args, Debug)]
 pub struct DeployArgs {
     /// URL of the enclave image
-    #[arg(long, required = true)]
+    #[arg(
+        long,
+        default_value = "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_arm64.eif"
+    )]
     image_url: String,
 
     /// Region for deployment
@@ -65,7 +68,7 @@ pub struct DeployArgs {
     operator: String,
 
     /// Instance type (e.g. "m5a.2xlarge")
-    #[arg(long, required = true)]
+    #[arg(long, default_value = "r6g.large")]
     instance_type: String,
 
     /// Optional bandwidth in KBps (default: 10)
