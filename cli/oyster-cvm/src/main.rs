@@ -1,14 +1,12 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use commands::deploy::DeployArgs;
-use oyster::attestation::AWS_ROOT_KEY;
+use commands::{deploy::DeployArgs, verify::VerifyArgs};
 
 mod args;
 mod commands;
 mod types;
 mod utils;
 
-use crate::args::pcr::PcrArgs;
 use tracing_subscriber::EnvFilter;
 
 fn setup_logging() {
@@ -73,30 +71,7 @@ enum Commands {
     /// Deploy an Oyster CVM instance
     Deploy(DeployArgs),
     /// Verify Oyster Enclave Attestation
-    Verify {
-        /// Enclave IP
-        #[arg(short = 'e', long, required = true)]
-        enclave_ip: String,
-
-        #[command(flatten)]
-        pcr: PcrArgs,
-
-        /// Attestation Port (default: 1300)
-        #[arg(short = 'p', long, default_value = "1300")]
-        attestation_port: u16,
-
-        /// Maximum age of attestation (in milliseconds) (default: 300000)
-        #[arg(short = 'a', long, default_value = "300000")]
-        max_age: usize,
-
-        /// Attestation timestamp (in milliseconds)
-        #[arg(short = 't', long, default_value = "0")]
-        timestamp: usize,
-
-        /// Root public key
-        #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
-        root_public_key: String,
-    },
+    Verify(VerifyArgs),
     /// Update existing deployments
     Update {
         /// Job ID
@@ -167,24 +142,7 @@ async fn main() -> Result<()> {
             let default_provider = types::StorageProvider::Pinata;
             commands::upload::upload_enclave_image(&file, &default_provider).await
         }
-        Commands::Verify {
-            pcr,
-            enclave_ip,
-            attestation_port,
-            max_age,
-            root_public_key,
-            timestamp,
-        } => {
-            commands::verify::verify_enclave(
-                &pcr,
-                &enclave_ip,
-                &attestation_port,
-                &max_age,
-                &root_public_key,
-                &timestamp,
-            )
-            .await
-        }
+        Commands::Verify(args) => commands::verify::verify(args).await,
         Commands::Deploy(args) => commands::deploy::deploy(args).await,
         Commands::Update {
             job_id,

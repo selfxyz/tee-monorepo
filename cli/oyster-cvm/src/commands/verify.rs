@@ -1,24 +1,46 @@
 use anyhow::{Context, Result};
+use clap::Args;
 use hex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
-use oyster::attestation::{get, verify, AttestationExpectations};
+use oyster::attestation::{get, AttestationExpectations, AWS_ROOT_KEY};
 
 use crate::args::pcr::PcrArgs;
 
-pub async fn verify_enclave(
-    pcr: &PcrArgs,
-    enclave_ip: &str,
-    attestation_port: &u16,
-    max_age: &usize,
-    root_public_key: &str,
-    timestamp: &usize,
-) -> Result<()> {
-    let pcrs = get_pcrs(pcr).context("Failed to load PCR data")?;
+#[derive(Args)]
+pub struct VerifyArgs {
+    /// Enclave IP
+    #[arg(short = 'e', long, required = true)]
+    enclave_ip: String,
 
-    let attestation_endpoint =
-        format!("http://{}:{}/attestation/raw", enclave_ip, attestation_port);
+    #[command(flatten)]
+    pcr: PcrArgs,
+
+    /// Attestation Port (default: 1300)
+    #[arg(short = 'p', long, default_value = "1300")]
+    attestation_port: u16,
+
+    /// Maximum age of attestation (in milliseconds) (default: 300000)
+    #[arg(short = 'a', long, default_value = "300000")]
+    max_age: usize,
+
+    /// Attestation timestamp (in milliseconds)
+    #[arg(short = 't', long, default_value = "0")]
+    timestamp: usize,
+
+    /// Root public key
+    #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
+    root_public_key: String,
+}
+
+pub async fn verify(args: VerifyArgs) -> Result<()> {
+    let pcrs = get_pcrs(&args.pcr).context("Failed to load PCR data")?;
+
+    let attestation_endpoint = format!(
+        "http://{}:{}/attestation/raw",
+        args.enclave_ip, args.attestation_port
+    );
     info!(
         "Connecting to attestation endpoint: {}",
         attestation_endpoint
@@ -29,15 +51,16 @@ pub async fn verify_enclave(
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as usize;
     let attestation_expectations = AttestationExpectations {
-        age: Some((*max_age, now)),
-        pcrs: pcrs,
+        age: Some((args.max_age, now)),
+        pcrs,
         root_public_key: Some(
-            hex::decode(root_public_key).context("Failed to decode root public key hex string")?,
+            hex::decode(args.root_public_key)
+                .context("Failed to decode root public key hex string")?,
         ),
-        timestamp: (!timestamp.eq(&0)).then_some(*timestamp),
+        timestamp: (!args.timestamp.eq(&0)).then_some(args.timestamp),
     };
 
-    let decoded = verify(attestation_doc, attestation_expectations)
+    let decoded = oyster::attestation::verify(attestation_doc, attestation_expectations)
         .context("Failed to verify attestation document")?;
 
     info!("Root public key: {}", hex::encode(decoded.root_public_key));
