@@ -144,11 +144,11 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let result = match &cli.command {
+    let result = match cli.command {
         Commands::Doctor { docker, nix } => {
             // enable all if nothing is enabled
             let all = !docker && !nix;
-            commands::doctor::run_doctor(*docker || all, *nix || all)
+            commands::doctor::run_doctor(docker || all, nix || all)
         }
         Commands::Build {
             platform,
@@ -157,18 +157,18 @@ async fn main() -> Result<()> {
             output,
             commit_ref,
         } => {
-            let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
+            let platform = types::Platform::from_str(&platform).map_err(|e| anyhow::anyhow!(e))?;
             commands::build::build_oyster_image(
                 platform,
-                docker_compose,
-                docker_images,
-                output,
-                commit_ref,
+                &docker_compose,
+                &docker_images,
+                &output,
+                &commit_ref,
             )
         }
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;
-            commands::upload::upload_enclave_image(file, &default_provider).await
+            commands::upload::upload_enclave_image(&file, &default_provider).await
         }
         Commands::Verify {
             pcr,
@@ -179,12 +179,12 @@ async fn main() -> Result<()> {
             timestamp,
         } => {
             commands::verify::verify_enclave(
-                pcr,
-                enclave_ip,
-                attestation_port,
-                max_age,
-                root_public_key,
-                timestamp,
+                &pcr,
+                &enclave_ip,
+                &attestation_port,
+                &max_age,
+                &root_public_key,
+                &timestamp,
             )
             .await
         }
@@ -196,8 +196,8 @@ async fn main() -> Result<()> {
             debug,
         } => {
             commands::update::update_job(
-                job_id,
-                wallet_private_key,
+                &job_id,
+                &wallet_private_key,
                 image_url.as_ref().map(|x| x.as_str()),
                 debug.to_owned(),
             )
@@ -208,7 +208,7 @@ async fn main() -> Result<()> {
             start_from,
             with_log_id,
             quiet,
-        } => commands::log::stream_logs(ip, start_from.as_deref(), *with_log_id, *quiet).await,
+        } => commands::log::stream_logs(&ip, start_from.as_deref(), with_log_id, quiet).await,
     };
 
     if let Err(err) = &result {
