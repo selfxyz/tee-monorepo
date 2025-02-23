@@ -265,6 +265,21 @@
         };
         default = musl;
       };
+      "aarch64-darwin" = rec {
+        gnu = systemBuilder {
+          system = "aarch64-darwin";
+          rust_target = "aarch64-apple-darwin";
+          eif_arch = "aarch64";
+          static = false;
+        };
+        musl = systemBuilder {
+          system = "aarch64-darwin";
+          rust_target = "aarch64-apple-darwin";
+          eif_arch = "aarch64";
+          static = false;
+        };
+        default = musl;
+      };
     };
   };
 }
