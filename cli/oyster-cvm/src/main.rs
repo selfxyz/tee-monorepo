@@ -86,7 +86,7 @@ enum Commands {
         wallet_private_key: String,
 
         /// Operator address
-        #[arg(long, required = true)]
+        #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
         operator: String,
 
         /// Instance type (e.g. "m5a.2xlarge")
