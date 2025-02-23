@@ -78,7 +78,7 @@ enum Commands {
         image_url: String,
 
         /// Region for deployment
-        #[arg(long, required = true)]
+        #[arg(long, default_value = "ap-south-1")]
         region: String,
 
         /// Wallet private key for transaction signing
