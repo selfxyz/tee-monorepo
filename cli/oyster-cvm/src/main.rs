@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use args::init_params::InitParamsArgs;
 use clap::{Parser, Subcommand};
+use commands::deploy::DeployArgs;
 use oyster::attestation::AWS_ROOT_KEY;
+use tracing::info;
 
 mod args;
 mod commands;
@@ -72,51 +74,7 @@ enum Commands {
         file: String,
     },
     /// Deploy an Oyster CVM instance
-    Deploy {
-        /// URL of the enclave image
-        #[arg(long, required = true)]
-        image_url: String,
-
-        /// Region for deployment
-        #[arg(long, default_value = "ap-south-1")]
-        region: String,
-
-        /// Wallet private key for transaction signing
-        #[arg(long, required = true)]
-        wallet_private_key: String,
-
-        /// Operator address
-        #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
-        operator: String,
-
-        /// Instance type (e.g. "m5a.2xlarge")
-        #[arg(long, required = true)]
-        instance_type: String,
-
-        /// Optional bandwidth in KBps (default: 10)
-        #[arg(long, default_value = "10")]
-        bandwidth: u32,
-
-        /// Duration in minutes
-        #[arg(long, required = true)]
-        duration_in_minutes: u32,
-
-        /// Job name
-        #[arg(long, default_value = "")]
-        job_name: String,
-
-        /// Enable debug mode
-        #[arg(long)]
-        debug: bool,
-
-        /// Disable automatic log streaming in debug mode
-        #[arg(long, requires = "debug")]
-        no_stream: bool,
-
-        /// Init params
-        #[command(flatten)]
-        init_params: InitParamsArgs,
-    },
+    Deploy(DeployArgs),
     /// Verify Oyster Enclave Attestation
     Verify {
         /// Enclave IP
@@ -230,35 +188,7 @@ async fn main() -> Result<()> {
             )
             .await
         }
-        Commands::Deploy {
-            image_url,
-            region,
-            wallet_private_key,
-            operator,
-            instance_type,
-            bandwidth,
-            duration_in_minutes,
-            job_name,
-            debug,
-            no_stream,
-            init_params,
-        } => {
-            let config = DeploymentConfig {
-                image_url: image_url.clone(),
-                region: region.clone(),
-                instance_type: instance_type.clone(),
-                bandwidth: *bandwidth,
-                duration: *duration_in_minutes,
-                job_name: job_name.clone(),
-                debug: *debug,
-                no_stream: *no_stream,
-                init_params: init_params
-                    .load()
-                    .context("Failed to load init params")?
-                    .unwrap_or("".into()),
-            };
-            commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
-        }
+        Commands::Deploy(args) => commands::deploy::deploy(args).await,
         Commands::Update {
             job_id,
             wallet_private_key,
