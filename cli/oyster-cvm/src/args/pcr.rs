@@ -5,20 +5,24 @@ use serde_json;
 #[derive(Args, Debug)]
 #[group(multiple = true)]
 pub struct PcrArgs {
+    /// Preset PCRs for known enclave images
+    #[arg(short = 'p', long, conflicts_with_all = ["pcr0", "pcr1", "pcr2", "pcr_json"])]
+    pub pcr_preset: Option<String>,
+
     /// Path to PCR JSON file
-    #[arg(short = 'j', long, conflicts_with_all = ["pcr0", "pcr1", "pcr2"])]
+    #[arg(short = 'j', long, conflicts_with_all = ["pcr0", "pcr1", "pcr2", "pcr_preset"])]
     pub pcr_json: Option<String>,
 
     /// PCR 0 value
-    #[arg(short = '0', long, conflicts_with = "pcr_json", requires_all = ["pcr1", "pcr2"])]
+    #[arg(short = '0', long, conflicts_with_all = ["pcr_json", "pcr_preset"], requires_all = ["pcr1", "pcr2"])]
     pub pcr0: Option<String>,
 
     /// PCR 1 value
-    #[arg(short = '1', long, conflicts_with = "pcr_json", requires_all = ["pcr0", "pcr2"])]
+    #[arg(short = '1', long, conflicts_with_all = ["pcr_json", "pcr_preset"], requires_all = ["pcr0", "pcr2"])]
     pub pcr1: Option<String>,
 
     /// PCR 2 value
-    #[arg(short = '2', long, conflicts_with = "pcr_json", requires_all = ["pcr0", "pcr1"])]
+    #[arg(short = '2', long, conflicts_with_all = ["pcr_json", "pcr_preset"], requires_all = ["pcr0", "pcr1"])]
     pub pcr2: Option<String>,
 }
 
