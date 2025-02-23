@@ -93,19 +93,6 @@ pub struct DeployArgs {
     init_params: InitParamsArgs,
 }
 
-#[derive(Debug)]
-pub struct DeploymentConfig {
-    pub image_url: String,
-    pub region: String,
-    pub instance_type: String,
-    pub bandwidth: u32,
-    pub duration: u32,
-    pub job_name: String,
-    pub debug: bool,
-    pub no_stream: bool,
-    pub init_params: String,
-}
-
 #[derive(Serialize, Deserialize)]
 struct Operator {
     allowed_regions: Vec<String>,

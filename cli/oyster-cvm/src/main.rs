@@ -1,9 +1,7 @@
-use anyhow::{Context, Result};
-use args::init_params::InitParamsArgs;
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::deploy::DeployArgs;
 use oyster::attestation::AWS_ROOT_KEY;
-use tracing::info;
 
 mod args;
 mod commands;
@@ -11,7 +9,6 @@ mod types;
 mod utils;
 
 use crate::args::pcr::PcrArgs;
-use crate::commands::deploy::DeploymentConfig;
 use tracing_subscriber::EnvFilter;
 
 fn setup_logging() {
