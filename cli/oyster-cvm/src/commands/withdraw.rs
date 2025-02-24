@@ -133,24 +133,19 @@ pub async fn withdraw_from_job(
         ));
     };
 
-    // First check amount if not using max
-    if !max {
-        let amount =
-            amount.ok_or_else(|| anyhow!("Amount must be specified when not using --max"))?;
+    // Determine withdrawal amount (in USDC with 6 decimals)
+    let amount_u256 = if max {
+        info!("Maximum withdrawal requested");
+        max_withdrawable
+    } else {
+        let amount = amount.ok_or_else(|| anyhow!("Amount must be specified when not using --max"))?;
         if amount < MIN_WITHDRAW_AMOUNT {
             return Err(anyhow!(
                 "Amount must be at least {} (0.000001 USDC)",
                 MIN_WITHDRAW_AMOUNT
             ));
         }
-    }
-
-    // Determine withdrawal amount (in USDC with 6 decimals)
-    let amount_u256 = if max {
-        info!("Maximum withdrawal requested");
-        max_withdrawable
-    } else {
-        let amount_u256 = U256::from(amount.unwrap()); // Safe to unwrap as we checked above
+        let amount_u256 = U256::from(amount);
         if amount_u256 > max_withdrawable {
             return Err(anyhow!(
                 "Cannot withdraw {:.6} USDC: maximum withdrawable amount is {:.6} USDC (need to maintain {:.6} USDC buffer)",
