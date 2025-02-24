@@ -8,6 +8,8 @@ use alloy::{
 };
 use anyhow::{anyhow, Context, Result};
 use tracing::info;
+use std::time::Duration;
+use tokio::time::sleep;
 
 sol!(
     #[allow(missing_docs)]
@@ -60,13 +62,66 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
         return Err(anyhow!("Job {} does not exist", job_id));
     }
 
-    info!("Found job, initiating stop...");
+    // First, set the job's rate to 0 using the jobReviseRateInitiate call.
+    info!("Found job, initiating rate update to 0...");
+    let revise_send_result = market
+        .jobReviseRateInitiate(job_id_bytes, alloy::primitives::U256::from(0))
+        .send()
+        .await;
+    let revise_tx_hash = match revise_send_result {
+        Ok(tx_call_result) => {
+            tx_call_result
+                .watch()
+                .await
+                .context("Failed to get transaction hash for rate revise")?
+        }
+        Err(err) => {
+            return Err(anyhow!("Failed to send rate revise transaction: {:?}", err));
+        }
+    };
 
-    // Call jobClose function and capture potential error details
+    info!("Rate revise transaction sent: {:?}", revise_tx_hash);
+
+    // Verify the revise transaction execution.
+    let revise_receipt = market
+        .provider()
+        .get_transaction_receipt(revise_tx_hash)
+        .await
+        .context("Failed to get transaction receipt for rate revise")?
+        .ok_or_else(|| anyhow!("Rate revise transaction receipt not found"))?;
+    if !revise_receipt.status() {
+        return Err(anyhow!(
+            "Rate revise transaction failed - check contract interaction"
+        ));
+    }
+
+    info!("Job rate updated successfully to 0!");
+
+    // Wait for 5 minutes before closing the job.
+    info!("Waiting for 5 minutes before closing the job...");
+    sleep(Duration::from_secs(300)).await;
+
+    // Check if job is already closed before attempting to close
+    let job = market
+        .jobs(job_id_bytes)
+        .call()
+        .await
+        .context("Failed to fetch job details")?;
+    
+    if job.owner == Address::ZERO {
+        info!("Job is already closed!");
+        return Ok(());
+    }
+
+    // Only proceed with closing if job still exists
+    info!("Initiating job close...");
     let send_result = market.jobClose(job_id_bytes).send().await;
     let tx_hash = match send_result {
         Ok(tx_call_result) => {
-            tx_call_result.watch().await.context("Failed to get transaction hash")?
+            tx_call_result
+                .watch()
+                .await
+                .context("Failed to get transaction hash for job close")?
         },
         Err(err) => {
             return Err(anyhow!("Failed to send stop transaction: {:?}", err));
@@ -75,20 +130,20 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
 
     info!("Stop transaction sent: {:?}", tx_hash);
 
-    // Verify transaction success
+    // Verify jobClose transaction success.
     let receipt = market
         .provider()
         .get_transaction_receipt(tx_hash)
         .await
-        .context("Failed to get transaction receipt")?
-        .ok_or_else(|| anyhow!("Transaction receipt not found"))?;
+        .context("Failed to get transaction receipt for job close")?
+        .ok_or_else(|| anyhow!("Job close transaction receipt not found"))?;
 
     if !receipt.status() {
         return Err(anyhow!(
-            "Stop transaction failed - check contract interaction"
+            "Job close transaction failed - check contract interaction"
         ));
     }
 
     info!("Instance stopped successfully!");
-    return Ok(());
+    Ok(())
 }
