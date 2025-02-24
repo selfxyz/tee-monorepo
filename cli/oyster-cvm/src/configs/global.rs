@@ -10,7 +10,7 @@ pub const PINATA_UPLOAD_URL: &str = "https://api.pinata.cloud/pinning/pinFileToI
 pub const PINATA_GATEWAY_URL: &str = "https://gateway.pinata.cloud/ipfs";
 
 // Indexer URL
-pub const INDEXER_URL: &str = "http://13.202.13.168:5000/graphql";
+pub const INDEXER_URL: &str = "https://indexer.oyster.marlin.org/graphql";
 
 // Default Ports
 pub const DEFAULT_ATTESTATION_PORT: u16 = 1300;
