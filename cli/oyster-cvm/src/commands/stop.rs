@@ -1,7 +1,7 @@
 use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
 use alloy::{
     network::EthereumWallet,
-    primitives::{keccak256, Address, FixedBytes, B256},
+    primitives::{Address, FixedBytes, B256},
     providers::{Provider, ProviderBuilder, WalletProvider},
     signers::local::PrivateKeySigner,
     sol,
@@ -89,17 +89,6 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
         ));
     }
 
-    // Calculate event signature hash
-    let job_closed_signature = "JobClosed(bytes32)";
-    let job_closed_topic = keccak256(job_closed_signature.as_bytes());
-
-    // Look for JobClosed event
-    for log in receipt.inner.logs().iter() {
-        if log.topics()[0] == job_closed_topic {
-            info!("Instance stopped successfully!");
-            return Ok(());
-        }
-    }
-
-    Err(anyhow!("JobClosed event not found in transaction receipt"))
+    info!("Instance stopped successfully!");
+    return Ok(());
 }
