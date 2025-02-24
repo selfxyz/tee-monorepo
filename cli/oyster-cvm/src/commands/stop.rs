@@ -62,15 +62,16 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
 
     info!("Found job, initiating stop...");
 
-    // Call jobClose function
-    let tx_hash = market
-        .jobClose(job_id_bytes)
-        .send()
-        .await
-        .context("Failed to send stop transaction")?
-        .watch()
-        .await
-        .context("Failed to get transaction hash")?;
+    // Call jobClose function and capture potential error details
+    let send_result = market.jobClose(job_id_bytes).send().await;
+    let tx_hash = match send_result {
+        Ok(tx_call_result) => {
+            tx_call_result.watch().await.context("Failed to get transaction hash")?
+        },
+        Err(err) => {
+            return Err(anyhow!("Failed to send stop transaction: {:?}", err));
+        }
+    };
 
     info!("Stop transaction sent: {:?}", tx_hash);
 
