@@ -1,7 +1,7 @@
 use alloy::{
     network::EthereumWallet,
     primitives::{Address, FixedBytes, U256},
-    providers::{Provider, ProviderBuilder},
+    providers::{Provider, ProviderBuilder, WalletProvider},
     signers::local::PrivateKeySigner,
     sol,
 };
@@ -48,6 +48,7 @@ pub async fn withdraw_from_job(
                 .parse()
                 .context("Failed to parse RPC URL")?,
         );
+    info!("Signer address: {:?}", provider.signer_addresses().next().ok_or_else(|| anyhow!("No signer address found"))?);
 
     // Create contract instance
     let market = OysterMarket::new(
