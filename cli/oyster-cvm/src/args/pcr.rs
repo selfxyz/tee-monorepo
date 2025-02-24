@@ -6,7 +6,7 @@ use serde_json;
 #[group(multiple = true)]
 pub struct PcrArgs {
     /// Preset PCRs for known enclave images
-    #[arg(short = 'p', long, conflicts_with_all = ["pcr0", "pcr1", "pcr2", "pcr_json"])]
+    #[arg(long, conflicts_with_all = ["pcr0", "pcr1", "pcr2", "pcr_json"])]
     pub pcr_preset: Option<String>,
 
     /// Path to PCR JSON file
