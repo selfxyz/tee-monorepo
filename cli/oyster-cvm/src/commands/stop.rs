@@ -7,9 +7,9 @@ use alloy::{
     sol,
 };
 use anyhow::{anyhow, Context, Result};
-use tracing::info;
 use std::time::Duration;
 use tokio::time::sleep;
+use tracing::info;
 
 sol!(
     #[allow(missing_docs)]
@@ -69,12 +69,10 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
         .send()
         .await;
     let revise_tx_hash = match revise_send_result {
-        Ok(tx_call_result) => {
-            tx_call_result
-                .watch()
-                .await
-                .context("Failed to get transaction hash for rate revise")?
-        }
+        Ok(tx_call_result) => tx_call_result
+            .watch()
+            .await
+            .context("Failed to get transaction hash for rate revise")?,
         Err(err) => {
             return Err(anyhow!("Failed to send rate revise transaction: {:?}", err));
         }
@@ -107,7 +105,7 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
         .call()
         .await
         .context("Failed to fetch job details")?;
-    
+
     if job.owner == Address::ZERO {
         info!("Job is already closed!");
         return Ok(());
@@ -117,12 +115,10 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
     info!("Initiating job close...");
     let send_result = market.jobClose(job_id_bytes).send().await;
     let tx_hash = match send_result {
-        Ok(tx_call_result) => {
-            tx_call_result
-                .watch()
-                .await
-                .context("Failed to get transaction hash for job close")?
-        },
+        Ok(tx_call_result) => tx_call_result
+            .watch()
+            .await
+            .context("Failed to get transaction hash for job close")?,
         Err(err) => {
             return Err(anyhow!("Failed to send stop transaction: {:?}", err));
         }
