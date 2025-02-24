@@ -1,5 +1,5 @@
 use crate::{
-    args::init_params::InitParamsArgs,
+    args::{init_params::InitParamsArgs, wallet::WalletArgs},
     commands::log::stream_logs,
     utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
 };
@@ -59,9 +59,8 @@ pub struct DeployArgs {
     #[arg(long, default_value = "ap-south-1")]
     region: String,
 
-    /// Wallet private key for transaction signing
-    #[arg(long, required = true)]
-    wallet_private_key: String,
+    #[command(flatten)]
+    wallet: WalletArgs,
 
     /// Operator address
     #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
@@ -121,7 +120,9 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
     tracing::info!("Starting deployment...");
 
     // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(args.wallet_private_key)?);
+    let private_key = FixedBytes::<32>::from_slice(&hex::decode(
+        args.wallet.load()?.ok_or(anyhow!("Wallet is required"))?,
+    )?);
     let signer = PrivateKeySigner::from_bytes(&private_key)?;
     let wallet = EthereumWallet::from(signer);
 
