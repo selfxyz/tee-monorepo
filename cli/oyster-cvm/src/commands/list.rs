@@ -6,37 +6,35 @@ use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
-pub async fn list_jobs(wallet_address: &str) -> Result<()> {
+pub async fn list_jobs(wallet_address: &str, count: Option<u32>) -> Result<()> {
     info!("Listing active jobs for wallet address: {}", wallet_address);
 
     let client = reqwest::Client::new();
-
     let query = json!({
         "query": r#"
-            query($owner: String!) {
-                allJobs(filter: { 
-                    isClosed: { equalTo: false }, 
-                    owner: { equalTo: $owner }
-                }) {
-                    edges {
-                        node {
-                            id
-                            balance
-                            created
-                            isClosed
-                            lastSettled
-                            metadata
-                            nodeId
-                            owner
-                            provider
-                            rate
-                        }
+            query($owner: String!, $first: Int) {
+                allJobs(
+                    filter: {
+                        owner: { equalToInsensitive: $owner },
+                    }
+                    orderBy: CREATED_DESC
+                    first: $first
+                ) {
+                    totalCount
+                    nodes {
+                        id
+                        balance
+                        lastSettled
+                        rate
+                        provider
+                        metadata
                     }
                 }
             }
         "#,
         "variables": {
-            "owner": wallet_address
+            "owner": wallet_address,
+            "first": count
         }
     });
 
@@ -56,14 +54,14 @@ pub async fn list_jobs(wallet_address: &str) -> Result<()> {
         anyhow::bail!("GraphQL query failed: {:?}", errors);
     }
 
-    let edges = data
+    let nodes = data
         .get("data")
         .and_then(|data| data.get("allJobs"))
-        .and_then(|all_jobs| all_jobs.get("edges"))
+        .and_then(|all_jobs| all_jobs.get("nodes"))
         .and_then(Value::as_array);
 
-    if let Some(edges_array) = edges {
-        if edges_array.is_empty() {
+    if let Some(nodes_array) = nodes {
+        if nodes_array.is_empty() {
             info!("No active jobs found for address: {}", wallet_address);
             return Ok(());
         }
@@ -78,61 +76,59 @@ pub async fn list_jobs(wallet_address: &str) -> Result<()> {
             .unwrap()
             .as_secs_f64();
 
-        for edge in edges_array {
-            if let Some(node) = edge.get("node") {
-                let id = node.get("id").and_then(Value::as_str).unwrap_or("N/A");
-                let rate = node
-                    .get("rate")
-                    .and_then(Value::as_str)
-                    .map(|r| {
-                        if let Ok(num) = r.parse::<f64>() {
-                            // Convert rate from USDC/second to USDC/hour
-                            let usdc = (num / 1_000_000_000_000_000_000.0) * 3600.0;
-                            format!("{:.4} USDC", usdc)
-                        } else {
-                            "N/A".to_string()
-                        }
-                    })
-                    .unwrap_or_else(|| "N/A".to_string());
-
-                // --- Modified Balance Calculation ---
-                let balance_usdc_opt = node
-                    .get("balance")
-                    .and_then(Value::as_str)
-                    .and_then(|s| s.parse::<f64>().ok())
-                    .map(|n| n / 1_000_000.0);
-                let rate_usdc_hour_opt = node
-                    .get("rate")
-                    .and_then(Value::as_str)
-                    .and_then(|s| s.parse::<f64>().ok())
-                    .map(|n| (n / 1_000_000_000_000_000_000.0) * 3600.0);
-                let last_settled_opt = node
-                    .get("lastSettled")
-                    .and_then(Value::as_str)
-                    .and_then(|s| s.parse::<f64>().ok());
-
-                let balance_str = if let Some(balance_usdc) = balance_usdc_opt {
-                    if let (Some(rate_usdc_hour), Some(last_settled)) =
-                        (rate_usdc_hour_opt, last_settled_opt)
-                    {
-                        // Compute time since last update in hours.
-                        let delta_hours = (now - last_settled) / 3600.0;
-                        format!("{:.4} USDC", balance_usdc - (delta_hours * rate_usdc_hour))
+        for node in nodes_array {
+            let id = node.get("id").and_then(Value::as_str).unwrap_or("N/A");
+            let rate = node
+                .get("rate")
+                .and_then(Value::as_str)
+                .map(|r| {
+                    if let Ok(num) = r.parse::<f64>() {
+                        // Convert rate from USDC/second to USDC/hour
+                        let usdc = (num / 1_000_000_000_000_000_000.0) * 3600.0;
+                        format!("{:.4} USDC", usdc)
                     } else {
-                        format!("{:.4} USDC", balance_usdc)
+                        "N/A".to_string()
                     }
+                })
+                .unwrap_or_else(|| "N/A".to_string());
+
+            // --- Modified Balance Calculation ---
+            let balance_usdc_opt = node
+                .get("balance")
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(|n| n / 1_000_000.0);
+            let rate_usdc_hour_opt = node
+                .get("rate")
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(|n| (n / 1_000_000_000_000_000_000.0) * 3600.0);
+            let last_settled_opt = node
+                .get("lastSettled")
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<f64>().ok());
+
+            let balance_str = if let Some(balance_usdc) = balance_usdc_opt {
+                if let (Some(rate_usdc_hour), Some(last_settled)) =
+                    (rate_usdc_hour_opt, last_settled_opt)
+                {
+                    // Compute time since last update in hours.
+                    let delta_hours = (now - last_settled) / 3600.0;
+                    format!("{:.4} USDC", balance_usdc - (delta_hours * rate_usdc_hour))
                 } else {
-                    "N/A".to_string()
-                };
-                // --- End Modified Balance Calculation ---
+                    format!("{:.4} USDC", balance_usdc)
+                }
+            } else {
+                "N/A".to_string()
+            };
+            // --- End Modified Balance Calculation ---
 
-                let provider = node
-                    .get("provider")
-                    .and_then(Value::as_str)
-                    .unwrap_or("N/A");
+            let provider = node
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or("N/A");
 
-                table.add_row(row![id, rate, balance_str, provider]);
-            }
+            table.add_row(row![id, rate, balance_str, provider]);
         }
 
         table.printstd();

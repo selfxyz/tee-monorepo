@@ -141,6 +141,10 @@ enum Commands {
         /// Wallet address to query jobs for
         #[arg(short, long, required = true)]
         address: String,
+
+        /// Number of most recent jobs to display (optional)
+        #[arg(short, long)]
+        count: Option<u32>,
     },
     /// Update existing deployments
     Update {
@@ -294,7 +298,7 @@ async fn main() -> Result<()> {
             };
             commands::deploy::deploy_oyster_instance(config, &wallet_private_key, &operator).await
         }
-        Commands::List { address } => commands::list::list_jobs(&address).await,
+        Commands::List { address, count } => commands::list::list_jobs(&address, count).await,
         Commands::Update {
             job_id,
             wallet_private_key,
