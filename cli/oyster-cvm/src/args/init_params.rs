@@ -33,19 +33,30 @@ pub struct InitParamsArgs {
     /// Expected PCRs of the decryptor
     #[command(flatten)]
     pub pcrs: PcrArgs,
+
+    /// Docker compose file defining services to run,
+    /// set as first init param
+    #[arg(long)]
+    pub docker_compose: Option<String>,
 }
 
 impl InitParamsArgs {
-    pub fn load(&self) -> Result<Option<String>> {
+    pub fn load(self) -> Result<Option<String>> {
         // check for encoded params
         if self.init_params_encoded.is_some() {
             return Ok(self.init_params_encoded.clone());
         }
 
         // check if there are any init params
-        let Some(ref init_params) = self.init_params else {
+        if self.init_params.is_none() && self.docker_compose.is_none() {
             return Ok(None);
         };
+
+        let mut init_params = self
+            .docker_compose
+            .map(|x| vec![format!("docker-compose.yml:1:0:file:{x}")])
+            .unwrap_or(vec![]);
+        init_params.append(&mut self.init_params.unwrap_or(vec![]));
 
         // encoding has to be done
 
