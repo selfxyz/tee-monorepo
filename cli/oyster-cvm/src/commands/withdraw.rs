@@ -1,3 +1,5 @@
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, MIN_WITHDRAW_AMOUNT, OYSTER_MARKET_ADDRESS};
+use crate::utils::usdc::format_usdc;
 use alloy::{
     network::EthereumWallet,
     primitives::{Address, FixedBytes, U256},
@@ -5,11 +7,6 @@ use alloy::{
     signers::local::PrivateKeySigner,
     sol,
 };
-use crate::configs::global::{
-    ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS,
-    MIN_WITHDRAW_AMOUNT,
-};
-use crate::utils::usdc::format_usdc;
 use anyhow::{anyhow, Context, Result};
 use tracing::info;
 
@@ -48,7 +45,13 @@ pub async fn withdraw_from_job(
                 .parse()
                 .context("Failed to parse RPC URL")?,
         );
-    info!("Signer address: {:?}", provider.signer_addresses().next().ok_or_else(|| anyhow!("No signer address found"))?);
+    info!(
+        "Signer address: {:?}",
+        provider
+            .signer_addresses()
+            .next()
+            .ok_or_else(|| anyhow!("No signer address found"))?
+    );
 
     // Create contract instance
     let market = OysterMarket::new(
@@ -139,7 +142,8 @@ pub async fn withdraw_from_job(
         info!("Maximum withdrawal requested");
         max_withdrawable
     } else {
-        let amount = amount.ok_or_else(|| anyhow!("Amount must be specified when not using --max"))?;
+        let amount =
+            amount.ok_or_else(|| anyhow!("Amount must be specified when not using --max"))?;
         if amount < MIN_WITHDRAW_AMOUNT {
             return Err(anyhow!(
                 "Amount must be at least {} (0.000001 USDC)",

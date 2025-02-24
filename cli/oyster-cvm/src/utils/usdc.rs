@@ -1,3 +1,4 @@
+use crate::configs::global::{OYSTER_MARKET_ADDRESS, USDC_ADDRESS};
 use alloy::{
     network::Ethereum,
     primitives::{Address, U256},
@@ -8,7 +9,6 @@ use alloy::{
 use anyhow::{Context, Result};
 use reqwest::Client;
 use tracing::info;
-use crate::configs::global::{USDC_ADDRESS, OYSTER_MARKET_ADDRESS};
 
 sol!(
     #[allow(missing_docs)]
@@ -18,7 +18,10 @@ sol!(
 );
 
 /// Approves USDC transfer to the Oyster Market contract
-pub async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Ethereum>) -> Result<()> {
+pub async fn approve_usdc(
+    amount: U256,
+    provider: impl Provider<Http<Client>, Ethereum>,
+) -> Result<()> {
     let usdc_address: Address = USDC_ADDRESS
         .parse()
         .context("Failed to parse USDC address")?;
@@ -43,4 +46,4 @@ pub async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Et
 /// Formats a U256 value as USDC with 6 decimal places
 pub fn format_usdc(value: U256) -> f64 {
     value.to::<u128>() as f64 / 1e6
-} 
+}

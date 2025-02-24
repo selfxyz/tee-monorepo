@@ -1,8 +1,8 @@
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
 use alloy::{
     network::EthereumWallet, primitives::FixedBytes, providers::ProviderBuilder,
     signers::local::PrivateKeySigner, sol,
 };
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
 use anyhow::Result;
 use tracing::info;
 

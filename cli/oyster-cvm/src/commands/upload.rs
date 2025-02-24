@@ -1,5 +1,5 @@
+use crate::configs::global::{PINATA_GATEWAY_URL, PINATA_UPLOAD_URL};
 use crate::types::StorageProvider;
-use crate::configs::global::{PINATA_UPLOAD_URL, PINATA_GATEWAY_URL};
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::Value;

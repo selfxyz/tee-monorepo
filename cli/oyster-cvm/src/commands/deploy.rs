@@ -1,5 +1,5 @@
-use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
 use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
+use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
 use crate::utils::usdc::{approve_usdc, format_usdc};
 use alloy::{
     network::{Ethereum, EthereumWallet},
@@ -130,10 +130,7 @@ pub async fn deploy_oyster_instance(
     )
     .await?;
 
-    info!(
-        "Total cost: {:.6} USDC",
-        format_usdc(total_cost)
-    );
+    info!("Total cost: {:.6} USDC", format_usdc(total_cost));
     info!(
         "Total rate: {:.6} USDC/hour",
         (total_rate.to::<u128>() * 3600) as f64 / 1e18

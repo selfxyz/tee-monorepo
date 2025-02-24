@@ -1,3 +1,5 @@
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, MIN_DEPOSIT_AMOUNT, OYSTER_MARKET_ADDRESS};
+use crate::utils::usdc::{approve_usdc, format_usdc};
 use alloy::{
     network::EthereumWallet,
     primitives::{Address, FixedBytes, U256},
@@ -5,10 +7,6 @@ use alloy::{
     signers::local::PrivateKeySigner,
     sol,
 };
-use crate::configs::global::{
-    ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS, MIN_DEPOSIT_AMOUNT
-};
-use crate::utils::usdc::{approve_usdc, format_usdc};
 use anyhow::{anyhow, Context, Result};
 use tracing::info;
 
@@ -67,10 +65,7 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
     if job.owner == Address::ZERO {
         return Err(anyhow!("Job {} does not exist", job_id));
     }
-    info!(
-        "Depositing: {:.6} USDC",
-        format_usdc(amount_u256)
-    );
+    info!("Depositing: {:.6} USDC", format_usdc(amount_u256));
 
     // First approve USDC transfer
     approve_usdc(amount_u256, provider.clone()).await?;

@@ -1,3 +1,4 @@
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
 use alloy::{
     network::EthereumWallet,
     primitives::{keccak256, Address, FixedBytes, B256},
@@ -5,7 +6,6 @@ use alloy::{
     signers::local::PrivateKeySigner,
     sol,
 };
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
 use anyhow::{anyhow, Context, Result};
 use tracing::info;
 
@@ -33,7 +33,13 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
                 .parse()
                 .context("Failed to parse RPC URL")?,
         );
-    info!("Signer address: {:?}", provider.signer_addresses().next().ok_or_else(|| anyhow!("No signer address found"))?);
+    info!(
+        "Signer address: {:?}",
+        provider
+            .signer_addresses()
+            .next()
+            .ok_or_else(|| anyhow!("No signer address found"))?
+    );
 
     // Create contract instance
     let market_address = OYSTER_MARKET_ADDRESS

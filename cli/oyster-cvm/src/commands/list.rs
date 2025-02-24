@@ -1,10 +1,10 @@
-use anyhow::{Context, Result};
 use crate::configs::global::INDEXER_URL;
+use anyhow::{Context, Result};
 use prettytable::{row, Table};
 use reqwest;
 use serde_json::{json, Value};
-use tracing::info;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::info;
 
 pub async fn list_jobs(wallet_address: &str) -> Result<()> {
     info!("Listing active jobs for wallet address: {}", wallet_address);
@@ -126,7 +126,10 @@ pub async fn list_jobs(wallet_address: &str) -> Result<()> {
                 };
                 // --- End Modified Balance Calculation ---
 
-                let provider = node.get("provider").and_then(Value::as_str).unwrap_or("N/A");
+                let provider = node
+                    .get("provider")
+                    .and_then(Value::as_str)
+                    .unwrap_or("N/A");
 
                 table.add_row(row![id, rate, balance_str, provider]);
             }
