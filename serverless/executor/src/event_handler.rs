@@ -32,6 +32,17 @@ pub async fn events_listener(app_state: State<AppState>, starting_block: U64) {
     defer! {
         *app_state.events_listener_active.lock().unwrap() = false;
     }
+
+    // Create tokio mpsc channel to receive contract events and send transactions to them and initialize the pending txns queue to be monitored
+    let (tx, rx) = channel::<JobsTxnMetadata>(100);
+    let pending_txns: Arc<Mutex<VecDeque<PendingTxnData>>> = Arc::new(VecDeque::new().into());
+
+    let app_state_clone = app_state.clone();
+    let pending_txns_clone = pending_txns.clone();
+    tokio::spawn(async move {
+        send_execution_output(app_state_clone, rx, pending_txns_clone).await;
+    });
+
     loop {
         // web socket connection
         let ws_rpc_url = app_state.ws_rpc_url.read().unwrap().clone();
@@ -83,6 +94,15 @@ pub async fn events_listener(app_state: State<AppState>, starting_block: U64) {
                     event.block_number.unwrap_or(starting_block).as_u64(),
                     Ordering::SeqCst,
                 );
+
+                // Spawn task for monitoring pending transactions for block confirmation and retrying when necessary
+                let app_state_clone = app_state.clone();
+                let pending_txns_clone = pending_txns.clone();
+                let tx_clone = tx.clone();
+                tokio::spawn(async move {
+                    resend_pending_transaction(app_state_clone, pending_txns_clone, tx_clone).await;
+                });
+
                 break;
             }
 
@@ -160,29 +180,14 @@ pub async fn events_listener(app_state: State<AppState>, starting_block: U64) {
         };
         let executor_deregistered_stream = pin!(executor_deregistered_stream);
 
-        // Create tokio mpsc channel to receive contract events and send transactions to them and initialize the pending txns queue to be monitored
-        let (tx, rx) = channel::<JobsTxnMetadata>(100);
-        let pending_txns: Arc<Mutex<VecDeque<PendingTxnData>>> = Arc::new(VecDeque::new().into());
-
-        // Spawn task for monitoring pending transactions for block confirmation and retrying when necessary
-        let app_state_clone = app_state.clone();
-        let pending_txns_clone = pending_txns.clone();
         let tx_clone = tx.clone();
-        tokio::spawn(async move {
-            resend_pending_transaction(app_state_clone, pending_txns_clone, tx_clone).await;
-        });
-
-        let app_state_clone = app_state.clone();
-        tokio::spawn(async move {
-            send_execution_output(app_state_clone, rx, pending_txns).await;
-        });
 
         handle_event_logs(
             jobs_created_stream,
             jobs_responded_stream,
             executor_deregistered_stream,
             app_state.clone(),
-            tx,
+            tx_clone,
         )
         .await;
         if !app_state.enclave_registered.load(Ordering::SeqCst) {

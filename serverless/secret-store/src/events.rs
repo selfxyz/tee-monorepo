@@ -22,6 +22,7 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
     defer! {
         *app_state.events_listener_active.lock().unwrap() = false;
     }
+
     loop {
         // web socket connection
         let web_socket_url = app_state.web_socket_url.read().unwrap().clone();
@@ -85,6 +86,12 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
                     .unwrap();
                 txn_manager.run().await;
 
+                // Spawn task to submit periodic proofs for secrets stored and remove expired secrets
+                let app_state_clone = app_state.clone();
+                tokio::spawn(async move {
+                    remove_expired_secrets_and_mark_store_alive(app_state_clone).await;
+                });
+
                 break;
             }
 
@@ -143,12 +150,6 @@ pub async fn events_listener(app_state: Data<AppState>, starting_block: u64) {
             }
         };
         let store_stream = pin!(store_subscription.into_stream());
-
-        // Spawn task to submit periodic proofs for secrets stored and remove expired secrets
-        let app_state_clone = app_state.clone();
-        tokio::spawn(async move {
-            remove_expired_secrets_and_mark_store_alive(app_state_clone).await;
-        });
 
         handle_event_logs(secrets_stream, store_stream, app_state.clone()).await;
 

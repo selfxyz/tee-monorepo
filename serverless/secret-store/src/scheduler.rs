@@ -30,6 +30,9 @@ pub async fn remove_expired_secrets_and_mark_store_alive(app_state: Data<AppStat
 
         // If enclave is drained, skip the alive transaction because acknowledgments won't be accepted then
         if app_state.enclave_draining.load(Ordering::SeqCst) {
+            // Call the garbage cleaner to clean all secrets stored inside it
+            garbage_cleaner(app_state.clone(), true).await;
+
             continue;
         }
 
@@ -97,12 +100,12 @@ pub async fn remove_expired_secrets_and_mark_store_alive(app_state: Data<AppStat
         };
 
         // Call the garbage cleaner
-        garbage_cleaner(app_state.clone()).await;
+        garbage_cleaner(app_state.clone(), false).await;
     }
 }
 
 // Garbage cleaner for removing expired secrets
-async fn garbage_cleaner(app_state: Data<AppState>) {
+async fn garbage_cleaner(app_state: Data<AppState>, clean_all: bool) {
     // Clone and get the data of secrets stored inside the enclave at the moment
     let secrets_stored: Vec<(U256, SecretMetadata)> = app_state
         .secrets_stored
@@ -114,11 +117,12 @@ async fn garbage_cleaner(app_state: Data<AppState>) {
 
     for (secret_id, secret_metadata) in secrets_stored {
         // If the secret ID has passed its end timestamp plus a buffer, remove it from the storage
-        if SystemTime::now()
-            > SystemTime::UNIX_EPOCH
-                + Duration::from_secs(
-                    secret_metadata.end_timestamp.to::<u64>() + SECRET_EXPIRATION_BUFFER_SECS,
-                )
+        if clean_all
+            || SystemTime::now()
+                > SystemTime::UNIX_EPOCH
+                    + Duration::from_secs(
+                        secret_metadata.end_timestamp.to::<u64>() + SECRET_EXPIRATION_BUFFER_SECS,
+                    )
         {
             let _ = app_state.secrets_stored.lock().unwrap().remove(&secret_id);
 

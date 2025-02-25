@@ -5,11 +5,11 @@ use alloy::consensus::Transaction;
 use alloy::dyn_abi::DynSolValue;
 use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::{Filter, Log};
+use alloy::rpc::types::{Filter, Log, TransactionInput, TransactionRequest};
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::utils::public_key_to_address;
-use alloy::sol_types::SolEvent;
+use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use alloy::transports::http::reqwest::{self, Url};
 use alloy::{hex, sol};
 use anyhow::{anyhow, Context, Result};
@@ -31,6 +31,15 @@ sol! {
         uint256 usdcDeposit,
         address[] selectedEnclaves
     );
+
+    struct SelectedEnclave {
+        address enclaveAddress;
+        bool hasAcknowledgedStore;
+        uint256 selectTimestamp;
+        uint256 replacedAckTimestamp;
+    }
+
+    function getSelectedEnclaves(uint256 _secretId) external view returns (SelectedEnclave[] memory);
 }
 
 struct ConfigManager {
@@ -284,21 +293,45 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Secret data length exceeds limit"));
     }
 
+    let response = http_rpc_client
+        .call(&TransactionRequest {
+            to: Some(alloy::primitives::TxKind::Call(contract_address)),
+            input: TransactionInput::new(
+                getSelectedEnclavesCall {
+                    _secretId: decoded_log.secretId,
+                }
+                .abi_encode()
+                .into(),
+            ),
+            ..Default::default()
+        })
+        .await?;
+
+    // Decode response as SelectedEnclave[]
+    let decoded: Vec<SelectedEnclave> = Vec::<SelectedEnclave>::abi_decode(&response, true)?;
+
+    if decoded.is_empty() {
+        return Err(anyhow!("No selected enclaves found!"));
+    }
+
     let mut inject_set = JoinSet::new();
 
-    for addr in decoded_log.selectedEnclaves {
-        if !config.stores.contains_key(&addr) {
-            eprintln!("Enclave with address {} not present in config data", addr);
+    for addr in decoded {
+        if !config.stores.contains_key(&addr.enclaveAddress) {
+            eprintln!(
+                "Enclave with address {} not present in config data",
+                addr.enclaveAddress
+            );
             continue;
         }
 
-        let store_info = config.stores.get(&addr).unwrap().clone();
+        let store_info = config.stores.get(&addr.enclaveAddress).unwrap().clone();
         let secret_data_bytes_clone = secret_data_bytes.clone();
         let user_private_key_clone = user_private_key.clone();
 
         inject_set.spawn(async move {
             inject_secret(
-                addr,
+                addr.enclaveAddress,
                 store_info,
                 decoded_log.secretId,
                 secret_data_bytes_clone,
