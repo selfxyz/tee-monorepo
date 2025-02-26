@@ -30,9 +30,6 @@ pub async fn remove_expired_secrets_and_mark_store_alive(app_state: Data<AppStat
 
         // If enclave is drained, skip the alive transaction because acknowledgments won't be accepted then
         if app_state.enclave_draining.load(Ordering::SeqCst) {
-            // Call the garbage cleaner to clean all secrets stored inside it
-            garbage_cleaner(app_state.clone(), true).await;
-
             continue;
         }
 
@@ -105,7 +102,7 @@ pub async fn remove_expired_secrets_and_mark_store_alive(app_state: Data<AppStat
 }
 
 // Garbage cleaner for removing expired secrets
-async fn garbage_cleaner(app_state: Data<AppState>, clean_all: bool) {
+pub async fn garbage_cleaner(app_state: Data<AppState>, clean_all: bool) {
     // Clone and get the data of secrets stored inside the enclave at the moment
     let secrets_stored: Vec<(U256, SecretMetadata)> = app_state
         .secrets_stored

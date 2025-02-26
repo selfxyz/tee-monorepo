@@ -180,14 +180,12 @@ pub async fn events_listener(app_state: State<AppState>, starting_block: U64) {
         };
         let executor_deregistered_stream = pin!(executor_deregistered_stream);
 
-        let tx_clone = tx.clone();
-
         handle_event_logs(
             jobs_created_stream,
             jobs_responded_stream,
             executor_deregistered_stream,
             app_state.clone(),
-            tx_clone,
+            tx.clone(),
         )
         .await;
         if !app_state.enclave_registered.load(Ordering::SeqCst) {

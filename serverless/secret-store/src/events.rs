@@ -14,7 +14,7 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::constants::*;
 use crate::model::{AppState, SecretCreatedMetadata, SecretManagerContract, SecretMetadata};
-use crate::scheduler::remove_expired_secrets_and_mark_store_alive;
+use crate::scheduler::{garbage_cleaner, remove_expired_secrets_and_mark_store_alive};
 use crate::utils::*;
 
 // Start listening to events emitted by the 'SecretManager' contract if enclave is registered else listen for Store registered event first
@@ -195,6 +195,8 @@ async fn handle_event_logs(
                 else if event.topic0() == Some(&keccak256(SECRET_STORE_DRAINED_EVENT)) {
                     println!("Enclave put in draining mode!");
                     app_state.enclave_draining.store(true, Ordering::SeqCst);
+                    // Call the garbage cleaner to clean all secrets stored inside it
+                    garbage_cleaner(app_state.clone(), true).await;
                 }
                 // Capture the Enclave revived event emitted by the 'TeeManager' contract
                 else if event.topic0() == Some(&keccak256(SECRET_STORE_REVIVED_EVENT)) {

@@ -5,11 +5,11 @@ use alloy::consensus::Transaction;
 use alloy::dyn_abi::DynSolValue;
 use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::{Filter, Log, TransactionInput, TransactionRequest};
+use alloy::rpc::types::{Filter, Log};
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::k256::elliptic_curve::generic_array::sequence::Lengthen;
 use alloy::signers::utils::public_key_to_address;
-use alloy::sol_types::{SolCall, SolEvent, SolValue};
+use alloy::sol_types::SolEvent;
 use alloy::transports::http::reqwest::{self, Url};
 use alloy::{hex, sol};
 use anyhow::{anyhow, Context, Result};
@@ -23,23 +23,27 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 sol! {
-    event SecretCreated(
-        uint256 indexed secretId,
-        address indexed owner,
-        uint256 sizeLimit,
-        uint256 endTimestamp,
-        uint256 usdcDeposit,
-        address[] selectedEnclaves
-    );
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    contract SecretManager {
+        event SecretCreated(
+            uint256 indexed secretId,
+            address indexed owner,
+            uint256 sizeLimit,
+            uint256 endTimestamp,
+            uint256 usdcDeposit,
+            address[] selectedEnclaves
+        );
 
-    struct SelectedEnclave {
-        address enclaveAddress;
-        bool hasAcknowledgedStore;
-        uint256 selectTimestamp;
-        uint256 replacedAckTimestamp;
+        struct SelectedEnclave {
+            address enclaveAddress;
+            bool hasAcknowledgedStore;
+            uint256 selectTimestamp;
+            uint256 replacedAckTimestamp;
+        }
+
+        function getSelectedEnclaves(uint256 _secretId) external view returns (SelectedEnclave[] memory);
     }
-
-    function getSelectedEnclaves(uint256 _secretId) external view returns (SelectedEnclave[] memory);
 }
 
 struct ConfigManager {
@@ -282,7 +286,7 @@ async fn main() -> Result<()> {
     }
 
     let log = secret_create_log.first().unwrap().to_owned();
-    let decoded_log = SecretCreated::decode_log_data(log.data(), true)
+    let decoded_log = SecretManager::SecretCreated::decode_log_data(log.data(), true)
         .context("Failed to decode secret created log")?;
 
     if user_address != decoded_log.owner {
@@ -293,30 +297,24 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Secret data length exceeds limit"));
     }
 
-    let response = http_rpc_client
-        .call(&TransactionRequest {
-            to: Some(alloy::primitives::TxKind::Call(contract_address)),
-            input: TransactionInput::new(
-                getSelectedEnclavesCall {
-                    _secretId: decoded_log.secretId,
-                }
-                .abi_encode()
-                .into(),
-            ),
-            ..Default::default()
-        })
-        .await?;
+    let secret_manager_contract = SecretManager::new(contract_address, http_rpc_client);
 
-    // Decode response as SelectedEnclave[]
-    let decoded: Vec<SelectedEnclave> = Vec::<SelectedEnclave>::abi_decode(&response, true)?;
+    let response = secret_manager_contract
+        .getSelectedEnclaves(decoded_log.secretId)
+        .call()
+        .await
+        .context(format!(
+            "Failed to get the selected enclaves for the secret ID {}",
+            decoded_log.secretId
+        ))?;
 
-    if decoded.is_empty() {
+    if response._0.is_empty() {
         return Err(anyhow!("No selected enclaves found!"));
     }
 
     let mut inject_set = JoinSet::new();
 
-    for addr in decoded {
+    for addr in response._0 {
         if !config.stores.contains_key(&addr.enclaveAddress) {
             eprintln!(
                 "Enclave with address {} not present in config data",
