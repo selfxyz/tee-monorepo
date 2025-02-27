@@ -1,9 +1,8 @@
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
+use crate::configs::global::OYSTER_MARKET_ADDRESS;
+use crate::utils::provider::create_provider;
 use alloy::{
-    network::EthereumWallet,
-    primitives::{Address, FixedBytes, B256},
-    providers::{Provider, ProviderBuilder, WalletProvider},
-    signers::local::PrivateKeySigner,
+    primitives::{Address, B256},
+    providers::{Provider, WalletProvider},
     sol,
 };
 use anyhow::{anyhow, Context, Result};
@@ -22,19 +21,11 @@ pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Res
     info!("Stopping oyster instance with:");
     info!("  Job ID: {}", job_id);
 
-    // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
-    let wallet = EthereumWallet::from(signer);
+    // Setup provider
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
 
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet)
-        .on_http(
-            ARBITRUM_ONE_RPC_URL
-                .parse()
-                .context("Failed to parse RPC URL")?,
-        );
     info!(
         "Signer address: {:?}",
         provider

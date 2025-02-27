@@ -1,10 +1,8 @@
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, MIN_WITHDRAW_AMOUNT, OYSTER_MARKET_ADDRESS};
-use crate::utils::usdc::format_usdc;
+use crate::configs::global::{MIN_WITHDRAW_AMOUNT, OYSTER_MARKET_ADDRESS};
+use crate::utils::{provider::create_provider, usdc::format_usdc};
 use alloy::{
-    network::EthereumWallet,
-    primitives::{Address, FixedBytes, U256},
-    providers::{Provider, ProviderBuilder, WalletProvider},
-    signers::local::PrivateKeySigner,
+    primitives::{Address, U256},
+    providers::{Provider, WalletProvider},
     sol,
 };
 use anyhow::{anyhow, Context, Result};
@@ -29,22 +27,11 @@ pub async fn withdraw_from_job(
 ) -> Result<()> {
     info!("Starting withdrawal process...");
 
-    // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(
-        &hex::decode(wallet_private_key).context("Failed to decode private key")?,
-    );
-    let signer = PrivateKeySigner::from_bytes(&private_key)
-        .context("Failed to create signer from private key")?;
-    let wallet = EthereumWallet::from(signer);
+    // Setup provider
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
 
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet)
-        .on_http(
-            ARBITRUM_ONE_RPC_URL
-                .parse()
-                .context("Failed to parse RPC URL")?,
-        );
     info!(
         "Signer address: {:?}",
         provider

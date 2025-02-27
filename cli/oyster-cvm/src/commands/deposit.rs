@@ -1,10 +1,11 @@
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, MIN_DEPOSIT_AMOUNT, OYSTER_MARKET_ADDRESS};
-use crate::utils::usdc::{approve_usdc, format_usdc};
+use crate::configs::global::{MIN_DEPOSIT_AMOUNT, OYSTER_MARKET_ADDRESS};
+use crate::utils::{
+    provider::create_provider,
+    usdc::{approve_usdc, format_usdc},
+};
 use alloy::{
-    network::EthereumWallet,
-    primitives::{Address, FixedBytes, U256},
-    providers::{Provider, ProviderBuilder},
-    signers::local::PrivateKeySigner,
+    primitives::{Address, U256},
+    providers::Provider,
     sol,
 };
 use anyhow::{anyhow, Context, Result};
@@ -31,22 +32,10 @@ pub async fn deposit_to_job(job_id: &str, amount: u64, wallet_private_key: &str)
     // Convert amount to U256 with 6 decimals (USDC has 6 decimals)
     let amount_u256 = U256::from(amount);
 
-    // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(
-        &hex::decode(wallet_private_key).context("Failed to decode private key")?,
-    );
-    let signer = PrivateKeySigner::from_bytes(&private_key)
-        .context("Failed to create signer from private key")?;
-    let wallet = EthereumWallet::from(signer);
-
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet)
-        .on_http(
-            ARBITRUM_ONE_RPC_URL
-                .parse()
-                .context("Failed to parse RPC URL")?,
-        );
+    // Setup provider
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
 
     // Create contract instance
     let market = OysterMarket::new(

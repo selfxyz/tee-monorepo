@@ -1,13 +1,13 @@
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS};
-use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
-use crate::utils::usdc::{approve_usdc, format_usdc};
+use crate::configs::global::OYSTER_MARKET_ADDRESS;
+use crate::utils::{
+    bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
+    provider::{create_provider, OysterProvider},
+    usdc::{approve_usdc, format_usdc},
+};
 use alloy::{
-    network::{Ethereum, EthereumWallet},
-    primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
-    providers::{Provider, ProviderBuilder},
-    signers::local::PrivateKeySigner,
+    primitives::{keccak256, Address, B256 as H256, U256},
+    providers::Provider,
     sol,
-    transports::http::Http,
 };
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
@@ -80,15 +80,10 @@ pub async fn deploy_oyster_instance(
 ) -> Result<()> {
     tracing::info!("Starting deployment...");
 
-    // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
-    let wallet = EthereumWallet::from(signer);
-
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
+    // Setup provider
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
 
     // Get CP URL using the configured provider
     let cp_url = get_operator_cp(operator, provider.clone())
@@ -182,7 +177,7 @@ async fn create_new_oyster_job(
     provider_addr: Address,
     rate: U256,
     balance: U256,
-    provider: impl Provider<Http<Client>, Ethereum> + Clone,
+    provider: OysterProvider,
 ) -> Result<H256> {
     let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
 
@@ -434,10 +429,7 @@ async fn calculate_total_cost(
     Ok((total_cost_scaled, total_rate_scaled))
 }
 
-async fn get_operator_cp(
-    provider_address: &str,
-    provider: impl Provider<Http<Client>, Ethereum>,
-) -> Result<String> {
+async fn get_operator_cp(provider_address: &str, provider: OysterProvider) -> Result<String> {
     let market_address = Address::from_str(OYSTER_MARKET_ADDRESS)?;
     let provider_address = Address::from_str(provider_address)?;
 
