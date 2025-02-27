@@ -6,7 +6,8 @@ use alloy::{
     sol,
 };
 use anyhow::{anyhow, Context, Result};
-use tracing::info;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{debug, info};
 
 // Withdrawal Settings
 const BUFFER_MINUTES: u64 = 7; // Required buffer time in minutes
@@ -18,6 +19,55 @@ sol!(
     OysterMarket,
     "src/abis/oyster_market_abi.json"
 );
+
+/// Calculate the current balance after accounting for time elapsed since last settlement
+fn calculate_current_balance(balance: U256, rate: U256, last_settled: U256) -> Result<U256> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("Failed to get current time")?
+        .as_secs();
+
+    let last_settled_secs =
+        u64::try_from(last_settled).map_err(|_| anyhow!("Last settled time too large for u64"))?;
+
+    if last_settled_secs > now {
+        return Err(anyhow!("Last settled time is in the future"));
+    }
+
+    let elapsed_seconds = now.saturating_sub(last_settled_secs);
+    debug!(
+        "Time calculation: now={}, last_settled={}, elapsed_seconds={}",
+        now, last_settled_secs, elapsed_seconds
+    );
+
+    // Calculate amount used since last settlement
+    let amount_used = rate
+        .checked_mul(U256::from(elapsed_seconds))
+        .ok_or_else(|| anyhow!("Failed to calculate amount used"))?;
+
+    debug!(
+        "Balance calculation: balance={}, rate={}, amount_used={}",
+        balance, rate, amount_used
+    );
+
+    // If amount used is greater than balance, return 0
+    if amount_used >= balance {
+        debug!(
+            "Usage ({}) exceeds balance ({}), returning 0",
+            amount_used, balance
+        );
+        return Ok(U256::ZERO);
+    }
+
+    // Calculate and return current balance after deducting used amount
+    balance.checked_sub(amount_used).ok_or_else(|| {
+        anyhow!(
+            "Failed to calculate current balance: amount_used ({}) is greater than balance ({})",
+            amount_used,
+            balance
+        )
+    })
+}
 
 pub async fn withdraw_from_job(
     job_id: &str,
@@ -65,31 +115,6 @@ pub async fn withdraw_from_job(
         return Err(anyhow!("Cannot withdraw: job balance is 0 USDC"));
     }
 
-    // Try to settle the job first
-    info!("Attempting to settle job before withdrawal...");
-    let pending_tx = market
-        .jobSettle(job_id_bytes)
-        .send()
-        .await
-        .context("Failed to settle job")?;
-    let tx_hash = pending_tx
-        .watch()
-        .await
-        .context("Failed to get transaction hash")?;
-    info!("Job settlement successful. Transaction hash: {:?}", tx_hash);
-
-    // Fetch updated job details after settlement attempt
-    let job = market
-        .jobs(job_id_bytes)
-        .call()
-        .await
-        .context("Failed to fetch updated job details")?;
-
-    // Check if balance is zero
-    if job.balance == U256::ZERO {
-        return Err(anyhow!("Cannot withdraw: job balance is 0 USDC"));
-    }
-
     // Scale down rate by 1e12
     let scaled_rate = job
         .rate
@@ -102,24 +127,29 @@ pub async fn withdraw_from_job(
         .checked_mul(buffer_seconds)
         .ok_or_else(|| anyhow!("Failed to calculate buffer balance"))?;
 
-    // Balance is already in USDC 6 decimals format
-    let balance = job.balance;
+    // Calculate current balance after accounting for elapsed time
+    let current_balance = calculate_current_balance(job.balance, scaled_rate, job.lastSettled)?;
+
+    if current_balance == U256::ZERO {
+        info!("Cannot withdraw. Job is already expired.");
+        return Ok(());
+    }
 
     info!(
         "Current balance: {:.6} USDC, Required buffer: {:.6} USDC",
-        format_usdc(balance),
+        format_usdc(current_balance),
         format_usdc(buffer_balance)
     );
 
     // Calculate maximum withdrawable amount (in USDC with 6 decimals)
-    let max_withdrawable = if balance > buffer_balance {
-        balance
+    let max_withdrawable = if current_balance > buffer_balance {
+        current_balance
             .checked_sub(buffer_balance)
             .ok_or_else(|| anyhow!("Failed to calculate withdrawable amount"))?
     } else {
         return Err(anyhow!(
             "Cannot withdraw: current balance ({:.6} USDC) is less than required buffer ({:.6} USDC)",
-            format_usdc(balance),
+            format_usdc(current_balance),
             format_usdc(buffer_balance)
         ));
     };

@@ -1,11 +1,11 @@
-use crate::configs::global::{INDEXER_URL, MIN_RATE_THRESHOLD};
+use crate::configs::global::INDEXER_URL;
 use anyhow::{Context, Result};
 use chrono::DateTime;
 use prettytable::{row, Table};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(Debug)]
 struct JobData {
@@ -143,8 +143,8 @@ fn process_job_data(node: &Value, now: f64) -> Option<JobData> {
     debug!("Calculated rate: {} USDC/hour", rate_per_hour);
 
     // Skip if rate is zero, negative, or negligible (less than 0.01 USDC/hour)
-    if rate_per_hour <= MIN_RATE_THRESHOLD {
-        debug!("Skipping job {} due to rate below minimum threshold", id);
+    if rate_per_hour <= 0.0 {
+        debug!("Skipping job {} due to rate <= 0", id);
         return None;
     }
 
@@ -166,6 +166,15 @@ fn process_job_data(node: &Value, now: f64) -> Option<JobData> {
         .map(|dt| dt.timestamp() as f64)?;
 
     let delta_hours = (now - last_settled) / 3600.0;
+
+    if delta_hours < 0.0 {
+        warn!(
+            "Job Settled time is in the future for job {}. Make sure your system clock is correct.",
+            id
+        );
+        return None;
+    }
+
     let current_balance = balance_usdc - (delta_hours * rate_per_hour);
 
     if current_balance <= 0.0 {
