@@ -1,26 +1,34 @@
-use crate::configs::global::INDEXER_URL;
+use crate::configs::global::{INDEXER_URL, MIN_RATE_THRESHOLD};
 use anyhow::{Context, Result};
+use chrono::DateTime;
 use prettytable::{row, Table};
-use reqwest;
+use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::{debug, info};
+
+#[derive(Debug)]
+struct JobData {
+    id: String,
+    rate_per_hour: f64,
+    current_balance: f64,
+    time_remaining: f64,
+    provider: String,
+}
 
 pub async fn list_jobs(wallet_address: &str, count: Option<u32>) -> Result<()> {
     info!("Listing active jobs for wallet address: {}", wallet_address);
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
     let query = json!({
         "query": r#"
-            query($owner: String!, $first: Int) {
+            query($owner: String!) {
                 allJobs(
                     filter: {
                         owner: { equalToInsensitive: $owner },
                     }
                     orderBy: CREATED_DESC
-                    first: $first
                 ) {
-                    totalCount
                     nodes {
                         id
                         balance
@@ -34,7 +42,6 @@ pub async fn list_jobs(wallet_address: &str, count: Option<u32>) -> Result<()> {
         "#,
         "variables": {
             "owner": wallet_address,
-            "first": count
         }
     });
 
@@ -58,83 +65,142 @@ pub async fn list_jobs(wallet_address: &str, count: Option<u32>) -> Result<()> {
         .get("data")
         .and_then(|data| data.get("allJobs"))
         .and_then(|all_jobs| all_jobs.get("nodes"))
-        .and_then(Value::as_array);
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
-    if let Some(nodes_array) = nodes {
-        if nodes_array.is_empty() {
-            info!("No active jobs found for address: {}", wallet_address);
-            return Ok(());
-        }
-
-        // Create a table using prettytable-rs
-        let mut table = Table::new();
-        table.add_row(row!["ID", "RATE (USDC/hour)", "BALANCE", "PROVIDER"]);
-
-        // Compute the current time once as seconds since Unix epoch.
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-
-        for node in nodes_array {
-            let id = node.get("id").and_then(Value::as_str).unwrap_or("N/A");
-            let rate = node
-                .get("rate")
-                .and_then(Value::as_str)
-                .map(|r| {
-                    if let Ok(num) = r.parse::<f64>() {
-                        // Convert rate from USDC/second to USDC/hour
-                        let usdc = (num / 1_000_000_000_000_000_000.0) * 3600.0;
-                        format!("{:.4} USDC", usdc)
-                    } else {
-                        "N/A".to_string()
-                    }
-                })
-                .unwrap_or_else(|| "N/A".to_string());
-
-            // --- Modified Balance Calculation ---
-            let balance_usdc_opt = node
-                .get("balance")
-                .and_then(Value::as_str)
-                .and_then(|s| s.parse::<f64>().ok())
-                .map(|n| n / 1_000_000.0);
-            let rate_usdc_hour_opt = node
-                .get("rate")
-                .and_then(Value::as_str)
-                .and_then(|s| s.parse::<f64>().ok())
-                .map(|n| (n / 1_000_000_000_000_000_000.0) * 3600.0);
-            let last_settled_opt = node
-                .get("lastSettled")
-                .and_then(Value::as_str)
-                .and_then(|s| s.parse::<f64>().ok());
-
-            let balance_str = if let Some(balance_usdc) = balance_usdc_opt {
-                if let (Some(rate_usdc_hour), Some(last_settled)) =
-                    (rate_usdc_hour_opt, last_settled_opt)
-                {
-                    // Compute time since last update in hours.
-                    let delta_hours = (now - last_settled) / 3600.0;
-                    format!("{:.4} USDC", balance_usdc - (delta_hours * rate_usdc_hour))
-                } else {
-                    format!("{:.4} USDC", balance_usdc)
-                }
-            } else {
-                "N/A".to_string()
-            };
-            // --- End Modified Balance Calculation ---
-
-            let provider = node
-                .get("provider")
-                .and_then(Value::as_str)
-                .unwrap_or("N/A");
-
-            table.add_row(row![id, rate, balance_str, provider]);
-        }
-
-        table.printstd();
-    } else {
+    if nodes.is_empty() {
         info!("No active jobs found for address: {}", wallet_address);
+        return Ok(());
     }
 
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+
+    let mut table = Table::new();
+    table.add_row(row![
+        "ID",
+        "RATE (USDC/hour)",
+        "BALANCE",
+        "TIME REMAINING",
+        "PROVIDER"
+    ]);
+
+    let mut printed_count = 0u32;
+    for node in nodes {
+        let Some(job) = process_job_data(&node, now) else {
+            continue;
+        };
+
+        if let Some(max_count) = count {
+            if printed_count >= max_count {
+                break;
+            }
+        }
+
+        table.add_row(row![
+            job.id,
+            format!("{:.4} USDC", job.rate_per_hour),
+            format!("{:.4} USDC", job.current_balance),
+            format_time_remaining(job.time_remaining),
+            job.provider
+        ]);
+        printed_count += 1;
+    }
+
+    if printed_count == 0 {
+        info!(
+            "No active jobs with positive balance found for address: {}",
+            wallet_address
+        );
+        return Ok(());
+    }
+
+    table.printstd();
     Ok(())
+}
+
+fn process_job_data(node: &Value, now: f64) -> Option<JobData> {
+    let id = node
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("N/A")
+        .to_string();
+
+    debug!(
+        "Processing job {} with raw rate: {:?}",
+        id,
+        node.get("rate")
+    );
+
+    // Get raw rate value first to properly handle zero rates
+    let rate_str = node.get("rate").and_then(|v| v.as_str())?;
+    let rate_raw = rate_str.parse::<f64>().ok()?;
+    let rate_per_hour = (rate_raw / 1_000_000_000_000_000_000.0) * 3600.0;
+
+    debug!("Calculated rate: {} USDC/hour", rate_per_hour);
+
+    // Skip if rate is zero, negative, or negligible (less than 0.01 USDC/hour)
+    if rate_per_hour <= MIN_RATE_THRESHOLD {
+        debug!("Skipping job {} due to rate below minimum threshold", id);
+        return None;
+    }
+
+    let balance_usdc = node
+        .get("balance")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(|n| n / 1_000_000.0)?;
+
+    if balance_usdc <= 0.0 {
+        debug!("Skipping job {} due to zero or negative balance", id);
+        return None;
+    }
+
+    let last_settled = node
+        .get("lastSettled")
+        .and_then(|v| v.as_str())
+        .and_then(|s| DateTime::parse_from_rfc3339(&format!("{s}Z")).ok())
+        .map(|dt| dt.timestamp() as f64)?;
+
+    let delta_hours = (now - last_settled) / 3600.0;
+    let current_balance = balance_usdc - (delta_hours * rate_per_hour);
+
+    if current_balance <= 0.0 {
+        debug!(
+            "Skipping job {} due to zero or negative current balance",
+            id
+        );
+        return None;
+    }
+
+    let time_remaining = current_balance / rate_per_hour;
+
+    let provider = node
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("N/A")
+        .to_string();
+
+    Some(JobData {
+        id,
+        rate_per_hour,
+        current_balance,
+        time_remaining,
+        provider,
+    })
+}
+
+fn format_time_remaining(hours: f64) -> String {
+    let days = (hours / 24.0).floor();
+    let remaining_hours = (hours % 24.0).floor();
+    let minutes = ((hours * 60.0) % 60.0).floor();
+
+    match (days as i64, remaining_hours as i64) {
+        (d, _) if d > 0 => format!("{:.0}d {:.0}h {:.0}m", days, remaining_hours, minutes),
+        (0, h) if h > 0 => format!("{:.0}h {:.0}m", remaining_hours, minutes),
+        _ => format!("{:.0}m", minutes),
+    }
 }
