@@ -34,6 +34,10 @@ pub struct InitParamsArgs {
     #[command(flatten)]
     pub pcrs: PcrArgs,
 
+    /// Encalve verifier contract address
+    #[arg(long, conflicts_with = "pcrs")]
+    pub contract_address: Option<String>,
+
     /// Docker compose file defining services to run,
     /// set as first init param
     #[arg(long)]
@@ -131,17 +135,26 @@ impl InitParamsArgs {
         ));
 
         // fetch key
-        let pk = fetch_encryption_key(
-            self.kms_endpoint
-                .as_ref()
-                .unwrap_or(&"http://image-v2.kms.box:1101".into()),
-            &pcrs.0,
-            &pcrs.1,
-            &pcrs.2,
-            &hex::encode(digest),
-        )
-        .context("failed to fetch key")?;
-
+        let pk = if let Some(address) = self.contract_address {
+            fetch_encryption_key_with_contract(
+                self.kms_endpoint
+                    .as_ref()
+                    .unwrap_or(&"http://image-v2.kms.box:1101".into()), // TODO: update the default URL
+                &address,
+            )
+            .context("failed to fetch key")?
+        } else {
+            fetch_encryption_key_with_pcr(
+                self.kms_endpoint
+                    .as_ref()
+                    .unwrap_or(&"http://image-v2.kms.box:1101".into()),
+                &pcrs.0,
+                &pcrs.1,
+                &pcrs.2,
+                &hex::encode(digest),
+            )
+            .context("failed to fetch key")?
+        };
         // prepare init params
         let params = init_params
             .iter()
@@ -219,7 +232,7 @@ struct InitParamsList {
     params: Vec<InitParam>,
 }
 
-fn fetch_encryption_key(
+fn fetch_encryption_key_with_pcr(
     endpoint: &str,
     pcr0: &str,
     pcr1: &str,
@@ -240,4 +253,21 @@ fn fetch_encryption_key(
         .as_slice()
         .try_into()
         .context("failed to parse reponse")
+}
+
+fn fetch_encryption_key_with_contract(
+    endpoint: &str,
+    address: &str,
+) -> Result<[u8; 32]> {
+    Ok(ureq::get(endpoint.to_owned() + "/derive/x25519/public")
+        .query("address", address)
+        .query("path", "oyster.init-params")
+        .call()
+        .context("failed to call derive server")?
+        .body_mut()
+        .read_to_vec()
+        .context("failed to read body")?
+        .as_slice()
+        .try_into()
+        .context("failed to parse reponse")?)
 }
