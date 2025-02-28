@@ -46,6 +46,33 @@ pub fn derive_enclave_seed(
     )
 }
 
+/// Derives a 64-byte seed for an enclave given a chain id and an address.
+/// The derivation is performed twice for additional security around length extension.
+///
+/// # Arguments
+/// * `root` - A 64-byte root seed
+/// * `chain_id` - Chain ID
+/// * `address` - Address (e.g. Ethereum or Solana)
+///
+/// # Examples
+/// ```
+/// use kms_derive_utils::derive_enclave_contract_seed;
+///
+/// let root = [0u8; 64];
+/// let chain_id = 1;
+/// let address = "0xffffffffffffffffffffffffffffffffffffffff";
+/// let seed = derive_enclave_contract_seed(root, chain_id, address);
+/// ```
+pub fn derive_enclave_contract_seed(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+    // normalize
+    let address = &address.to_lowercase();
+    derive_enclave_contract_seed_once(
+        derive_enclave_contract_seed_once(root, chain_id, address),
+        chain_id,
+        address,
+    )
+}
+
 /// Derives a 64-byte seed for a given path using a root seed.
 /// The derivation is performed twice for additional security around length extension.
 ///
@@ -262,6 +289,15 @@ fn derive_enclave_seed_once(
     mac.finalize().into_bytes().into()
 }
 
+fn derive_enclave_contract_seed_once(root: [u8; 64], chain_id: u64, address: &str) -> [u8; 64] {
+    // SAFETY: cannot error, safe to unwrap
+    let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
+    mac.update(&chain_id.to_le_bytes());
+    mac.update(&address.as_bytes());
+
+    mac.finalize().into_bytes().into()
+}
+
 fn derive_path_seed_once(root: [u8; 64], path: &[u8]) -> [u8; 64] {
     // SAFETY: cannot error, safe to unwrap
     let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
@@ -275,9 +311,9 @@ mod tests {
     use hex_literal::hex;
 
     use crate::{
-        derive_enclave_seed, derive_path_seed, to_ed25519_public, to_ed25519_secret,
-        to_ed25519_solana_address, to_secp256k1_ethereum_address, to_secp256k1_public,
-        to_secp256k1_secret, to_x25519_public, to_x25519_secret,
+        derive_enclave_contract_seed, derive_enclave_seed, derive_path_seed, to_ed25519_public,
+        to_ed25519_secret, to_ed25519_solana_address, to_secp256k1_ethereum_address,
+        to_secp256k1_public, to_secp256k1_secret, to_x25519_public, to_x25519_secret,
     };
 
     #[test]
@@ -291,6 +327,32 @@ mod tests {
         let expected = hex!("07daa9e8e6917e45658f826b68f925e043d54ae4040ef1bbcc54e9aaf29d72a9c8ab133a8a5ca8b6a86eaf355421a4b4d8c6e125a22a827df3c90d78696d07d7");
 
         let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
+
+        assert_eq!(seed, expected);
+    }
+
+    #[test]
+    fn test_derive_enclave_seed_eth() {
+        let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let chain_id = 0x1234;
+        let address = "0x92148e8F84096d0Dfe7E66a025d14D1e2594DDc2";
+        // derived from an independent online implementation
+        let expected = hex!("2893103cf566e7d2df9da1aec5e6c3f66a1d03e4031d6cd22282bab6415fc4da8a16b299c1e570115f0ec4173fa1f192e22dea29e21c2328ace3773151eacdcb");
+
+        let seed = derive_enclave_contract_seed(root, chain_id, address);
+
+        assert_eq!(seed, expected);
+    }
+
+    #[test]
+    fn test_derive_enclave_seed_sol() {
+        let root = hex!("4090382ec7b7a00ee999a8da6f5d85e4159964c9f03448b3e3608e877a49cdf2031c4c25b95142cf02844a118bfafa2ad41aceda1191be332eee20b4bacd9be5");
+        let chain_id = 0x5678;
+        let address = "BEYzkmcGNdhqHAPKQ7oz89n1RbAumm2kwtX113pPuCax";
+        // derived from an independent online implementation
+        let expected = hex!("ac30d6400265019af7c7bca9386021ad9299c2094bc8ebdeef8f0143afd2740ae8d119478b336e7509e7d7cf2a9d6e9f8ffbb03aa78c4e3f59e9141e063f1421");
+
+        let seed = derive_enclave_contract_seed(root, chain_id, address);
 
         assert_eq!(seed, expected);
     }

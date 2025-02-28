@@ -44,7 +44,7 @@ contract SecretManager is
     constructor(
         IERC20 _usdcToken,
         uint256 _noOfNodesToSelect,
-        uint256 _globalMaxStoreSize,
+        uint256 _globalMaxSecretSize,
         uint256 _globalMinStoreDuration,
         uint256 _globalMaxStoreDuration,
         uint256 _acknowledgementTimeout,
@@ -63,7 +63,7 @@ contract SecretManager is
         NO_OF_NODES_TO_SELECT = _noOfNodesToSelect;
 
         // TODO: add checks
-        GLOBAL_MAX_STORE_SIZE = _globalMaxStoreSize;
+        GLOBAL_MAX_SECRET_SIZE = _globalMaxSecretSize;
         GLOBAL_MIN_STORE_DURATION = _globalMinStoreDuration;
         GLOBAL_MAX_STORE_DURATION = _globalMaxStoreDuration;
         // TODO: endTimestamp should be greater than acknowledge timeout
@@ -119,7 +119,7 @@ contract SecretManager is
     uint256 public immutable NO_OF_NODES_TO_SELECT;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
-    uint256 public immutable GLOBAL_MAX_STORE_SIZE;
+    uint256 public immutable GLOBAL_MAX_SECRET_SIZE;
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     uint256 public immutable GLOBAL_MIN_STORE_DURATION;
@@ -284,7 +284,7 @@ contract SecretManager is
         address[] memory _allowedAddresses,
         address _owner
     ) internal {
-        if(_sizeLimit == 0 || _sizeLimit > GLOBAL_MAX_STORE_SIZE)
+        if(_sizeLimit == 0 || _sizeLimit > GLOBAL_MAX_SECRET_SIZE)
             revert SecretManagerInvalidSizeLimit();
 
         if ((_endTimestamp < block.timestamp + GLOBAL_MIN_STORE_DURATION) || (_endTimestamp > block.timestamp + GLOBAL_MAX_STORE_DURATION)) 
@@ -424,7 +424,9 @@ contract SecretManager is
                     if(isArrayLenReduced)
                         continue;
                 }
-            } else {
+            }
+            // if the original set of selected stores haven't acknowledged the secret
+            else if(userStoreData.ackTimestamp == 0) {
                 if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
                     revert SecretManagerAcknowledgementTimeoutPending(enclaveAddress);
 
@@ -799,9 +801,11 @@ contract SecretManager is
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
             uint256 ackTimestamp = _getSecretStoreAckTimestamp(_secretId, index);
-            uint256 endTimestamp = userStorage[_secretId].endTimestamp;
-            uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
-            _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, lastAliveTimestamp);
+            if(ackTimestamp != 0) {
+                uint256 endTimestamp = userStorage[_secretId].endTimestamp;
+                uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
+                _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, lastAliveTimestamp);
+            }
 
             SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[_secretId].sizeLimit, _secretId);
         }
@@ -927,6 +931,8 @@ contract SecretManager is
     ) external view returns (address[] memory) {
         if(userStorage[_secretId].owner != _jobOwner && !hasSecretAllowedAddress(_secretId, _jobOwner))
             revert SecretManagerUserNotAllowed();
+        if(block.timestamp >= userStorage[_secretId].endTimestamp)
+            revert SecretManagerAlreadyTerminated();
 
         uint256 len = userStorage[_secretId].selectedEnclaves.length;
         address[] memory selectedStores = new address[](len);

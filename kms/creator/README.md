@@ -2,13 +2,13 @@
 
 # KMS Creator
 
-The KMS Creator generates encrypted randomness with two goals:
-- It is verifiable that the encrypted randomness was generated inside a Creator enclave, even after the enclave is terminated.
-- The encrypted randomness can be decrypted by KMS root server enclaves.
+The KMS Creator generates encrypted seeds with two goals:
+- It is verifiable that the encrypted seed was generated inside a Creator enclave, even after the enclave is terminated.
+- The encrypted seed can be decrypted by KMS root server enclaves.
 
-The first goal is achieved by the creator attaching a signature to the encrypted randomness whose private key is generated inside the enclave and public key is present in remote attestations. Once generated, the randomness, signature and a remote attestation can be preserved indefinitely as proof.
+The first goal is achieved by the creator attaching a signature to the encrypted seed whose private key is generated inside the enclave and public key is present in remote attestations. Once generated, the seed, signature and a remote attestation can be preserved indefinitely as proof.
 
-The second goal is achieved through the condition parameter. It attaches a decryption condition to the encrypted randomness that allows the creator to restrict who can decrypt it. In the common case, this would be checking if an address is approved by the [KmsRoot](../../contracts/contracts-foundry/src/kms/KmsRoot.sol) smart contract that verifies remote attestations before approving KMS root servers.
+The second goal is achieved through the condition parameter. It attaches a decryption condition to the encrypted seed that allows the creator to restrict who can decrypt it. In the common case, this would be checking if an address is approved by the [KmsRoot](../../contracts/contracts-foundry/src/kms/KmsRoot.sol) smart contract that verifies remote attestations before approving KMS root servers.
 
 ## Build
 
@@ -37,15 +37,15 @@ Supported outputs:
 
 ```
 $ ./target/release/kms-creator --help
-Usage: kms-creator [OPTIONS] --condition <CONDITION> --dkg-public-key <DKG_PUBLIC_KEY>
+Usage: kms-creator [OPTIONS] --condition-path <CONDITION_PATH> --dkg-public-key <DKG_PUBLIC_KEY>
 
 Options:
       --listen-addr <LISTEN_ADDR>
           DKG listening address [default: 0.0.0.0:1100]
       --signer <SIGNER>
           Path to file with private key signer [default: /app/secp256k1.sec]
-      --condition <CONDITION>
-          Condition string for the key
+      --condition-path <CONDITION_PATH>
+          File path for the condition for the seed
       --dkg-public-key <DKG_PUBLIC_KEY>
           DKG ceremony public key
   -h, --help

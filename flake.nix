@@ -4,7 +4,7 @@
     extra-trusted-public-keys = ["oyster.cachix.org-1:QEXLEQvMA7jPLn4VZWVk9vbtypkXhwZknX+kFgDpYQY="];
   };
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/release-24.11";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -111,6 +111,20 @@
         vet = initialization.vet.compressed;
         kernels = kernels.tuna;
         root-server = kms.root-server.compressed;
+      };
+      kms.root-server-contract = import ./kms/root-server-contract {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
+      kms.root-server-arbone-enclave = import ./kms/root-server-arbone-enclave {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        kernels = kernels.tuna;
+        root-server-contract = kms.root-server-contract.compressed;
       };
       networking.raw-proxy = import ./networking/raw-proxy {
         inherit nixpkgs systemConfig fenix naersk;

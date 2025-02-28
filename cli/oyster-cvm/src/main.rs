@@ -103,6 +103,10 @@ enum Commands {
         #[arg(long)]
         debug: bool,
 
+        /// Disable automatic log streaming in debug mode
+        #[arg(long, requires = "debug")]
+        no_stream: bool,
+
         /// Init params, base64 encoded
         #[arg(long, default_value = "")]
         init_params: String,
@@ -282,6 +286,7 @@ async fn main() -> Result<()> {
             duration_in_minutes,
             job_name,
             debug,
+            no_stream,
             init_params,
             extra_init_params,
         } => {
@@ -294,6 +299,7 @@ async fn main() -> Result<()> {
                 job_name,
                 debug,
                 init_params,
+                no_stream,
                 extra_init_params,
             };
             commands::deploy::deploy_oyster_instance(config, &wallet_private_key, &operator).await

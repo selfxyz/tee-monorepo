@@ -43,12 +43,12 @@ in rec {
     name = "marlinorg/attestation-server-custom-mock";
     copyToRoot = pkgs.buildEnv {
       name = "image-root";
-      paths = [ uncompressed ];
-      pathsToLink = [ "/bin" ];
+      paths = [uncompressed];
+      pathsToLink = ["/bin"];
     };
     config = {
-      Entrypoint = [ "/bin/oyster-attestation-server-custom-mock" ];
-      Cmd = [ "--ip-addr" "0.0.0.0:1350" ];
+      Entrypoint = ["/bin/oyster-attestation-server-custom-mock"];
+      Cmd = ["--ip-addr" "0.0.0.0:1350"];
     };
   };
 

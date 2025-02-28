@@ -31,23 +31,23 @@
   setup = ./. + "/setup.sh";
   supervisorConf = ./. + "/supervisord.conf";
   app = pkgs.runCommand "app" {} ''
-		echo Preparing the app folder
-		pwd
-		mkdir -p $out
-		mkdir -p $out/app
-		mkdir -p $out/etc
-		cp ${supervisord'} $out/app/supervisord
-		cp ${keygenSecp256k1} $out/app/keygen-secp256k1
-		cp ${keygenX25519} $out/app/keygen-x25519
-		cp ${itvroProxy} $out/app/ip-to-vsock-raw-outgoing
-		cp ${vtiriProxy} $out/app/vsock-to-ip-raw-incoming
-		cp ${attestationServer} $out/app/attestation-server
-		cp ${dnsproxy'} $out/app/dnsproxy
-		cp ${vet'} $out/app/vet
-		cp ${deriveServer'} $out/app/kms-derive-server
-		cp ${setup} $out/app/setup.sh
-		chmod +x $out/app/*
-		cp ${supervisorConf} $out/etc/supervisord.conf
+    echo Preparing the app folder
+    pwd
+    mkdir -p $out
+    mkdir -p $out/app
+    mkdir -p $out/etc
+    cp ${supervisord'} $out/app/supervisord
+    cp ${keygenSecp256k1} $out/app/keygen-secp256k1
+    cp ${keygenX25519} $out/app/keygen-x25519
+    cp ${itvroProxy} $out/app/ip-to-vsock-raw-outgoing
+    cp ${vtiriProxy} $out/app/vsock-to-ip-raw-incoming
+    cp ${attestationServer} $out/app/attestation-server
+    cp ${dnsproxy'} $out/app/dnsproxy
+    cp ${vet'} $out/app/vet
+    cp ${deriveServer'} $out/app/kms-derive-server
+    cp ${setup} $out/app/setup.sh
+    chmod +x $out/app/*
+    cp ${supervisorConf} $out/etc/supervisord.conf
   '';
   # kinda hacky, my nix-fu is not great, figure out a better way
   initPerms = pkgs.runCommand "initPerms" {} ''

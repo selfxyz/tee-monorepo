@@ -15,8 +15,7 @@ pub async fn derive(
     // safe to unwrap since the server should always have an authstore
     let (pcrs, user_data) = scallop_state.0.unwrap();
 
-    let derived_key =
-        derive_enclave_seed(state.randomness, &pcrs[0], &pcrs[1], &pcrs[2], &user_data);
+    let derived_key = derive_enclave_seed(state.seed, &pcrs[0], &pcrs[1], &pcrs[2], &user_data);
 
     (StatusCode::OK, derived_key)
 }

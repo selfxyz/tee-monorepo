@@ -44,7 +44,7 @@ describe("SecretManager - Init", function () {
     let wallets: Wallet[];
     let token: string;
     let noOfNodesToSelect: number;
-    let globalMaxStoreSize: number;
+    let globalMaxSecretSize: number;
     let globalMinStoreDuration: number;
     let globalMaxStoreDuration: number;
     let acknowledgementTimeout: number;
@@ -63,7 +63,7 @@ describe("SecretManager - Init", function () {
 
         token = addrs[1],
             noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -82,7 +82,7 @@ describe("SecretManager - Init", function () {
         const secretManager = await SecretManager.deploy(
             token,
             noOfNodesToSelect,
-            globalMaxStoreSize,
+            globalMaxSecretSize,
             globalMinStoreDuration,
             globalMaxStoreDuration,
             acknowledgementTimeout,
@@ -96,7 +96,7 @@ describe("SecretManager - Init", function () {
 
         expect(await secretManager.USDC_TOKEN()).to.equal(token);
         expect(await secretManager.NO_OF_NODES_TO_SELECT()).to.equal(noOfNodesToSelect);
-        expect(await secretManager.GLOBAL_MAX_STORE_SIZE()).to.equal(globalMaxStoreSize);
+        expect(await secretManager.GLOBAL_MAX_SECRET_SIZE()).to.equal(globalMaxSecretSize);
         expect(await secretManager.GLOBAL_MIN_STORE_DURATION()).to.equal(globalMinStoreDuration);
         expect(await secretManager.GLOBAL_MAX_STORE_DURATION()).to.equal(globalMaxStoreDuration);
         expect(await secretManager.ACKNOWLEDGEMENT_TIMEOUT()).to.equal(acknowledgementTimeout);
@@ -123,7 +123,7 @@ describe("SecretManager - Init", function () {
                 constructorArgs: [
                     token,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -139,7 +139,7 @@ describe("SecretManager - Init", function () {
 
         expect(await secretManager.USDC_TOKEN()).to.equal(token);
         expect(await secretManager.NO_OF_NODES_TO_SELECT()).to.equal(noOfNodesToSelect);
-        expect(await secretManager.GLOBAL_MAX_STORE_SIZE()).to.equal(globalMaxStoreSize);
+        expect(await secretManager.GLOBAL_MAX_SECRET_SIZE()).to.equal(globalMaxSecretSize);
         expect(await secretManager.GLOBAL_MIN_STORE_DURATION()).to.equal(globalMinStoreDuration);
         expect(await secretManager.GLOBAL_MAX_STORE_DURATION()).to.equal(globalMaxStoreDuration);
         expect(await secretManager.ACKNOWLEDGEMENT_TIMEOUT()).to.equal(acknowledgementTimeout);
@@ -165,7 +165,7 @@ describe("SecretManager - Init", function () {
                     constructorArgs: [
                         token,
                         noOfNodesToSelect,
-                        globalMaxStoreSize,
+                        globalMaxSecretSize,
                         globalMinStoreDuration,
                         globalMaxStoreDuration,
                         acknowledgementTimeout,
@@ -193,7 +193,7 @@ describe("SecretManager - Init", function () {
                     constructorArgs: [
                         ZeroAddress,
                         noOfNodesToSelect,
-                        globalMaxStoreSize,
+                        globalMaxSecretSize,
                         globalMinStoreDuration,
                         globalMaxStoreDuration,
                         acknowledgementTimeout,
@@ -220,7 +220,7 @@ describe("SecretManager - Init", function () {
                 constructorArgs: [
                     token,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -236,7 +236,7 @@ describe("SecretManager - Init", function () {
 
         const token2 = addrs[2],
             noOfNodesToSelect2 = 4,
-            globalMaxStoreSize2 = 100,
+            globalMaxSecretSize2 = 100,
             globalMinStoreDuration2 = 1,
             globalMaxStoreDuration2 = 10,
             acknowledgementTimeout2 = 10,
@@ -255,7 +255,7 @@ describe("SecretManager - Init", function () {
                 constructorArgs: [
                     token2,
                     noOfNodesToSelect2,
-                    globalMaxStoreSize2,
+                    globalMaxSecretSize2,
                     globalMinStoreDuration2,
                     globalMaxStoreDuration2,
                     acknowledgementTimeout2,
@@ -271,7 +271,7 @@ describe("SecretManager - Init", function () {
 
         expect(await secretManager.USDC_TOKEN()).to.equal(token2);
         expect(await secretManager.NO_OF_NODES_TO_SELECT()).to.equal(noOfNodesToSelect2);
-        expect(await secretManager.GLOBAL_MAX_STORE_SIZE()).to.equal(globalMaxStoreSize2);
+        expect(await secretManager.GLOBAL_MAX_SECRET_SIZE()).to.equal(globalMaxSecretSize2);
         expect(await secretManager.GLOBAL_MIN_STORE_DURATION()).to.equal(globalMinStoreDuration2);
         expect(await secretManager.GLOBAL_MAX_STORE_DURATION()).to.equal(globalMaxStoreDuration2);
         expect(await secretManager.ACKNOWLEDGEMENT_TIMEOUT()).to.equal(acknowledgementTimeout2);
@@ -296,7 +296,7 @@ describe("SecretManager - Init", function () {
                 constructorArgs: [
                     token,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -316,7 +316,7 @@ describe("SecretManager - Init", function () {
                 constructorArgs: [
                     token,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -337,7 +337,7 @@ testERC165(
     async function (_signers: Signer[], addrs: string[]) {
         let usdcToken = addrs[1],
             noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -358,7 +358,7 @@ testERC165(
                 constructorArgs: [
                     usdcToken,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -477,7 +477,7 @@ describe("SecretManager - Create secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -495,7 +495,7 @@ describe("SecretManager - Create secret", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -712,7 +712,7 @@ describe("SecretManager - Acknowledge secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -730,7 +730,7 @@ describe("SecretManager - Acknowledge secret", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -1001,6 +1001,77 @@ describe("SecretManager - Acknowledge secret", function () {
         let userFinalBal = await usdcToken.balanceOf(addrs[0]);
         expect(userFinalBal - userInitialBal).to.eq(usdcDeposit);
     });
+
+    it("can mark ack fail for replaced stores without affecting the original selected stores", async function () {
+        // register a new store
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest() - 540;
+        let env = 1,
+            jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = parseUnits("10");	// 10 POND
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[20],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let signedDigest = await registerTeeNodeSignature(
+            addrs[1],
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            wallets[20]
+        );
+
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+
+        let secretId = 1;
+        for (let index = 0; index < 3; index++) {
+            let signTimestamp = await time.latest() - 540,
+                signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17 + index]);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        }
+
+        await time.increase(10);
+        // draining the store 17 so that it gets replaced with the new store 20
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[17]);
+
+        await time.increase(150);
+        // on ack fail, the store 20 will be replaced with itself as no other store is there to replace it
+        let tx = await secretManager.acknowledgeStoreFailed(secretId);
+        await tx.wait();
+        await expect(tx)
+            .to.emit(secretManager, "SecretStoreReplaced")
+            .and.to.not.emit(secretManager, "SecretStoreAcknowledgementFailed");
+
+        const selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        for (let index = 0; index < 3; index++) {
+            let txnTimestamp = (await tx.getBlock())?.timestamp;
+            // only the select timestamp of store 20 would be updated
+            if(selectedStores[index].enclaveAddress === addrs[20])
+                expect(selectedStores[index].selectTimestamp).to.eq(txnTimestamp);
+            else
+                expect(selectedStores[index].selectTimestamp)
+                    .to.eq((await secretManager.userStorage(secretId)).startTimestamp);
+        }
+
+        expect((await secretStore.secretStores(addrs[18])).storageOccupied).to.eq(1000);
+        expect((await secretStore.secretStores(addrs[19])).storageOccupied).to.eq(1000);
+        expect((await secretStore.secretStores(addrs[20])).storageOccupied).to.eq(1000);
+        expect((await secretManager.getSelectedEnclaves(secretId)).length).to.eq(3);
+    });
 });
 
 describe("SecretManager - Alive/Dead checks for secret", function () {
@@ -1097,7 +1168,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 8000,
+            globalMaxSecretSize = 8000,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -1115,7 +1186,7 @@ describe("SecretManager - Alive/Dead checks for secret", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -1584,7 +1655,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -1602,7 +1673,7 @@ describe("SecretManager - Update end timestamp of secret", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -1859,7 +1930,7 @@ describe("SecretManager - Terminate secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -1877,7 +1948,7 @@ describe("SecretManager - Terminate secret", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -2071,7 +2142,7 @@ describe("SecretManager - Remove secret", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -2089,7 +2160,7 @@ describe("SecretManager - Remove secret", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -2181,6 +2252,99 @@ describe("SecretManager - Remove secret", function () {
         expect(secretOwnerFinalBal - secretOwnerInitialBal)
             .to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
     });
+
+    it("can remove secret having a replaced selected node that hasn't ack", async function () {
+        let secretId = 1;
+        let endTimestamp = (await secretManager.userStorage(1)).endTimestamp;
+        let ackTimestamp = (await secretManager.userStorage(1)).ackTimestamp;
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
+        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
+
+        // register a new node
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest();
+        let env = 1,
+            jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = parseUnits("10");	// 10 POND
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[20],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let signedDigest = await registerTeeNodeSignature(
+            addrs[1],
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            wallets[20]
+        );
+
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+
+        // get list of selected enclaves
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        let selectedStoresAddresses = selectedStores.map(store => store.enclaveAddress);
+
+        // T+200
+        await time.increase(200);
+        // drain one of the selected enclave at selectedStoresAddresses[0]
+        let tx = await teeManager.connect(signers[1]).drainTeeNode(selectedStoresAddresses[0]);
+        await tx.wait();
+        // usdc payment for the drained store
+        let usdcPayment = (BigInt((await tx?.getBlock())?.timestamp as number) - ackTimestamp) * 1000n * 10n;
+
+        // T+900
+        await time.increase(700);
+        // send alive from remaining enclaves
+        for (let index = 0 ; index < 4; index++) {
+            if (wallets[17 + index].address == selectedStoresAddresses[0]) {
+                continue;
+            }
+            let signTimestamp = await time.latest(),
+                signedDigest = await createAliveSignature(
+                    signTimestamp,
+                    wallets[17 + index]
+                );
+            await secretManager.markStoreAlive(signTimestamp, signedDigest);
+        }
+
+        // T+1400
+        await time.increase(500);
+        // remove secret
+        await expect(secretManager.removeSecret(secretId))
+            .to.emit(secretManager, "SecretRemoved")
+            .withArgs(secretId);
+
+        expect((await secretManager.userStorage(secretId)).owner).to.eq(ZeroAddress);
+        for (let index = 0; index < 4; index++) {
+            let store = await secretStore.secretStores(addrs[17 + index]);
+            expect(store.storageOccupied).to.eq(0);
+            expect(await secretStore.getStoreAckSecretIds(addrs[17 + index])).to.be.empty;
+        }
+
+        // no usdc payment for the replaced store as it hasn't ack the secret
+        usdcPayment += (2n * (endTimestamp - ackTimestamp) * 1000n * 10n);
+
+        let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+        expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal)
+            .to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
+    })
 
     it('cannot remove secret non-existing secret', async function () {
         let secretId = 2;
@@ -2362,7 +2526,7 @@ describe("SecretManager - Other functions", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -2380,7 +2544,7 @@ describe("SecretManager - Other functions", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
@@ -2470,6 +2634,12 @@ describe("SecretManager - Other functions", function () {
 
         await expect(secretManager.verifyUserAndGetSelectedStores(1, addrs[1]))
             .to.be.revertedWithCustomError(secretManager, "SecretManagerUserNotAllowed");
+    });
+
+    it('cannot verify user and get selected stores after the end timestamp', async function () {
+        await time.increase(810);
+        await expect(secretManager.verifyUserAndGetSelectedStores(1, addrs[0]))
+            .to.be.revertedWithCustomError(secretManager, "SecretManagerAlreadyTerminated");
     });
 
     it('cannot verify user and get selected stores for unacknowledged secret', async function () {
@@ -2593,7 +2763,7 @@ describe("SecretManager - Renounce secrets", function () {
         await teeManager.setSecretStore(secretStore.target);
 
         let noOfNodesToSelect = 3,
-            globalMaxStoreSize = 1e6,
+            globalMaxSecretSize = 1e6,
             globalMinStoreDuration = 10,
             globalMaxStoreDuration = 1e6,
             acknowledgementTimeout = 120,
@@ -2611,7 +2781,7 @@ describe("SecretManager - Renounce secrets", function () {
                 constructorArgs: [
                     usdcToken.target,
                     noOfNodesToSelect,
-                    globalMaxStoreSize,
+                    globalMaxSecretSize,
                     globalMinStoreDuration,
                     globalMaxStoreDuration,
                     acknowledgementTimeout,
