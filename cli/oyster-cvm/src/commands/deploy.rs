@@ -66,7 +66,7 @@ pub struct DeployArgs {
     #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
     operator: String,
 
-    /// Instance type (e.g. "m5a.2xlarge")
+    /// Instance type (e.g. "r6g.large")
     #[arg(long, default_value = "r6g.large")]
     instance_type: String,
 
