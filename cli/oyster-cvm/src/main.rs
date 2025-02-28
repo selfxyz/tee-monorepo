@@ -4,8 +4,10 @@ use oyster::attestation::AWS_ROOT_KEY;
 
 mod args;
 mod commands;
+mod configs;
 mod types;
 mod utils;
+use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 
 use crate::args::pcr::PcrArgs;
 use crate::commands::deploy::DeploymentConfig;
@@ -123,7 +125,7 @@ enum Commands {
         pcr: PcrArgs,
 
         /// Attestation Port (default: 1300)
-        #[arg(short = 'p', long, default_value = "1300")]
+        #[arg(short = 'p', long, default_value_t = DEFAULT_ATTESTATION_PORT)]
         attestation_port: u16,
 
         /// Maximum age of attestation (in milliseconds) (default: 300000)
@@ -137,6 +139,16 @@ enum Commands {
         /// Root public key
         #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
         root_public_key: String,
+    },
+    /// List active jobs for a wallet address
+    List {
+        /// Wallet address to query jobs for
+        #[arg(short, long, required = true)]
+        address: String,
+
+        /// Number of most recent jobs to display (optional)
+        #[arg(short, long)]
+        count: Option<u32>,
     },
     /// Update existing deployments
     Update {
@@ -174,6 +186,48 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         quiet: bool,
     },
+    /// Deposit funds to an existing job
+    Deposit {
+        /// Job ID
+        #[arg(short, long, required = true)]
+        job_id: String,
+
+        /// Amount to deposit in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
+        #[arg(short, long, required = true)]
+        amount: u64,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+    },
+    /// Stop an Oyster CVM instance
+    Stop {
+        /// Job ID
+        #[arg(short = 'j', long, required = true)]
+        job_id: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+    },
+    /// Withdraw funds from an existing job
+    Withdraw {
+        /// Job ID
+        #[arg(short, long, required = true)]
+        job_id: String,
+
+        /// Amount to withdraw in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
+        #[arg(short, long, required_unless_present = "max")]
+        amount: Option<u64>,
+
+        /// Withdraw all remaining balance
+        #[arg(long, conflicts_with = "amount")]
+        max: bool,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+    },
 }
 
 #[tokio::main]
@@ -182,7 +236,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let result = match &cli.command {
+    let result = match cli.command {
         Commands::Doctor => commands::doctor::run_doctor(),
         Commands::Build {
             platform,
@@ -191,18 +245,18 @@ async fn main() -> Result<()> {
             output,
             commit_ref,
         } => {
-            let platform = types::Platform::from_str(platform).map_err(|e| anyhow::anyhow!(e))?;
+            let platform = types::Platform::from_str(&platform).map_err(|e| anyhow::anyhow!(e))?;
             commands::build::build_oyster_image(
                 platform,
-                docker_compose,
-                docker_images,
-                output,
-                commit_ref,
+                &docker_compose,
+                &docker_images,
+                &output,
+                &commit_ref,
             )
         }
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;
-            commands::upload::upload_enclave_image(file, &default_provider).await
+            commands::upload::upload_enclave_image(&file, &default_provider).await
         }
         Commands::Verify {
             pcr,
@@ -213,12 +267,12 @@ async fn main() -> Result<()> {
             timestamp,
         } => {
             commands::verify::verify_enclave(
-                pcr,
-                enclave_ip,
-                attestation_port,
-                max_age,
-                root_public_key,
-                timestamp,
+                &pcr,
+                &enclave_ip,
+                &attestation_port,
+                &max_age,
+                &root_public_key,
+                &timestamp,
             )
             .await
         }
@@ -237,43 +291,54 @@ async fn main() -> Result<()> {
             extra_init_params,
         } => {
             let config = DeploymentConfig {
-                image_url: image_url.clone(),
-                region: region.clone(),
-                instance_type: instance_type.clone(),
-                bandwidth: *bandwidth,
-                duration: *duration_in_minutes,
-                job_name: job_name.clone(),
-                debug: *debug,
-                no_stream: *no_stream,
-                init_params: init_params.clone(),
-                extra_init_params: extra_init_params.clone(),
+                image_url,
+                region,
+                instance_type,
+                bandwidth,
+                duration: duration_in_minutes,
+                job_name,
+                debug,
+                init_params,
+                no_stream,
+                extra_init_params,
             };
-            commands::deploy::deploy_oyster_instance(config, wallet_private_key, operator).await
+            commands::deploy::deploy_oyster_instance(config, &wallet_private_key, &operator).await
         }
+        Commands::List { address, count } => commands::list::list_jobs(&address, count).await,
         Commands::Update {
             job_id,
             wallet_private_key,
             image_url,
             debug,
         } => {
-            commands::update::update_job(
-                job_id,
-                wallet_private_key,
-                image_url.as_ref().map(|x| x.as_str()),
-                debug.to_owned(),
-            )
-            .await
+            commands::update::update_job(&job_id, &wallet_private_key, image_url.as_deref(), debug)
+                .await
         }
         Commands::Logs {
             ip,
             start_from,
             with_log_id,
             quiet,
-        } => commands::log::stream_logs(ip, start_from.as_deref(), *with_log_id, *quiet).await,
+        } => commands::log::stream_logs(&ip, start_from.as_deref(), with_log_id, quiet).await,
+        Commands::Deposit {
+            job_id,
+            amount,
+            wallet_private_key,
+        } => commands::deposit::deposit_to_job(&job_id, amount, &wallet_private_key).await,
+        Commands::Stop {
+            job_id,
+            wallet_private_key,
+        } => commands::stop::stop_oyster_instance(&job_id, &wallet_private_key).await,
+        Commands::Withdraw {
+            job_id,
+            amount,
+            max,
+            wallet_private_key,
+        } => commands::withdraw::withdraw_from_job(&job_id, amount, max, &wallet_private_key).await,
     };
 
-    if let Err(err) = &result {
-        tracing::error!("Error: {:#}", err);
+    if let Err(e) = result {
+        tracing::error!("Error: {}", e);
         std::process::exit(1);
     }
 

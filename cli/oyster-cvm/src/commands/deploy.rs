@@ -1,11 +1,13 @@
-use crate::utils::bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region};
+use crate::configs::global::OYSTER_MARKET_ADDRESS;
+use crate::utils::{
+    bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
+    provider::{create_provider, OysterProvider},
+    usdc::{approve_usdc, format_usdc},
+};
 use alloy::{
-    network::{Ethereum, EthereumWallet},
-    primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
-    providers::{Provider, ProviderBuilder},
-    signers::local::PrivateKeySigner,
+    primitives::{keccak256, Address, B256 as H256, U256},
+    providers::Provider,
     sol,
-    transports::http::Http,
 };
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
@@ -16,11 +18,7 @@ use tokio::net::TcpStream;
 use tracing::info;
 use crate::commands::log::stream_logs;
 
-const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-
-const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
-const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"; // Mainnet USDC Address
-
+// Retry Configuration
 const IP_CHECK_RETRIES: u32 = 20;
 const IP_CHECK_INTERVAL: u64 = 15;
 const ATTESTATION_RETRIES: u32 = 20;
@@ -84,15 +82,10 @@ pub async fn deploy_oyster_instance(
 ) -> Result<()> {
     tracing::info!("Starting deployment...");
 
-    // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
-    let wallet = EthereumWallet::from(signer);
-
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
+    // Setup provider
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
 
     // Get CP URL using the configured provider
     let cp_url = get_operator_cp(operator, provider.clone())
@@ -134,10 +127,7 @@ pub async fn deploy_oyster_instance(
     )
     .await?;
 
-    info!(
-        "Total cost: {:.6} USDC",
-        total_cost.to::<u128>() as f64 / 1e6
-    );
+    info!("Total cost: {:.6} USDC", format_usdc(total_cost));
     info!(
         "Total rate: {:.6} USDC/hour",
         (total_rate.to::<u128>() * 3600) as f64 / 1e18
@@ -190,28 +180,12 @@ pub async fn deploy_oyster_instance(
     Ok(())
 }
 
-async fn approve_usdc(amount: U256, provider: impl Provider<Http<Client>, Ethereum>) -> Result<()> {
-    let usdc_address: Address = USDC_ADDRESS.parse()?;
-    let market_address: Address = OYSTER_MARKET_ADDRESS.parse()?;
-
-    let usdc = USDC::new(usdc_address, provider);
-    let tx_hash = usdc
-        .approve(market_address, amount)
-        .send()
-        .await?
-        .watch()
-        .await?;
-
-    info!("USDC approval transaction: {:?}", tx_hash);
-    Ok(())
-}
-
 async fn create_new_oyster_job(
     metadata: String,
     provider_addr: Address,
     rate: U256,
     balance: U256,
-    provider: impl Provider<Http<Client>, Ethereum> + Clone,
+    provider: OysterProvider,
 ) -> Result<H256> {
     let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
 
@@ -463,10 +437,7 @@ async fn calculate_total_cost(
     Ok((total_cost_scaled, total_rate_scaled))
 }
 
-async fn get_operator_cp(
-    provider_address: &str,
-    provider: impl Provider<Http<Client>, Ethereum>,
-) -> Result<String> {
+async fn get_operator_cp(provider_address: &str, provider: OysterProvider) -> Result<String> {
     let market_address = Address::from_str(OYSTER_MARKET_ADDRESS)?;
     let provider_address = Address::from_str(provider_address)?;
 
