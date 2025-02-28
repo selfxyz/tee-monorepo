@@ -1001,6 +1001,77 @@ describe("SecretManager - Acknowledge secret", function () {
         let userFinalBal = await usdcToken.balanceOf(addrs[0]);
         expect(userFinalBal - userInitialBal).to.eq(usdcDeposit);
     });
+
+    it("can mark ack fail for replaced stores without affecting the original selected stores", async function () {
+        // register a new store
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest() - 540;
+        let env = 1,
+            jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = parseUnits("10");	// 10 POND
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[20],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let signedDigest = await registerTeeNodeSignature(
+            addrs[1],
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            wallets[20]
+        );
+
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+
+        let secretId = 1;
+        for (let index = 0; index < 3; index++) {
+            let signTimestamp = await time.latest() - 540,
+                signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallets[17 + index]);
+            await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+        }
+
+        await time.increase(10);
+        // draining the store 17 so that it gets replaced with the new store 20
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[17]);
+
+        await time.increase(150);
+        // on ack fail, the store 20 will be replaced with itself as no other store is there to replace it
+        let tx = await secretManager.acknowledgeStoreFailed(secretId);
+        await tx.wait();
+        await expect(tx)
+            .to.emit(secretManager, "SecretStoreReplaced")
+            .and.to.not.emit(secretManager, "SecretStoreAcknowledgementFailed");
+
+        const selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        for (let index = 0; index < 3; index++) {
+            let txnTimestamp = (await tx.getBlock())?.timestamp;
+            // only the select timestamp of store 20 would be updated
+            if(selectedStores[index].enclaveAddress === addrs[20])
+                expect(selectedStores[index].selectTimestamp).to.eq(txnTimestamp);
+            else
+                expect(selectedStores[index].selectTimestamp)
+                    .to.eq((await secretManager.userStorage(secretId)).startTimestamp);
+        }
+
+        expect((await secretStore.secretStores(addrs[18])).storageOccupied).to.eq(1000);
+        expect((await secretStore.secretStores(addrs[19])).storageOccupied).to.eq(1000);
+        expect((await secretStore.secretStores(addrs[20])).storageOccupied).to.eq(1000);
+        expect((await secretManager.getSelectedEnclaves(secretId)).length).to.eq(3);
+    });
 });
 
 describe("SecretManager - Alive/Dead checks for secret", function () {
@@ -2256,6 +2327,13 @@ describe("SecretManager - Remove secret", function () {
         await expect(secretManager.removeSecret(secretId))
             .to.emit(secretManager, "SecretRemoved")
             .withArgs(secretId);
+
+        expect((await secretManager.userStorage(secretId)).owner).to.eq(ZeroAddress);
+        for (let index = 0; index < 4; index++) {
+            let store = await secretStore.secretStores(addrs[17 + index]);
+            expect(store.storageOccupied).to.eq(0);
+            expect(await secretStore.getStoreAckSecretIds(addrs[17 + index])).to.be.empty;
+        }
 
         // no usdc payment for the replaced store as it hasn't ack the secret
         usdcPayment += (2n * (endTimestamp - ackTimestamp) * 1000n * 10n);
