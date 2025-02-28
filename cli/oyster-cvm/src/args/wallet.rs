@@ -10,7 +10,7 @@ pub struct WalletArgs {
     #[arg(long, conflicts_with = "wallet_file")]
     wallet_private_key: Option<String>,
 
-    /// Wallet private key file
+    /// Wallet private key file containing hex encoded private key
     #[arg(long, conflicts_with = "wallet_private_key")]
     wallet_file: Option<String>,
 }

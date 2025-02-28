@@ -94,7 +94,7 @@ static PCRS_BASE_BLUE_V1_0_0_AMD64: (&str, &str, &str) = (
     "4a075320473f28aa39a6b92bfe344764a1352d735bf41e234480d1ccc806d1092e192d293db75a52133c27f25be5b11c",
 );
 
-static PCRS_BASE_BLUE_V1_0_0_ARM64: (&str, &str, &str) = (
+pub static PCRS_BASE_BLUE_V1_0_0_ARM64: (&str, &str, &str) = (
     "cef9d589279cddbf2de41a7d94772d1501c89b50df8a40a19cfa73c8ac8e5b590b0bf434d84007e1300c5e4c3d4b572f",
     "3dc2602d18944028b4705c2b46c5d6efd73cba3c58d09deccc073075c68a4ebac36e5368eb0921c7b4c699f4ae03a1e5",
     "b946e182060c771f0c94be8882b72e051ab6bb26474ed72247e58360e94e0bb8027bf7de725f9c90d7a8e2d2bbc58d36",

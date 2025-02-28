@@ -11,7 +11,7 @@ use libsodium_sys::{crypto_box_SEALBYTES, crypto_box_seal, sodium_init};
 use serde::Serialize;
 use tracing::info;
 
-use super::pcr::PcrArgs;
+use super::pcr::{PcrArgs, PCRS_BASE_BLUE_V1_0_0_ARM64};
 
 #[derive(Args, Debug)]
 #[group(multiple = true)]
@@ -125,9 +125,9 @@ impl InitParamsArgs {
         // load pcrs
         // use pcrs of the blue base image by default
         let pcrs = self.pcrs.load().context("Failed to load PCRs")?.unwrap_or((
-            "cef9d589279cddbf2de41a7d94772d1501c89b50df8a40a19cfa73c8ac8e5b590b0bf434d84007e1300c5e4c3d4b572f".into(),
-            "3dc2602d18944028b4705c2b46c5d6efd73cba3c58d09deccc073075c68a4ebac36e5368eb0921c7b4c699f4ae03a1e5".into(),
-            "b946e182060c771f0c94be8882b72e051ab6bb26474ed72247e58360e94e0bb8027bf7de725f9c90d7a8e2d2bbc58d36".into(),
+            PCRS_BASE_BLUE_V1_0_0_ARM64.0.into(),
+            PCRS_BASE_BLUE_V1_0_0_ARM64.1.into(),
+            PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
         ));
 
         // fetch key
