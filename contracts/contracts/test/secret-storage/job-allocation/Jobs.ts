@@ -639,6 +639,7 @@ describe("Jobs - Create", function () {
     let attestationVerifier: AttestationVerifier;
     let teeManager: TeeManager;
     let executors: Executors;
+    let secretStore: SecretStore;
     let jobs: Jobs;
     let secretManager: SecretManager;
     let staking_payment_pool: string;
@@ -702,7 +703,7 @@ describe("Jobs - Create", function () {
         ) as unknown as Executors;
 
         const SecretStore = await ethers.getContractFactory("SecretStore");
-        let secretStore = await upgrades.deployProxy(
+        secretStore = await upgrades.deployProxy(
             SecretStore,
             [addrs[0]],
             {
@@ -914,10 +915,10 @@ describe("Jobs - Create", function () {
     });
 
     it("cannot create job when a minimum no. of executor nodes are not available", async function () {
+        // drain 1st node
         await teeManager.connect(signers[1]).drainTeeNode(addrs[19]);
-        await teeManager.connect(signers[1]).drainTeeNode(addrs[20]);
 
-        // need to ack the replaced stores
+        // need to ack the replaced store
         let secretId = 1,
             signTimestamp = await time.latest();
         let selectedStores = await secretManager.getSelectedEnclaves(secretId);
@@ -927,8 +928,12 @@ describe("Jobs - Create", function () {
             if(!selectedStores[i].hasAcknowledgedStore) {
                 let signedDigest = await createAcknowledgeSignature(secretId, signTimestamp, wallet);
                 await secretManager.acknowledgeStore(secretId, signTimestamp, signedDigest);
+                break;
             }
         }
+
+        // drain 2nd node
+        await teeManager.connect(signers[1]).drainTeeNode(addrs[20]);
 
         let env = 1,
             codeHash = keccak256(solidityPacked(["string"], ["codehash"])),
