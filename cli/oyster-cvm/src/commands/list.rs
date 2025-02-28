@@ -5,7 +5,9 @@ use prettytable::{row, Table};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info};
+
+const BUFFER_TIME_HOURS: f64 = 5.0 / 60.0; // 5 minutes in hours
 
 #[derive(Debug)]
 struct JobData {
@@ -88,18 +90,21 @@ pub async fn list_jobs(wallet_address: &str, count: Option<u32>) -> Result<()> {
         "PROVIDER"
     ]);
 
-    let mut printed_count = 0u32;
-    for node in nodes {
-        let Some(job) = process_job_data(&node, now) else {
-            continue;
-        };
+    let processed_jobs: Vec<_> = nodes
+        .iter()
+        .filter_map(|node| process_job_data(node, now))
+        .take(count.unwrap_or(nodes.len().try_into().unwrap()) as usize)
+        .collect();
 
-        if let Some(max_count) = count {
-            if printed_count >= max_count {
-                break;
-            }
-        }
+    if processed_jobs.is_empty() {
+        info!(
+            "No active jobs with positive balance found for address: {}",
+            wallet_address
+        );
+        return Ok(());
+    }
 
+    processed_jobs.iter().for_each(|job| {
         table.add_row(row![
             job.id,
             format!("{:.4} USDC", job.rate_per_hour),
@@ -107,16 +112,7 @@ pub async fn list_jobs(wallet_address: &str, count: Option<u32>) -> Result<()> {
             format_time_remaining(job.time_remaining),
             job.provider
         ]);
-        printed_count += 1;
-    }
-
-    if printed_count == 0 {
-        info!(
-            "No active jobs with positive balance found for address: {}",
-            wallet_address
-        );
-        return Ok(());
-    }
+    });
 
     table.printstd();
     Ok(())
@@ -168,7 +164,7 @@ fn process_job_data(node: &Value, now: f64) -> Option<JobData> {
     let delta_hours = (now - last_settled) / 3600.0;
 
     if delta_hours < 0.0 {
-        warn!(
+        error!(
             "Job Settled time is in the future for job {}. Make sure your system clock is correct.",
             id
         );
@@ -185,7 +181,15 @@ fn process_job_data(node: &Value, now: f64) -> Option<JobData> {
         return None;
     }
 
-    let time_remaining = current_balance / rate_per_hour;
+    let time_remaining = (current_balance / rate_per_hour) - BUFFER_TIME_HOURS;
+
+    if time_remaining <= 0.0 {
+        debug!(
+            "Skipping job {} due to insufficient time remaining after buffer",
+            id
+        );
+        return None;
+    }
 
     let provider = node
         .get("provider")
