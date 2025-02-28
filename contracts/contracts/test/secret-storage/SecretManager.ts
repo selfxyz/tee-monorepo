@@ -2182,6 +2182,92 @@ describe("SecretManager - Remove secret", function () {
             .to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
     });
 
+    it("can remove secret having a replaced selected node that hasn't ack", async function () {
+        let secretId = 1;
+        let endTimestamp = (await secretManager.userStorage(1)).endTimestamp;
+        let ackTimestamp = (await secretManager.userStorage(1)).ackTimestamp;
+        let secretOwnerInitialBal = await usdcToken.balanceOf(addrs[0]);
+        let enclaveOwnerInitialBal = await usdcToken.balanceOf(addrs[1]);
+
+        // register a new node
+        const timestamp = await time.latest() * 1000;
+        let signTimestamp = await time.latest();
+        let env = 1,
+            jobCapacity = 20,
+            storageCapacity = 1e9,
+            stakeAmount = parseUnits("10");	// 10 POND
+        let [attestationSign, attestation] = await createAttestation(
+            pubkeys[20],
+            image2,
+            wallets[14],
+            timestamp - 540000
+        );
+
+        let signedDigest = await registerTeeNodeSignature(
+            addrs[1],
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            wallets[20]
+        );
+
+        await teeManager.connect(signers[1]).registerTeeNode(
+            attestationSign,
+            attestation,
+            jobCapacity,
+            storageCapacity,
+            env,
+            signTimestamp,
+            signedDigest,
+            stakeAmount
+        );
+
+        // get list of selected enclaves
+        let selectedStores = await secretManager.getSelectedEnclaves(secretId);
+        let selectedStoresAddresses = selectedStores.map(store => store.enclaveAddress);
+
+        // T+200
+        await time.increase(200);
+        // drain one of the selected enclave at selectedStoresAddresses[0]
+        let tx = await teeManager.connect(signers[1]).drainTeeNode(selectedStoresAddresses[0]);
+        await tx.wait();
+        // usdc payment for the drained store
+        let usdcPayment = (BigInt((await tx?.getBlock())?.timestamp as number) - ackTimestamp) * 1000n * 10n;
+
+        // T+900
+        await time.increase(700);
+        // send alive from remaining enclaves
+        for (let index = 0 ; index < 4; index++) {
+            if (wallets[17 + index].address == selectedStoresAddresses[0]) {
+                continue;
+            }
+            let signTimestamp = await time.latest(),
+                signedDigest = await createAliveSignature(
+                    signTimestamp,
+                    wallets[17 + index]
+                );
+            await secretManager.markStoreAlive(signTimestamp, signedDigest);
+        }
+
+        // T+1400
+        await time.increase(500);
+        // remove secret
+        await expect(secretManager.removeSecret(secretId))
+            .to.emit(secretManager, "SecretRemoved")
+            .withArgs(secretId);
+
+        // no usdc payment for the replaced store as it hasn't ack the secret
+        usdcPayment += (2n * (endTimestamp - ackTimestamp) * 1000n * 10n);
+
+        let enclaveOwnerFinalBal = await usdcToken.balanceOf(addrs[1]);
+        expect(enclaveOwnerFinalBal - enclaveOwnerInitialBal).to.eq(usdcPayment);
+
+        let secretOwnerFinalBal = await usdcToken.balanceOf(addrs[0]);
+        expect(secretOwnerFinalBal - secretOwnerInitialBal)
+            .to.eq(parseUnits("30", 6) - usdcPayment);   // usdcDeposit - usdcPayment
+    })
+
     it('cannot remove secret non-existing secret', async function () {
         let secretId = 2;
         await expect(secretManager.removeSecret(secretId))
