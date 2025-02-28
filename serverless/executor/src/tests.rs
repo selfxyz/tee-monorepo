@@ -38,7 +38,10 @@ pub mod serverless_executor_test {
     use tokio_stream::StreamExt as _;
 
     use crate::cgroups::Cgroups;
-    use crate::constant::{EXECUTION_ENV_ID, MAX_OUTPUT_BYTES_LENGTH};
+    use crate::constant::{
+        EXECUTION_ENV_ID, EXECUTOR_DEREGISTERED_EVENT, EXECUTOR_DRAINED_EVENT,
+        EXECUTOR_REVIVED_EVENT, MAX_OUTPUT_BYTES_LENGTH,
+    };
     use crate::event_handler::handle_event_logs;
     use crate::model::{AppState, JobsTxnMetadata, JobsTxnType};
     use crate::node_handler::{
@@ -84,6 +87,7 @@ pub mod serverless_executor_test {
             mutable_params_injected: Arc::new(Mutex::new(false)),
             enclave_registered: Arc::new(AtomicBool::new(false)),
             events_listener_active: Arc::new(Mutex::new(false)),
+            enclave_draining: Arc::new(AtomicBool::new(false)),
             enclave_owner: Arc::new(Mutex::new(H160::zero())),
             http_rpc_client: Arc::new(Mutex::new(None)),
             job_requests_running: Arc::new(Mutex::new(HashSet::new())),
@@ -1327,10 +1331,11 @@ pub mod serverless_executor_test {
         let executor_deregistered_logs = vec![Log {
             address: H160::from_str(TEE_MANAGER_CONTRACT_ADDR).unwrap(),
             topics: vec![
-                keccak256("ExecutorDeregistered(address)").into(),
+                keccak256(EXECUTOR_DEREGISTERED_EVENT).into(),
                 H256::from(app_state.enclave_address),
             ],
             removed: Some(false),
+            block_number: Some(1.into()),
             ..Default::default()
         }];
 
@@ -1842,6 +1847,166 @@ pub mod serverless_executor_test {
             0.into(),
             0,
             "Internal Server Error".into(),
+        );
+    }
+
+    #[tokio::test]
+    // Test the executor draining case by sending job request after draining and not sending response log
+    async fn executor_drain_test() {
+        let app_state = generate_app_state(false).await;
+
+        let code_hash = "9c641b535e5586200d0f2fd81f05a39436c0d9dd35530e9fb3ca18352c3ba111";
+        let user_deadline = 5000;
+        let execution_buffer_time = app_state.execution_buffer_time;
+        let app_state_clone = app_state.clone();
+
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({})).unwrap().into();
+
+        // Add drain log for the executor
+        let executor_drain_log = vec![Log {
+            address: H160::from_str(TEE_MANAGER_CONTRACT_ADDR).unwrap(),
+            topics: vec![
+                keccak256(EXECUTOR_DRAINED_EVENT).into(),
+                H256::from(app_state.enclave_address),
+            ],
+            removed: Some(false),
+            block_number: Some(1.into()),
+            ..Default::default()
+        }];
+
+        // Add log entry to relay a job but job response event is not sent
+        let jobs_created_logs = vec![
+            get_job_created_log(
+                1.into(),
+                0.into(),
+                0.into(),
+                EXECUTION_ENV_ID,
+                code_hash,
+                code_input_bytes,
+                user_deadline,
+                app_state.enclave_address,
+            ),
+            Log {
+                ..Default::default()
+            },
+        ];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            let jobs_created_stream = pin!(tokio_stream::iter(jobs_created_logs.into_iter()).then(
+                |log| async move {
+                    sleep(Duration::from_millis(
+                        user_deadline + execution_buffer_time * 1000 + 1000,
+                    ))
+                    .await;
+                    log
+                }
+            ));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                jobs_created_stream,
+                pin!(tokio_stream::empty()),
+                pin!(tokio_stream::iter(executor_drain_log.into_iter())),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        while rx.recv().await.is_some() {
+            assert!(false, "Response received even after draining!");
+        }
+
+        assert!(
+            app_state_clone.enclave_draining.load(Ordering::SeqCst),
+            "Executor not set to draining in the app_state!"
+        );
+    }
+
+    #[tokio::test]
+    // Test the executor reviving case by sending job request after reviving from drain
+    async fn executor_revive_test() {
+        let app_state = generate_app_state(false).await;
+        app_state.enclave_draining.store(true, Ordering::SeqCst);
+
+        let code_hash = "9c641b535e5586200d0f2fd81f05a39436c0d9dd35530e9fb3ca18352c3ba111";
+        let user_deadline = 5000;
+        let app_state_clone = app_state.clone();
+
+        let code_input_bytes: Bytes = serde_json::to_vec(&json!({})).unwrap().into();
+
+        // Add revive log for the executor
+        let executor_revive_log = vec![Log {
+            address: H160::from_str(TEE_MANAGER_CONTRACT_ADDR).unwrap(),
+            topics: vec![
+                keccak256(EXECUTOR_REVIVED_EVENT).into(),
+                H256::from(app_state.enclave_address),
+            ],
+            removed: Some(false),
+            block_number: Some(1.into()),
+            ..Default::default()
+        }];
+
+        // Add log entry to relay a job but job response event is not sent
+        let jobs_created_logs = vec![get_job_created_log(
+            1.into(),
+            0.into(),
+            0.into(),
+            EXECUTION_ENV_ID,
+            code_hash,
+            code_input_bytes,
+            user_deadline,
+            app_state.enclave_address,
+        )];
+
+        let jobs_responded_logs = vec![get_job_responded_log(1.into(), 0.into())];
+
+        let (tx, mut rx) = channel::<JobsTxnMetadata>(10);
+
+        tokio::spawn(async move {
+            let jobs_created_stream = pin!(tokio_stream::iter(jobs_created_logs.into_iter()).then(
+                |log| async move {
+                    sleep(Duration::from_millis(1000)).await;
+                    log
+                }
+            ));
+
+            let jobs_responded_stream = pin!(tokio_stream::iter(jobs_responded_logs.into_iter())
+                .then(|log| async move {
+                    sleep(Duration::from_millis(user_deadline + 2000)).await;
+                    log
+                }));
+
+            // Call the event handler for the contract logs
+            handle_event_logs(
+                jobs_created_stream,
+                jobs_responded_stream,
+                pin!(tokio_stream::iter(executor_revive_log.into_iter())),
+                State {
+                    0: app_state.clone(),
+                },
+                tx,
+            )
+            .await;
+        });
+
+        let mut responses: Vec<JobsTxnMetadata> = vec![];
+
+        // Receive and store the responses
+        while let Some(job_response) = rx.recv().await {
+            responses.push(job_response);
+        }
+
+        assert_eq!(responses.len(), 1);
+
+        assert_response(responses[0].clone(), 0.into(), 4, "".into());
+        assert!(
+            !app_state_clone.enclave_draining.load(Ordering::SeqCst),
+            "Executor still draining in the app_state!"
         );
     }
 

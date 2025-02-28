@@ -97,6 +97,7 @@ async fn main() -> Result<()> {
         mutable_params_injected: Arc::new(Mutex::new(false)),
         enclave_registered: Arc::new(AtomicBool::new(false)),
         events_listener_active: Arc::new(Mutex::new(false)),
+        enclave_draining: Arc::new(AtomicBool::new(false)),
         enclave_owner: Arc::new(Mutex::new(H160::zero())),
         http_rpc_client: Arc::new(Mutex::new(None)),
         job_requests_running: Arc::new(Mutex::new(HashSet::new())),

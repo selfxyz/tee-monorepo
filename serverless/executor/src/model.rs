@@ -59,6 +59,7 @@ pub struct AppState {
     pub mutable_params_injected: Arc<Mutex<bool>>,
     pub enclave_registered: Arc<AtomicBool>,
     pub events_listener_active: Arc<Mutex<bool>>,
+    pub enclave_draining: Arc<AtomicBool>,
     pub enclave_owner: Arc<Mutex<H160>>,
     pub http_rpc_client: Arc<Mutex<Option<HttpSignerProvider>>>,
     pub jobs_contract_abi: Abi,

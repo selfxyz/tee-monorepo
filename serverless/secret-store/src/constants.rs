@@ -13,7 +13,7 @@ pub const SEND_TRANSACTION_BUFFER_SECS: u64 = 5;
 // Buffer time (in secs) for removing an expired secret
 pub const SECRET_EXPIRATION_BUFFER_SECS: u64 = 5;
 
-// Event signatures of 'SecretStore' and 'SecretManager' contracts
+// Event signatures of 'TeeManager' and 'SecretManager' contracts
 pub const SECRET_STORE_REGISTERED_EVENT: &str =
     "TeeNodeRegistered(address,address,uint256,uint256,uint8)";
 pub const SECRET_STORE_DRAINED_EVENT: &str = "TeeNodeDrained(address)";

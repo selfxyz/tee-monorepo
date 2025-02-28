@@ -135,12 +135,22 @@ $ curl -X POST -H "Content-Type: application/json" -d '{"secret_id": {ASSIGNED_S
 User can use the following binary to encrypt their secret data bytes with the selected secret store enclave's public key, sign it using their private key with which they requested storage on the common chain and inject the secret into the secret stores. 
 ```
 $ ./target/x86_64-unknown-linux-musl/release/oyster-secret-user-utility --secret-data-hex {SECRET_DATA_BYTES_HEX} --user-private-hex {USER_PRIVATE_KEY_HEX} --http-rpc-url {COMMON_CHAIN_HTTP_RPC_URL} --config-file {SECRET_STORE_ENCLAVES_INFO_JSON} --txn-hash {SECRET_CREATE_TRANSACTION_HASH}
-Secret data in bytes: {SECRET_DATA_DECODED_INTO_BYTES}
-Secret ID: {SECRET_ID_FETCHED_FROM_CHAIN}
-Encrypted secret: {ENCRYPTED_SECRET_DATA_BYTES_HEX}
-Signature: {USER_SIGNATURE_OF_SECRET_ID_AND_ENCRYPTED_DATA}
-Secret injected successfully with acknowledgement: Object {"secret_id": String("{SECRET_ID}"), "sign_timestamp": Number({ENCLAVE_SIGN_TIMESTAMP}), "signature": String("{ENCLAVE_ACKNOWELDGEMENT_SIGNATURE}")}
+Secret injected successfully into enclave "{ENCLAVE_ADDRESS}" with acknowledgement: Object {"secret_id": String("{SECRET_ID}"), "sign_timestamp": Number({ENCLAVE_SIGN_TIMESTAMP}), "signature": String("{ENCLAVE_ACKNOWELDGEMENT_SIGNATURE}")}
+...
 ```
+The "SECRET_STORE_ENCLAVES_INFO_JSON" will look something like this: 
+```
+{
+    "stores": {
+        "{ENCLAVE_ADDRESS}": {
+            "public_key": "{ENCLAVE_PUBLIC_KEY}",
+            "store_external_ip": "http://{ENCLAVE_PUBLIC_IP}:{EXTERNAL_PORT}"
+        },
+        ...
+    }
+}
+```
+
 
 ## License
 
