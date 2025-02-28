@@ -45,6 +45,10 @@ struct Args {
     /// user data of the root server
     #[arg(long)]
     user_data: String,
+
+    /// enclave verification contract address
+    #[arg(long)]
+    contract_address: Option<String>,
 }
 
 #[derive(Clone)]
@@ -88,7 +92,7 @@ async fn main() -> Result<()> {
         state: ([pcr0, pcr1, pcr2], user_data),
     };
 
-    let seed = fetch_seed(auther, auth_store, secret, args.kms_endpoint)
+    let seed = fetch_seed(auther, auth_store, secret, args.kms_endpoint, args.contract_address)
         .await
         .context("failed to fetch seed")?;
 
