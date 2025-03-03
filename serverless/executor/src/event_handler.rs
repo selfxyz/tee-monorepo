@@ -357,6 +357,8 @@ pub async fn handle_event_logs(
                 else if event.topics[0] == keccak256(EXECUTOR_DRAINED_EVENT).into() {
                     println!("Executor put in draining mode!");
                     app_state.enclave_draining.store(true, Ordering::SeqCst);
+                    // Clear the pending jobs map
+                    app_state.job_requests_running.lock().unwrap().clear();
                 }
                 // Capture the Enclave revived event emitted by the 'TeeManager' contract
                 else if event.topics[0] == keccak256(EXECUTOR_REVIVED_EVENT).into() {

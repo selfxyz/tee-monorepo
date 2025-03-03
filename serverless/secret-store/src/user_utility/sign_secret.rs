@@ -59,7 +59,7 @@ struct Config {
 #[derive(Clone, Deserialize, Debug)]
 struct EnclaveInfo {
     public_key: String,
-    store_external_ip: String,
+    store_external_url: String,
 }
 
 impl ConfigManager {
@@ -147,7 +147,7 @@ async fn inject_secret(
     let signature = rs.to_bytes().append(27 + v.to_byte()).to_vec();
 
     let client = reqwest::Client::new();
-    let req_url = store_info.store_external_ip + "/inject-secret";
+    let req_url = store_info.store_external_url + "/inject-secret";
     let request_json = json!({
         "secret_id": secret_id,
         "encrypted_secret_hex": hex::encode(encrypted_secret_data_bytes),

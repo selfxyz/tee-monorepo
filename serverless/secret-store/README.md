@@ -144,7 +144,7 @@ The "SECRET_STORE_ENCLAVES_INFO_JSON" will look something like this:
     "stores": {
         "{ENCLAVE_ADDRESS}": {
             "public_key": "{ENCLAVE_PUBLIC_KEY}",
-            "store_external_ip": "http://{ENCLAVE_PUBLIC_IP}:{EXTERNAL_PORT}"
+            "store_external_url": "http://{ENCLAVE_PUBLIC_IP}:{EXTERNAL_PORT}"
         },
         ...
     }

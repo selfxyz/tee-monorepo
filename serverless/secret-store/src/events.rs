@@ -436,11 +436,12 @@ async fn handle_acknowledgement_timeout(secret_id: U256, app_state: Data<AppStat
     sleep(Duration::from_secs(app_state.acknowledgement_timeout + 1)).await;
 
     // If the secret created has been acknowledged then don't send anything
-    if !app_state
+    if app_state
         .secrets_awaiting_acknowledgement
         .lock()
         .unwrap()
-        .contains_key(&secret_id)
+        .remove(&secret_id)
+        .is_none()
     {
         return;
     }
@@ -472,11 +473,4 @@ async fn handle_acknowledgement_timeout(secret_id: U256, app_state: Data<AppStat
             secret_id, err
         );
     };
-
-    // Mark the secret created as removed from awaiting acknowledgement
-    app_state
-        .secrets_awaiting_acknowledgement
-        .lock()
-        .unwrap()
-        .remove(&secret_id);
 }

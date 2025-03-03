@@ -1951,7 +1951,7 @@ pub mod serverless_executor_test {
             ..Default::default()
         }];
 
-        // Add log entry to relay a job but job response event is not sent
+        // Add log entry to relay a job
         let jobs_created_logs = vec![get_job_created_log(
             1.into(),
             0.into(),
