@@ -4,17 +4,18 @@ use crate::{
     configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS},
     utils::{
         bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
-        provider::{create_provider, OysterProvider},
+        provider::create_provider,
         usdc::{approve_usdc, format_usdc},
     },
 };
 
 use alloy::{
-    network::EthereumWallet,
+    network::{Ethereum, EthereumWallet},
     primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
-    providers::{Provider, ProviderBuilder},
+    providers::{Provider, ProviderBuilder, WalletProvider},
     signers::local::PrivateKeySigner,
     sol,
+    transports::http::Http,
 };
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
@@ -224,7 +225,7 @@ async fn create_new_oyster_job(
     provider_addr: Address,
     rate: U256,
     balance: U256,
-    provider: OysterProvider,
+    provider: impl Provider<Http<Client>, Ethereum> + WalletProvider + Clone,
 ) -> Result<H256> {
     let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
 
@@ -474,7 +475,10 @@ async fn calculate_total_cost(
     Ok((total_cost_scaled, total_rate_scaled))
 }
 
-async fn get_operator_cp(provider_address: &str, provider: OysterProvider) -> Result<String> {
+async fn get_operator_cp(
+    provider_address: &str,
+    provider: impl Provider<Http<Client>, Ethereum> + WalletProvider,
+) -> Result<String> {
     let market_address = Address::from_str(OYSTER_MARKET_ADDRESS)?;
     let provider_address = Address::from_str(provider_address)?;
 
