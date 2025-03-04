@@ -7,6 +7,7 @@ use tracing::info;
 use oyster::attestation::{get, AttestationExpectations, AWS_ROOT_KEY};
 
 use crate::args::pcr::PcrArgs;
+use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 
 #[derive(Args)]
 pub struct VerifyArgs {
@@ -22,7 +23,7 @@ pub struct VerifyArgs {
     user_data: Option<String>,
 
     /// Attestation Port (default: 1300)
-    #[arg(short = 'p', long, default_value = "1300")]
+    #[arg(short = 'p', long, default_value_t = DEFAULT_ATTESTATION_PORT)]
     attestation_port: u16,
 
     /// Maximum age of attestation (in milliseconds) (default: 300000)

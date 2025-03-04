@@ -4,6 +4,7 @@ use commands::{deploy::DeployArgs, verify::VerifyArgs};
 
 mod args;
 mod commands;
+mod configs;
 mod types;
 mod utils;
 
@@ -72,6 +73,16 @@ enum Commands {
     Deploy(DeployArgs),
     /// Verify Oyster Enclave Attestation
     Verify(VerifyArgs),
+    /// List active jobs for a wallet address
+    List {
+        /// Wallet address to query jobs for
+        #[arg(short, long, required = true)]
+        address: String,
+
+        /// Number of most recent jobs to display (optional)
+        #[arg(short, long)]
+        count: Option<u32>,
+    },
     /// Update existing deployments
     Update {
         /// Job ID
@@ -107,6 +118,48 @@ enum Commands {
         /// Suppress connection status message
         #[arg(short, long, default_value_t = false)]
         quiet: bool,
+    },
+    /// Deposit funds to an existing job
+    Deposit {
+        /// Job ID
+        #[arg(short, long, required = true)]
+        job_id: String,
+
+        /// Amount to deposit in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
+        #[arg(short, long, required = true)]
+        amount: u64,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+    },
+    /// Stop an Oyster CVM instance
+    Stop {
+        /// Job ID
+        #[arg(short = 'j', long, required = true)]
+        job_id: String,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
+    },
+    /// Withdraw funds from an existing job
+    Withdraw {
+        /// Job ID
+        #[arg(short, long, required = true)]
+        job_id: String,
+
+        /// Amount to withdraw in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
+        #[arg(short, long, required_unless_present = "max")]
+        amount: Option<u64>,
+
+        /// Withdraw all remaining balance
+        #[arg(long, conflicts_with = "amount")]
+        max: bool,
+
+        /// Wallet private key for transaction signing
+        #[arg(long, required = true)]
+        wallet_private_key: String,
     },
 }
 
@@ -144,6 +197,7 @@ async fn main() -> Result<()> {
         }
         Commands::Verify(args) => commands::verify::verify(args).await,
         Commands::Deploy(args) => commands::deploy::deploy(args).await,
+        Commands::List { address, count } => commands::list::list_jobs(&address, count).await,
         Commands::Update {
             job_id,
             wallet_private_key,
@@ -164,10 +218,25 @@ async fn main() -> Result<()> {
             with_log_id,
             quiet,
         } => commands::log::stream_logs(&ip, start_from.as_deref(), with_log_id, quiet).await,
+        Commands::Deposit {
+            job_id,
+            amount,
+            wallet_private_key,
+        } => commands::deposit::deposit_to_job(&job_id, amount, &wallet_private_key).await,
+        Commands::Stop {
+            job_id,
+            wallet_private_key,
+        } => commands::stop::stop_oyster_instance(&job_id, &wallet_private_key).await,
+        Commands::Withdraw {
+            job_id,
+            amount,
+            max,
+            wallet_private_key,
+        } => commands::withdraw::withdraw_from_job(&job_id, amount, max, &wallet_private_key).await,
     };
 
-    if let Err(err) = &result {
-        tracing::error!("Error: {:#}", err);
+    if let Err(e) = result {
+        tracing::error!("Error: {}", e);
         std::process::exit(1);
     }
 
