@@ -272,6 +272,7 @@
           eif_arch = "aarch64";
           static = false;
         };
+        # TODO: Figure out how to organize this properly
         musl = systemBuilder {
           system = "aarch64-darwin";
           rust_target = "aarch64-apple-darwin";
