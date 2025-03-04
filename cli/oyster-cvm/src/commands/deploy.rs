@@ -120,17 +120,8 @@ struct InstanceRate {
 pub async fn deploy(args: DeployArgs) -> Result<()> {
     tracing::info!("Starting deployment...");
 
-    // Setup wallet and provider with signer
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(
-        args.wallet.load()?.ok_or(anyhow!("Wallet is required"))?,
-    )?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
-    let wallet = EthereumWallet::from(signer);
-
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
+    let provider =
+        create_provider(&args.wallet.load()?.ok_or(anyhow!("Wallet is required"))?).await?;
 
     // Get CP URL using the configured provider
     let cp_url = get_operator_cp(&args.operator, provider.clone())
