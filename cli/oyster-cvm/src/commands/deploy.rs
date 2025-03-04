@@ -1,7 +1,7 @@
 use crate::{
     args::{init_params::InitParamsArgs, wallet::WalletArgs},
     commands::log::stream_logs,
-    configs::global::{ARBITRUM_ONE_RPC_URL, OYSTER_MARKET_ADDRESS},
+    configs::global::OYSTER_MARKET_ADDRESS,
     utils::{
         bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
         provider::create_provider,
@@ -10,10 +10,9 @@ use crate::{
 };
 
 use alloy::{
-    network::{Ethereum, EthereumWallet},
-    primitives::{keccak256, Address, FixedBytes, B256 as H256, U256},
-    providers::{Provider, ProviderBuilder, WalletProvider},
-    signers::local::PrivateKeySigner,
+    network::Ethereum,
+    primitives::{keccak256, Address, B256 as H256, U256},
+    providers::{Provider, WalletProvider},
     sol,
     transports::http::Http,
 };

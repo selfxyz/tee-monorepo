@@ -2,14 +2,7 @@ use crate::configs::global::ARBITRUM_ONE_RPC_URL;
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::FixedBytes,
-    providers::{
-        self,
-        fillers::{
-            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
-            WalletFiller,
-        },
-        Identity, Provider, ProviderBuilder, RootProvider, WalletProvider,
-    },
+    providers::{Provider, ProviderBuilder, WalletProvider},
     signers::local::PrivateKeySigner,
     transports::http::Http,
 };
