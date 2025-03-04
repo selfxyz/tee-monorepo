@@ -55,8 +55,8 @@ impl InitParamsArgs {
         let mut init_params = self
             .docker_compose
             .map(|x| vec![format!("docker-compose.yml:1:0:file:{x}")])
-            .unwrap_or(vec![]);
-        init_params.append(&mut self.init_params.unwrap_or(vec![]));
+            .unwrap_or_default();
+        init_params.append(&mut self.init_params.unwrap_or_default());
 
         // encoding has to be done
 
@@ -226,7 +226,7 @@ fn fetch_encryption_key(
     pcr2: &str,
     user_data: &str,
 ) -> Result<[u8; 32]> {
-    Ok(ureq::get(endpoint.to_owned() + "/derive/x25519/public")
+    ureq::get(endpoint.to_owned() + "/derive/x25519/public")
         .query("pcr0", pcr0)
         .query("pcr1", pcr1)
         .query("pcr2", pcr2)
@@ -239,5 +239,5 @@ fn fetch_encryption_key(
         .context("failed to read body")?
         .as_slice()
         .try_into()
-        .context("failed to parse reponse")?)
+        .context("failed to parse reponse")
 }

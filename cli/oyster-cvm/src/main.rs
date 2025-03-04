@@ -208,7 +208,7 @@ async fn main() -> Result<()> {
             commands::update::update_job(
                 &job_id,
                 &wallet_private_key,
-                image_url.as_ref().map(|x| x.as_str()),
+                image_url.as_deref(),
                 debug.to_owned(),
             )
             .await

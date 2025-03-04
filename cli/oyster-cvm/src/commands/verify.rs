@@ -65,7 +65,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
     let attestation_expectations = AttestationExpectations {
         age: Some((args.max_age, now)),
         pcrs,
-        user_data: user_data.as_ref().map(|x| x.as_slice()),
+        user_data: user_data.as_deref(),
         root_public_key: Some(root_public_key.as_slice()),
         timestamp: (!args.timestamp.eq(&0)).then_some(args.timestamp),
         public_key: None,
