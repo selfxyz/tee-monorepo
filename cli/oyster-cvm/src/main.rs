@@ -28,7 +28,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Check environment dependencies including Docker & Nix
+    /// Check system dependencies like Docker & Nix
+    /// Some are optional and are only needed for certain commands
     Doctor {
         /// Perform Docker checks
         #[arg(short, long)]
@@ -37,7 +38,7 @@ enum Commands {
         #[arg(short, long)]
         nix: bool,
     },
-    /// Build Oyster CVM Image
+    /// Build enclave image
     Build {
         /// Platform (amd64 or arm64)
         #[arg(short, long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
@@ -63,7 +64,7 @@ enum Commands {
         )]
         commit_ref: String,
     },
-    /// Upload Enclave Image to IPFS
+    /// Upload enclave image to IPFS
     Upload {
         /// Path to enclave image file
         #[arg(short, long)]
