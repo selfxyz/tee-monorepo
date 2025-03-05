@@ -1,3 +1,5 @@
+use clap::ValueEnum;
+
 #[derive(Debug, Clone)]
 pub enum Platform {
     AMD64,
@@ -28,6 +30,16 @@ impl Platform {
                 s
             )),
         }
+    }
+}
+
+impl ValueEnum for Platform {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::AMD64, Self::ARM64]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(self.as_str().into())
     }
 }
 
