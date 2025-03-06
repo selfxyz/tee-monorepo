@@ -41,6 +41,8 @@ nix build .#packages.aarch64-linux.default.cli.oyster-cvm.default
 nix build .#packages.aarch64-darwin.default.cli.oyster-cvm.default
 ```
 
+Note: macOS build can't be used to build custom oyster-cvm images.
+
 ## Usage
 
 ### View help
