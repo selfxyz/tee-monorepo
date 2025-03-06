@@ -1,16 +1,13 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use oyster::attestation::AWS_ROOT_KEY;
+use commands::{deploy::DeployArgs, verify::VerifyArgs};
 
 mod args;
 mod commands;
 mod configs;
 mod types;
 mod utils;
-use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 
-use crate::args::pcr::PcrArgs;
-use crate::commands::deploy::DeploymentConfig;
 use tracing_subscriber::EnvFilter;
 
 fn setup_logging() {
@@ -31,9 +28,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Check environment dependencies including Docker & Nix
-    Doctor,
-    /// Build Oyster CVM Image
+    /// Check system dependencies like Docker & Nix
+    /// Some are optional and are only needed for certain commands
+    Doctor {
+        /// Perform Docker checks
+        #[arg(short, long)]
+        docker: bool,
+        /// Perform Nix checks
+        #[arg(short, long)]
+        nix: bool,
+    },
+    /// Build enclave image
     Build {
         /// Platform (amd64 or arm64)
         #[arg(short, long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
@@ -59,87 +64,16 @@ enum Commands {
         )]
         commit_ref: String,
     },
-    /// Upload Enclave Image to IPFS
+    /// Upload enclave image to IPFS
     Upload {
         /// Path to enclave image file
         #[arg(short, long)]
         file: String,
     },
     /// Deploy an Oyster CVM instance
-    Deploy {
-        /// URL of the enclave image
-        #[arg(long, required = true)]
-        image_url: String,
-
-        /// Region for deployment
-        #[arg(long, required = true)]
-        region: String,
-
-        /// Wallet private key for transaction signing
-        #[arg(long, required = true)]
-        wallet_private_key: String,
-
-        /// Operator address
-        #[arg(long, required = true)]
-        operator: String,
-
-        /// Instance type (e.g. "m5a.2xlarge")
-        #[arg(long, required = true)]
-        instance_type: String,
-
-        /// Optional bandwidth in KBps (default: 10)
-        #[arg(long, default_value = "10")]
-        bandwidth: u32,
-
-        /// Duration in minutes
-        #[arg(long, required = true)]
-        duration_in_minutes: u32,
-
-        /// Job name
-        #[arg(long, default_value = "")]
-        job_name: String,
-
-        /// Enable debug mode
-        #[arg(long)]
-        debug: bool,
-
-        /// Disable automatic log streaming in debug mode
-        #[arg(long, requires = "debug")]
-        no_stream: bool,
-
-        /// Init params, base64 encoded
-        #[arg(long, default_value = "")]
-        init_params: String,
-
-        /// Extra init params, base64 encoded
-        #[arg(long, default_value = "")]
-        extra_init_params: String,
-    },
+    Deploy(DeployArgs),
     /// Verify Oyster Enclave Attestation
-    Verify {
-        /// Enclave IP
-        #[arg(short = 'e', long, required = true)]
-        enclave_ip: String,
-
-        #[command(flatten)]
-        pcr: PcrArgs,
-
-        /// Attestation Port (default: 1300)
-        #[arg(short = 'p', long, default_value_t = DEFAULT_ATTESTATION_PORT)]
-        attestation_port: u16,
-
-        /// Maximum age of attestation (in milliseconds) (default: 300000)
-        #[arg(short = 'a', long, default_value = "300000")]
-        max_age: usize,
-
-        /// Attestation timestamp (in milliseconds)
-        #[arg(short = 't', long, default_value = "0")]
-        timestamp: usize,
-
-        /// Root public key
-        #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
-        root_public_key: String,
-    },
+    Verify(VerifyArgs),
     /// List active jobs for a wallet address
     List {
         /// Wallet address to query jobs for
@@ -237,7 +171,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Doctor => commands::doctor::run_doctor(),
+        Commands::Doctor { docker, nix } => {
+            // enable all if nothing is enabled
+            let all = !docker && !nix;
+            commands::doctor::run_doctor(docker || all, nix || all)
+        }
         Commands::Build {
             platform,
             docker_compose,
@@ -258,52 +196,8 @@ async fn main() -> Result<()> {
             let default_provider = types::StorageProvider::Pinata;
             commands::upload::upload_enclave_image(&file, &default_provider).await
         }
-        Commands::Verify {
-            pcr,
-            enclave_ip,
-            attestation_port,
-            max_age,
-            root_public_key,
-            timestamp,
-        } => {
-            commands::verify::verify_enclave(
-                &pcr,
-                &enclave_ip,
-                &attestation_port,
-                &max_age,
-                &root_public_key,
-                &timestamp,
-            )
-            .await
-        }
-        Commands::Deploy {
-            image_url,
-            region,
-            wallet_private_key,
-            operator,
-            instance_type,
-            bandwidth,
-            duration_in_minutes,
-            job_name,
-            debug,
-            no_stream,
-            init_params,
-            extra_init_params,
-        } => {
-            let config = DeploymentConfig {
-                image_url,
-                region,
-                instance_type,
-                bandwidth,
-                duration: duration_in_minutes,
-                job_name,
-                debug,
-                init_params,
-                no_stream,
-                extra_init_params,
-            };
-            commands::deploy::deploy_oyster_instance(config, &wallet_private_key, &operator).await
-        }
+        Commands::Verify(args) => commands::verify::verify(args).await,
+        Commands::Deploy(args) => commands::deploy::deploy(args).await,
         Commands::List { address, count } => commands::list::list_jobs(&address, count).await,
         Commands::Update {
             job_id,
@@ -311,8 +205,13 @@ async fn main() -> Result<()> {
             image_url,
             debug,
         } => {
-            commands::update::update_job(&job_id, &wallet_private_key, image_url.as_deref(), debug)
-                .await
+            commands::update::update_job(
+                &job_id,
+                &wallet_private_key,
+                image_url.as_deref(),
+                debug.to_owned(),
+            )
+            .await
         }
         Commands::Logs {
             ip,

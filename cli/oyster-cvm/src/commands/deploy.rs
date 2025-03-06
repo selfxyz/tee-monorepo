@@ -1,22 +1,29 @@
-use crate::configs::global::OYSTER_MARKET_ADDRESS;
-use crate::utils::{
-    bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
-    provider::{create_provider, OysterProvider},
-    usdc::{approve_usdc, format_usdc},
+use crate::{
+    args::{init_params::InitParamsArgs, wallet::WalletArgs},
+    commands::log::stream_logs,
+    configs::global::OYSTER_MARKET_ADDRESS,
+    utils::{
+        bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
+        provider::create_provider,
+        usdc::{approve_usdc, format_usdc},
+    },
 };
+
 use alloy::{
+    network::Ethereum,
     primitives::{keccak256, Address, B256 as H256, U256},
-    providers::Provider,
+    providers::{Provider, WalletProvider},
     sol,
+    transports::http::Http,
 };
 use anyhow::{anyhow, Context, Result};
+use clap::Args;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tracing::info;
-use crate::commands::log::stream_logs;
 
 // Retry Configuration
 const IP_CHECK_RETRIES: u32 = 20;
@@ -40,18 +47,53 @@ sol!(
     "src/abis/oyster_market_abi.json"
 );
 
-#[derive(Debug)]
-pub struct DeploymentConfig {
-    pub image_url: String,
-    pub region: String,
-    pub instance_type: String,
-    pub bandwidth: u32,
-    pub duration: u32,
-    pub job_name: String,
-    pub debug: bool,
-    pub no_stream: bool,
-    pub init_params: String,
-    pub extra_init_params: String,
+#[derive(Args, Debug)]
+pub struct DeployArgs {
+    /// URL of the enclave image
+    #[arg(
+        long,
+        default_value = "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_arm64.eif"
+    )]
+    image_url: String,
+
+    /// Region for deployment
+    #[arg(long, default_value = "ap-south-1")]
+    region: String,
+
+    #[command(flatten)]
+    wallet: WalletArgs,
+
+    /// Operator address
+    #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
+    operator: String,
+
+    /// Instance type (e.g. "r6g.large")
+    #[arg(long, default_value = "r6g.large")]
+    instance_type: String,
+
+    /// Optional bandwidth in KBps (default: 10)
+    #[arg(long, default_value = "10")]
+    bandwidth: u32,
+
+    /// Duration in minutes
+    #[arg(long, required = true)]
+    duration_in_minutes: u32,
+
+    /// Job name
+    #[arg(long, default_value = "")]
+    job_name: String,
+
+    /// Enable debug mode
+    #[arg(long)]
+    debug: bool,
+
+    /// Disable automatic log streaming in debug mode
+    #[arg(long, requires = "debug")]
+    no_stream: bool,
+
+    /// Init params
+    #[command(flatten)]
+    init_params: InitParamsArgs,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -75,20 +117,14 @@ struct InstanceRate {
     arch: String,
 }
 
-pub async fn deploy_oyster_instance(
-    config: DeploymentConfig,
-    wallet_private_key: &str,
-    operator: &str,
-) -> Result<()> {
+pub async fn deploy(args: DeployArgs) -> Result<()> {
     tracing::info!("Starting deployment...");
 
-    // Setup provider
-    let provider = create_provider(wallet_private_key)
-        .await
-        .context("Failed to create provider")?;
+    let provider =
+        create_provider(&args.wallet.load()?.ok_or(anyhow!("Wallet is required"))?).await?;
 
     // Get CP URL using the configured provider
-    let cp_url = get_operator_cp(operator, provider.clone())
+    let cp_url = get_operator_cp(&args.operator, provider.clone())
         .await
         .context("Failed to get CP URL")?;
     info!("CP URL for operator: {}", cp_url);
@@ -103,26 +139,26 @@ pub async fn deploy_oyster_instance(
     if !operator_spec
         .allowed_regions
         .iter()
-        .any(|r| r == &config.region)
+        .any(|r| r == &args.region)
     {
         return Err(anyhow!(
             "Region '{}' not supported by operator",
-            config.region
+            args.region
         ));
     }
 
     // Fetch operator min rates with early validation
     let selected_instance =
-        find_minimum_rate_instance(&operator_spec, &config.region, &config.instance_type)
+        find_minimum_rate_instance(&operator_spec, &args.region, &args.instance_type)
             .context("Configuration not supported by operator")?;
 
     // Calculate costs
-    let duration_seconds = (config.duration as u64) * 60;
+    let duration_seconds = (args.duration_in_minutes as u64) * 60;
     let (total_cost, total_rate) = calculate_total_cost(
         &selected_instance,
         duration_seconds,
-        config.bandwidth,
-        &config.region,
+        args.bandwidth,
+        &args.region,
         &cp_url,
     )
     .await?;
@@ -136,14 +172,17 @@ pub async fn deploy_oyster_instance(
     // Create metadata
     let metadata = create_metadata(
         &selected_instance.instance,
-        &config.region,
+        &args.region,
         selected_instance.memory,
         selected_instance.cpu,
-        &config.image_url,
-        &config.job_name,
-        config.debug,
-        &config.init_params,
-        &config.extra_init_params,
+        &args.image_url,
+        &args.job_name,
+        args.debug,
+        &args
+            .init_params
+            .load()
+            .context("Failed to load init params")?
+            .unwrap_or("".into()),
     );
 
     // Approve USDC and create job
@@ -152,7 +191,7 @@ pub async fn deploy_oyster_instance(
     // Create job
     let job_id = create_new_oyster_job(
         metadata,
-        operator.parse()?,
+        args.operator.parse()?,
         total_rate,
         total_cost,
         provider.clone(),
@@ -163,7 +202,7 @@ pub async fn deploy_oyster_instance(
     info!("Waiting for 3 minutes for enclave to start...");
     tokio::time::sleep(StdDuration::from_secs(180)).await;
 
-    let ip_address = wait_for_ip_address(&cp_url, job_id, &config.region).await?;
+    let ip_address = wait_for_ip_address(&cp_url, job_id, &args.region).await?;
     info!("IP address obtained: {}", ip_address);
 
     if !check_reachability(&ip_address).await {
@@ -171,12 +210,12 @@ pub async fn deploy_oyster_instance(
     }
 
     info!("Enclave is ready! IP address: {}", ip_address);
-    
-    if config.debug && !config.no_stream {
+
+    if args.debug && !args.no_stream {
         info!("Debug mode enabled - starting log streaming...");
         stream_logs(&ip_address, Some("0"), true, false).await?;
     }
-    
+
     Ok(())
 }
 
@@ -185,7 +224,7 @@ async fn create_new_oyster_job(
     provider_addr: Address,
     rate: U256,
     balance: U256,
-    provider: OysterProvider,
+    provider: impl Provider<Http<Client>, Ethereum> + WalletProvider + Clone,
 ) -> Result<H256> {
     let market_address = OYSTER_MARKET_ADDRESS.parse::<Address>()?;
 
@@ -350,7 +389,6 @@ fn create_metadata(
     name: &str,
     debug: bool,
     init_params: &str,
-    extra_init_params: &str,
 ) -> String {
     serde_json::json!({
         "instance": instance,
@@ -362,7 +400,6 @@ fn create_metadata(
         "family": "tuna",
         "debug": debug,
         "init_params": init_params,
-        "extra_init_params": extra_init_params,
     })
     .to_string()
 }
@@ -437,7 +474,10 @@ async fn calculate_total_cost(
     Ok((total_cost_scaled, total_rate_scaled))
 }
 
-async fn get_operator_cp(provider_address: &str, provider: OysterProvider) -> Result<String> {
+async fn get_operator_cp(
+    provider_address: &str,
+    provider: impl Provider<Http<Client>, Ethereum> + WalletProvider,
+) -> Result<String> {
     let market_address = Address::from_str(OYSTER_MARKET_ADDRESS)?;
     let provider_address = Address::from_str(provider_address)?;
 

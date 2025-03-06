@@ -1,10 +1,13 @@
 use crate::configs::global::{OYSTER_MARKET_ADDRESS, USDC_ADDRESS};
 use alloy::{
+    network::Ethereum,
     primitives::{Address, U256},
-    providers::WalletProvider,
+    providers::{Provider, WalletProvider},
     sol,
+    transports::http::Http,
 };
 use anyhow::{anyhow, Context, Result};
+use reqwest::Client;
 use tracing::info;
 
 sol!(
@@ -17,7 +20,7 @@ sol!(
 /// Approves USDC transfer to the Oyster Market contract if the current allowance is insufficient
 pub async fn approve_usdc(
     amount: U256,
-    provider: crate::utils::provider::OysterProvider,
+    provider: impl Provider<Http<Client>, Ethereum> + WalletProvider,
 ) -> Result<()> {
     let usdc_address: Address = USDC_ADDRESS
         .parse()
