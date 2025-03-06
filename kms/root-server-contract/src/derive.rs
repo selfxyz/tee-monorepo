@@ -18,7 +18,7 @@ use crate::{scallop::AuthStoreState, AppState};
 sol!(
     #[sol(rpc)]
     interface IKMSVerifiable {
-        function oysterKMSVerify(bytes32 _key) external returns (bool);
+        function oysterKMSVerify(bytes32 _imageId) external returns (bool);
     }
 );
 
