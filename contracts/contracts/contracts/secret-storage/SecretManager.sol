@@ -424,7 +424,9 @@ contract SecretManager is
                     if(isArrayLenReduced)
                         continue;
                 }
-            } else {
+            }
+            // if the original set of selected stores haven't acknowledged the secret
+            else if(userStoreData.ackTimestamp == 0) {
                 if(block.timestamp <= userStoreData.selectedEnclaves[index].selectTimestamp + ACKNOWLEDGEMENT_TIMEOUT)
                     revert SecretManagerAcknowledgementTimeoutPending(enclaveAddress);
 
@@ -799,9 +801,11 @@ contract SecretManager is
         for (uint256 index = 0; index < len; index++) {
             address enclaveAddress = userStorage[_secretId].selectedEnclaves[index].enclaveAddress;
             uint256 ackTimestamp = _getSecretStoreAckTimestamp(_secretId, index);
-            uint256 endTimestamp = userStorage[_secretId].endTimestamp;
-            uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
-            _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, lastAliveTimestamp);
+            if(ackTimestamp != 0) {
+                uint256 endTimestamp = userStorage[_secretId].endTimestamp;
+                uint256 lastAliveTimestamp = SECRET_STORE.getSecretStoreLastAliveTimestamp(enclaveAddress);
+                _updateUsdcDepositPostPayment(_secretId, ackTimestamp, endTimestamp, lastAliveTimestamp);
+            }
 
             SECRET_STORE.secretTerminationUpdate(enclaveAddress, userStorage[_secretId].sizeLimit, _secretId);
         }

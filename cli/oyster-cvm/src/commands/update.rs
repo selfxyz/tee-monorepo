@@ -1,12 +1,8 @@
-use alloy::{
-    network::EthereumWallet, primitives::FixedBytes, providers::ProviderBuilder,
-    signers::local::PrivateKeySigner, sol,
-};
-use anyhow::Result;
+use crate::configs::global::OYSTER_MARKET_ADDRESS;
+use crate::utils::provider::create_provider;
+use alloy::sol;
+use anyhow::{Context, Result};
 use tracing::info;
-
-const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-const OYSTER_MARKET_ADDRESS: &str = "0x9d95D61eA056721E358BC49fE995caBF3B86A34B"; // Mainnet Contract Address
 
 sol!(
     #[allow(missing_docs)]
@@ -21,14 +17,10 @@ pub async fn update_job(
     image_url: Option<&str>,
     debug: Option<bool>,
 ) -> Result<()> {
-    let private_key = FixedBytes::<32>::from_slice(&hex::decode(wallet_private_key)?);
-    let signer = PrivateKeySigner::from_bytes(&private_key)?;
-    let wallet = EthereumWallet::from(signer);
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
 
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_http(ARBITRUM_ONE_RPC_URL.parse()?);
     let market = OysterMarket::new(OYSTER_MARKET_ADDRESS.parse()?, provider);
 
     let mut metadata = serde_json::from_str::<serde_json::Value>(

@@ -179,6 +179,18 @@
         init-params-manager = initialization.init-params-manager.compressed;
         kernels = kernels.tuna;
       };
+      enclaves.blue = nixpkgs.legacyPackages.${systemConfig.system}.callPackage ./enclaves/blue {
+        inherit nixpkgs systemConfig nitro-util;
+        supervisord = external.supervisord.compressed;
+        dnsproxy = external.dnsproxy.compressed;
+        keygen = initialization.keygen.compressed;
+        raw-proxy = networking.raw-proxy.compressed;
+        attestation-server = attestation.server.compressed;
+        vet = initialization.vet.compressed;
+        derive-server = kms.derive-server.compressed;
+        init-params-manager = initialization.init-params-manager.compressed;
+        kernels = kernels.tuna;
+      };
       cli.oyster-cvm = import ./cli/oyster-cvm {
         inherit nixpkgs systemConfig fenix naersk;
       };
@@ -193,6 +205,7 @@
         tcp-proxy = networking.tcp-proxy.compressed;
         attestation-server = attestation.server.compressed;
         executor = serverless.executor.compressed;
+        secret-store = serverless.secret-store.compressed;
         kernels = kernels.serverless;
         workerd = serverless.workerd;
       };
@@ -250,6 +263,22 @@
           rust_target = "aarch64-unknown-linux-musl";
           eif_arch = "aarch64";
           static = true;
+        };
+        default = musl;
+      };
+      "aarch64-darwin" = rec {
+        gnu = systemBuilder {
+          system = "aarch64-darwin";
+          rust_target = "aarch64-apple-darwin";
+          eif_arch = "aarch64";
+          static = false;
+        };
+        # TODO: Figure out how to organize this properly
+        musl = systemBuilder {
+          system = "aarch64-darwin";
+          rust_target = "aarch64-apple-darwin";
+          eif_arch = "aarch64";
+          static = false;
         };
         default = musl;
       };
