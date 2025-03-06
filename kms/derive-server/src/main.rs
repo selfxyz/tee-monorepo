@@ -46,9 +46,9 @@ struct Args {
     #[arg(long)]
     user_data: String,
 
-    /// enclave verification contract address
+    /// file containing enclave verification contract address in hexadecimal
     #[arg(long)]
-    contract_address: Option<String>,
+    contract_address_file: Option<String>,
 }
 
 #[derive(Clone)]
@@ -92,7 +92,16 @@ async fn main() -> Result<()> {
         state: ([pcr0, pcr1, pcr2], user_data),
     };
 
-    let seed = fetch_seed(auther, auth_store, secret, args.kms_endpoint, args.contract_address)
+    let contract_address = if let Some(contract_address_file) = args.contract_address_file {
+        let address = read(contract_address_file)
+            .await
+            .context("failed to read contract address file")?;
+        Some(String::from_utf8(address).context("failed to parse contract address")?.trim().to_string())
+    } else {
+        None
+    };
+
+    let seed = fetch_seed(auther, auth_store, secret, args.kms_endpoint, contract_address)
         .await
         .context("failed to fetch seed")?;
 
