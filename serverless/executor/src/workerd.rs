@@ -2,6 +2,7 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use ethers::types::U256;
 use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -14,6 +15,7 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::cgroups::Cgroups;
+use crate::constant::SAVE_CODE_FUNCTION_SELECTOR;
 
 // Define errors that might arise during a job execution
 #[derive(Error, Debug)]
@@ -85,27 +87,34 @@ pub async fn create_code_file(
     }
 
     // Get the calldata of the transaction as string
-    let calldata = match tx_data["input"].take() {
-        Value::String(calldata) => Ok(calldata),
+    let input = match tx_data["input"].take() {
+        Value::String(input) => Ok(input),
         _ => Err(ServerlessError::InvalidTxCalldataType),
     }?;
 
-    if calldata.len() < 138 {
+    // Ensure there is enough bytes for the function selector (4 bytes) + 2 offsets (32 bytes each) + 2 parameter lengths (32 bytes each)
+    if input.len() < 266 {
         return Err(ServerlessError::InvalidTxCalldataLength);
     }
 
-    if !calldata
-        .starts_with("0xff7cdaf30000000000000000000000000000000000000000000000000000000000000020")
-    {
+    // Ensure the function selector is correct
+    if !input.starts_with(SAVE_CODE_FUNCTION_SELECTOR) {
         return Err(ServerlessError::InvalidTxCalldata);
     }
 
-    // Hex decode the calldata by skipping to the code bytes
-    let mut calldata = hex::decode(&calldata[138..])?;
+    // Get the input bytes starting from the parameter length byte
+    let input_bytes: &[u8] = &hex::decode(&input[138..])?;
+    let code_data_length = U256::from_big_endian(&input_bytes[0..32]);
+
+    if (32 + code_data_length.as_usize()) > input_bytes.len() {
+        return Err(ServerlessError::InvalidTxCalldataLength);
+    }
+
+    let mut code_bytes: Vec<u8> = input_bytes[32..(32 + code_data_length.as_usize())].into();
 
     // Strip trailing zeros in the calldata
-    let idx = calldata.iter().rev().position(|x| *x != 0).unwrap_or(0);
-    calldata.truncate(calldata.len() - idx);
+    let idx = code_bytes.iter().rev().position(|x| *x != 0).unwrap_or(0);
+    code_bytes.truncate(code_bytes.len() - idx);
 
     // Write calldata to the desired file location
     Retry::spawn(
@@ -113,7 +122,7 @@ pub async fn create_code_file(
         || async {
             create_and_populate_file(
                 workerd_runtime_path.to_owned() + "/" + tx_hash + "-" + slug + ".js",
-                calldata.as_slice(),
+                code_bytes.as_slice(),
             )
             .await
         },
