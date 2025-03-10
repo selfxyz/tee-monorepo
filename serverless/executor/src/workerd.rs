@@ -2,7 +2,7 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use ethers::types::U256;
+use ethers::abi::{Function, Param, ParamType, StateMutability};
 use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -30,8 +30,6 @@ pub enum ServerlessError {
     InvalidTxToValue(String, String),
     #[error("calldata field of transaction data is not a string")]
     InvalidTxCalldataType,
-    #[error("calldata string is shorter than 138 characters")]
-    InvalidTxCalldataLength,
     #[error("calldata doesn't belong to the expected method")]
     InvalidTxCalldata,
     #[error("calldata field is not a valid hex string")]
@@ -86,31 +84,49 @@ pub async fn create_code_file(
         ));
     }
 
-    // Get the calldata of the transaction as string
+    // Get the transaction data as hexadecimal string starting with '0x'
     let input = match tx_data["input"].take() {
         Value::String(input) => Ok(input),
         _ => Err(ServerlessError::InvalidTxCalldataType),
     }?;
 
-    // Ensure there is enough bytes for the function selector (4 bytes) + 2 offsets (32 bytes each) + 2 parameter lengths (32 bytes each)
-    if input.len() < 266 {
-        return Err(ServerlessError::InvalidTxCalldataLength);
-    }
-
     // Ensure the function selector is correct
     if !input.starts_with(SAVE_CODE_FUNCTION_SELECTOR) {
         return Err(ServerlessError::InvalidTxCalldata);
     }
+    let input_bytes = hex::decode(&input[2..])?;
 
-    // Get the input bytes starting from the parameter length byte
-    let input_bytes: &[u8] = &hex::decode(&input[138..])?;
-    let code_data_length = U256::from_big_endian(&input_bytes[0..32]);
+    // Create a Function object corresponding to function saveCodeInCallData(string calldata inputData, bytes calldata metadata)
+    let save_code_function = Function {
+        name: "saveCodeInCallData".to_string(),
+        inputs: vec![
+            Param {
+                name: "inputData".to_string(),
+                kind: ParamType::String,
+                internal_type: None,
+            },
+            Param {
+                name: "metadata".to_string(),
+                kind: ParamType::Bytes,
+                internal_type: None,
+            },
+        ],
+        outputs: vec![],
+        constant: Some(false),
+        state_mutability: StateMutability::NonPayable,
+    };
 
-    if (32 + code_data_length.as_usize()) > input_bytes.len() {
-        return Err(ServerlessError::InvalidTxCalldataLength);
-    }
+    // Now decode the data
+    let Ok(tokens) = save_code_function.decode_input(&input_bytes[4..]) else {
+        return Err(ServerlessError::InvalidTxCalldata);
+    };
 
-    let mut code_bytes: Vec<u8> = input_bytes[32..(32 + code_data_length.as_usize())].into();
+    // Extract inputData token
+    let Some(code_str) = tokens[0].clone().into_string() else {
+        return Err(ServerlessError::InvalidTxCalldata);
+    };
+
+    let mut code_bytes = code_str.into_bytes();
 
     // Strip trailing zeros in the calldata
     let idx = code_bytes.iter().rev().position(|x| *x != 0).unwrap_or(0);
