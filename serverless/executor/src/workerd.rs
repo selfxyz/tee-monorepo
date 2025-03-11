@@ -2,7 +2,7 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use ethers::abi::{Function, Param, ParamType, StateMutability};
+use ethers::abi::Abi;
 use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -56,6 +56,7 @@ pub async fn create_code_file(
     workerd_runtime_path: &str,
     rpc: &str,
     contract: &str,
+    code_contract_abi: &Abi,
 ) -> Result<(), ServerlessError> {
     // Get code transaction data from its hash
     let mut tx_data = match Retry::spawn(
@@ -96,25 +97,8 @@ pub async fn create_code_file(
     }
     let input_bytes = hex::decode(&input[2..])?;
 
-    // Create a Function object corresponding to function saveCodeInCallData(string calldata inputData, bytes calldata metadata)
-    let save_code_function = Function {
-        name: "saveCodeInCallData".to_string(),
-        inputs: vec![
-            Param {
-                name: "inputData".to_string(),
-                kind: ParamType::String,
-                internal_type: None,
-            },
-            Param {
-                name: "metadata".to_string(),
-                kind: ParamType::Bytes,
-                internal_type: None,
-            },
-        ],
-        outputs: vec![],
-        constant: Some(false),
-        state_mutability: StateMutability::NonPayable,
-    };
+    // Get the Function object corresponding to function saveCodeInCallData(string calldata inputData, bytes calldata metadata)
+    let save_code_function = code_contract_abi.function("saveCodeInCallData").unwrap();
 
     // Now decode the data
     let Ok(tokens) = save_code_function.decode_input(&input_bytes[4..]) else {

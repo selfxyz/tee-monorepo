@@ -131,6 +131,7 @@ async fn execute_job(
         &app_state.workerd_runtime_path,
         &app_state.http_rpc_url,
         &app_state.code_contract_addr,
+        &app_state.code_contract_abi,
     )
     .await
     {

@@ -30,7 +30,7 @@ pub mod serverless_executor_test {
     use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
     use rand::rngs::OsRng;
     use serde::{Deserialize, Serialize};
-    use serde_json::{json, Value};
+    use serde_json::{from_str, json, Value};
     use tempfile::Builder;
     use tokio::runtime::Handle;
     use tokio::sync::mpsc::channel;
@@ -48,7 +48,6 @@ pub mod serverless_executor_test {
         export_signed_registration_message, get_tee_details, index, inject_immutable_config,
         inject_mutable_config,
     };
-    use crate::utils::load_abi_from_file;
 
     // Testnet or Local blockchain (Hardhat) configurations
     const CHAIN_ID: u64 = 421614;
@@ -93,7 +92,8 @@ pub mod serverless_executor_test {
             job_requests_running: Arc::new(Mutex::new(HashSet::new())),
             last_block_seen: Arc::new(AtomicU64::new(0)),
             nonce_to_send: Arc::new(Mutex::new(U256::from(0))),
-            jobs_contract_abi: load_abi_from_file().unwrap(),
+            jobs_contract_abi: from_str(include_str!("../Jobs.json")).unwrap(),
+            code_contract_abi: from_str(include_str!("../CodeContract.json")).unwrap(),
         }
     }
 
