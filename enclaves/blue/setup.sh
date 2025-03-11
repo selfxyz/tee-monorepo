@@ -92,7 +92,9 @@ sleep 2
 
 # start derive server
 /app/supervisord ctl -c /etc/supervisord.conf start derive-server
-
+if [ -f /init-params/contract-address ] && [ -f /init-params/root-server-config.json ]; then
+    /app/supervisord ctl -c /etc/supervisord.conf start derive-server-contract
+fi
 sleep 10
 
 # process init params into their constituent files
