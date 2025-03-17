@@ -1,6 +1,6 @@
 use crate::{
     args::{init_params::InitParamsArgs, wallet::WalletArgs},
-    commands::log::stream_logs,
+    commands::log::{stream_logs, LogArgs},
     configs::global::OYSTER_MARKET_ADDRESS,
     utils::{
         bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
@@ -213,7 +213,13 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
 
     if args.debug && !args.no_stream {
         info!("Debug mode enabled - starting log streaming...");
-        stream_logs(&ip_address, Some("0"), true, false).await?;
+        stream_logs(LogArgs {
+            ip: ip_address,
+            start_from: Some("0".into()),
+            with_log_id: true,
+            quiet: false,
+        })
+        .await?;
     }
 
     Ok(())

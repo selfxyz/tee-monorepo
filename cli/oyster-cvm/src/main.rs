@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::{
-    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, list::ListArgs, update::UpdateArgs,
-    upload::UploadArgs, verify::VerifyArgs,
+    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, list::ListArgs, log::LogArgs,
+    update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
 };
 
 mod args;
@@ -46,23 +46,7 @@ enum Commands {
     /// Update existing deployments
     Update(UpdateArgs),
     /// Stream logs from an Oyster CVM instance
-    Logs {
-        /// IP address of the instance
-        #[arg(short, long, required = true)]
-        ip: String,
-
-        /// Optional log ID to start streaming from
-        #[arg(short, long)]
-        start_from: Option<String>,
-
-        /// Include log ID prefix in output
-        #[arg(short, long, default_value_t = false)]
-        with_log_id: bool,
-
-        /// Suppress connection status message
-        #[arg(short, long, default_value_t = false)]
-        quiet: bool,
-    },
+    Logs(LogArgs),
     /// Deposit funds to an existing job
     Deposit {
         /// Job ID
@@ -121,12 +105,7 @@ async fn main() -> Result<()> {
         Commands::Deploy(args) => commands::deploy::deploy(args).await,
         Commands::List(args) => commands::list::list_jobs(args).await,
         Commands::Update(args) => commands::update::update_job(args).await,
-        Commands::Logs {
-            ip,
-            start_from,
-            with_log_id,
-            quiet,
-        } => commands::log::stream_logs(&ip, start_from.as_deref(), with_log_id, quiet).await,
+        Commands::Logs(args) => commands::log::stream_logs(args).await,
         Commands::Deposit {
             job_id,
             amount,
