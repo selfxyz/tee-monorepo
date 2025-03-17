@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::{
-    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, list::ListArgs, log::LogArgs,
-    update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
+    build::BuildArgs, deploy::DeployArgs, deposit::DepositArgs, doctor::DoctorArgs, list::ListArgs,
+    log::LogArgs, update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
 };
 
 mod args;
@@ -48,19 +48,7 @@ enum Commands {
     /// Stream logs from an Oyster CVM instance
     Logs(LogArgs),
     /// Deposit funds to an existing job
-    Deposit {
-        /// Job ID
-        #[arg(short, long, required = true)]
-        job_id: String,
-
-        /// Amount to deposit in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
-        #[arg(short, long, required = true)]
-        amount: u64,
-
-        /// Wallet private key for transaction signing
-        #[arg(long, required = true)]
-        wallet_private_key: String,
-    },
+    Deposit(DepositArgs),
     /// Stop an Oyster CVM instance
     Stop {
         /// Job ID
@@ -106,11 +94,7 @@ async fn main() -> Result<()> {
         Commands::List(args) => commands::list::list_jobs(args).await,
         Commands::Update(args) => commands::update::update_job(args).await,
         Commands::Logs(args) => commands::log::stream_logs(args).await,
-        Commands::Deposit {
-            job_id,
-            amount,
-            wallet_private_key,
-        } => commands::deposit::deposit_to_job(&job_id, amount, &wallet_private_key).await,
+        Commands::Deposit(args) => commands::deposit::deposit_to_job(args).await,
         Commands::Stop {
             job_id,
             wallet_private_key,
