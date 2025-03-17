@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::{
     build::BuildArgs, deploy::DeployArgs, deposit::DepositArgs, doctor::DoctorArgs, list::ListArgs,
-    log::LogArgs, update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
+    log::LogArgs, stop::StopArgs, update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
 };
 
 mod args;
@@ -50,15 +50,7 @@ enum Commands {
     /// Deposit funds to an existing job
     Deposit(DepositArgs),
     /// Stop an Oyster CVM instance
-    Stop {
-        /// Job ID
-        #[arg(short = 'j', long, required = true)]
-        job_id: String,
-
-        /// Wallet private key for transaction signing
-        #[arg(long, required = true)]
-        wallet_private_key: String,
-    },
+    Stop(StopArgs),
     /// Withdraw funds from an existing job
     Withdraw {
         /// Job ID
@@ -95,10 +87,7 @@ async fn main() -> Result<()> {
         Commands::Update(args) => commands::update::update_job(args).await,
         Commands::Logs(args) => commands::log::stream_logs(args).await,
         Commands::Deposit(args) => commands::deposit::deposit_to_job(args).await,
-        Commands::Stop {
-            job_id,
-            wallet_private_key,
-        } => commands::stop::stop_oyster_instance(&job_id, &wallet_private_key).await,
+        Commands::Stop(args) => commands::stop::stop_oyster_instance(args).await,
         Commands::Withdraw {
             job_id,
             amount,

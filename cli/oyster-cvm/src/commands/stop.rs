@@ -6,9 +6,21 @@ use alloy::{
     sol,
 };
 use anyhow::{anyhow, Context, Result};
+use clap::Args;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::info;
+
+#[derive(Args)]
+pub struct StopArgs {
+    /// Job ID
+    #[arg(short = 'j', long, required = true)]
+    job_id: String,
+
+    /// Wallet private key for transaction signing
+    #[arg(long, required = true)]
+    wallet_private_key: String,
+}
 
 sol!(
     #[allow(missing_docs)]
@@ -17,7 +29,10 @@ sol!(
     "src/abis/oyster_market_abi.json"
 );
 
-pub async fn stop_oyster_instance(job_id: &str, wallet_private_key: &str) -> Result<()> {
+pub async fn stop_oyster_instance(args: StopArgs) -> Result<()> {
+    let job_id = args.job_id;
+    let wallet_private_key = &args.wallet_private_key;
+
     info!("Stopping oyster instance with:");
     info!("  Job ID: {}", job_id);
 
