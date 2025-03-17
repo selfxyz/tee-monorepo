@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::{
-    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, list::ListArgs, upload::UploadArgs,
-    verify::VerifyArgs,
+    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, list::ListArgs, update::UpdateArgs,
+    upload::UploadArgs, verify::VerifyArgs,
 };
 
 mod args;
@@ -44,23 +44,7 @@ enum Commands {
     /// List active jobs for a wallet address
     List(ListArgs),
     /// Update existing deployments
-    Update {
-        /// Job ID
-        #[arg(short, long)]
-        job_id: String,
-
-        /// Wallet private key for transaction signing
-        #[arg(long)]
-        wallet_private_key: String,
-
-        /// New URL of the enclave image
-        #[arg(short, long)]
-        image_url: Option<String>,
-
-        /// New debug mode
-        #[arg(short, long)]
-        debug: Option<bool>,
-    },
+    Update(UpdateArgs),
     /// Stream logs from an Oyster CVM instance
     Logs {
         /// IP address of the instance
@@ -136,20 +120,7 @@ async fn main() -> Result<()> {
         Commands::Verify(args) => commands::verify::verify(args).await,
         Commands::Deploy(args) => commands::deploy::deploy(args).await,
         Commands::List(args) => commands::list::list_jobs(args).await,
-        Commands::Update {
-            job_id,
-            wallet_private_key,
-            image_url,
-            debug,
-        } => {
-            commands::update::update_job(
-                &job_id,
-                &wallet_private_key,
-                image_url.as_deref(),
-                debug.to_owned(),
-            )
-            .await
-        }
+        Commands::Update(args) => commands::update::update_job(args).await,
         Commands::Logs {
             ip,
             start_from,
