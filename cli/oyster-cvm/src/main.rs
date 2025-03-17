@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use commands::{deploy::DeployArgs, doctor::DoctorArgs, verify::VerifyArgs};
+use commands::{build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, verify::VerifyArgs};
 
 mod args;
 mod commands;
@@ -28,35 +28,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Check system dependencies like Docker & Nix
-    /// Some are optional and are only needed for certain commands
+    /// Check optional system dependencies like Docker & Nix
     Doctor(DoctorArgs),
     /// Build enclave image
-    Build {
-        /// Platform (amd64 or arm64)
-        #[arg(short, long, value_parser = [types::Platform::AMD64.as_str(), types::Platform::ARM64.as_str()])]
-        platform: String,
-
-        /// Path to docker-compose.yml file
-        #[arg(short = 'c', long)]
-        docker_compose: String,
-
-        /// List of Docker image .tar file paths
-        #[arg(short = 'i', long, default_value = "")]
-        docker_images: Vec<String>,
-
-        /// Output folder name
-        #[arg(short, long, default_value = "result")]
-        output: String,
-
-        /// Git commit reference for oyster-monorepo
-        #[arg(
-            short = 'r',
-            long,
-            default_value = "oyster-cvm-v1.1.0" // To be updated when new version is tagged
-        )]
-        commit_ref: String,
-    },
+    Build(BuildArgs),
     /// Upload enclave image to IPFS
     Upload {
         /// Path to enclave image file
@@ -165,22 +140,7 @@ async fn main() -> Result<()> {
 
     let result = match cli.command {
         Commands::Doctor(args) => commands::doctor::run_doctor(args),
-        Commands::Build {
-            platform,
-            docker_compose,
-            docker_images,
-            output,
-            commit_ref,
-        } => {
-            let platform = types::Platform::from_str(&platform).map_err(|e| anyhow::anyhow!(e))?;
-            commands::build::build_oyster_image(
-                platform,
-                &docker_compose,
-                &docker_images,
-                &output,
-                &commit_ref,
-            )
-        }
+        Commands::Build(args) => commands::build::build_oyster_image(args),
         Commands::Upload { file } => {
             let default_provider = types::StorageProvider::Pinata;
             commands::upload::upload_enclave_image(&file, &default_provider).await
