@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::{
-    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, upload::UploadArgs,
+    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, list::ListArgs, upload::UploadArgs,
     verify::VerifyArgs,
 };
 
@@ -42,15 +42,7 @@ enum Commands {
     /// Verify Oyster Enclave Attestation
     Verify(VerifyArgs),
     /// List active jobs for a wallet address
-    List {
-        /// Wallet address to query jobs for
-        #[arg(short, long, required = true)]
-        address: String,
-
-        /// Number of most recent jobs to display (optional)
-        #[arg(short, long)]
-        count: Option<u32>,
-    },
+    List(ListArgs),
     /// Update existing deployments
     Update {
         /// Job ID
@@ -143,7 +135,7 @@ async fn main() -> Result<()> {
         Commands::Upload(args) => commands::upload::upload_enclave_image(args).await,
         Commands::Verify(args) => commands::verify::verify(args).await,
         Commands::Deploy(args) => commands::deploy::deploy(args).await,
-        Commands::List { address, count } => commands::list::list_jobs(&address, count).await,
+        Commands::List(args) => commands::list::list_jobs(args).await,
         Commands::Update {
             job_id,
             wallet_private_key,
