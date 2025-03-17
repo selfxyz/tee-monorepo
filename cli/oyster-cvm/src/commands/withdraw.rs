@@ -1,3 +1,4 @@
+use crate::args::wallet::WalletArgs;
 use crate::configs::global::{MIN_WITHDRAW_AMOUNT, OYSTER_MARKET_ADDRESS};
 use crate::utils::{provider::create_provider, usdc::format_usdc};
 use alloy::{
@@ -24,9 +25,8 @@ pub struct WithdrawArgs {
     #[arg(long, conflicts_with = "amount")]
     max: bool,
 
-    /// Wallet private key for transaction signing
-    #[arg(long, required = true)]
-    wallet_private_key: String,
+    #[command(flatten)]
+    wallet: WalletArgs,
 }
 
 // Withdrawal Settings
@@ -91,7 +91,7 @@ fn calculate_current_balance(balance: U256, rate: U256, last_settled: U256) -> R
 
 pub async fn withdraw_from_job(args: WithdrawArgs) -> Result<()> {
     let job_id = args.job_id;
-    let wallet_private_key = &args.wallet_private_key;
+    let wallet_private_key = &args.wallet.load_required()?;
     let max = args.max;
     let amount = args.amount;
 

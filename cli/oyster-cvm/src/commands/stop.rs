@@ -1,5 +1,5 @@
-use crate::configs::global::OYSTER_MARKET_ADDRESS;
 use crate::utils::provider::create_provider;
+use crate::{args::wallet::WalletArgs, configs::global::OYSTER_MARKET_ADDRESS};
 use alloy::{
     primitives::{Address, B256},
     providers::{Provider, WalletProvider},
@@ -17,9 +17,8 @@ pub struct StopArgs {
     #[arg(short = 'j', long, required = true)]
     job_id: String,
 
-    /// Wallet private key for transaction signing
-    #[arg(long, required = true)]
-    wallet_private_key: String,
+    #[command(flatten)]
+    wallet: WalletArgs,
 }
 
 sol!(
@@ -31,7 +30,7 @@ sol!(
 
 pub async fn stop_oyster_instance(args: StopArgs) -> Result<()> {
     let job_id = args.job_id;
-    let wallet_private_key = &args.wallet_private_key;
+    let wallet_private_key = &args.wallet.load_required()?;
 
     info!("Stopping oyster instance with:");
     info!("  Job ID: {}", job_id);

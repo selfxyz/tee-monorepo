@@ -120,8 +120,7 @@ struct InstanceRate {
 pub async fn deploy(args: DeployArgs) -> Result<()> {
     tracing::info!("Starting deployment...");
 
-    let provider =
-        create_provider(&args.wallet.load()?.ok_or(anyhow!("Wallet is required"))?).await?;
+    let provider = create_provider(&args.wallet.load_required()?).await?;
 
     // Get CP URL using the configured provider
     let cp_url = get_operator_cp(&args.operator, provider.clone())

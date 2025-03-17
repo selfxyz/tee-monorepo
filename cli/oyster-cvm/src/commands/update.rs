@@ -1,5 +1,5 @@
-use crate::configs::global::OYSTER_MARKET_ADDRESS;
 use crate::utils::provider::create_provider;
+use crate::{args::wallet::WalletArgs, configs::global::OYSTER_MARKET_ADDRESS};
 use alloy::sol;
 use anyhow::{Context, Result};
 use clap::Args;
@@ -11,9 +11,8 @@ pub struct UpdateArgs {
     #[arg(short, long)]
     job_id: String,
 
-    /// Wallet private key for transaction signing
-    #[arg(long)]
-    wallet_private_key: String,
+    #[command(flatten)]
+    wallet: WalletArgs,
 
     /// New URL of the enclave image
     #[arg(short, long)]
@@ -32,7 +31,7 @@ sol!(
 );
 
 pub async fn update_job(args: UpdateArgs) -> Result<()> {
-    let wallet_private_key = &args.wallet_private_key;
+    let wallet_private_key = &args.wallet.load_required()?;
     let job_id = args.job_id;
     let debug = args.debug;
     let image_url = args.image_url;

@@ -1,3 +1,4 @@
+use crate::args::wallet::WalletArgs;
 use crate::configs::global::{MIN_DEPOSIT_AMOUNT, OYSTER_MARKET_ADDRESS};
 use crate::utils::{
     provider::create_provider,
@@ -22,9 +23,8 @@ pub struct DepositArgs {
     #[arg(short, long, required = true)]
     amount: u64,
 
-    /// Wallet private key for transaction signing
-    #[arg(long, required = true)]
-    wallet_private_key: String,
+    #[command(flatten)]
+    wallet: WalletArgs,
 }
 
 sol!(
@@ -38,7 +38,7 @@ pub async fn deposit_to_job(args: DepositArgs) -> Result<()> {
     info!("Starting deposit...");
 
     let amount = args.amount;
-    let wallet_private_key = &args.wallet_private_key;
+    let wallet_private_key = &args.wallet.load_required()?;
     let job_id = args.job_id;
 
     // Input validation
