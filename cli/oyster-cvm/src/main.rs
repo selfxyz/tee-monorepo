@@ -20,7 +20,7 @@ fn setup_logging() {
 }
 
 #[derive(Parser)]
-#[command(about = "Oyster CVM command line utility")]
+#[command(version, about = "Oyster CVM command line utility")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
