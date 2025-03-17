@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use commands::{
     build::BuildArgs, deploy::DeployArgs, deposit::DepositArgs, doctor::DoctorArgs, list::ListArgs,
     log::LogArgs, stop::StopArgs, update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
+    withdraw::WithdrawArgs,
 };
 
 mod args;
@@ -52,23 +53,7 @@ enum Commands {
     /// Stop an Oyster CVM instance
     Stop(StopArgs),
     /// Withdraw funds from an existing job
-    Withdraw {
-        /// Job ID
-        #[arg(short, long, required = true)]
-        job_id: String,
-
-        /// Amount to withdraw in USDC (e.g. 1000000 = 1 USDC since USDC has 6 decimal places)
-        #[arg(short, long, required_unless_present = "max")]
-        amount: Option<u64>,
-
-        /// Withdraw all remaining balance
-        #[arg(long, conflicts_with = "amount")]
-        max: bool,
-
-        /// Wallet private key for transaction signing
-        #[arg(long, required = true)]
-        wallet_private_key: String,
-    },
+    Withdraw(WithdrawArgs),
 }
 
 #[tokio::main]
@@ -88,12 +73,7 @@ async fn main() -> Result<()> {
         Commands::Logs(args) => commands::log::stream_logs(args).await,
         Commands::Deposit(args) => commands::deposit::deposit_to_job(args).await,
         Commands::Stop(args) => commands::stop::stop_oyster_instance(args).await,
-        Commands::Withdraw {
-            job_id,
-            amount,
-            max,
-            wallet_private_key,
-        } => commands::withdraw::withdraw_from_job(&job_id, amount, max, &wallet_private_key).await,
+        Commands::Withdraw(args) => commands::withdraw::withdraw_from_job(args).await,
     };
 
     if let Err(e) = result {
