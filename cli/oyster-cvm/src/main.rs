@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use commands::{deploy::DeployArgs, verify::VerifyArgs};
+use commands::{deploy::DeployArgs, doctor::DoctorArgs, verify::VerifyArgs};
 
 mod args;
 mod commands;
@@ -30,14 +30,7 @@ struct Cli {
 enum Commands {
     /// Check system dependencies like Docker & Nix
     /// Some are optional and are only needed for certain commands
-    Doctor {
-        /// Perform Docker checks
-        #[arg(short, long)]
-        docker: bool,
-        /// Perform Nix checks
-        #[arg(short, long)]
-        nix: bool,
-    },
+    Doctor(DoctorArgs),
     /// Build enclave image
     Build {
         /// Platform (amd64 or arm64)
@@ -171,11 +164,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Doctor { docker, nix } => {
-            // enable all if nothing is enabled
-            let all = !docker && !nix;
-            commands::doctor::run_doctor(docker || all, nix || all)
-        }
+        Commands::Doctor(args) => commands::doctor::run_doctor(args),
         Commands::Build {
             platform,
             docker_compose,
