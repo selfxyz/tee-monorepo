@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use commands::{build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, verify::VerifyArgs};
+use commands::{
+    build::BuildArgs, deploy::DeployArgs, doctor::DoctorArgs, upload::UploadArgs,
+    verify::VerifyArgs,
+};
 
 mod args;
 mod commands;
@@ -33,11 +36,7 @@ enum Commands {
     /// Build enclave image
     Build(BuildArgs),
     /// Upload enclave image to IPFS
-    Upload {
-        /// Path to enclave image file
-        #[arg(short, long)]
-        file: String,
-    },
+    Upload(UploadArgs),
     /// Deploy an Oyster CVM instance
     Deploy(DeployArgs),
     /// Verify Oyster Enclave Attestation
@@ -141,10 +140,7 @@ async fn main() -> Result<()> {
     let result = match cli.command {
         Commands::Doctor(args) => commands::doctor::run_doctor(args),
         Commands::Build(args) => commands::build::build_oyster_image(args),
-        Commands::Upload { file } => {
-            let default_provider = types::StorageProvider::Pinata;
-            commands::upload::upload_enclave_image(&file, &default_provider).await
-        }
+        Commands::Upload(args) => commands::upload::upload_enclave_image(args).await,
         Commands::Verify(args) => commands::verify::verify(args).await,
         Commands::Deploy(args) => commands::deploy::deploy(args).await,
         Commands::List { address, count } => commands::list::list_jobs(&address, count).await,
