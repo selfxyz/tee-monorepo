@@ -333,8 +333,38 @@ async fn wait_for_ip_address(url: &str, job_id: H256, region: &str) -> Result<St
             attempt, IP_CHECK_RETRIES
         );
 
-        let response = client.get(&ip_url).send().await?;
-        let json: serde_json::Value = response.json().await?;
+        let resp = client.get(&ip_url).send().await;
+        let Ok(response) = resp else {
+            tracing::error!("Failed to connect to IP endpoint: {}", resp.unwrap_err());
+            tokio::time::sleep(StdDuration::from_secs(IP_CHECK_INTERVAL)).await;
+            continue;
+        };
+
+        // Get the status code
+        let status = response.status();
+
+        // Get text response first to log in case of error
+        let text = response.text().await;
+        let Ok(text_body) = text else {
+            tracing::error!("Failed to read response body: {}", text.unwrap_err());
+            tokio::time::sleep(StdDuration::from_secs(IP_CHECK_INTERVAL)).await;
+            continue;
+        };
+
+        // Parse the JSON
+        let json_result = serde_json::from_str::<serde_json::Value>(&text_body);
+        let Ok(json) = json_result else {
+            let err = json_result.unwrap_err();
+            tracing::error!(
+                "Failed to parse IP endpoint response (status: {}): {}. Raw response: {}",
+                status,
+                err,
+                text_body
+            );
+            tokio::time::sleep(StdDuration::from_secs(IP_CHECK_INTERVAL)).await;
+            continue;
+        };
+
         last_response = json.to_string();
 
         info!("Response from IP endpoint: {}", last_response);
