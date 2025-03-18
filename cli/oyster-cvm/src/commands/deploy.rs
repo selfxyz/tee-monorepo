@@ -2,6 +2,7 @@ use crate::{
     args::{init_params::InitParamsArgs, wallet::WalletArgs},
     commands::log::{stream_logs, LogArgs},
     configs::global::OYSTER_MARKET_ADDRESS,
+    types::Platform,
     utils::{
         bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
         provider::create_provider,
@@ -55,18 +56,7 @@ pub struct DeployArgs {
 
     /// Platform architecture (e.g. amd64, arm64)
     #[arg(long, default_value = "arm64")]
-    arch: String,
-
-    /// URL of the enclave image
-    #[arg(
-        long,
-        default_value = "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_arm64.eif"
-    )]
-    image_url: String,
-
-    /// Region for deployment
-    #[arg(long, default_value = "ap-south-1")]
-    region: String,
+    arch: Platform,
 
     #[command(flatten)]
     wallet: WalletArgs,
@@ -74,6 +64,14 @@ pub struct DeployArgs {
     /// Operator address
     #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
     operator: String,
+
+    /// URL of the enclave image
+    #[arg(long)]
+    image_url: Option<String>,
+
+    /// Region for deployment
+    #[arg(long, default_value = "ap-south-1")]
+    region: String,
 
     /// Instance type (e.g. "r6g.large")
     #[arg(long, default_value = "r6g.large")]
