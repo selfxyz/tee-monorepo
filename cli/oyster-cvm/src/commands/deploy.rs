@@ -213,7 +213,7 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
         args.debug,
         &args
             .init_params
-            .load(args.preset, args.arch)
+            .load(args.preset, args.arch, args.debug)
             .context("Failed to load init params")?
             .unwrap_or("".into()),
     );

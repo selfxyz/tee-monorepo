@@ -43,7 +43,7 @@ pub struct InitParamsArgs {
 }
 
 impl InitParamsArgs {
-    pub fn load(self, preset: String, arch: Platform) -> Result<Option<String>> {
+    pub fn load(self, preset: String, arch: Platform, debug: bool) -> Result<Option<String>> {
         // check for encoded params
         if self.init_params_encoded.is_some() {
             return Ok(self.init_params_encoded.clone());
@@ -180,6 +180,14 @@ impl InitParamsArgs {
 
                 // encrypt if needed
                 let final_contents = if should_encrypt {
+                    if debug {
+                        // attempting to use encrypted init params in debug mode
+                        // error out since it is not safe
+                        return Err(anyhow!(
+                            "Refused to allow encrypted init params in debug mode enclaves. It is not safe to use encrypted init params in debug mode since it can then be decrypted and exported by other debug enclaves."
+                        ));
+                    }
+
                     let mut final_contents =
                         vec![0u8; contents.len() + crypto_box_SEALBYTES as usize];
                     // SAFETY: buffer is big enough for the encrypted message
