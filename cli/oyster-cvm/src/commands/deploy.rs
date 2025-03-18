@@ -74,8 +74,8 @@ pub struct DeployArgs {
     region: String,
 
     /// Instance type (e.g. "r6g.large")
-    #[arg(long, default_value = "r6g.large")]
-    instance_type: String,
+    #[arg(long)]
+    instance_type: Option<String>,
 
     /// Optional bandwidth in KBps (default: 10)
     #[arg(long, default_value = "10")]
@@ -152,9 +152,20 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
         ));
     }
 
+    let instance_type =
+        args.instance_type
+            .map(Result::Ok)
+            .unwrap_or(match args.preset.as_str() {
+                "blue" => match args.arch {
+                    Platform::AMD64 => Ok("c6a.xlarge".into()),
+                    Platform::ARM64 => Ok("c6g.large".into()),
+                },
+                _ => Err(anyhow!("Instance type is required")),
+            })?;
+
     // Fetch operator min rates with early validation
     let selected_instance =
-        find_minimum_rate_instance(&operator_spec, &args.region, &args.instance_type)
+        find_minimum_rate_instance(&operator_spec, &args.region, &instance_type)
             .context("Configuration not supported by operator")?;
 
     // Calculate costs
