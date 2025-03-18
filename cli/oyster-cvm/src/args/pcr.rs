@@ -88,7 +88,7 @@ impl PcrArgs {
     }
 }
 
-static PCRS_BASE_BLUE_V1_0_0_AMD64: (&str, &str, &str) = (
+pub static PCRS_BASE_BLUE_V1_0_0_AMD64: (&str, &str, &str) = (
     "181023664fd6477acdb28bb3d7b7e5eff6001a7a8c2d32309e076460fa6cda213cee6c4c0b97c96421bf6b1b74305030",
     "70ea27296f1809c73bb61f5f08892536e1969c154f08bdccd4ff907df79881a4b14a0fc6f2ab6dd00d5b2e5a73fe88a7",
     "c631afd653305f3a40f21579897d9308daa3145eff263b1f2875ac86d2ad800e3a7ebaf7fcd39e5485896cd94607e74e",
