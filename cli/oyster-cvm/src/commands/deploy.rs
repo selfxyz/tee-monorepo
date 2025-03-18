@@ -2,6 +2,7 @@ use crate::{
     args::{init_params::InitParamsArgs, wallet::WalletArgs},
     commands::log::{stream_logs, LogArgs},
     configs::global::OYSTER_MARKET_ADDRESS,
+    types::Platform,
     utils::{
         bandwidth::{calculate_bandwidth_cost, get_bandwidth_rate_for_region},
         provider::create_provider,
@@ -49,16 +50,13 @@ sol!(
 
 #[derive(Args, Debug)]
 pub struct DeployArgs {
-    /// URL of the enclave image
-    #[arg(
-        long,
-        default_value = "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_arm64.eif"
-    )]
-    image_url: String,
+    /// Preset for parameters (e.g. blue)
+    #[arg(long, default_value = "blue")]
+    preset: String,
 
-    /// Region for deployment
-    #[arg(long, default_value = "ap-south-1")]
-    region: String,
+    /// Platform architecture (e.g. amd64, arm64)
+    #[arg(long, default_value = "arm64")]
+    arch: Platform,
 
     #[command(flatten)]
     wallet: WalletArgs,
@@ -67,9 +65,17 @@ pub struct DeployArgs {
     #[arg(long, default_value = "0xe10fa12f580e660ecd593ea4119cebc90509d642")]
     operator: String,
 
+    /// URL of the enclave image
+    #[arg(long)]
+    image_url: Option<String>,
+
+    /// Region for deployment
+    #[arg(long, default_value = "ap-south-1")]
+    region: String,
+
     /// Instance type (e.g. "r6g.large")
-    #[arg(long, default_value = "r6g.large")]
-    instance_type: String,
+    #[arg(long)]
+    instance_type: Option<String>,
 
     /// Optional bandwidth in KBps (default: 10)
     #[arg(long, default_value = "10")]
@@ -146,9 +152,20 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
         ));
     }
 
+    let instance_type =
+        args.instance_type
+            .map(Result::Ok)
+            .unwrap_or(match args.preset.as_str() {
+                "blue" => match args.arch {
+                    Platform::AMD64 => Ok("c6a.xlarge".into()),
+                    Platform::ARM64 => Ok("c6g.large".into()),
+                },
+                _ => Err(anyhow!("Instance type is required")),
+            })?;
+
     // Fetch operator min rates with early validation
     let selected_instance =
-        find_minimum_rate_instance(&operator_spec, &args.region, &args.instance_type)
+        find_minimum_rate_instance(&operator_spec, &args.region, &instance_type)
             .context("Configuration not supported by operator")?;
 
     // Calculate costs
@@ -168,18 +185,35 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
         (total_rate.to::<u128>() * 3600) as f64 / 1e18
     );
 
+    let image_url = args
+        .image_url
+        .map(Result::Ok)
+        .unwrap_or(match args.preset.as_str() {
+            "blue" => match args.arch {
+                Platform::AMD64 => Ok(
+                    "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_amd64.eif"
+                        .into(),
+                ),
+                Platform::ARM64 => Ok(
+                    "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_arm64.eif"
+                        .into(),
+                ),
+            },
+            _ => Err(anyhow!("Image URL is required")),
+        })?;
+
     // Create metadata
     let metadata = create_metadata(
         &selected_instance.instance,
         &args.region,
         selected_instance.memory,
         selected_instance.cpu,
-        &args.image_url,
+        &image_url,
         &args.job_name,
         args.debug,
         &args
             .init_params
-            .load()
+            .load(args.preset, args.arch, args.debug)
             .context("Failed to load init params")?
             .unwrap_or("".into()),
     );
