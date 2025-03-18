@@ -49,6 +49,14 @@ sol!(
 
 #[derive(Args, Debug)]
 pub struct DeployArgs {
+    /// Preset for parameters (e.g. blue)
+    #[arg(long, default_value = "blue")]
+    preset: String,
+
+    /// Platform architecture (e.g. amd64, arm64)
+    #[arg(long, default_value = "arm64")]
+    arch: String,
+
     /// URL of the enclave image
     #[arg(
         long,
