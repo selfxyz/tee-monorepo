@@ -9,7 +9,7 @@ use alloy::{
     hex::FromHex,
     signers::k256::sha2::{Digest, Sha256},
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Args;
 use lazy_static::lazy_static;
@@ -17,7 +17,9 @@ use libsodium_sys::{crypto_box_SEALBYTES, crypto_box_seal, sodium_init};
 use serde::Serialize;
 use tracing::info;
 
-use super::pcr::{PcrArgs, PCRS_BASE_BLUE_V1_0_0_ARM64};
+use crate::types::Platform;
+
+use super::pcr::{PcrArgs, PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64};
 
 #[derive(Args, Debug)]
 #[group(multiple = true)]
@@ -55,7 +57,7 @@ pub struct InitParamsArgs {
 }
 
 impl InitParamsArgs {
-    pub fn load(self) -> Result<Option<String>> {
+    pub fn load(self, preset: String, arch: Platform, debug: bool) -> Result<Option<String>> {
         // check for encoded params
         if self.init_params_encoded.is_some() {
             return Ok(self.init_params_encoded.clone());
@@ -156,11 +158,26 @@ impl InitParamsArgs {
 
         // load pcrs
         // use pcrs of the blue base image by default
-        let pcrs = self.pcrs.load().context("Failed to load PCRs")?.unwrap_or((
-            PCRS_BASE_BLUE_V1_0_0_ARM64.0.into(),
-            PCRS_BASE_BLUE_V1_0_0_ARM64.1.into(),
-            PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
-        ));
+        let pcrs = self
+            .pcrs
+            .load()
+            .context("Failed to load PCRs")?
+            .map(Result::Ok)
+            .unwrap_or(match preset.as_str() {
+                "blue" => match arch {
+                    Platform::AMD64 => Ok((
+                        PCRS_BASE_BLUE_V1_0_0_AMD64.0.into(),
+                        PCRS_BASE_BLUE_V1_0_0_AMD64.1.into(),
+                        PCRS_BASE_BLUE_V1_0_0_AMD64.2.into(),
+                    )),
+                    Platform::ARM64 => Ok((
+                        PCRS_BASE_BLUE_V1_0_0_ARM64.0.into(),
+                        PCRS_BASE_BLUE_V1_0_0_ARM64.1.into(),
+                        PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
+                    )),
+                },
+                _ => Err(anyhow!("PCRs are required")),
+            })?;
 
         // fetch key
         let pk = fetch_encryption_key_with_pcr(
@@ -195,6 +212,14 @@ impl InitParamsArgs {
 
                 // encrypt if needed
                 let final_contents = if should_encrypt {
+                    if debug {
+                        // attempting to use encrypted init params in debug mode
+                        // error out since it is not safe
+                        return Err(anyhow!(
+                            "Refused to allow encrypted init params in debug mode enclaves. It is not safe to use encrypted init params in debug mode since it can then be decrypted and exported by other debug enclaves."
+                        ));
+                    }
+
                     let mut final_contents =
                         vec![0u8; contents.len() + crypto_box_SEALBYTES as usize];
                     // SAFETY: buffer is big enough for the encrypted message
