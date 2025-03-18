@@ -8,8 +8,8 @@ use tracing::info;
 #[derive(Args)]
 pub struct BuildArgs {
     /// Platform (amd64 or arm64)
-    #[arg(short, long, value_parser = [Platform::AMD64.as_str(), Platform::ARM64.as_str()])]
-    platform: String,
+    #[arg(short, long)]
+    platform: Platform,
 
     /// Path to docker-compose.yml file
     #[arg(short = 'c', long)]
@@ -38,7 +38,7 @@ pub fn build_oyster_image(args: BuildArgs) -> Result<()> {
     info!("  Docker compose: {}", args.docker_compose);
     info!("  Commit ref: {}", args.commit_ref);
 
-    let platform = Platform::from_str(&args.platform).map_err(|e| anyhow::anyhow!(e))?;
+    let platform = args.platform;
 
     let docker_images_list = args.docker_images.join(" ");
     if !docker_images_list.is_empty() {
