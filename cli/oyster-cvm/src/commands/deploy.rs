@@ -174,13 +174,30 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
         (total_rate.to::<u128>() * 3600) as f64 / 1e18
     );
 
+    let image_url = args
+        .image_url
+        .map(Result::Ok)
+        .unwrap_or(match args.preset.as_str() {
+            "blue" => match args.arch {
+                Platform::AMD64 => Ok(
+                    "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_amd64.eif"
+                        .into(),
+                ),
+                Platform::ARM64 => Ok(
+                    "https://artifacts.marlin.org/oyster/eifs/base-blue_v1.0.0_linux_arm64.eif"
+                        .into(),
+                ),
+            },
+            _ => Err(anyhow!("Image URL is required")),
+        })?;
+
     // Create metadata
     let metadata = create_metadata(
         &selected_instance.instance,
         &args.region,
         selected_instance.memory,
         selected_instance.cpu,
-        &args.image_url,
+        &image_url,
         &args.job_name,
         args.debug,
         &args
