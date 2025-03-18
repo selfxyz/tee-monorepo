@@ -20,17 +20,6 @@ impl Platform {
             Platform::ARM64 => "aarch64-linux",
         }
     }
-
-    pub fn from_str(s: &str) -> Result<Self, String> {
-        match s.to_lowercase().as_str() {
-            "amd64" => Ok(Platform::AMD64),
-            "arm64" => Ok(Platform::ARM64),
-            _ => Err(format!(
-                "Unsupported platform: {}. Only amd64 and arm64 are supported",
-                s
-            )),
-        }
-    }
 }
 
 impl ValueEnum for Platform {
