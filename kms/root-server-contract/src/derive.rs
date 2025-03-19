@@ -42,6 +42,7 @@ pub async fn derive(
     let provider = ProviderBuilder::new().on_http(rpc);
     let contract = IKMSVerifiableInstance::new(address, provider);
 
+    // SAFETY: transport should always have key associated, safe to unwrap
     let (pcrs, user_data) = scallop_state.0.unwrap();
     let mut hasher = Sha256::new();
     hasher.update(pcrs[0]);
@@ -51,7 +52,6 @@ pub async fn derive(
     hasher.update(user_data);
     let image_id: [u8; 32] = hasher.finalize().into();
 
-    // SAFETY: transport should always have key associated, safe to unwrap
     let Ok(res) = contract.oysterKMSVerify(B256::from(image_id)).call().await else {
         return (StatusCode::INTERNAL_SERVER_ERROR, [0; 64]);
     };

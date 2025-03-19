@@ -75,7 +75,6 @@ impl InitParamsArgs {
             .docker_compose
             .map(|x| vec![format!("docker-compose.yml:1:0:file:{x}")])
             .unwrap_or_default();
-        init_params.append(&mut self.init_params.unwrap_or_default());
 
         if let Some(address) = self.contract_address {
             if let Err(_) = Address::from_hex(&address) {
@@ -91,6 +90,8 @@ impl InitParamsArgs {
                 root_server_str
             ));
         }
+
+        init_params.append(&mut self.init_params.unwrap_or_default());
 
         // encoding has to be done
 
