@@ -1060,10 +1060,7 @@ impl<'a> JobState<'a> {
                 error!("failed to decode init params");
                 return JobResult::Failed;
             };
-            if self.init_params != init_params.into_boxed_slice() {
-                error!("Init params change not allowed");
-                return JobResult::Failed;
-            }
+            self.init_params = init_params.into_boxed_slice();
 
             // schedule change immediately if not already scheduled
             if !self.infra_change_scheduled {
