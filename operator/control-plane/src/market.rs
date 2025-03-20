@@ -1,4 +1,7 @@
+use std::collections::HashSet;
 use std::future::Future;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use alloy::hex::ToHexExt;
 use alloy::primitives::{keccak256, Address, B256, U256};
@@ -12,6 +15,7 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::fs;
 use tokio::time::sleep;
 use tokio::time::{Duration, Instant};
 use tokio_stream::StreamExt;
@@ -1052,6 +1056,72 @@ impl<'a> JobState<'a> {
         } else {
             error!(topic = ?log.topics()[0], "Unknown event");
             return JobResult::Failed;
+        }
+    }
+}
+
+// Registry to track terminated jobs
+#[derive(Clone)]
+pub struct JobRegistry {
+    terminated_jobs: Arc<Mutex<HashSet<String>>>,
+    save_path: String,
+}
+
+impl JobRegistry {
+    pub async fn new(save_path: String) -> Result<Self> {
+        let mut terminated_jobs = HashSet::new();
+        // Initialize with jobs from disk if file exists
+        if Path::new(&save_path).exists() {
+            terminated_jobs = fs::read_to_string(&save_path)
+                .await?
+                .trim()
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            info!(
+                "Loaded {} terminated jobs from registry",
+                terminated_jobs.len()
+            );
+        }
+
+        Ok(JobRegistry {
+            terminated_jobs: Arc::new(Mutex::new(terminated_jobs)),
+            save_path,
+        })
+    }
+
+    fn add_terminated_job(&self, job_id: String) {
+        self.terminated_jobs.lock().unwrap().insert(job_id);
+    }
+
+    fn is_job_terminated(&self, job_id: &str) -> bool {
+        self.terminated_jobs.lock().unwrap().contains(job_id)
+    }
+
+    async fn save_to_disk(&self) -> Result<(), std::io::Error> {
+        let jobs = self
+            .terminated_jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .fold("".to_owned(), |a, b| a + "\n" + b)
+            .trim()
+            .to_owned();
+        fs::write(&self.save_path, jobs).await?;
+        Ok(())
+    }
+
+    pub async fn run_periodic_save(self, interval_secs: u64) {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+            if let Err(e) = self.save_to_disk().await {
+                error!("Failed to save job registry: {:?}", e);
+            } else {
+                info!(
+                    "Job registry saved to disk: {} terminated jobs",
+                    self.terminated_jobs.lock().unwrap().len()
+                );
+            }
         }
     }
 }
