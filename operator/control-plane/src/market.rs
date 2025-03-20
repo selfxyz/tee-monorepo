@@ -1,4 +1,7 @@
+use std::collections::HashSet;
 use std::future::Future;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use alloy::hex::ToHexExt;
 use alloy::primitives::{keccak256, Address, B256, U256};
@@ -12,6 +15,7 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::fs;
 use tokio::time::sleep;
 use tokio::time::{Duration, Instant};
 use tokio_stream::StreamExt;
@@ -62,7 +66,6 @@ pub trait InfraProvider {
         image_url: &str,
         debug: bool,
         init_params: &[u8],
-        extra_init_params: &[u8],
     ) -> impl Future<Output = Result<()>> + Send;
 
     fn spin_down(&mut self, job: &JobId, region: &str) -> impl Future<Output = Result<()>> + Send;
@@ -92,7 +95,6 @@ where
         image_url: &str,
         debug: bool,
         init_params: &[u8],
-        extra_init_params: &[u8],
     ) -> Result<()> {
         (**self)
             .spin_up(
@@ -106,7 +108,6 @@ where
                 image_url,
                 debug,
                 init_params,
-                extra_init_params,
             )
             .await
     }
@@ -193,6 +194,7 @@ pub async fn run(
     address_blacklist: &'static [String],
     // without job_id.id set
     job_id: JobId,
+    job_registry: JobRegistry,
 ) {
     let mut backoff = 1;
 
@@ -242,6 +244,7 @@ pub async fn run(
             address_whitelist,
             address_blacklist,
             job_id.clone(),
+            job_registry.clone(),
         )
         .await;
     }
@@ -259,14 +262,24 @@ async fn run_once(
     address_blacklist: &'static [String],
     // without job_id.id set
     job_id: JobId,
+    job_registry: JobRegistry,
 ) -> usize {
     let mut job_count = 0;
     while let Some((job, removed)) = job_stream.next().await {
         info!(?job, removed, "New job");
 
+        let job_registry = job_registry.clone();
+
         // prepare with correct job id
         let mut job_id = job_id.clone();
         job_id.id = job.encode_hex_with_prefix();
+
+        // Skip if this job has already been terminated
+        if job_registry.is_job_terminated(&job_id.id) {
+            info!("Skipping already terminated job: {}", job_id.id);
+            job_count += 1;
+            continue;
+        }
 
         tokio::spawn(
             job_manager(
@@ -280,6 +293,7 @@ async fn run_once(
                 gb_rates,
                 address_whitelist,
                 address_blacklist,
+                job_registry,
             )
             .instrument(info_span!(parent: None, "job", ?job)),
         );
@@ -356,6 +370,7 @@ async fn job_manager(
     gb_rates: &[GBRateCard],
     address_whitelist: &[String],
     address_blacklist: &[String],
+    job_registry: JobRegistry,
 ) {
     let mut backoff = 1;
     let job = job_id.id.clone();
@@ -407,6 +422,10 @@ async fn job_manager(
             address_blacklist,
         )
         .await;
+
+        if res == JobResult::Done || res == JobResult::Failed {
+            job_registry.add_terminated_job(job_id.id.clone());
+        }
 
         if res != JobResult::Retry {
             // full exit
@@ -473,7 +492,6 @@ struct JobState<'a> {
     req_mem: i64,
     debug: bool,
     init_params: Box<[u8]>,
-    extra_init_params: Box<[u8]>,
 
     // whether instance should exist or not
     infra_state: bool,
@@ -512,7 +530,6 @@ impl<'a> JobState<'a> {
             req_mem: 4096,
             debug: false,
             init_params: Box::new([0; 0]),
-            extra_init_params: Box::new([0; 0]),
             infra_state: false,
             infra_change_time: Instant::now(),
             infra_change_scheduled: false,
@@ -605,7 +622,6 @@ impl<'a> JobState<'a> {
                     &self.eif_url,
                     self.debug,
                     &self.init_params,
-                    &self.extra_init_params,
                 )
                 .await;
             if let Err(err) = res {
@@ -755,14 +771,6 @@ impl<'a> JobState<'a> {
                 return JobResult::Failed;
             };
             self.init_params = init_params.into_boxed_slice();
-
-            let Ok(extra_init_params) =
-                BASE64_STANDARD.decode(v["extra_init_params"].as_str().unwrap_or(""))
-            else {
-                error!("failed to decode extra init params");
-                return JobResult::Failed;
-            };
-            self.extra_init_params = extra_init_params.into_boxed_slice();
 
             // blacklist whitelist check
             let allowed =
@@ -1057,17 +1065,6 @@ impl<'a> JobState<'a> {
                 return JobResult::Failed;
             }
 
-            let Ok(extra_init_params) =
-                BASE64_STANDARD.decode(v["extra_init_params"].as_str().unwrap_or(""))
-            else {
-                error!("failed to decode extra init params");
-                return JobResult::Failed;
-            };
-            if self.extra_init_params != extra_init_params.into_boxed_slice() {
-                error!("Extra init params change not allowed");
-                return JobResult::Failed;
-            }
-
             // schedule change immediately if not already scheduled
             if !self.infra_change_scheduled {
                 self.schedule_launch(0);
@@ -1077,6 +1074,72 @@ impl<'a> JobState<'a> {
         } else {
             error!(topic = ?log.topics()[0], "Unknown event");
             return JobResult::Failed;
+        }
+    }
+}
+
+// Registry to track terminated jobs
+#[derive(Clone)]
+pub struct JobRegistry {
+    terminated_jobs: Arc<Mutex<HashSet<String>>>,
+    save_path: String,
+}
+
+impl JobRegistry {
+    pub async fn new(save_path: String) -> Result<Self> {
+        let mut terminated_jobs = HashSet::new();
+        // Initialize with jobs from disk if file exists
+        if Path::new(&save_path).exists() {
+            terminated_jobs = fs::read_to_string(&save_path)
+                .await?
+                .trim()
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            info!(
+                "Loaded {} terminated jobs from registry",
+                terminated_jobs.len()
+            );
+        }
+
+        Ok(JobRegistry {
+            terminated_jobs: Arc::new(Mutex::new(terminated_jobs)),
+            save_path,
+        })
+    }
+
+    fn add_terminated_job(&self, job_id: String) {
+        self.terminated_jobs.lock().unwrap().insert(job_id);
+    }
+
+    fn is_job_terminated(&self, job_id: &str) -> bool {
+        self.terminated_jobs.lock().unwrap().contains(job_id)
+    }
+
+    async fn save_to_disk(&self) -> Result<(), std::io::Error> {
+        let jobs = self
+            .terminated_jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .fold("".to_owned(), |a, b| a + "\n" + b)
+            .trim()
+            .to_owned();
+        fs::write(&self.save_path, jobs).await?;
+        Ok(())
+    }
+
+    pub async fn run_periodic_save(self, interval_secs: u64) {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+            if let Err(e) = self.save_to_disk().await {
+                error!("Failed to save job registry: {:?}", e);
+            } else {
+                info!(
+                    "Job registry saved to disk: {} terminated jobs",
+                    self.terminated_jobs.lock().unwrap().len()
+                );
+            }
         }
     }
 }
@@ -1379,7 +1442,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -1401,7 +1463,7 @@ mod tests {
         let job_id = format!("{:064x}", 1);
 
         let logs = vec![
-            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"c29tZSBwYXJhbXM=\",\"extra_init_params\":\"c29tZSBleHRyYSBwYXJhbXM=\"}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
+            (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"c29tZSBwYXJhbXM=\"}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
             (301, Action::Close, [].into()),
         ];
 
@@ -1432,7 +1494,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: b"some params".to_vec().into_boxed_slice(),
-                    extra_init_params: b"some extra params".to_vec().into_boxed_slice(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -1485,7 +1546,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: true,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -1538,7 +1598,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -1594,7 +1653,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -1651,7 +1709,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -1945,7 +2002,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2001,7 +2057,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2057,7 +2112,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2187,7 +2241,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2439,7 +2492,6 @@ mod tests {
                     image_url: "https://example.com/updated-enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2493,7 +2545,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2619,7 +2670,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2673,7 +2723,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2690,7 +2739,6 @@ mod tests {
                     image_url: "https://example.com/updated-enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2744,7 +2792,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: true,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2761,7 +2808,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2816,7 +2862,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2871,7 +2916,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2925,7 +2969,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
@@ -2942,7 +2985,6 @@ mod tests {
                     image_url: "https://example.com/enclave.eif".into(),
                     debug: false,
                     init_params: [].into(),
-                    extra_init_params: [].into(),
                     contract_address: "xyz".into(),
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
