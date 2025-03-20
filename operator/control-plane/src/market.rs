@@ -194,6 +194,7 @@ pub async fn run(
     address_blacklist: &'static [String],
     // without job_id.id set
     job_id: JobId,
+    job_registry: JobRegistry,
 ) {
     let mut backoff = 1;
 
@@ -243,6 +244,7 @@ pub async fn run(
             address_whitelist,
             address_blacklist,
             job_id.clone(),
+            job_registry.clone(),
         )
         .await;
     }
@@ -260,14 +262,24 @@ async fn run_once(
     address_blacklist: &'static [String],
     // without job_id.id set
     job_id: JobId,
+    job_registry: JobRegistry,
 ) -> usize {
     let mut job_count = 0;
     while let Some((job, removed)) = job_stream.next().await {
         info!(?job, removed, "New job");
 
+        let job_registry = job_registry.clone();
+
         // prepare with correct job id
         let mut job_id = job_id.clone();
         job_id.id = job.encode_hex_with_prefix();
+
+        // Skip if this job has already been terminated
+        if job_registry.is_job_terminated(&job_id.id) {
+            info!("Skipping already terminated job: {}", job_id.id);
+            job_count += 1;
+            continue;
+        }
 
         tokio::spawn(
             job_manager(
