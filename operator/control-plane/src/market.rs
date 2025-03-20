@@ -293,6 +293,7 @@ async fn run_once(
                 gb_rates,
                 address_whitelist,
                 address_blacklist,
+                job_registry,
             )
             .instrument(info_span!(parent: None, "job", ?job)),
         );
@@ -369,6 +370,7 @@ async fn job_manager(
     gb_rates: &[GBRateCard],
     address_whitelist: &[String],
     address_blacklist: &[String],
+    job_registry: JobRegistry,
 ) {
     let mut backoff = 1;
     let job = job_id.id.clone();
@@ -420,6 +422,10 @@ async fn job_manager(
             address_blacklist,
         )
         .await;
+
+        if res == JobResult::Done || res == JobResult::Failed {
+            job_registry.add_terminated_job(job_id.id.clone());
+        }
 
         if res != JobResult::Retry {
             // full exit
