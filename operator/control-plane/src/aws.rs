@@ -591,7 +591,7 @@ impl Aws {
             )
             .context("Failed to set job id for init server")?;
 
-            old_hash != new_hash
+            old_hash.trim() != new_hash
         };
 
         if !params_changed {
