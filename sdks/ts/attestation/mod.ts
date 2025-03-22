@@ -100,7 +100,11 @@ export async function verify(
   }
 
   // verify signature and cert chain
-  result.rootPublicKey = await verifyRootOfTrust(attestationData, coseSign1);
+  result.rootPublicKey = await verifyRootOfTrust(
+    attestationData,
+    coseSign1,
+    result.timestamp,
+  );
 
   // check root public key if exists
   if (
@@ -232,6 +236,7 @@ function parsePCRs(data: AttestationPayload): Uint8Array[] {
 async function verifyRootOfTrust(
   data: AttestationPayload,
   coseSign1: Uint8Array,
+  timestamp: number,
 ): Promise<Uint8Array> {
   // verify attestation doc signature
   const enclaveCert = data.certificate;
@@ -250,6 +255,7 @@ async function verifyRootOfTrust(
   const rootKey = verifyCertChain(
     leafCert,
     caBundle.map((x) => new X509Certificate(x)).reverse(),
+    timestamp,
   );
 
   return rootKey;
@@ -258,6 +264,7 @@ async function verifyRootOfTrust(
 async function verifyCertChain(
   leafCert: X509Certificate,
   caBundle: X509Certificate[],
+  timestamp: number,
 ): Promise<Uint8Array> {
   try {
     const certs = [leafCert, ...caBundle];
@@ -265,8 +272,6 @@ async function verifyCertChain(
     for (let i = 0; i < certs.length - 1; i++) {
       const current = certs[i];
       const issuer = certs[i + 1];
-
-      console.log(current, issuer);
 
       if (
         !(await current.verify({
@@ -287,7 +292,7 @@ async function verifyCertChain(
         );
       }
 
-      const now = new Date();
+      const now = new Date(timestamp);
       if (
         now < current.notBefore || now > current.notAfter
       ) {
