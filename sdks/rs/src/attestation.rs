@@ -366,7 +366,7 @@ mod tests {
     use super::verify;
 
     #[test]
-    fn test_none_specified() {
+    fn test_aws_none_specified() {
         let attestation =
             std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/aws.bin")
                 .unwrap();
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_specified() {
+    fn test_aws_all_specified() {
         let attestation =
             std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/aws.bin")
                 .unwrap();
