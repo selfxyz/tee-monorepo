@@ -362,7 +362,7 @@ pub async fn get(endpoint: Uri) -> Result<Box<[u8]>, AttestationError> {
 mod tests {
     use hex_literal::hex;
 
-    use crate::attestation::{AttestationExpectations, MOCK_ROOT_KEY};
+    use crate::attestation::{AttestationExpectations, AWS_ROOT_KEY, MOCK_ROOT_KEY};
 
     use super::verify;
 
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(decoded.pcrs[2], hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"));
         assert_eq!(decoded.user_data, [0u8; 0].into());
         assert_eq!(decoded.public_key.as_ref(), hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"));
-        assert_eq!(decoded.root_public_key.as_ref(), hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4"));
+        assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
     }
 
     #[test]
@@ -404,7 +404,7 @@ mod tests {
                 ]),
                 public_key: Some(&hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb")),
                 user_data: Some(&[0; 0]),
-                root_public_key: Some(&hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4")),
+                root_public_key: Some(&AWS_ROOT_KEY),
             },
         )
         .unwrap();
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(decoded.pcrs[2], hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"));
         assert_eq!(decoded.user_data, [0u8; 0].into());
         assert_eq!(decoded.public_key.as_ref(), hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"));
-        assert_eq!(decoded.root_public_key.as_ref(), hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4"));
+        assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
     }
 
     #[test]
