@@ -7,7 +7,6 @@ import { X509Certificate } from "npm:@peculiar/x509@1";
 //
 // node:crypto - certificate verification not implemented in deno, will not work in a browser anyway
 // node-forge - does not support ECC, only RSA
-// @peculiar/x509 - failed certificate chain verification for AWS, custom works
 // @fidm/x509 - failed to parse dates
 // pkijs - failed certificate chain verification
 
@@ -244,7 +243,14 @@ async function verifyCertChain(
       const current = certs[i];
       const issuer = certs[i + 1];
 
-      if (!(await current.verify({ publicKey: issuer.publicKey }))) {
+      console.log(current, issuer);
+
+      if (
+        !(await current.verify({
+          publicKey: issuer.publicKey,
+          signatureOnly: true,
+        }))
+      ) {
         throw new AttestationError(
           "VerifyFailed",
           `Invalid signature for certificate ${i}`,
