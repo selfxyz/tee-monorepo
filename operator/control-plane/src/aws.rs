@@ -11,6 +11,7 @@ use aws_types::region::Region;
 use rand_core::OsRng;
 use serde_json::Value;
 use ssh2::Session;
+use ssh_key::sha2::{Digest, Sha256};
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tokio::time::{sleep, Duration};
 use tracing::{error, info};
@@ -561,11 +562,8 @@ impl Aws {
     // Goal: set up init server params
     // assumes the .conf has not been modified externally
     // cheap, so just always does `sed`
-    fn run_fragment_init_server(
-        sess: &Session,
-        job_id: &str,
-        init_params: &[u8],
-    ) -> Result<()> {
+    // init params are updated if they have changed
+    fn run_fragment_init_server(sess: &Session, job_id: &str, init_params: &[u8]) -> Result<()> {
         // set job id
         let (_, stderr) = Self::ssh_exec(
             sess,
@@ -577,6 +575,34 @@ impl Aws {
         .context("Failed to set job id for init server")?;
         if !stderr.is_empty() {
             return Err(anyhow!(stderr)).context("Failed to set job id for init server");
+        }
+
+        // Check if init params have changed
+        let params_changed = {
+            // Calculate hash of new params
+            let mut hasher = Sha256::new();
+            hasher.update(init_params);
+            let new_hash = hex::encode(hasher.finalize());
+
+            // get old hash
+            let (old_hash, _) = Self::ssh_exec(
+                sess,
+                "sha256sum /home/ubuntu/init-params 2>/dev/null | cut -d ' ' -f 1",
+            )
+            .context("Failed to set job id for init server")?;
+
+            old_hash.trim() != new_hash
+        };
+
+        if !params_changed {
+            return Ok(());
+        }
+
+        info!("Init parameters changed, terminating enclave for restart");
+        let (_, stderr) = Self::ssh_exec(sess, "nitro-cli terminate-enclave --all")?;
+
+        if !stderr.is_empty() && !stderr.contains("Successfully terminated enclave") {
+            return Err(anyhow!(stderr)).context("Error terminating enclave");
         }
 
         // set init params
@@ -599,7 +625,6 @@ impl Aws {
         init_params_file
             .wait_close()
             .context("failed to wait for close")?;
-
 
         let (_, stderr) = Self::ssh_exec(sess, "sudo supervisorctl update")
             .context("Failed to update init server")?;

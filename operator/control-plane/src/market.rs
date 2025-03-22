@@ -1060,10 +1060,7 @@ impl<'a> JobState<'a> {
                 error!("failed to decode init params");
                 return JobResult::Failed;
             };
-            if self.init_params != init_params.into_boxed_slice() {
-                error!("Init params change not allowed");
-                return JobResult::Failed;
-            }
+            self.init_params = init_params.into_boxed_slice();
 
             // schedule change immediately if not already scheduled
             if !self.infra_change_scheduled {
@@ -2603,8 +2600,7 @@ mod tests {
 
         let logs = vec![
             (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
-            // instance type has also been updated in the metadata. should fail this job.
-            (100, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"some params\"}".to_string().abi_encode()),
+            (100, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"c29tZSBwYXJhbXM=\"}".to_string().abi_encode()),
             (505, Action::Close, [].into()),
         ];
 
@@ -2621,12 +2617,30 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Failed,
-            outcomes: vec![TestAwsOutcome::SpinDown(test::SpinDownOutcome {
-                time: start_time + Duration::from_secs(100),
-                job: job_id,
-                region: "ap-south-1".into(),
-            })],
+            res: JobResult::Done,
+            outcomes: vec![
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
+                    time: start_time + Duration::from_secs(300),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    init_params: b"some params".to_vec().into_boxed_slice(),
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
+                    job: job_id,
+                    region: "ap-south-1".into(),
+                }),
+            ],
         };
 
         run_test(start_time, logs, job_manager_params, test_results).await;
@@ -2884,8 +2898,7 @@ mod tests {
 
         let logs = vec![
             (0, Action::Open, ("{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2}".to_string(),31000000000000u64,31000u64,0).abi_encode_sequence()),
-            // init params have also been updated in the metadata. should fail this job.
-            (400, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"some params\"}".to_string().abi_encode()),
+            (400, Action::MetadataUpdated, "{\"region\":\"ap-south-1\",\"url\":\"https://example.com/enclave.eif\",\"instance\":\"c6a.xlarge\",\"memory\":4096,\"vcpu\":2,\"init_params\":\"c29tZSBwYXJhbXM=\"}".to_string().abi_encode()),
             (505, Action::Close, [].into()),
         ];
 
@@ -2902,7 +2915,7 @@ mod tests {
         };
 
         let test_results = TestResults {
-            res: JobResult::Failed,
+            res: JobResult::Done,
             outcomes: vec![
                 TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(300),
@@ -2920,8 +2933,24 @@ mod tests {
                     chain_id: "123".into(),
                     instance_id: compute_instance_id(0),
                 }),
-                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                TestAwsOutcome::SpinUp(test::SpinUpOutcome {
                     time: start_time + Duration::from_secs(400),
+                    job: job_id.clone(),
+                    instance_type: "c6a.xlarge".into(),
+                    family: "salmon".into(),
+                    region: "ap-south-1".into(),
+                    req_mem: 4096,
+                    req_vcpu: 2,
+                    bandwidth: 76,
+                    image_url: "https://example.com/enclave.eif".into(),
+                    debug: false,
+                    init_params: b"some params".to_vec().into_boxed_slice(),
+                    contract_address: "xyz".into(),
+                    chain_id: "123".into(),
+                    instance_id: compute_instance_id(0),
+                }),
+                TestAwsOutcome::SpinDown(test::SpinDownOutcome {
+                    time: start_time + Duration::from_secs(505),
                     job: job_id,
                     region: "ap-south-1".into(),
                 }),
