@@ -19,6 +19,7 @@ export interface AttestationDecoded {
   pcrs: Uint8Array[];
   rootPublicKey: Uint8Array;
   publicKey: Uint8Array;
+  userData: Uint8Array;
 }
 
 export interface AttestationExpectations {
@@ -28,6 +29,8 @@ export interface AttestationExpectations {
     currentTimestamp: number;
   };
   pcrs?: Uint8Array[];
+  publicKey?: Uint8Array;
+  userData?: Uint8Array;
   rootPublicKey?: Uint8Array;
 }
 
@@ -50,6 +53,7 @@ export async function verify(
     pcrs: Array(3).fill(new Uint8Array(48)),
     rootPublicKey: new Uint8Array(),
     publicKey: new Uint8Array(),
+    userData: new Uint8Array(),
   };
 
   // parse attestation doc
@@ -108,6 +112,25 @@ export async function verify(
 
   // return the enclave key
   result.publicKey = parseEnclaveKey(attestationData);
+
+  // check enclave public key if exists
+  if (
+    expectations.publicKey &&
+    result.publicKey.toString() !== expectations.publicKey.toString()
+  ) {
+    throw new AttestationError("VerifyFailed", "enclave public key mismatch");
+  }
+
+  // return the user data
+  result.userData = parseUserData(attestationData);
+
+  // check user data if exists
+  if (
+    expectations.userData &&
+    result.userData.toString() !== expectations.userData.toString()
+  ) {
+    throw new AttestationError("VerifyFailed", "user data mismatch");
+  }
 
   return result;
 }
@@ -290,6 +313,12 @@ function parseEnclaveKey(data: AttestationPayload): Uint8Array {
   const publicKey = data.public_key;
 
   return publicKey;
+}
+
+function parseUserData(data: AttestationPayload): Uint8Array {
+  const userData = data.user_data;
+
+  return userData;
 }
 
 export async function get(endpoint: string): Promise<Uint8Array> {
