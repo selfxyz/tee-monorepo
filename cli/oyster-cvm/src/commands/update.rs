@@ -1,8 +1,41 @@
-use crate::configs::global::OYSTER_MARKET_ADDRESS;
+use crate::args::init_params::InitParamsArgs;
+use crate::types::Platform;
 use crate::utils::provider::create_provider;
+use crate::{args::wallet::WalletArgs, configs::global::OYSTER_MARKET_ADDRESS};
 use alloy::sol;
 use anyhow::{Context, Result};
+use clap::Args;
 use tracing::info;
+
+#[derive(Args)]
+pub struct UpdateArgs {
+    /// Job ID
+    #[arg(long)]
+    job_id: String,
+
+    #[command(flatten)]
+    wallet: WalletArgs,
+
+    /// New URL of the enclave image
+    #[arg(long)]
+    image_url: Option<String>,
+
+    /// New debug mode
+    #[arg(short, long)]
+    debug: Option<bool>,
+
+    /// Preset for init params (e.g. blue)
+    #[arg(long, default_value = "blue")]
+    preset: String,
+
+    /// Platform architecture (e.g. amd64, arm64)
+    #[arg(long, default_value = "arm64")]
+    arch: Platform,
+
+    /// New init params
+    #[command(flatten)]
+    init_params: InitParamsArgs,
+}
 
 sol!(
     #[allow(missing_docs)]
@@ -11,12 +44,12 @@ sol!(
     "src/abis/oyster_market_abi.json"
 );
 
-pub async fn update_job(
-    job_id: &str,
-    wallet_private_key: &str,
-    image_url: Option<&str>,
-    debug: Option<bool>,
-) -> Result<()> {
+pub async fn update_job(args: UpdateArgs) -> Result<()> {
+    let wallet_private_key = &args.wallet.load_required()?;
+    let job_id = args.job_id;
+    let debug = args.debug;
+    let image_url = args.image_url;
+
     let provider = create_provider(wallet_private_key)
         .await
         .context("Failed to create provider")?;
@@ -37,6 +70,18 @@ pub async fn update_job(
 
     if let Some(image_url) = image_url {
         metadata["url"] = serde_json::Value::String(image_url.into());
+    }
+
+    if let Some(init_params) = args
+        .init_params
+        .load(
+            args.preset,
+            args.arch,
+            metadata["debug"].as_bool().unwrap_or(false),
+        )
+        .context("Failed to load init params")?
+    {
+        metadata["init_params"] = init_params.into();
     }
 
     info!(
