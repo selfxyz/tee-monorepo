@@ -14,7 +14,7 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Args;
 use lazy_static::lazy_static;
 use libsodium_sys::{crypto_box_SEALBYTES, crypto_box_seal, sodium_init};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::types::Platform;
@@ -263,7 +263,7 @@ impl InitParamsArgs {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct InitParam {
     path: String,
     contents: String, // base64 encoded
@@ -271,9 +271,9 @@ struct InitParam {
     should_decrypt: bool,
 }
 
-#[derive(Serialize)]
-struct InitParamsList {
-    digest: String, // base64 encoded
+#[derive(Serialize, Deserialize)]
+pub struct InitParamsList {
+    pub digest: String, // base64 encoded
     params: Vec<InitParam>,
 }
 
@@ -305,7 +305,7 @@ lazy_static! {
     static ref KMS_ROOT_SERVERS: HashMap<u64, &'static str> = {
         let mut root_servers = HashMap::new();
         root_servers.insert(
-            31337,
+            42161,
             r#"
                 {
                     "kms_endpoint": "image-v2.kms.box:1101",
