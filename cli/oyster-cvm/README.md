@@ -198,6 +198,29 @@ Required args:
 
 Note: A buffer balance of 7 minutes worth of job rate will be maintained to ensure smooth operation.
 
+#### `image-id`
+Calculates the image ID based on the enclave image and input parameters. Intended to be used for applications using contract based KMS.
+
+Optional args:
+- `--preset`: Preset for parameters (e.g. blue) [default: blue]
+- `--arch`: Platform architecture [default: arm64] [possible values: amd64, arm64]
+- `--init-params-encoded`: Base64 encoded init params
+- `--init-params`: List of init params in format `<path>:<attest>:<encrypt>:<type>:<value>`
+- `--docker-compose`: Path to custom docker-compose.yml file
+- `--contract-address`: Enclave verifier contract address
+- `--chain-id`: Chain ID for KMS contract root server
+\
+<br>
+- `--pcr0` (-0): PCR0 value
+- `--pcr1` (-1): PCR1 value
+- `--pcr2` (-2): PCR2 value
+<br>
+OR
+- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
+<br>
+OR
+- `--pcr-json`: Pass the path to json file containing pcr values
+
 ### Example
 
 ```bash
@@ -359,6 +382,15 @@ Note: A buffer balance of 7 minutes worth of job rate will be maintained to ensu
 | 0x123...         | 0.50            | 100.00 USDC | AWS      |
 +------------------+------------------+-------------+-----------+
 
+# Calculate image ID
+oyster-cvm image-id --docker-compose docker-compose.yml --contract-address D0D6fF1C2FD450aBcB050896EeE16AE10A1aD3e1 --chain-id 42161 --pcr-preset debug
+
+# Sample output
+[INFO] oyster_cvm::args::init_params: digest path="docker-compose.yml" should_attest=true should_encrypt=false
+[INFO] oyster_cvm::args::init_params: digest path="contract-address" should_attest=true should_encrypt=false
+[INFO] oyster_cvm::args::init_params: digest path="root-server-config.json" should_attest=true should_encrypt=false
+[INFO] oyster_cvm::args::init_params: Computed digest digest="27637e8805c4eabe6bd39ed0cc9ac9e66db731470e524b02ea99794298a093e2"
+[INFO] oyster_cvm::commands::image_id: Image ID: aaa2e48fca87611a563556ad9d778f19c7c32a1a7c84242eeb57cbb1f7e33bf1
 ```
 
 ## License
