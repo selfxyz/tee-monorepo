@@ -366,7 +366,7 @@ async function verifyCoseSign1P384(
     );
   }
 
-  const [protectedHeaderBytes, , payloadBytes, signatureBytes] = decodedCose;
+  const [protectedHeaderBytes, _, payloadBytes, signatureBytes] = decodedCose;
 
   let protectedHeaderMap: unknown;
   try {
