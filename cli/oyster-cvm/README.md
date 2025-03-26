@@ -120,12 +120,17 @@ Optional args:
 - `--init-params`: List of init params in format `<path>:<attest>:<encrypt>:<type>:<value>`
 - `--kms-endpoint`: Kms key gen endpoint (default: http://image-v2.kms.box:1101)
 - `--docker-compose`: Path to custom docker-compose.yml file
-
+- `--contract-address`: Enclave verifier contract address
+- `--chain-id`: Chain ID for KMS contract root server
+\
+<br>
 - `--pcr0` (-0): PCR0 value
 - `--pcr1` (-1): PCR1 value
 - `--pcr2` (-2): PCR2 value
+<br>
 OR
 - `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64"]
+<br>
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
 
