@@ -24,6 +24,16 @@ export interface AttestationDecoded {
   userData: Uint8Array;
 }
 
+export class AttestationError extends Error {
+  constructor(
+    type: "ParseFailed" | "VerifyFailed" | "HttpClientError",
+    message: string,
+  ) {
+    super(`${type}: ${message}`);
+    this.name = "AttestationError";
+  }
+}
+
 export interface AttestationExpectations {
   timestamp?: number;
   age?: {
@@ -34,16 +44,6 @@ export interface AttestationExpectations {
   publicKey?: Uint8Array;
   userData?: Uint8Array;
   rootPublicKey?: Uint8Array;
-}
-
-export class AttestationError extends Error {
-  constructor(
-    type: "ParseFailed" | "VerifyFailed" | "HttpClientError",
-    message: string,
-  ) {
-    super(`${type}: ${message}`);
-    this.name = "AttestationError";
-  }
 }
 
 export async function verify(
