@@ -15,6 +15,7 @@ await build({
   shims: {
     // see JS docs for overview and more options
     deno: true,
+    crypto: true,
   },
   package: {
     // package.json properties
