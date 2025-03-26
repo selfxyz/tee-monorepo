@@ -366,6 +366,8 @@ mod tests {
 
     use super::verify;
 
+    // generated using `curl <ip>:<port>/attestation/raw`
+    // on the attestation server of a real Nitro enclave
     #[test]
     fn test_aws_none_specified() {
         let attestation =
@@ -383,6 +385,8 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
     }
 
+    // generated using `curl <ip>:<port>/attestation/raw`
+    // on the attestation server of a real Nitro enclave
     #[test]
     fn test_aws_all_specified() {
         let attestation =
@@ -418,6 +422,8 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
     }
 
+    // generated using `curl <ip>:<port>/attestation/raw?public_key=12345678&user_data=abcdef`
+    // on a custom mock attestation server running locally
     #[test]
     fn test_mock_none_specified() {
         let attestation =
@@ -435,6 +441,8 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
     }
 
+    // generated using `curl <ip>:<port>/attestation/raw?public_key=12345678&user_data=abcdef`
+    // on a custom mock attestation server running locally
     #[test]
     fn test_mock_all_specified() {
         let attestation =
