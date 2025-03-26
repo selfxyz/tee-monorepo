@@ -1,6 +1,5 @@
 import { decodeHex } from "jsr:@std/encoding@1/hex";
-import { decode } from "npm:cbor2@1";
-import * as cose from "npm:cose-js@0.9";
+import { decode, encode } from "npm:cbor2@1";
 import { X509Certificate } from "npm:@peculiar/x509@1";
 
 // Graveyard of x509 libraries that did not work, fuck me I guess
@@ -238,17 +237,18 @@ async function verifyRootOfTrust(
   coseSign1: Uint8Array,
   timestamp: number,
 ): Promise<Uint8Array> {
-  // verify attestation doc signature
-  const enclaveCert = data.certificate;
-  const leafCert = new X509Certificate(enclaveCert);
-  const pubkey = new Uint8Array(leafCert.publicKey.rawData.slice(24));
+  // verify attestation doc signature using the leaf certificate's public key
+  const enclaveCertBytes = data.certificate;
+  const leafCert = new X509Certificate(enclaveCertBytes);
 
-  await cose.sign.verify(coseSign1, {
-    key: {
-      x: pubkey.slice(0, 48),
-      y: pubkey.slice(48),
-    },
-  }, { defaultType: 18 });
+  // Extract raw P-384 public key (x || y)
+  // leafCert.publicKey.rawData contains ASN.1 encoded SubjectPublicKeyInfo.
+  // For P-384, the raw key starts after a 24-byte prefix (including the 0x04 uncompressed point indicator).
+  // However, WebCrypto's 'raw' import expects *just* the point for ECDSA.
+  const pubkeyRaw = new Uint8Array(leafCert.publicKey.rawData.slice(24)); // Should be 96 bytes (48 x + 48 y)
+
+  // Verify the COSE_Sign1 signature
+  await verifyCoseSign1P384(coseSign1, pubkeyRaw);
 
   // verify certificate chain
   const caBundle = data.cabundle;
@@ -324,6 +324,126 @@ function parseUserData(data: AttestationPayload): Uint8Array {
   const userData = data.user_data;
 
   return userData;
+}
+
+/**
+ * Verifies a COSE_Sign1 structure with an ES384 (P-384 ECDSA with SHA-384) signature.
+ * @param coseSign1 The COSE_Sign1 structure as a Uint8Array.
+ * @param publicKeyRaw The raw P-384 public key (x and y coordinates concatenated).
+ * @throws {AttestationError} If verification fails or the algorithm is not ES384.
+ */
+async function verifyCoseSign1P384(
+  coseSign1: Uint8Array,
+  publicKeyRaw: Uint8Array, // Expecting 96 bytes (48 bytes x + 48 bytes y)
+): Promise<void> {
+  if (publicKeyRaw.length !== 96) {
+    throw new AttestationError(
+      "VerifyFailed",
+      `Invalid P-384 public key length: ${publicKeyRaw.length}`,
+    );
+  }
+
+  let decodedCose: unknown;
+  try {
+    decodedCose = decode(coseSign1);
+  } catch (e) {
+    throw new AttestationError("ParseFailed", `COSE_Sign1 decode error: ${e}`);
+  }
+
+  if (
+    !Array.isArray(decodedCose) || decodedCose.length !== 4 ||
+    !(decodedCose[0] instanceof Uint8Array) || // protected header bytes
+    // decodedCose[1] is the unprotected header, not needed for verification
+    !(decodedCose[2] instanceof Uint8Array) || // payload bytes
+    !(decodedCose[3] instanceof Uint8Array) // signature bytes
+  ) {
+    throw new AttestationError(
+      "ParseFailed",
+      "Invalid COSE_Sign1 structure",
+    );
+  }
+
+  const [protectedHeaderBytes, , payloadBytes, signatureBytes] = decodedCose;
+
+  let protectedHeaderMap: unknown;
+  try {
+    protectedHeaderMap = decode(protectedHeaderBytes);
+  } catch (e) {
+    throw new AttestationError(
+      "ParseFailed",
+      `Protected header decode error: ${e}`,
+    );
+  }
+
+  if (!(protectedHeaderMap instanceof Map)) {
+    throw new AttestationError(
+      "ParseFailed",
+      "Protected header is not a map",
+    );
+  }
+
+  // Check algorithm - MUST be ES384 (alg ID -35)
+  const alg = protectedHeaderMap.get(1); // COSE Header Parameter "alg"
+  if (alg !== -35) {
+    throw new AttestationError(
+      "VerifyFailed",
+      `Unsupported COSE algorithm: ${alg}. Only ES384 (-35) is supported.`,
+    );
+  }
+
+  // Construct the Sig_structure: [context, protected_header_bytes, external_aad_bytes, payload_bytes]
+  // Context is "Signature1" for COSE_Sign1
+  // external_aad is empty (zero-length byte string)
+  const sigStructure = [
+    "Signature1",
+    protectedHeaderBytes,
+    new Uint8Array(), // external_aad
+    payloadBytes,
+  ];
+
+  const dataToVerify = encode(sigStructure);
+
+  // Import the public key for Web Crypto
+  // Prepend 0x04 to indicate uncompressed format
+  const uncompressedPublicKey = new Uint8Array(publicKeyRaw.length + 1);
+  uncompressedPublicKey[0] = 0x04;
+  uncompressedPublicKey.set(publicKeyRaw, 1);
+
+  let cryptoKey: CryptoKey;
+  try {
+    cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      uncompressedPublicKey,
+      { name: "ECDSA", namedCurve: "P-384" },
+      true, // extractable = false is generally recommended, but true is fine here
+      ["verify"],
+    );
+  } catch (e) {
+    throw new AttestationError(
+      "VerifyFailed",
+      `Failed to import public key: ${e}`,
+    );
+  }
+
+  // Verify the signature
+  let isValid: boolean;
+  try {
+    isValid = await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-384" },
+      cryptoKey,
+      signatureBytes,
+      dataToVerify,
+    );
+  } catch (e) {
+    throw new AttestationError(
+      "VerifyFailed",
+      `Web Crypto verification error: ${e}`,
+    );
+  }
+
+  if (!isValid) {
+    throw new AttestationError("VerifyFailed", "COSE_Sign1 signature invalid");
+  }
 }
 
 export async function get(endpoint: string): Promise<Uint8Array> {
