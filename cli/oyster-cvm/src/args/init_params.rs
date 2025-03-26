@@ -308,7 +308,7 @@ lazy_static! {
             42161,
             r#"
                 {
-                    "kms_endpoint": "52.66.5.185:1100",
+                    "kms_endpoint": "arbone-v2.kms.box:1100",
                     "pcr0": "439e85acd45a7d476e940346aa1e125ef06665efdd403bb056e89a4dbb3ba7bb85b853e2a70fe434d05e3daf75ef63ff",
                     "pcr1": "3dc2602d18944028b4705c2b46c5d6efd73cba3c58d09deccc073075c68a4ebac36e5368eb0921c7b4c699f4ae03a1e5",
                     "pcr2": "ee6041a503a1c17cdcf4b5c18bd82d2f5c934b2024e61c2b97b81416bab9cb72bcdf42a290f82f5053746fb80fa2b062",
