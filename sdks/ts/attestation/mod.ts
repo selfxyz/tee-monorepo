@@ -318,13 +318,13 @@ async function verifyCertChain(
 }
 
 function parseEnclaveKey(data: AttestationPayload): Uint8Array {
-  const publicKey = data.public_key;
+  const publicKey = data.public_key || new Uint8Array();
 
   return publicKey;
 }
 
 function parseUserData(data: AttestationPayload): Uint8Array {
-  const userData = data.user_data;
+  const userData = data.user_data || new Uint8Array();
 
   return userData;
 }
