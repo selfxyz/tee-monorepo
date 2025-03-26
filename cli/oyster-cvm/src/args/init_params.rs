@@ -177,6 +177,11 @@ impl InitParamsArgs {
                         PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
                     )),
                 },
+                "debug" => Ok((
+                    hex::encode([0u8; 48]),
+                    hex::encode([0u8; 48]),
+                    hex::encode([0u8; 48]),
+                )),
                 _ => Err(anyhow!("PCRs are required")),
             })?;
 

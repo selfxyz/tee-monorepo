@@ -55,7 +55,7 @@ enum Commands {
     /// Withdraw funds from an existing job
     Withdraw(WithdrawArgs),
     /// Get Image ID
-    ImageId(ImageArgs),
+    ComputeImageId(ImageArgs),
 }
 
 #[tokio::main]
@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
         Commands::Deposit(args) => commands::deposit::deposit_to_job(args).await,
         Commands::Stop(args) => commands::stop::stop_oyster_instance(args).await,
         Commands::Withdraw(args) => commands::withdraw::withdraw_from_job(args).await,
-        Commands::ImageId(args) => commands::image_id::image_id(args),
+        Commands::ComputeImageId(args) => commands::image_id::compute_image_id(args),
     };
 
     if let Err(e) = result {

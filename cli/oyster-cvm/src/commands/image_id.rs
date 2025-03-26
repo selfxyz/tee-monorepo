@@ -14,7 +14,7 @@ use crate::{
 
 #[derive(Args, Debug)]
 pub struct ImageArgs {
-    /// Preset for parameters (e.g. blue)
+    /// Preset for parameters (e.g. blue, debug)
     #[arg(long, default_value = "blue")]
     preset: String,
 
@@ -26,7 +26,7 @@ pub struct ImageArgs {
     init_params: InitParamsArgs,
 }
 
-pub fn image_id(args: ImageArgs) -> Result<()> {
+pub fn compute_image_id(args: ImageArgs) -> Result<()> {
     let pcrs = args
         .init_params
         .pcrs
@@ -46,6 +46,11 @@ pub fn image_id(args: ImageArgs) -> Result<()> {
                     PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
                 )),
             },
+            "debug" => Ok((
+                hex::encode([0u8; 48]),
+                hex::encode([0u8; 48]),
+                hex::encode([0u8; 48]),
+            )),
             _ => Err(anyhow!("PCRs are required")),
         })?;
     let Some(init_param_b64) = args
