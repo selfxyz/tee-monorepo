@@ -19,9 +19,9 @@ fi
 
 ip=$(cat /app/ip.txt)
 
-# setting an address for loopback
-ifconfig lo $ip mtu 9001
-ip addr add $ip dev lo
+# set up loopback
+ip addr add 127.0.0.1/8 dev lo
+ip link set lo up
 
 # localhost dns
 echo "127.0.0.1 localhost" > /etc/hosts
