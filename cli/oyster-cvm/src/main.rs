@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::{
-    build::BuildArgs, deploy::DeployArgs, deposit::DepositArgs, doctor::DoctorArgs, list::ListArgs,
-    log::LogArgs, stop::StopArgs, update::UpdateArgs, upload::UploadArgs, verify::VerifyArgs,
-    withdraw::WithdrawArgs,
+    build::BuildArgs, deploy::DeployArgs, deposit::DepositArgs, doctor::DoctorArgs,
+    image_id::ImageArgs, list::ListArgs, log::LogArgs, stop::StopArgs, update::UpdateArgs,
+    upload::UploadArgs, verify::VerifyArgs, withdraw::WithdrawArgs,
 };
 
 mod args;
@@ -54,6 +54,8 @@ enum Commands {
     Stop(StopArgs),
     /// Withdraw funds from an existing job
     Withdraw(WithdrawArgs),
+    /// Get Image ID
+    ComputeImageId(ImageArgs),
 }
 
 #[tokio::main]
@@ -74,6 +76,7 @@ async fn main() -> Result<()> {
         Commands::Deposit(args) => commands::deposit::deposit_to_job(args).await,
         Commands::Stop(args) => commands::stop::stop_oyster_instance(args).await,
         Commands::Withdraw(args) => commands::withdraw::withdraw_from_job(args).await,
+        Commands::ComputeImageId(args) => commands::image_id::compute_image_id(args),
     };
 
     if let Err(e) = result {
