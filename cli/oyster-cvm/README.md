@@ -91,7 +91,7 @@ Optional args:
 - `--pcr1` (-1): PCR1 value
 - `--pcr2` (-2): PCR2 value
 OR
-- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64"]
+- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
 
@@ -220,7 +220,7 @@ Optional args:
 - `--pcr2` (-2): PCR2 value
 <br>
 OR
-- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64"]
+- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
 <br>
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
