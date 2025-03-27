@@ -23,6 +23,12 @@ ip=$(cat /app/ip.txt)
 ip addr add 127.0.0.1/8 dev lo
 ip link set lo up
 
+# set up bridge
+ip link add name br0 type bridge
+ip addr add $ip/32 dev br0
+ip link set dev br0 mtu 9001
+ip link set dev br0 up
+
 # localhost dns
 echo "127.0.0.1 localhost" > /etc/hosts
 
