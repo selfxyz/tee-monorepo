@@ -16,6 +16,7 @@ use tokio::{
     spawn,
     time::sleep,
 };
+use tower_http::{limit::RequestBodyLimitLayer, timeout::TimeoutLayer};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -197,6 +198,10 @@ async fn run_scallop_server(
 
     let app = Router::new()
         .route("/derive", get(derive::derive))
+        // middleware is executed bottom to top here
+        // we want timeouts to be first, then size checks
+        .layer(RequestBodyLimitLayer::new(1024))
+        .layer(TimeoutLayer::new(Duration::from_secs(5)))
         .with_state(app_state);
 
     let tcp_listener = TcpListener::bind(&listen_addr)
@@ -241,6 +246,10 @@ async fn run_public_server(app_state: AppState, listen_addr: String) -> Result<(
             "/derive/x25519/public",
             get(derive_public::derive_x25519_public),
         )
+        // middleware is executed bottom to top here
+        // we want timeouts to be first, then size checks
+        .layer(RequestBodyLimitLayer::new(1024))
+        .layer(TimeoutLayer::new(Duration::from_secs(5)))
         .with_state(app_state);
 
     let listener = TcpListener::bind(&listen_addr)
