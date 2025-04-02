@@ -75,11 +75,8 @@ async fn main() -> Result<()> {
         url: args.attestation_endpoint,
     };
 
-    let pcr0: [u8; 48];
-    let pcr1: [u8; 48];
-    let pcr2: [u8; 48];
-    let user_data: Box<[u8]>;
     let kms_endpoint: String;
+    let kms_pubkey: [u8; 32];
 
     if let Some(filename) = args.root_server_config {
         let config_content = read_to_string(filename)
@@ -92,42 +89,20 @@ async fn main() -> Result<()> {
             .as_str()
             .context("missing kms_endpoint in config")?
             .to_string();
-        pcr0 = hex::decode(config["pcr0"].as_str().context("missing pcr0 in config")?)
-            .context("failed to decode pcr0")?
-            .try_into()
-            .map_err(|_| anyhow!("incorrect pcr0 size"))?;
-        pcr1 = hex::decode(config["pcr1"].as_str().context("missing pcr1 in config")?)
-            .context("failed to decode pcr1")?
-            .try_into()
-            .map_err(|_| anyhow!("incorrect pcr1 size"))?;
-        pcr2 = hex::decode(config["pcr2"].as_str().context("missing pcr2 in config")?)
-            .context("failed to decode pcr2")?
-            .try_into()
-            .map_err(|_| anyhow!("incorrect pcr2 size"))?;
-        user_data = hex::decode(
-            config["user_data"]
+        kms_pubkey = hex::decode(
+            config["kms_pubkey"]
                 .as_str()
-                .context("missing user_data in config")?,
+                .context("missing kms_pubkey in config")?,
         )
-        .context("failed to decode user data")?
-        .into_boxed_slice();
+        .context("failed to decode kms_pubkey")?
+        .try_into()
+        .map_err(|_| anyhow!("incorrect kms_pubkey size"))?;
     } else {
         kms_endpoint = args.kms_endpoint.unwrap();
-        pcr0 = hex::decode(args.pcr0.unwrap())
-            .context("failed to decode pcr0")?
+        kms_pubkey = hex::decode(args.kms_pubkey.unwrap())
+            .context("failed to decode kms_pubkey")?
             .try_into()
-            .map_err(|_| anyhow!("incorrect pcr0 size"))?;
-        pcr1 = hex::decode(args.pcr1.unwrap())
-            .context("failed to decode pcr1")?
-            .try_into()
-            .map_err(|_| anyhow!("incorrect pcr1 size"))?;
-        pcr2 = hex::decode(args.pcr2.unwrap())
-            .context("failed to decode pcr2")?
-            .try_into()
-            .map_err(|_| anyhow!("incorrect pcr2 size"))?;
-        user_data = hex::decode(args.user_data.unwrap())
-            .context("failed to decode user data")?
-            .into_boxed_slice();
+            .map_err(|_| anyhow!("incorrect kms_pubkey size"))?;
     }
 
     let auth_store = AuthStore {
