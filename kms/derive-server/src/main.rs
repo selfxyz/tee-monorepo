@@ -25,7 +25,7 @@ struct Args {
     )]
     kms_endpoint: Option<String>,
 
-    /// KMS pubkey, hex encoded
+    /// KMS X25519 pubkey, hex encoded
     #[arg(
         long,
         conflicts_with = "root_server_config",
