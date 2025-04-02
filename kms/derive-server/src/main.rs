@@ -105,9 +105,7 @@ async fn main() -> Result<()> {
             .map_err(|_| anyhow!("incorrect kms_pubkey size"))?;
     }
 
-    let auth_store = AuthStore {
-        state: ([pcr0, pcr1, pcr2], user_data),
-    };
+    let auth_store = AuthStore { pubkey: kms_pubkey };
 
     let contract_address = if let Some(contract_address_file) = args.contract_address_file {
         let address = read(contract_address_file)
