@@ -47,22 +47,3 @@ impl ScallopAuthStore for AuthStore {
         return Some((decoded.pcrs, decoded.user_data));
     }
 }
-
-#[derive(Clone)]
-pub struct Auther {
-    pub url: String,
-}
-
-impl ScallopAuther for Auther {
-    type Error = anyhow::Error;
-
-    async fn new_auth(&mut self) -> Result<Box<[u8]>> {
-        let body = reqwest::get(&self.url)
-            .await
-            .context("failed to fetch attestation")?
-            .bytes()
-            .await
-            .context("failed to read attestation")?;
-        Ok(body.deref().into())
-    }
-}
