@@ -7,6 +7,7 @@ use alloy::{
 use anyhow::{anyhow, Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
+use kms_derive_utils::{derive_path_seed, to_x25519_secret};
 use oyster::axum::{ScallopListener, ScallopState};
 use scallop::{AuthStore, AuthStoreState};
 use taco::decrypt;
@@ -136,11 +137,7 @@ async fn main() -> Result<()> {
     .try_into()
     .context("seed is not the right size")?;
 
-    let secret: [u8; 32] = read(args.secret_path)
-        .await
-        .context("failed to read secret file")?
-        .try_into()
-        .map_err(|_| anyhow!("failed to parse secret file"))?;
+    let secret = to_x25519_secret(derive_path_seed(seed, b"oyster.kms.x25519"));
 
     let scallop_app_state = AppState {
         seed,
