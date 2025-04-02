@@ -174,10 +174,6 @@ async fn run_scallop_server(
     attestation_endpoint: String,
     secret: [u8; 32],
 ) -> Result<()> {
-    let auther = Auther {
-        url: attestation_endpoint,
-    };
-
     let auth_store = AuthStore {};
 
     let app = Router::new()
@@ -195,8 +191,8 @@ async fn run_scallop_server(
     let listener = ScallopListener {
         listener: tcp_listener,
         secret,
-        auth_store,
-        auther,
+        auth_store: Some(auth_store),
+        auther: None::<()>,
     };
 
     info!("Listening on {}", listen_addr);
