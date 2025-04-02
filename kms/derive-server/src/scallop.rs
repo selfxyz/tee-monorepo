@@ -1,13 +1,7 @@
-use std::{
-    ops::Deref,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::ops::Deref;
 
 use anyhow::{Context, Result};
-use oyster::{
-    attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
-    scallop::{Key, ScallopAuthStore, ScallopAuther},
-};
+use oyster::scallop::{Key, ScallopAuthStore, ScallopAuther};
 
 #[derive(Clone)]
 pub struct AuthStore {
