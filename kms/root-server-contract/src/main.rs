@@ -4,7 +4,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
 use kms_derive_utils::{derive_path_seed, to_x25519_secret};
@@ -60,10 +60,6 @@ struct Args {
     /// RPC URL
     #[arg(long, default_value = "https://polygon-rpc.com")]
     rpc: String,
-
-    /// Path to X25519 secret file
-    #[arg(long, default_value = "/app/x25519.sec")]
-    secret_path: String,
 
     /// DKG threshold
     #[arg(long, default_value = "16")]
