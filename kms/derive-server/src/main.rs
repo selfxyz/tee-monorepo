@@ -25,6 +25,14 @@ struct Args {
     )]
     kms_endpoint: Option<String>,
 
+    /// KMS pubkey, hex encoded
+    #[arg(
+        long,
+        conflicts_with = "root_server_config",
+        required_unless_present = "root_server_config"
+    )]
+    kms_pubkey: Option<String>,
+
     /// Listening address
     #[arg(long, default_value = "127.0.0.1:1100")]
     listen_addr: String,
@@ -42,7 +50,7 @@ struct Args {
     contract_address_file: Option<String>,
 
     /// JSON config file containing the root server's details
-    #[arg(long, required_unless_present_all = ["kms_endpoint", "pcr0", "pcr1", "pcr2", "user_data"])]
+    #[arg(long, required_unless_present_all = ["kms_endpoint", "kms_pubkey"])]
     root_server_config: Option<String>,
 }
 
