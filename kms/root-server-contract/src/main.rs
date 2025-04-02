@@ -211,8 +211,8 @@ async fn run_scallop_server(
     let listener = ScallopListener {
         listener: tcp_listener,
         secret,
-        auth_store,
-        auther,
+        auth_store: Some(auth_store),
+        auther: None::<()>,
     };
 
     info!("Listening on {}", listen_addr);
