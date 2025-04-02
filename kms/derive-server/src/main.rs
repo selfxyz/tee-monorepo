@@ -37,38 +37,6 @@ struct Args {
     #[arg(long, default_value = "/app/x25519.sec")]
     secret_path: String,
 
-    /// PCR0 of the root server
-    #[arg(
-        long,
-        conflicts_with = "root_server_config",
-        required_unless_present = "root_server_config"
-    )]
-    pcr0: Option<String>,
-
-    /// PCR1 of the root server
-    #[arg(
-        long,
-        conflicts_with = "root_server_config",
-        required_unless_present = "root_server_config"
-    )]
-    pcr1: Option<String>,
-
-    /// PCR2 of the root server
-    #[arg(
-        long,
-        conflicts_with = "root_server_config",
-        required_unless_present = "root_server_config"
-    )]
-    pcr2: Option<String>,
-
-    /// user data of the root server
-    #[arg(
-        long,
-        conflicts_with = "root_server_config",
-        required_unless_present = "root_server_config"
-    )]
-    user_data: Option<String>,
-
     /// file containing enclave verification contract address in hexadecimal
     #[arg(long)]
     contract_address_file: Option<String>,
