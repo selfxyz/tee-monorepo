@@ -26,8 +26,8 @@ pub enum AxumError {
 pub struct ScallopListener<AuthStore, Auther> {
     pub listener: TcpListener,
     pub secret: [u8; 32],
-    pub auth_store: AuthStore,
-    pub auther: Auther,
+    pub auth_store: Option<AuthStore>,
+    pub auther: Option<Auther>,
 }
 
 impl<AuthStore, Auther> ScallopListener<AuthStore, Auther>
@@ -45,8 +45,8 @@ where
             stream = new_server_async_Noise_IX_25519_ChaChaPoly_BLAKE2b(
                 stream,
                 &self.secret,
-                Some(self.auth_store.clone()),
-                Some(self.auther.clone()),
+                self.auth_store.clone(),
+                self.auther.clone(),
             ) => {
                 Ok((stream?, addr))
             }

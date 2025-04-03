@@ -4,11 +4,12 @@ use alloy::{
     providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use axum::{routing::get, Router};
 use clap::Parser;
+use kms_derive_utils::{derive_path_seed, to_x25519_secret};
 use oyster::axum::{ScallopListener, ScallopState};
-use scallop::{AuthStore, AuthStoreState, Auther};
+use scallop::{AuthStore, AuthStoreState};
 use taco::decrypt;
 use tokio::{
     fs::{self, read},
@@ -59,14 +60,6 @@ struct Args {
     /// RPC URL
     #[arg(long, default_value = "https://polygon-rpc.com")]
     rpc: String,
-
-    /// Attestation endpoint
-    #[arg(long, default_value = "http://127.0.0.1:1301/attestation/raw")]
-    attestation_endpoint: String,
-
-    /// Path to X25519 secret file
-    #[arg(long, default_value = "/app/x25519.sec")]
-    secret_path: String,
 
     /// DKG threshold
     #[arg(long, default_value = "16")]
@@ -128,11 +121,7 @@ async fn main() -> Result<()> {
     .try_into()
     .context("seed is not the right size")?;
 
-    let secret: [u8; 32] = read(args.secret_path)
-        .await
-        .context("failed to read secret file")?
-        .try_into()
-        .map_err(|_| anyhow!("failed to parse secret file"))?;
+    let secret = to_x25519_secret(derive_path_seed(seed, b"oyster.kms.x25519"));
 
     let scallop_app_state = AppState { seed };
     let public_app_state = scallop_app_state.clone();
@@ -142,9 +131,8 @@ async fn main() -> Result<()> {
     let scallop_handle = spawn(run_forever(move || {
         let app_state = scallop_app_state.clone();
         let listen_addr = args.scallop_listen_addr.clone();
-        let attestation_endpoint = args.attestation_endpoint.clone();
         let secret = secret.clone();
-        async move { run_scallop_server(app_state, listen_addr, attestation_endpoint, secret).await }
+        async move { run_scallop_server(app_state, listen_addr, secret).await }
     }));
 
     let public_handle = spawn(run_forever(move || {
@@ -171,13 +159,8 @@ async fn run_forever<T: FnMut() -> F, F: Future<Output = Result<()>>>(mut task: 
 async fn run_scallop_server(
     app_state: AppState,
     listen_addr: String,
-    attestation_endpoint: String,
     secret: [u8; 32],
 ) -> Result<()> {
-    let auther = Auther {
-        url: attestation_endpoint,
-    };
-
     let auth_store = AuthStore {};
 
     let app = Router::new()
@@ -195,8 +178,8 @@ async fn run_scallop_server(
     let listener = ScallopListener {
         listener: tcp_listener,
         secret,
-        auth_store,
-        auther,
+        auth_store: Some(auth_store),
+        auther: None::<()>,
     };
 
     info!("Listening on {}", listen_addr);
