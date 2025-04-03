@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use alloy::signers::k256::sha2::{Digest, Sha256};
 use oyster::{
     attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
     scallop::{Key, ScallopAuthStore},
@@ -8,7 +9,8 @@ use oyster::{
 #[derive(Clone, Default)]
 pub struct AuthStore {}
 
-pub type AuthStoreState = ([[u8; 48]; 3], Box<[u8]>);
+// holds image id
+pub type AuthStoreState = [u8; 32];
 
 impl ScallopAuthStore for AuthStore {
     type State = AuthStoreState;
@@ -40,6 +42,14 @@ impl ScallopAuthStore for AuthStore {
             return None;
         }
 
-        return Some((decoded.pcrs, decoded.user_data));
+        let mut hasher = Sha256::new();
+        hasher.update(hex::decode(decoded.pcrs[0]).unwrap());
+        hasher.update(hex::decode(decoded.pcrs[1]).unwrap());
+        hasher.update(hex::decode(decoded.pcrs[2]).unwrap());
+        hasher.update((decoded.user_data.len() as u16).to_be_bytes());
+        hasher.update(decoded.user_data);
+        let image_id = hasher.finalize().into();
+
+        return Some(image_id);
     }
 }
