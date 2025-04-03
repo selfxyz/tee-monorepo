@@ -9,15 +9,12 @@ use sha2::Digest;
 use sha2::Sha512;
 use sha3::Keccak256;
 
-/// Derives a 64-byte seed for an enclave using PCR measurements and user data.
+/// Derives a 64-byte seed for an enclave using an image id.
 /// The derivation is performed twice for additional security around length extension.
 ///
 /// # Arguments
 /// * `root` - A 64-byte root seed
-/// * `pcr0` - PCR0 measurement bytes
-/// * `pcr1` - PCR1 measurement bytes
-/// * `pcr2` - PCR2 measurement bytes
-/// * `user_data` - Additional user data bytes
+/// * `image_id` - A 32-byte image id
 ///
 /// # Examples
 /// ```
