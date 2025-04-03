@@ -30,20 +30,8 @@ use sha3::Keccak256;
 /// let user_data = vec![4u8; 8];
 /// let seed = derive_enclave_seed(root, &pcr0, &pcr1, &pcr2, &user_data);
 /// ```
-pub fn derive_enclave_seed(
-    root: [u8; 64],
-    pcr0: &[u8],
-    pcr1: &[u8],
-    pcr2: &[u8],
-    user_data: &[u8],
-) -> [u8; 64] {
-    derive_enclave_seed_once(
-        derive_enclave_seed_once(root, pcr0, pcr1, pcr2, user_data),
-        pcr0,
-        pcr1,
-        pcr2,
-        user_data,
-    )
+pub fn derive_enclave_seed(root: [u8; 64], image_id: [u8; 32]) -> [u8; 64] {
+    derive_enclave_seed_once(derive_enclave_seed_once(root, image_id), image_id)
 }
 
 /// Derives a 64-byte seed for an enclave given a chain id and an address.
@@ -271,20 +259,10 @@ pub fn to_x25519_public(derived: [u8; 64]) -> [u8; 32] {
     x25519_dalek::PublicKey::from(&secret).to_bytes()
 }
 
-fn derive_enclave_seed_once(
-    root: [u8; 64],
-    pcr0: &[u8],
-    pcr1: &[u8],
-    pcr2: &[u8],
-    user_data: &[u8],
-) -> [u8; 64] {
+fn derive_enclave_seed_once(root: [u8; 64], image_id: [u8; 32]) -> [u8; 64] {
     // SAFETY: cannot error, safe to unwrap
     let mut mac = Hmac::<Sha512>::new_from_slice(&root).unwrap();
-    mac.update(&pcr0);
-    mac.update(&pcr1);
-    mac.update(&pcr2);
-    mac.update(&(user_data.len() as u16).to_be_bytes());
-    mac.update(&user_data);
+    mac.update(&image_id);
 
     mac.finalize().into_bytes().into()
 }
