@@ -5,7 +5,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::{Context, Result};
-use axum::{routing::get, Router};
+use axum::{middleware, routing::get, Router};
 use clap::Parser;
 use kms_derive_utils::{derive_path_seed, to_secp256k1_secret, to_x25519_secret};
 use oyster::axum::{ScallopListener, ScallopState};
@@ -237,7 +237,11 @@ async fn run_public_server(app_state: AppState, listen_addr: String) -> Result<(
             get(derive_public::derive_x25519_public),
         )
         // middleware is executed bottom to top here
-        // we want timeouts to be first, then size checks
+        // we want timeouts to be first, then size checks, then signing
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            derive_public::signing_middleware,
+        ))
         .layer(RequestBodyLimitLayer::new(1024))
         .layer(TimeoutLayer::new(Duration::from_secs(5)))
         .with_state(app_state);
