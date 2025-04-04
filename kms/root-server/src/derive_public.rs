@@ -41,10 +41,12 @@ impl Params {
 
 pub async fn signing_middleware(
     State(state): State<AppState>,
-    Query(params): Query<Params>,
     req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // store the uri
+    let uri = req.uri().clone();
+
     // run the request
     let mut res = next.run(req).await;
 
@@ -62,8 +64,7 @@ pub async fn signing_middleware(
         };
 
         let mut hasher = Sha256::new();
-        hasher.update(params.image_id);
-        hasher.update(params.path);
+        hasher.update(uri.to_string());
         hasher.update(&body_bytes);
         let digest: [u8; 32] = hasher.finalize().into();
 
