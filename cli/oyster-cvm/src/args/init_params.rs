@@ -306,16 +306,14 @@ fn fetch_encryption_key_with_pcr(
 }
 
 lazy_static! {
-    static ref KMS_ROOT_SERVERS: HashMap<u64, &'static str> = {
+    static ref KMS_ROOT_SERVERS: HashMap<u64, String> = {
         let mut root_servers = HashMap::new();
         root_servers.insert(
             42161,
-            r#"
-                {
-                    "kms_endpoint": "arbone-v3.kms.box:1100",
-                    "kms_pubkey": "ddba991e640f24f4cac8cf4c3596d99eea83f37cb7ad6fb68061fca1ef110e08",
-                }
-            "#,
+            serde_json::json!({
+                "kms_endpoint": "arbone-v3.kms.box:1100",
+                "kms_pubkey": "ddba991e640f24f4cac8cf4c3596d99eea83f37cb7ad6fb68061fca1ef110e08"
+            }).to_string(),
         );
         root_servers
     };
