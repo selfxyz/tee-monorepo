@@ -290,14 +290,11 @@ pub struct InitParamsList {
 }
 
 fn fetch_encryption_key_with_pcr(endpoint: &str, image_id: &str) -> Result<[u8; 32]> {
-    // NOTE: following uri should have query params in order same as the ureq get request
     let uri = format!(
         "/derive/x25519/public?image_id={}&path=oyster.init-params",
         image_id
     );
-    let mut response = ureq::get(endpoint.to_owned() + "/derive/x25519/public")
-        .query("image_id", image_id)
-        .query("path", "oyster.init-params")
+    let mut response = ureq::get(endpoint.to_owned() + uri.as_str())
         .call()
         .context("failed to call derive server")?;
 
