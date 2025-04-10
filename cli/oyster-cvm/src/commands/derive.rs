@@ -1,10 +1,3 @@
-// input
-// endpoint
-// image id
-// path
-// contract address
-// chain id
-// pub key type / address
 use std::collections::HashMap;
 
 use alloy::signers::k256::sha2::{Digest, Sha256};
