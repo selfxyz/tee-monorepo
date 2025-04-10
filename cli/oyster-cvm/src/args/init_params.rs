@@ -193,11 +193,12 @@ impl InitParamsArgs {
         hasher.update((digest.len() as u16).to_be_bytes());
         hasher.update(digest);
         let image_id: [u8; 32] = hasher.finalize().into();
-
+        info!(image_id = hex::encode(image_id), "Computed image id");
         // fetch key
         let pk = fetch_encryption_key_with_pcr(
             self.kms_endpoint
                 .as_ref()
+                // .unwrap_or(&"http://127.0.0.1:1101".into()),
                 .unwrap_or(&"http://image-v3.kms.box:1101".into()),
             &hex::encode(image_id),
         )
@@ -288,18 +289,56 @@ pub struct InitParamsList {
     params: Vec<InitParam>,
 }
 
-fn fetch_encryption_key_with_pcr(
-    endpoint: &str,
-    image_id: &str,
-) -> Result<[u8; 32]> {
-    ureq::get(endpoint.to_owned() + "/derive/x25519/public")
+fn fetch_encryption_key_with_pcr(endpoint: &str, image_id: &str) -> Result<[u8; 32]> {
+    // NOTE: following uri should have query params in order same as the ureq get request
+    let uri = format!(
+        "/derive/x25519/public?image_id={}&path=oyster.init-params",
+        image_id
+    );
+    let mut response = ureq::get(endpoint.to_owned() + "/derive/x25519/public")
         .query("image_id", image_id)
         .query("path", "oyster.init-params")
         .call()
-        .context("failed to call derive server")?
+        .context("failed to call derive server")?;
+
+    if response.status() != 200 {
+        bail!("failed to get encryption key from kms root server");
+    }
+    // get the header from response
+    let signature_bytes = hex::decode(
+        response
+            .headers()
+            .get("x-marlin-kms-signature")
+            .context("failed to get signature for encryption key from kms root server")?,
+    )
+    .context("failed to decode signature")?;
+
+    let body_bytes = response
         .body_mut()
         .read_to_vec()
-        .context("failed to read body")?
+        .context("failed to read body")?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(uri);
+    hasher.update(&body_bytes);
+    let digest: [u8; 32] = hasher.finalize().into();
+
+    let signature = k256::ecdsa::Signature::from_slice(&signature_bytes[0..64])
+        .context("failed to parse signature for encryption key from kms root server")?;
+    let recovery_id = k256::ecdsa::RecoveryId::from_byte(signature_bytes[64] - 27)
+        .context("failed to parse recovery id from kms root server signature")?;
+    let verifying_key =
+        k256::ecdsa::VerifyingKey::recover_from_prehash(&digest, &signature, recovery_id)
+            .context("failed to recover pubkey from kms root server signature")?;
+    let pubkey = hex::encode(&verifying_key.to_encoded_point(false).as_bytes()[1..]);
+
+    // TODO: put expected pubkey as constant or config
+    let expected_pubkey = "2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85";
+    if pubkey != expected_pubkey {
+        bail!("invalid public key");
+    }
+
+    body_bytes
         .as_slice()
         .try_into()
         .context("failed to parse reponse")
@@ -313,7 +352,8 @@ lazy_static! {
             serde_json::json!({
                 "kms_endpoint": "arbone-v3.kms.box:1100",
                 "kms_pubkey": "ddba991e640f24f4cac8cf4c3596d99eea83f37cb7ad6fb68061fca1ef110e08"
-            }).to_string(),
+            })
+            .to_string(),
         );
         root_servers
     };
