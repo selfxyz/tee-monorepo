@@ -56,7 +56,7 @@ enum Commands {
     Withdraw(WithdrawArgs),
     /// Get Image ID
     ComputeImageId(ImageArgs),
-    /// Get KMS derived public keys
+    /// Get KMS derived public keys or addresses
     KmsDerive(KmsDeriveArgs),
 }
 
