@@ -2,31 +2,31 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "../../lib/forge-std/src/Test.sol";
-import {SampleKMSVerifiable} from "../../src/kms/SampleKMSVerifiable.sol";
+import {KmsVerifiable} from "../../src/kms/KmsVerifiable.sol";
 
-contract SampleKMSVerifiableTestConstructor is Test {
+contract KmsVerifiableTestConstructor is Test {
     function test_construction(
     ) public {
         bytes32 [] memory _imageIds = new bytes32[](1);
         address _owner = makeAddr("owner");
         vm.prank(_owner);
         _imageIds[0] = bytes32(vm.randomUint());
-        SampleKMSVerifiable _kms = new SampleKMSVerifiable(_imageIds);
+        KmsVerifiable _kms = new KmsVerifiable(_imageIds);
         assertEq(_kms.owner(), _owner);
         assertTrue(_kms.images(_imageIds[0]));
     }
 }
 
-contract SampleKMSVerifiableTest is Test {
+contract KmsVerifiableTest is Test {
     address owner;
     bytes32[] imageIds;
-    SampleKMSVerifiable kmsVerifiable;
+    KmsVerifiable kmsVerifiable;
     function setUp() public {
         owner = makeAddr("owner");
         vm.prank(owner);
         imageIds = new bytes32[](1);
         imageIds[0] = bytes32(vm.randomUint());
-        kmsVerifiable = new SampleKMSVerifiable(imageIds);
+        kmsVerifiable = new KmsVerifiable(imageIds);
     }
 
     function test_verifyImage() public view {

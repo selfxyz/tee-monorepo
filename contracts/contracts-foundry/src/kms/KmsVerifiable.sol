@@ -8,7 +8,7 @@ import {IKMSVerifiable} from "./IKMSVerifiable.sol";
 
 /// @title Sample KMS Verifiable Contract
 /// @notice Manages list of image IDs allowed to derive keys
-contract SampleKMSVerifiable is Ownable, IKMSVerifiable {
+contract KmsVerifiable is Ownable, IKMSVerifiable {
     /// @notice Mapping of verified image IDs
     mapping (bytes32 => bool) public images;
 
