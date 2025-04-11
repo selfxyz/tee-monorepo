@@ -198,7 +198,6 @@ impl InitParamsArgs {
         let pk = fetch_encryption_key_with_pcr(
             self.kms_endpoint
                 .as_ref()
-                // .unwrap_or(&"http://127.0.0.1:1101".into()),
                 .unwrap_or(&"http://image-v3.kms.box:1101".into()),
             &hex::encode(image_id),
         )
