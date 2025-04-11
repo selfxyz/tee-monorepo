@@ -31,25 +31,23 @@ Supported outputs:
 
 ```
 $ ./target/release/kms-derive-server --help
-Usage: kms-derive-server [OPTIONS] --kms-endpoint <KMS_ENDPOINT> --pcr0 <PCR0> --pcr1 <PCR1> --pcr2 <PCR2> --user-data <USER_DATA>
+Usage: kms-derive-server [OPTIONS]
 
 Options:
       --kms-endpoint <KMS_ENDPOINT>
           KMS endpoint
+      --kms-pubkey <KMS_PUBKEY>
+          KMS X25519 pubkey, hex encoded
       --listen-addr <LISTEN_ADDR>
           Listening address [default: 127.0.0.1:1100]
       --attestation-endpoint <ATTESTATION_ENDPOINT>
           Attestation endpoint [default: http://127.0.0.1:1301/attestation/raw]
       --secret-path <SECRET_PATH>
           Path to X25519 secret file [default: /app/x25519.sec]
-      --pcr0 <PCR0>
-          PCR0 of the root server
-      --pcr1 <PCR1>
-          PCR1 of the root server
-      --pcr2 <PCR2>
-          PCR2 of the root server
-      --user-data <USER_DATA>
-          user data of the root server
+      --contract-address-file <CONTRACT_ADDRESS_FILE>
+          file containing enclave verification contract address in hexadecimal
+      --root-server-config <ROOT_SERVER_CONFIG>
+          JSON config file containing the root server's details
   -h, --help
           Print help
   -V, --version
