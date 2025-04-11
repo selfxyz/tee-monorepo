@@ -38,6 +38,10 @@ pub struct InitParamsArgs {
     #[arg(short = 'k', long)]
     pub kms_endpoint: Option<String>,
 
+    /// KMS response signature verification key
+    #[arg(long, requires = "kms_endpoint")]
+    pub kms_verification_key: Option<String>,
+
     /// Expected PCRs of the decryptor
     #[command(flatten)]
     pub pcrs: PcrArgs,
@@ -199,6 +203,9 @@ impl InitParamsArgs {
             self.kms_endpoint
                 .as_ref()
                 .unwrap_or(&"http://image-v3.kms.box:1101".into()),
+            self.kms_verification_key
+                .as_ref()
+                .unwrap_or(&"2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85".into()),
             &hex::encode(image_id),
         )
         .context("failed to fetch key")?;
@@ -288,7 +295,11 @@ pub struct InitParamsList {
     params: Vec<InitParam>,
 }
 
-fn fetch_encryption_key_with_pcr(endpoint: &str, image_id: &str) -> Result<[u8; 32]> {
+fn fetch_encryption_key_with_pcr(
+    endpoint: &str,
+    kms_verification_key: &str,
+    image_id: &str,
+) -> Result<[u8; 32]> {
     let uri = format!(
         "/derive/x25519/public?image_id={}&path=oyster.init-params",
         image_id
@@ -328,9 +339,7 @@ fn fetch_encryption_key_with_pcr(endpoint: &str, image_id: &str) -> Result<[u8; 
             .context("failed to recover pubkey from kms root server signature")?;
     let pubkey = hex::encode(&verifying_key.to_encoded_point(false).as_bytes()[1..]);
 
-    // TODO: put expected pubkey as constant or config
-    let expected_pubkey = "2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85";
-    if pubkey != expected_pubkey {
+    if pubkey != kms_verification_key.to_lowercase() {
         bail!("invalid public key");
     }
 
