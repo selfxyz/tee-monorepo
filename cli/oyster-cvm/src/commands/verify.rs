@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Args;
 use hex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,6 +22,10 @@ pub struct VerifyArgs {
     /// Attestation user data, hex encoded
     #[arg(short = 'u', long)]
     user_data: Option<String>,
+
+    /// Image id, hex encoded
+    #[arg(short = 'i', long)]
+    image_id: Option<String>,
 
     /// Attestation Port (default: 1300)
     #[arg(short = 'p', long, default_value_t = DEFAULT_ATTESTATION_PORT)]
@@ -70,6 +74,15 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         .transpose()?;
     let root_public_key =
         hex::decode(args.root_public_key).context("Failed to decode root public key hex string")?;
+    let image_id = args
+        .image_id
+        .map(|x| {
+            hex::decode(x)
+                .context("Failed to decode root public key hex string")?
+                .try_into()
+                .map_err(|_| anyhow!("incorrect image id size"))
+        })
+        .transpose()?;
 
     let attestation_expectations = AttestationExpectations {
         age: Some((args.max_age, now)),
@@ -78,6 +91,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         root_public_key: Some(root_public_key.as_slice()),
         timestamp: (!args.timestamp.eq(&0)).then_some(args.timestamp),
         public_key: None,
+        image_id: image_id.as_ref(),
     };
 
     let decoded = oyster::attestation::verify(&attestation_doc, attestation_expectations)
@@ -85,6 +99,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
 
     info!("Root public key: {}", hex::encode(decoded.root_public_key));
     info!("Enclave public key: {}", hex::encode(decoded.public_key));
+    info!("Image id: {}", hex::encode(&decoded.image_id));
     info!("User data: {}", hex::encode(&decoded.user_data));
     if let Ok(user_data) = String::from_utf8(decoded.user_data.to_vec()) {
         info!("User data, decoded as UTF-8: {user_data}");
