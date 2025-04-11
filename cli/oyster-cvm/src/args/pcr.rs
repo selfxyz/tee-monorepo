@@ -27,7 +27,7 @@ pub struct PcrArgs {
 }
 
 impl PcrArgs {
-    pub fn load(&self) -> Result<Option<(String, String, String)>> {
+    pub fn load(self, default_preset: Option<String>) -> Result<Option<(String, String, String)>> {
         if let Some(ref path) = self.pcr_json {
             let file = std::fs::File::open(path)?;
             let json: serde_json::Value =
@@ -68,7 +68,7 @@ impl PcrArgs {
             return Ok(Some((pcr0, pcr1, pcr2)));
         }
 
-        if let Some(ref name) = self.pcr_preset {
+        if let Some(ref name) = self.pcr_preset.or(default_preset) {
             return match name.as_str() {
                 "base/blue/v1.0.0/amd64" => Ok(Some((
                     PCRS_BASE_BLUE_V1_0_0_AMD64.0.into(),
