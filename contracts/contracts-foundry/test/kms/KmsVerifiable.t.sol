@@ -11,6 +11,8 @@ contract KmsVerifiableTestConstructor is Test {
         address _owner = makeAddr("owner");
         vm.prank(_owner);
         _imageIds[0] = bytes32(vm.randomUint());
+        vm.expectEmit();
+        emit KmsVerifiable.ImageApproved(_imageIds[0]);
         KmsVerifiable _kms = new KmsVerifiable(_imageIds);
         assertEq(_kms.owner(), _owner);
         assertTrue(_kms.images(_imageIds[0]));
@@ -40,6 +42,10 @@ contract KmsVerifiableTest is Test {
     function test_approveImages(bytes32[] calldata _imageIds) public {
         // Execute
         vm.prank(owner);
+        for (uint i = 0; i < _imageIds.length; i++) {
+            vm.expectEmit();
+            emit KmsVerifiable.ImageApproved(_imageIds[i]);
+        }
         kmsVerifiable.approveImages(_imageIds);
         // Validate
         for (uint i = 0; i < _imageIds.length; i++) {
@@ -48,6 +54,10 @@ contract KmsVerifiableTest is Test {
 
         // approve the same images again
         vm.prank(owner);
+        for (uint i = 0; i < _imageIds.length; i++) {
+            vm.expectEmit();
+            emit KmsVerifiable.ImageApproved(_imageIds[i]);
+        }
         kmsVerifiable.approveImages(_imageIds);
         for (uint i = 0; i < _imageIds.length; i++) {
             assertTrue(kmsVerifiable.images(_imageIds[i]));
@@ -57,6 +67,10 @@ contract KmsVerifiableTest is Test {
     function test_revokeImages() public {
         // Execute
         vm.prank(owner);
+        for (uint i = 0; i < imageIds.length; i++) {
+            vm.expectEmit();
+            emit KmsVerifiable.ImageRevoked(imageIds[i]);
+        }
         kmsVerifiable.revokeImages(imageIds);
         // Validate
         for (uint i = 0; i < imageIds.length; i++) {
@@ -65,6 +79,10 @@ contract KmsVerifiableTest is Test {
 
         // revoke the same images again
         vm.prank(owner);
+        for (uint i = 0; i < imageIds.length; i++) {
+            vm.expectEmit();
+            emit KmsVerifiable.ImageRevoked(imageIds[i]);
+        }
         kmsVerifiable.revokeImages(imageIds);
         for (uint i = 0; i < imageIds.length; i++) {
             assertFalse(kmsVerifiable.images(imageIds[i]));

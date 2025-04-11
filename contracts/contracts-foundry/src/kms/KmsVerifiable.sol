@@ -12,6 +12,12 @@ contract KmsVerifiable is Ownable, IKMSVerifiable {
     /// @notice Mapping of verified image IDs
     mapping (bytes32 => bool) public images;
 
+    /// @notice Event emitted when an image is approved
+    event ImageApproved(bytes32 imageId);
+
+    /// @notice Event emitted when an image is revoked
+    event ImageRevoked(bytes32 imageId);
+
     constructor(
         bytes32[] memory _imageIds
     ) Ownable(msg.sender) {
@@ -21,6 +27,7 @@ contract KmsVerifiable is Ownable, IKMSVerifiable {
     function _approveImages(bytes32[] memory _imageIds) internal {
         for (uint i = 0; i < _imageIds.length; i++) {
             images[_imageIds[i]] = true;
+            emit ImageApproved(_imageIds[i]);
         }
     }
 
@@ -30,7 +37,8 @@ contract KmsVerifiable is Ownable, IKMSVerifiable {
 
     function revokeImages(bytes32[] calldata _imageIds) onlyOwner external {
         for (uint i = 0; i < _imageIds.length; i++) {
-            delete images[_imageIds[i]]  ;
+            delete images[_imageIds[i]];
+            emit ImageRevoked(_imageIds[i]);
         }
     }
 
