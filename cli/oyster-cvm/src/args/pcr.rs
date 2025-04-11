@@ -2,6 +2,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use serde_json;
 
+use crate::types::Platform;
+
 #[derive(Args, Debug)]
 #[group(multiple = true)]
 pub struct PcrArgs {
@@ -98,6 +100,18 @@ impl PcrArgs {
             .transpose()
             .ok_or(anyhow!("Pcrs parameter is required."))?
     }
+}
+
+pub fn preset_to_pcr_preset(preset: &str, arch: &Platform) -> Option<String> {
+    match preset {
+        "blue" => match arch {
+            Platform::AMD64 => Some("base/blue/v1.0.0/amd64"),
+            Platform::ARM64 => Some("base/blue/v1.0.0/arm64"),
+        },
+        "debug" => Some("debug"),
+        _ => None,
+    }
+    .map(str::to_owned)
 }
 
 pub static PCRS_BASE_BLUE_V1_0_0_AMD64: (&str, &str, &str) = (
