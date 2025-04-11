@@ -428,6 +428,7 @@ mod tests {
                 public_key: Some(&hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb")),
                 user_data: Some(&[0; 0]),
                 root_public_key: Some(&AWS_ROOT_KEY),
+                image_id: Some(&hex!("10aff51b369137fcb2d71372829300c543b1f8c586d77080f00ba31140621b9c")),
             },
         )
         .unwrap();
@@ -477,6 +478,9 @@ mod tests {
                 public_key: Some(&hex!("12345678")),
                 user_data: Some(&hex!("abcdef")),
                 root_public_key: Some(&MOCK_ROOT_KEY),
+                image_id: Some(&hex!(
+                    "79fc2e5fd8deb77d38890bdb4e4b1a1bddb08b5854d81d97b24167b449ddd372"
+                )),
             },
         )
         .unwrap();
