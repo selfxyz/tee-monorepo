@@ -17,7 +17,7 @@ use libsodium_sys::{crypto_box_SEALBYTES, crypto_box_seal, sodium_init};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::types::Platform;
+use crate::{args::pcr::preset_to_pcr_preset, types::Platform};
 
 use super::pcr::{PcrArgs, PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64};
 
@@ -165,29 +165,8 @@ impl InitParamsArgs {
         // use pcrs of the blue base image by default
         let pcrs = self
             .pcrs
-            .load()
-            .context("Failed to load PCRs")?
-            .map(Result::Ok)
-            .unwrap_or(match preset.as_str() {
-                "blue" => match arch {
-                    Platform::AMD64 => Ok((
-                        PCRS_BASE_BLUE_V1_0_0_AMD64.0.into(),
-                        PCRS_BASE_BLUE_V1_0_0_AMD64.1.into(),
-                        PCRS_BASE_BLUE_V1_0_0_AMD64.2.into(),
-                    )),
-                    Platform::ARM64 => Ok((
-                        PCRS_BASE_BLUE_V1_0_0_ARM64.0.into(),
-                        PCRS_BASE_BLUE_V1_0_0_ARM64.1.into(),
-                        PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
-                    )),
-                },
-                "debug" => Ok((
-                    hex::encode([0u8; 48]),
-                    hex::encode([0u8; 48]),
-                    hex::encode([0u8; 48]),
-                )),
-                _ => Err(anyhow!("PCRs are required")),
-            })?;
+            .load_required(preset_to_pcr_preset(&preset, &arch))
+            .context("Failed to load PCRs")?;
 
         // calculate the image id
         let mut hasher = Sha256::new();
