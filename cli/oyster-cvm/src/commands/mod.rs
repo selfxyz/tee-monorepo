@@ -4,6 +4,7 @@ pub mod deposit;
 pub mod derive;
 pub mod doctor;
 pub mod image_id;
+pub mod kms_contract;
 pub mod list;
 pub mod log;
 pub mod stop;
