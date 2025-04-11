@@ -37,35 +37,35 @@ contract KmsVerifiableTest is Test {
         assertTrue(result);
     }
 
-    function test_whitelistImages(bytes32[] calldata _imageIds) public {
+    function test_approveImages(bytes32[] calldata _imageIds) public {
         // Execute
         vm.prank(owner);
-        kmsVerifiable.whitelistImages(_imageIds);
+        kmsVerifiable.approveImages(_imageIds);
         // Validate
         for (uint i = 0; i < _imageIds.length; i++) {
             assertTrue(kmsVerifiable.images(_imageIds[i]));
         }
 
-        // whitelist the same images again
+        // approve the same images again
         vm.prank(owner);
-        kmsVerifiable.whitelistImages(_imageIds);
+        kmsVerifiable.approveImages(_imageIds);
         for (uint i = 0; i < _imageIds.length; i++) {
             assertTrue(kmsVerifiable.images(_imageIds[i]));
         }
     }
 
-    function test_blacklistImages() public {
+    function test_revokeImages() public {
         // Execute
         vm.prank(owner);
-        kmsVerifiable.blacklistImages(imageIds);
+        kmsVerifiable.revokeImages(imageIds);
         // Validate
         for (uint i = 0; i < imageIds.length; i++) {
             assertFalse(kmsVerifiable.images(imageIds[i]));
         }
 
-        // blacklist the same images again
+        // revoke the same images again
         vm.prank(owner);
-        kmsVerifiable.blacklistImages(imageIds);
+        kmsVerifiable.revokeImages(imageIds);
         for (uint i = 0; i < imageIds.length; i++) {
             assertFalse(kmsVerifiable.images(imageIds[i]));
         }

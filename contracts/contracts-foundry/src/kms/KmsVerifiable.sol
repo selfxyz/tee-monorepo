@@ -15,20 +15,20 @@ contract KmsVerifiable is Ownable, IKMSVerifiable {
     constructor(
         bytes32[] memory _imageIds
     ) Ownable(msg.sender) {
-        _whitelistImages(_imageIds);
+        _approveImages(_imageIds);
     }
 
-    function _whitelistImages(bytes32[] memory _imageIds) internal {
+    function _approveImages(bytes32[] memory _imageIds) internal {
         for (uint i = 0; i < _imageIds.length; i++) {
             images[_imageIds[i]] = true;
         }
     }
 
-    function whitelistImages(bytes32[] calldata _imageIds) onlyOwner external {
-        _whitelistImages(_imageIds);
+    function approveImages(bytes32[] calldata _imageIds) onlyOwner external {
+        _approveImages(_imageIds);
     }
 
-    function blacklistImages(bytes32[] calldata _imageIds) onlyOwner external {
+    function revokeImages(bytes32[] calldata _imageIds) onlyOwner external {
         for (uint i = 0; i < _imageIds.length; i++) {
             delete images[_imageIds[i]]  ;
         }
