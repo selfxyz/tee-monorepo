@@ -59,6 +59,15 @@ impl PcrArgs {
             )));
         }
 
+        // Only checking one PCR - requires_all enforces mutual presence of all PCRs
+        if self.pcr0.is_some() {
+            let pcr0 = self.pcr0.as_ref().unwrap().clone();
+            let pcr1 = self.pcr1.as_ref().unwrap().clone();
+            let pcr2 = self.pcr2.as_ref().unwrap().clone();
+
+            return Ok(Some((pcr0, pcr1, pcr2)));
+        }
+
         if let Some(ref name) = self.pcr_preset {
             return match name.as_str() {
                 "base/blue/v1.0.0/amd64" => Ok(Some((
@@ -81,16 +90,7 @@ impl PcrArgs {
             };
         }
 
-        // Only checking one PCR - requires_all enforces mutual presence of all PCRs
-        if self.pcr0.is_none() {
-            return Ok(None);
-        }
-
-        let pcr0 = self.pcr0.as_ref().unwrap().clone();
-        let pcr1 = self.pcr1.as_ref().unwrap().clone();
-        let pcr2 = self.pcr2.as_ref().unwrap().clone();
-
-        Ok(Some((pcr0, pcr1, pcr2)))
+        Ok(None)
     }
 }
 
