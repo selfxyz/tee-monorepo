@@ -122,7 +122,8 @@ Optional args:
 - `--no-stream`: Disable automatic log streaming in debug mode (requires --debug)
 - `--init-params-encoded`: Base64 encoded init params
 - `--init-params`: List of init params in format `<path>:<attest>:<encrypt>:<type>:<value>`
-- `--kms-endpoint`: Kms key gen endpoint (default: http://image-v2.kms.box:1101)
+- `--kms-endpoint`: Kms key gen endpoint (default: http://image-v3.kms.box:1101)
+- `--kms-verification-key`: Kms response signature verification key
 - `--docker-compose`: Path to custom docker-compose.yml file
 - `--contract-address`: Enclave verifier contract address
 - `--chain-id`: Chain ID for KMS contract root server
@@ -225,6 +226,23 @@ OR
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
 
+#### `kms-derive`
+Fetches the KMS derived public keys or addresses  from root server.
+
+Required args:
+- `--path`: Derivation path of the key
+- `--key-type`: Type of key to derive [possible values: secp256k1/public, secp256k1/address/ethereum, ed25519/public, ed25519/address/solana, x25519/public]
+
+Optional args:
+- `--kms-endpoint`: KMS endpoint for fetching public keys or addresses
+- `--kms-verification-key`: Kms response signature verification key
+\
+<br>
+- `--image-id`: Image ID of the enclave
+<br>
+OR
+- `--contract-address`: Address of KMS verification contract
+- `--chain-id`: Chain ID of KMS contract root server
 ### Example
 
 ```bash
@@ -395,6 +413,18 @@ oyster-cvm compute-image-id --docker-compose docker-compose.yml --contract-addre
 [INFO] oyster_cvm::args::init_params: digest path="root-server-config.json" should_attest=true should_encrypt=false
 [INFO] oyster_cvm::args::init_params: Computed digest digest="27637e8805c4eabe6bd39ed0cc9ac9e66db731470e524b02ea99794298a093e2"
 [INFO] oyster_cvm::commands::image_id: Image ID: aaa2e48fca87611a563556ad9d778f19c7c32a1a7c84242eeb57cbb1f7e33bf1
+
+# Derive KMS keys using image ID
+oyster-cvm kms-derive --image-id c7160a47e84b1cdd06095c78ce20fbc95967810357f4f590d560a5fa41f076ec --path signing-server --key-type ed25519/address/solana
+
+# Sample output
+2025-04-10T13:18:44.806739Z  INFO oyster_cvm::commands::derive: kms derived address address="7Nbd6bRg9cAGsRBYCpyUFWQyE9h57mksYg9P7iabgHD"
+
+# Derive KMS keys using contract address
+oyster-cvm  kms-derive --contract-address D0D6fF1C2FD450aBcB050896EeE16AE10A1aD3e1 --chain-id 42161 --path signing-server --key-type x25519/public
+
+# Sample output
+2025-04-10T13:17:52.240043Z  INFO oyster_cvm::commands::derive: kms derived key key="f81003ebf81644344f688d62d4e42c7d4247afe5cba0a1220c159467dd7f1d44"
 ```
 
 ## License
