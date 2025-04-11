@@ -249,6 +249,7 @@ Deploys a KMS verify contract
 
 Required args:
 - `--wallet-private-key` or `--wallet-private-key-file`: Private key for transaction signing
+
 #### `kms-contract approve`
 Approve the image ID on KMS verify contract
 
