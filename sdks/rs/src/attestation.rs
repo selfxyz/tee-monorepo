@@ -10,6 +10,7 @@ use hyper_util::rt::TokioExecutor;
 use openssl::asn1::Asn1Time;
 use openssl::bn::BigNumContext;
 use openssl::ec::{EcKey, PointConversionForm};
+use openssl::sha::Sha256;
 use openssl::x509::{X509VerifyResult, X509};
 use serde_cbor::{self, value, value::Value};
 
@@ -46,6 +47,7 @@ pub struct AttestationExpectations<'a> {
     pub public_key: Option<&'a [u8]>,
     pub user_data: Option<&'a [u8]>,
     pub root_public_key: Option<&'a [u8]>,
+    pub image_id: Option<&'a [u8; 32]>,
 }
 
 pub fn verify(
@@ -122,6 +124,23 @@ pub fn verify(
     if let Some(user_data) = expectations.user_data {
         if result.user_data.as_ref() != user_data {
             return Err(AttestationError::VerifyFailed("user data mismatch".into()));
+        }
+    }
+
+    // check image id if exists
+    if let Some(image_id) = expectations.image_id {
+        let mut hasher = Sha256::new();
+        hasher.update(result.pcrs.as_flattened());
+        hasher.update(
+            &u16::try_from(result.user_data.len())
+                .map_err(|_| {
+                    AttestationError::VerifyFailed("user data too big to compute image id".into())
+                })?
+                .to_be_bytes(),
+        );
+        let result_image_id = hasher.finish();
+        if &result_image_id != image_id {
+            return Err(AttestationError::VerifyFailed("image id mismatch".into()));
         }
     }
 
