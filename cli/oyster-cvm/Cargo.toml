@@ -14,7 +14,7 @@ anyhow = "1.0.72"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
 alloy = {version = "0.9.1", features = ["full"]}
-oyster-sdk = "0.16.1"
+oyster-sdk = "0.16.2"
 hex = "0.4.3"
 futures-util = "0.3"
 libsodium-sys-stable = "1.22.2"
