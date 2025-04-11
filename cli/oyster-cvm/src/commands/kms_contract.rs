@@ -166,7 +166,11 @@ async fn kms_contract_verify(args: KmsVerifyArgs) -> Result<()> {
         .oysterKMSVerify(args.image_id.parse::<FixedBytes<32>>()?)
         .call()
         .await?;
-    info!("Result: {}", resp._0);
+    if resp._0 {
+        info!("Image ID is verified");
+    } else {
+        info!("Image ID is not verified");
+    }
 
     Ok(())
 }
