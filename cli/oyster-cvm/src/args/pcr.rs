@@ -115,8 +115,8 @@ impl PcrArgs {
 pub fn preset_to_pcr_preset(preset: &str, arch: &Platform) -> Option<String> {
     match preset {
         "blue" => match arch {
-            Platform::AMD64 => Some("base/blue/v1.0.0/amd64"),
-            Platform::ARM64 => Some("base/blue/v1.0.0/arm64"),
+            Platform::AMD64 => Some("base/blue/v2.0.0/amd64"),
+            Platform::ARM64 => Some("base/blue/v2.0.0/arm64"),
         },
         "debug" => Some("debug"),
         _ => None,
