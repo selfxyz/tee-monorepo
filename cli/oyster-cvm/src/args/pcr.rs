@@ -4,7 +4,7 @@ use serde_json;
 
 use crate::types::Platform;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 #[group(multiple = true)]
 pub struct PcrArgs {
     /// Preset PCRs for known enclave images
