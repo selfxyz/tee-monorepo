@@ -19,7 +19,7 @@ use tracing::info;
 
 use crate::{args::pcr::preset_to_pcr_preset, types::Platform};
 
-use super::pcr::{PcrArgs, PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64};
+use super::pcr::PcrArgs;
 
 #[derive(Args, Debug)]
 #[group(multiple = true)]

@@ -6,9 +6,7 @@ use tracing::info;
 
 use oyster::attestation::{get, AttestationExpectations, AWS_ROOT_KEY};
 
-use crate::args::pcr::{
-    preset_to_pcr_preset, PcrArgs, PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64,
-};
+use crate::args::pcr::{preset_to_pcr_preset, PcrArgs};
 use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 use crate::types::Platform;
 

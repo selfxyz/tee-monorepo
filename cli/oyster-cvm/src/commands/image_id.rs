@@ -1,5 +1,5 @@
 use alloy::signers::k256::sha2::{Digest, Sha256};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Args;
 use tracing::info;
@@ -7,7 +7,7 @@ use tracing::info;
 use crate::{
     args::{
         init_params::{InitParamsArgs, InitParamsList},
-        pcr::{preset_to_pcr_preset, PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64},
+        pcr::preset_to_pcr_preset,
     },
     types::Platform,
 };
