@@ -7,7 +7,7 @@ use tracing::info;
 use crate::{
     args::{
         init_params::{InitParamsArgs, InitParamsList},
-        pcr::{PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64},
+        pcr::{preset_to_pcr_preset, PCRS_BASE_BLUE_V1_0_0_AMD64, PCRS_BASE_BLUE_V1_0_0_ARM64},
     },
     types::Platform,
 };
@@ -30,29 +30,9 @@ pub fn compute_image_id(args: ImageArgs) -> Result<()> {
     let pcrs = args
         .init_params
         .pcrs
-        .load()
-        .context("Failed to load PCRs")?
-        .map(Result::Ok)
-        .unwrap_or(match args.preset.as_str() {
-            "blue" => match args.arch {
-                Platform::AMD64 => Ok((
-                    PCRS_BASE_BLUE_V1_0_0_AMD64.0.into(),
-                    PCRS_BASE_BLUE_V1_0_0_AMD64.1.into(),
-                    PCRS_BASE_BLUE_V1_0_0_AMD64.2.into(),
-                )),
-                Platform::ARM64 => Ok((
-                    PCRS_BASE_BLUE_V1_0_0_ARM64.0.into(),
-                    PCRS_BASE_BLUE_V1_0_0_ARM64.1.into(),
-                    PCRS_BASE_BLUE_V1_0_0_ARM64.2.into(),
-                )),
-            },
-            "debug" => Ok((
-                hex::encode([0u8; 48]),
-                hex::encode([0u8; 48]),
-                hex::encode([0u8; 48]),
-            )),
-            _ => Err(anyhow!("PCRs are required")),
-        })?;
+        .clone()
+        .load_required(preset_to_pcr_preset(&args.preset, &args.arch))
+        .context("Failed to load PCRs")?;
     let Some(init_param_b64) = args
         .init_params
         .load(args.preset, args.arch, false)
