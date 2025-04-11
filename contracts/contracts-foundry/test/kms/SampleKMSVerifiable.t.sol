@@ -6,25 +6,27 @@ import {SampleKMSVerifiable} from "../../src/kms/SampleKMSVerifiable.sol";
 
 contract SampleKMSVerifiableTestConstructor is Test {
     function test_construction(
-        address _admin
     ) public {
         bytes32 [] memory _imageIds = new bytes32[](1);
+        address _owner = makeAddr("owner");
+        vm.prank(_owner);
         _imageIds[0] = bytes32(vm.randomUint());
-        SampleKMSVerifiable _kms = new SampleKMSVerifiable(_admin, _imageIds);
-        assertTrue(_kms.hasRole(_kms.DEFAULT_ADMIN_ROLE(), _admin));
+        SampleKMSVerifiable _kms = new SampleKMSVerifiable(_imageIds);
+        assertEq(_kms.owner(), _owner);
         assertTrue(_kms.images(_imageIds[0]));
     }
 }
 
 contract SampleKMSVerifiableTest is Test {
-    address admin;
+    address owner;
     bytes32[] imageIds;
     SampleKMSVerifiable kmsVerifiable;
     function setUp() public {
-        admin = makeAddr("admin");
+        owner = makeAddr("owner");
+        vm.prank(owner);
         imageIds = new bytes32[](1);
         imageIds[0] = bytes32(vm.randomUint());
-        kmsVerifiable = new SampleKMSVerifiable(admin, imageIds);
+        kmsVerifiable = new SampleKMSVerifiable(imageIds);
     }
 
     function test_verifyImage() public view {
@@ -37,7 +39,7 @@ contract SampleKMSVerifiableTest is Test {
 
     function test_whitelistImages(bytes32[] calldata _imageIds) public {
         // Execute
-        vm.prank(admin);
+        vm.prank(owner);
         kmsVerifiable.whitelistImages(_imageIds);
         // Validate
         for (uint i = 0; i < _imageIds.length; i++) {
@@ -45,7 +47,7 @@ contract SampleKMSVerifiableTest is Test {
         }
 
         // whitelist the same images again
-        vm.prank(admin);
+        vm.prank(owner);
         kmsVerifiable.whitelistImages(_imageIds);
         for (uint i = 0; i < _imageIds.length; i++) {
             assertTrue(kmsVerifiable.images(_imageIds[i]));
@@ -54,7 +56,7 @@ contract SampleKMSVerifiableTest is Test {
 
     function test_blacklistImages() public {
         // Execute
-        vm.prank(admin);
+        vm.prank(owner);
         kmsVerifiable.blacklistImages(imageIds);
         // Validate
         for (uint i = 0; i < imageIds.length; i++) {
@@ -62,7 +64,7 @@ contract SampleKMSVerifiableTest is Test {
         }
 
         // blacklist the same images again
-        vm.prank(admin);
+        vm.prank(owner);
         kmsVerifiable.blacklistImages(imageIds);
         for (uint i = 0; i < imageIds.length; i++) {
             assertFalse(kmsVerifiable.images(imageIds[i]));

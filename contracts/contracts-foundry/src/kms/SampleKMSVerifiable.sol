@@ -2,21 +2,19 @@
 
 pragma solidity ^0.8.0;
 
-import {AccessControl} from "../../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
+import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 
 import {IKMSVerifiable} from "./IKMSVerifiable.sol";
 
 /// @title Sample KMS Verifiable Contract
 /// @notice Manages list of image IDs allowed to derive keys 
-contract SampleKMSVerifiable is AccessControl, IKMSVerifiable {
+contract SampleKMSVerifiable is Ownable, IKMSVerifiable {
     /// @notice Mapping of verified image IDs
     mapping (bytes32 => bool) public images;
 
     constructor(
-        address _admin,
         bytes32[] memory _imageIds
-    ) {
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+    ) Ownable(msg.sender) {
         _whitelistImages(_imageIds);
     }
 
@@ -26,11 +24,11 @@ contract SampleKMSVerifiable is AccessControl, IKMSVerifiable {
         }
     }
 
-    function whitelistImages(bytes32[] calldata _imageIds) onlyRole(DEFAULT_ADMIN_ROLE) external {
+    function whitelistImages(bytes32[] calldata _imageIds) onlyOwner external {
         _whitelistImages(_imageIds);
     }
 
-    function blacklistImages(bytes32[] calldata _imageIds) onlyRole(DEFAULT_ADMIN_ROLE) external {
+    function blacklistImages(bytes32[] calldata _imageIds) onlyOwner external {
         for (uint i = 0; i < _imageIds.length; i++) {
             delete images[_imageIds[i]]  ;
         }
