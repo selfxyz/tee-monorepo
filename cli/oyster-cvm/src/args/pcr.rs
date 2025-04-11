@@ -92,6 +92,12 @@ impl PcrArgs {
 
         Ok(None)
     }
+
+    pub fn load_required(self, default_preset: Option<String>) -> Result<(String, String, String)> {
+        self.load(default_preset)
+            .transpose()
+            .ok_or(anyhow!("Pcrs parameter is required."))?
+    }
 }
 
 pub static PCRS_BASE_BLUE_V1_0_0_AMD64: (&str, &str, &str) = (
