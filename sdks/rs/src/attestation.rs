@@ -138,6 +138,7 @@ pub fn verify(
                 })?
                 .to_be_bytes(),
         );
+        hasher.update(result.user_data.as_ref());
         let result_image_id = hasher.finish();
         if &result_image_id != image_id {
             return Err(AttestationError::VerifyFailed("image id mismatch".into()));
