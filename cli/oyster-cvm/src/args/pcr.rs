@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use serde_json;
+use tracing::info;
 
 use crate::types::Platform;
 
@@ -71,6 +72,7 @@ impl PcrArgs {
         }
 
         if let Some(ref name) = self.pcr_preset.or(default_preset) {
+            info!(name, "PCR preset");
             return match name.as_str() {
                 "base/blue/v2.0.0/amd64" => Ok(Some((
                     PCRS_BASE_BLUE_V2_0_0_AMD64.0.into(),
