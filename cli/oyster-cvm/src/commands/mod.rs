@@ -1,6 +1,7 @@
 pub mod build;
 pub mod deploy;
 pub mod deposit;
+pub mod derive;
 pub mod doctor;
 pub mod image_id;
 pub mod list;
