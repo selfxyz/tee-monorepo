@@ -39,7 +39,7 @@ pub struct InitParamsArgs {
     pub kms_endpoint: Option<String>,
 
     /// KMS response signature verification key
-    #[arg(long, requires = "kms_endpoint")]
+    #[arg(long)]
     pub kms_verification_key: Option<String>,
 
     /// Expected PCRs of the decryptor
@@ -340,7 +340,7 @@ fn fetch_encryption_key_with_pcr(
     let pubkey = hex::encode(&verifying_key.to_encoded_point(false).as_bytes()[1..]);
 
     if pubkey != kms_verification_key.to_lowercase() {
-        bail!("invalid public key");
+        bail!("signature verifaction failed: unexpected signer");
     }
 
     body_bytes

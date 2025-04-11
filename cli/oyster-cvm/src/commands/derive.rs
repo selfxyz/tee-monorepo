@@ -12,6 +12,10 @@ pub struct KmsDeriveArgs {
     #[arg(short = 'k', long)]
     pub kms_endpoint: Option<String>,
 
+    /// KMS response signature verification key
+    #[arg(long)]
+    pub kms_verification_key: Option<String>,
+
     /// Image ID of deployed enclave
     #[arg(short = 'i', long, conflicts_with_all = ["contract_address", "chain_id"])]
     pub image_id: Option<String>,
@@ -99,7 +103,9 @@ pub async fn kms_derive(args: KmsDeriveArgs) -> Result<()> {
             .context("failed to recover pubkey from kms root server signature")?;
     let pubkey = hex::encode(&verifying_key.to_encoded_point(false).as_bytes()[1..]);
 
-    let expected_pubkey = if let Some(chain_id) = args.chain_id {
+    let kms_verification_key = if let Some(kms_verification_key) = args.kms_verification_key {
+        kms_verification_key
+    } else if let Some(chain_id) = args.chain_id {
         KMS_ROOT_SERVERS
             .get(&chain_id)
             .context(format!("No KMS endpoint found for chain ID {}", chain_id))?
@@ -108,8 +114,9 @@ pub async fn kms_derive(args: KmsDeriveArgs) -> Result<()> {
     } else {
         "2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85".to_string()
     };
-    if pubkey != expected_pubkey {
-        bail!("invalid public key");
+
+    if pubkey != kms_verification_key.to_lowercase() {
+        bail!("signature verifaction failed: unexpected signer");
     }
     if args.key_type.contains("address") {
         info!(
