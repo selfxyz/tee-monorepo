@@ -91,7 +91,7 @@ Optional args:
 - `--pcr1` (-1): PCR1 value
 - `--pcr2` (-2): PCR2 value
 OR
-- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
+- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v2.0.0/amd64", "base/blue/v2.0.0/arm64", "base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
 
@@ -134,7 +134,7 @@ Optional args:
 - `--pcr2` (-2): PCR2 value
 <br>
 OR
-- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64"]
+- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v2.0.0/amd64", "base/blue/v2.0.0/arm64", "base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
 <br>
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
@@ -221,7 +221,7 @@ Optional args:
 - `--pcr2` (-2): PCR2 value
 <br>
 OR
-- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
+- `--pcr-preset`: Use predefined PCR values for known images. Possible values: ["base/blue/v2.0.0/amd64", "base/blue/v2.0.0/arm64", "base/blue/v1.0.0/amd64", "base/blue/v1.0.0/arm64", "debug"]
 <br>
 OR
 - `--pcr-json`: Pass the path to json file containing pcr values
@@ -314,7 +314,7 @@ OR
 # Verify an enclave using PCR preset
 ./oyster-cvm verify \
   --enclave-ip 192.168.1.100 \
-  --pcr-preset "base/blue/v1.0.0/amd64"
+  --pcr-preset "base/blue/v2.0.0/amd64"
 
 # Or verify with custom PCR values
 ./oyster-cvm verify \
