@@ -70,5 +70,4 @@ contract SampleKMSVerifiableTest is Test {
             assertFalse(kmsVerifiable.images(imageIds[i]));
         }
     }
-
 }

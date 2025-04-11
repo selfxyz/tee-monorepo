@@ -7,7 +7,7 @@ import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable
 import {IKMSVerifiable} from "./IKMSVerifiable.sol";
 
 /// @title Sample KMS Verifiable Contract
-/// @notice Manages list of image IDs allowed to derive keys 
+/// @notice Manages list of image IDs allowed to derive keys
 contract SampleKMSVerifiable is Ownable, IKMSVerifiable {
     /// @notice Mapping of verified image IDs
     mapping (bytes32 => bool) public images;
