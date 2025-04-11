@@ -24,6 +24,7 @@ pub struct AttestationDecoded {
     pub root_public_key: Box<[u8]>,
     pub public_key: Box<[u8]>,
     pub user_data: Box<[u8]>,
+    pub image_id: [u8; 32],
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -60,6 +61,7 @@ pub fn verify(
         root_public_key: Default::default(),
         public_key: Default::default(),
         user_data: Default::default(),
+        image_id: Default::default(),
     };
 
     // parse attestation doc
@@ -127,20 +129,21 @@ pub fn verify(
         }
     }
 
+    let mut hasher = Sha256::new();
+    hasher.update(result.pcrs.as_flattened());
+    hasher.update(
+        &u16::try_from(result.user_data.len())
+            .map_err(|_| {
+                AttestationError::VerifyFailed("user data too big to compute image id".into())
+            })?
+            .to_be_bytes(),
+    );
+    hasher.update(result.user_data.as_ref());
+    result.image_id = hasher.finish();
+
     // check image id if exists
     if let Some(image_id) = expectations.image_id {
-        let mut hasher = Sha256::new();
-        hasher.update(result.pcrs.as_flattened());
-        hasher.update(
-            &u16::try_from(result.user_data.len())
-                .map_err(|_| {
-                    AttestationError::VerifyFailed("user data too big to compute image id".into())
-                })?
-                .to_be_bytes(),
-        );
-        hasher.update(result.user_data.as_ref());
-        let result_image_id = hasher.finish();
-        if &result_image_id != image_id {
+        if &result.image_id != image_id {
             return Err(AttestationError::VerifyFailed("image id mismatch".into()));
         }
     }
