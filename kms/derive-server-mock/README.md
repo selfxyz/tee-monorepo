@@ -1,6 +1,6 @@
 ![Marlin Oyster Logo](./logo.svg)
 
-# KMS Derive Server Mock
+# KMS Derive Server - Mock
 
 The KMS Derive Server Mock provides derivation endpoints to derive secrets using a constant zero seed. It is meant to be mainly used for testing in local enclaves and used by applications there to derive secrets like wallets.
 
