@@ -9,6 +9,7 @@ The repository is organized into projects:
 - [attestation/server](./attestation/server/): Attestation server that uses the NSM API to generate attestations.
 - [attestation/server-custom](./attestation/server-custom/): Attestation server that uses the NSM API to generate attestations and accepts query parameters for customizing attestation fields.
 - [attestation/server-custom-mock](./attestation/server-custom-mock/): Attestation server that uses a local root of trust to generate attestations and accepts query parameters for customizing attestation fields.
+- [attestation/server-mock](./attestation/server-mock/): Attestation server that uses a local root of trust to generate attestations.
 - [attestation/verifier](./attestation/verifier/): Attestation verifier server that verifies attestations.
 - [attestation/verifier-enclave](./attestation/verifier-enclave/): Attestation verifier enclave that packages the attestation verifier server.
 - [attestation/verifier-risczero](./attestation/verifier-risczero/): Attestation verifier that generates a ZK proof of attestation verification using RISCZero.
