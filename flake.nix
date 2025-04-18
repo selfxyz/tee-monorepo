@@ -90,6 +90,9 @@
       kms.derive-server = import ./kms/derive-server {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      kms.derive-server-mock = import ./kms/derive-server-mock {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       kms.derive-server-enclave = import ./kms/derive-server-enclave {
         inherit nixpkgs systemConfig nitro-util;
         supervisord = external.supervisord.compressed;
