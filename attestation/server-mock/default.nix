@@ -39,18 +39,5 @@ in rec {
       upx $out/bin/*
     '';
 
-  docker = pkgs.dockerTools.buildImage {
-    name = "marlinorg/attestation-server-mock";
-    copyToRoot = pkgs.buildEnv {
-      name = "image-root";
-      paths = [uncompressed];
-      pathsToLink = ["/bin"];
-    };
-    config = {
-      Entrypoint = ["/bin/oyster-attestation-server-mock"];
-      Cmd = ["--ip-addr" "0.0.0.0:1300"];
-    };
-  };
-
   default = compressed;
 }
