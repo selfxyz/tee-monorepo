@@ -4,11 +4,7 @@ use std::num::TryFromIntError;
 use alloy::{
     dyn_abi::Eip712Domain,
     primitives::{B256, U256},
-    signers::{
-        k256::sha2::{Digest, Sha256},
-        local::PrivateKeySigner,
-        SignerSync,
-    },
+    signers::{local::PrivateKeySigner, SignerSync},
     sol,
     sol_types::{eip712_domain, SolStruct},
 };
