@@ -38,7 +38,6 @@
 in {
   default = pkgs.dockerTools.buildImage {
     name = "marlinorg/local-dev-image";
-    tag = "latest";
 
     copyToRoot = pkgs.buildEnv {
       name = "image-root";
