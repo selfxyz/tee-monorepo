@@ -36,22 +36,18 @@ curl http://localhost:1300/attestation/hex
 curl http://localhost:1300/attestation/raw
 ```
 
-## Build a dev image
+## Running the dev image with docker compose
 
-A local dev image can be built from a `docker-compose.yml` file whose container will then run the services mentioned in the yml file inside it on start up. To achieve this, first copy the `docker-compose.yml` file into this `dev-image` directory and use the following commands:
+The local dev image can be used to run user applications mentioned in a `docker-compose.yml` file whose container will then run the services mentioned in the yml file inside it on start up. To achieve this, first copy the `docker-compose.yml` file into this `dev-image` directory and use the following command:
 ```bash
-git add docker-compose.yml
-env COMPOSE="/docker-compose.yml" nix build --impure -v .#musl.local.dev-image.default
+docker run --privileged --network=host -v ./docker-compose.yml:/app/docker-compose.yml --rm -it marlinorg/local-dev-image:latest
 ```
 
-Load and run the created dev image like mentioned above and interact with the services defined in the yml file running inside the container.
+## Running the dev image with custom docker images
 
-## Build a dev image with custom docker images
-
-Local docker images ( '.tar' files) can also be loaded in the dev image, all of which can then be pulled by the docker daemon inside the dev container to run the `docker-compose.yml` file. To achieve this, copy all the docker images into this `dev-image` directory and use the following commands:
+Local docker images ( '.tar' files) can also be loaded in the dev image container, all of which will then be pulled by the docker daemon inside the dev container to run the `docker-compose.yml` file. To achieve this, copy all the docker images into this `dev-image` directory and use the following commands:
 ```bash
-git add *.tar
-env DOCKER_IMAGES='[ "/ollama_amd64.tar", "/image.tar" ]' COMPOSE="/docker-compose.yml" nix build --impure -v .#musl.local.dev-image.default
+docker run --privileged --network=host -v ./docker-compose.yml:/app/docker-compose.yml -v ./image.tar:/app/docker-images/image.tar --rm -it marlinorg/local-dev-image:latest
 ```
 
 ## License
