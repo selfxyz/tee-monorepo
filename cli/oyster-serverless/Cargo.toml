@@ -11,7 +11,7 @@ serde_json = "1.0"
 anyhow = "1.0.72"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
-inquire = "0.6"  # For interactive CLI
-reqwest = { version = "0.11", features = ["blocking"] }  # For HTTP requests
-portpicker = "0.1.1"  # For finding free ports
+inquire = "0.6" 
+reqwest = { version = "0.11", features = ["json"] }
+portpicker = "0.1.1" 
 ctrlc = "3.4"

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use commands::dev::DevArgs;
 use commands::doctor::DoctorArgs;
 use commands::new_project::NewArgs;
-use commands::dev::DevArgs;
 
 mod commands;
 mod types;

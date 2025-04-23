@@ -1,25 +1,31 @@
 use anyhow::{Context, Result};
 use clap::Args;
+use portpicker::pick_unused_port;
+use reqwest;
+use std::io::{BufRead, BufReader};
 use std::process::Command;
 use std::process::Stdio;
-use std::io::{BufRead, BufReader};
-use std::thread;
-use portpicker::pick_unused_port;
-use tracing::info;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use tokio::fs;
+use tracing::{error, info};
 
 #[derive(Args)]
-pub struct DevArgs {}
+pub struct DevArgs {
+    /// Path to the input file to send to the worker
+    #[clap(short, long)]
+    input_file: Option<String>,
+}
 
 fn cleanup_container(container_id: &str) {
-    info!("Cleaning up container...");
     if let Err(e) = Command::new("docker")
         .arg("rm")
         .arg("-f")
         .arg(container_id)
-        .output() {
-        eprintln!("Failed to cleanup container: {}", e);
+        .output()
+    {
+        error!("Failed to cleanup container: {}", e);
     }
 }
 
@@ -36,7 +42,7 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
         let mut child = match logs {
             Ok(child) => child,
             Err(e) => {
-                eprintln!("Failed to start log streaming: {}", e);
+                error!("Failed to start log streaming: {}", e);
                 return;
             }
         };
@@ -53,7 +59,7 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
                     break;
                 }
                 if let Ok(line) = line {
-                    println!("{}", line);
+                    info!("{}", line);
                 }
             }
         });
@@ -67,14 +73,14 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
                     break;
                 }
                 if let Ok(line) = line {
-                    eprintln!("{}", line);
+                    error!("{}", line);
                 }
             }
         });
     });
 }
 
-pub async fn run_dev(_args: DevArgs) -> Result<()> {
+pub async fn run_dev(args: DevArgs) -> Result<()> {
     // Check if worker.js exists in current directory
     let worker_path = std::env::current_dir()?.join("worker.js");
     if !worker_path.exists() {
@@ -88,10 +94,10 @@ pub async fn run_dev(_args: DevArgs) -> Result<()> {
 
     // Find a free port
     let port = pick_unused_port().context("No free ports available")?;
-    
-    info!("Starting development server on port {}", port);
 
-    let output = Command::new("docker")
+    info!("Starting development server on port : {}", port);
+
+    let docker_process = Command::new("docker")
         .arg("run")
         .arg("-d")
         .arg("-p")
@@ -99,8 +105,14 @@ pub async fn run_dev(_args: DevArgs) -> Result<()> {
         .arg("-v")
         .arg(format!("{}:/app/worker.js", worker_abs_path.display()))
         .arg("sagarparker/serverless_workerd")
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit()) // Show pull progress on stderr
+        .spawn()
         .context("Failed to start docker container")?;
+
+    let output = docker_process
+        .wait_with_output()
+        .context("Failed to get docker container output")?;
 
     if !output.status.success() {
         anyhow::bail!("Failed to start docker container");
@@ -123,10 +135,22 @@ pub async fn run_dev(_args: DevArgs) -> Result<()> {
         cleanup_container(&container_id_clone);
     })?;
 
-    // Keep the main thread running until we receive a signal
-    while running.load(Ordering::SeqCst) {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+    let client = reqwest::Client::new();
+    let mut request = client.post(format!("http://127.0.0.1:{}", port));
+
+    if let Some(input_path) = args.input_file {
+        let content = fs::read(input_path)
+            .await
+            .context("Failed to read input file")?;
+        request = request.body(content);
     }
 
+    let response = request.send().await.context("Failed to make API request")?;
+
+    let response_text = response.text().await?;
+    info!("Response: {}", response_text);
+
+    // Clean up and exit after getting response
+    cleanup_container(&container_id);
     Ok(())
 }

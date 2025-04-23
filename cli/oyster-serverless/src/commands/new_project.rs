@@ -90,5 +90,9 @@ pub async fn run_new(args: NewArgs) -> Result<()> {
 
     download_template(&template_url, &project_path).await?;
     info!("Created new project at {}", project_path.display());
+    info!(
+        "All subsequent steps should be performed inside the newly created {} directory.",
+        &args.name
+    );
     Ok(())
 }
