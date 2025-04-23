@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::doctor::DoctorArgs;
 use commands::new_project::NewArgs;
+use commands::dev::DevArgs;
 
 mod commands;
 mod types;
@@ -30,6 +31,8 @@ enum Commands {
     Doctor(DoctorArgs),
     /// Create a new project
     New(NewArgs),
+    /// Start development server
+    Dev(DevArgs),
 }
 
 #[tokio::main]
@@ -41,6 +44,7 @@ async fn main() -> Result<()> {
     let result = match cli.command {
         Commands::Doctor(args) => commands::doctor::run_doctor(args),
         Commands::New(args) => commands::new_project::run_new(args).await,
+        Commands::Dev(args) => commands::dev::run_dev(args).await,
     };
 
     if let Err(e) = result {
