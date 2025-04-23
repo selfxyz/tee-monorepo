@@ -7,6 +7,16 @@ use lazy_static::lazy_static;
 use tracing::info;
 
 #[derive(Args, Debug)]
+#[command(override_usage = r#"
+  oyster-cvm kms-derive [OPTIONS] --path <PATH> --key-type <KEY_TYPE> <SOURCE>
+
+SOURCE:
+  For image based KMS:
+    --image-id <IMAGE_ID>
+  
+  For contract based KMS:
+    --contract-address <ADDRESS> --chain-id <ID>
+"#)]
 pub struct KmsDeriveArgs {
     /// KMS endpoint for fetching public key for encryption
     #[arg(short = 'k', long)]
