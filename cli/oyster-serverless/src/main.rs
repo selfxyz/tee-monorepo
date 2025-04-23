@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use commands::doctor::DoctorArgs;
+use commands::new_project::NewArgs;
 
 mod commands;
 mod types;
@@ -27,6 +28,8 @@ struct Cli {
 enum Commands {
     /// Check optional system dependencies like Docker
     Doctor(DoctorArgs),
+    /// Create a new project
+    New(NewArgs),
 }
 
 #[tokio::main]
@@ -37,6 +40,7 @@ async fn main() -> Result<()> {
 
     let result = match cli.command {
         Commands::Doctor(args) => commands::doctor::run_doctor(args),
+        Commands::New(args) => commands::new_project::run_new(args).await,
     };
 
     if let Err(e) = result {

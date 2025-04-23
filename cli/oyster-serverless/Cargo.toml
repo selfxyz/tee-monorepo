@@ -1,7 +1,7 @@
 [package]
 name = "oyster-serverless"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
@@ -11,3 +11,5 @@ serde_json = "1.0"
 anyhow = "1.0.72"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
+inquire = "0.6"  # For interactive CLI
+reqwest = { version = "0.11", features = ["blocking"] }  # For HTTP requests
