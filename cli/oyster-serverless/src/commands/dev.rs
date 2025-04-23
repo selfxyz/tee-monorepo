@@ -82,19 +82,6 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
     });
 }
 
-async fn wait_for_container_ready(port: u16, max_retries: u32) -> Result<()> {
-    let client = reqwest::Client::new();
-    for i in 0..max_retries {
-        match client.get(format!("http://127.0.0.1:{}", port)).send().await {
-            Ok(_) => return Ok(()),
-            Err(_) if i < max_retries - 1 => {
-                sleep(Duration::from_millis(500)).await;
-            }
-            Err(e) => return Err(anyhow::anyhow!("Container failed to start: {}", e)),
-        }
-    }
-    Ok(())
-}
 
 pub async fn run_dev(args: DevArgs) -> Result<()> {
     // Check if worker.js exists in current directory
@@ -155,8 +142,8 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
 
     // Wait for the container to be ready
     info!("Waiting for container to be ready...");
-    wait_for_container_ready(port, 10).await?;
-    info!("Container is ready!");
+    sleep(Duration::from_millis(1000)).await;
+    info!("Container is ready, executing request...");
 
     let client = reqwest::Client::new();
     let mut request = client.post(format!("http://127.0.0.1:{}", port));
