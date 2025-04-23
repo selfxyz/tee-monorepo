@@ -26,6 +26,8 @@ use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tracing::info;
 
+use super::simulate::{simulate, SimulateArgs};
+
 // Retry Configuration
 const IP_CHECK_RETRIES: u32 = 20;
 const IP_CHECK_INTERVAL: u64 = 15;
@@ -100,6 +102,14 @@ pub struct DeployArgs {
     /// Init params
     #[command(flatten)]
     init_params: InitParamsArgs,
+
+    /// Dry run the image locally
+    #[arg(long, conflicts_with = "image_url")]
+    dry_run: bool,
+
+    /// Application ports to expose out of the local oyster simulation
+    #[arg(long, requires = "dry_run")]
+    expose_ports: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -124,6 +134,17 @@ struct InstanceRate {
 }
 
 pub async fn deploy(args: DeployArgs) -> Result<()> {
+    // Start simulation if dry_run flag is opted
+    if args.dry_run {
+        if args.preset == "blue" {
+            return start_simulation(args).await;
+        } else {
+            return Err(anyhow!(
+                "Dry run is only supported for blue images based deployments!"
+            ));
+        }
+    }
+
     tracing::info!("Starting deployment...");
 
     let provider = create_provider(&args.wallet.load_required()?).await?;
@@ -256,6 +277,24 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn start_simulation(args: DeployArgs) -> Result<()> {
+    let simulate_args = SimulateArgs {
+        preset: args.preset,
+        arch: args.arch.clone(),
+        docker_compose: args.init_params.docker_compose,
+        docker_images: Vec::new(),
+        init_params: args.init_params.init_params.unwrap_or_default(),
+        expose_ports: args.expose_ports,
+        base_image: None,
+        container_memory: None,
+        job_name: args.job_name,
+        cleanup: true,
+        no_local_images: true,
+    };
+
+    return simulate(simulate_args).await;
 }
 
 async fn create_new_oyster_job(
