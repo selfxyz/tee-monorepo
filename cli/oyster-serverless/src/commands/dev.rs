@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use tokio::fs;
+use tokio::time::sleep;
+use std::time::Duration;
 use tracing::{error, info};
 
 #[derive(Args)]
@@ -80,6 +82,20 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
     });
 }
 
+async fn wait_for_container_ready(port: u16, max_retries: u32) -> Result<()> {
+    let client = reqwest::Client::new();
+    for i in 0..max_retries {
+        match client.get(format!("http://127.0.0.1:{}", port)).send().await {
+            Ok(_) => return Ok(()),
+            Err(_) if i < max_retries - 1 => {
+                sleep(Duration::from_millis(500)).await;
+            }
+            Err(e) => return Err(anyhow::anyhow!("Container failed to start: {}", e)),
+        }
+    }
+    Ok(())
+}
+
 pub async fn run_dev(args: DevArgs) -> Result<()> {
     // Check if worker.js exists in current directory
     let worker_path = std::env::current_dir()?.join("worker.js");
@@ -96,10 +112,12 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
     let port = pick_unused_port().context("No free ports available")?;
 
     info!("Starting development server on port : {}", port);
-
+    
     let docker_process = Command::new("docker")
         .arg("run")
         .arg("-d")
+        .arg("--platform")
+        .arg("linux/amd64")
         .arg("-p")
         .arg(format!("{}:8080", port))
         .arg("-v")
@@ -134,6 +152,11 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         r.store(false, Ordering::SeqCst);
         cleanup_container(&container_id_clone);
     })?;
+
+    // Wait for the container to be ready
+    info!("Waiting for container to be ready...");
+    wait_for_container_ready(port, 10).await?;
+    info!("Container is ready!");
 
     let client = reqwest::Client::new();
     let mut request = client.post(format!("http://127.0.0.1:{}", port));
