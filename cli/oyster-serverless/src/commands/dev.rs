@@ -127,8 +127,6 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         .trim()
         .to_string();
 
-    info!("Container ID: {}", container_id);
-
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     let container_id_clone = container_id.clone();
