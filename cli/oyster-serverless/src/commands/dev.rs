@@ -135,6 +135,8 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         .trim()
         .to_string();
 
+    info!("Container ID: {}", container_id);
+
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     let container_id_clone = container_id.clone();
@@ -149,9 +151,30 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
 
     // Wait for the container to be ready
     info!("Waiting for container to be ready...");
-    sleep(Duration::from_millis(1000)).await;
-    info!("Executing request...");
+    
+    // Check if the port is accepting connections
+    let mut retries = 10;
+    let mut is_ready = false;
+    while retries > 0 {
+        match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+            Ok(_) => {
+                is_ready = true;
+                break;
+            }
+            Err(_) => {
+                sleep(Duration::from_millis(300)).await;
+                retries -= 1;
+            }
+        }
+    }
 
+    if !is_ready {
+        cleanup_container(&container_id);
+        anyhow::bail!("Service did not start properly (port {} is not accessible)", port);
+    }
+
+    info!("Service is ready. Executing request...");
+    
     let client = reqwest::Client::new();
     let mut request = client.post(format!("http://127.0.0.1:{}", port));
 
