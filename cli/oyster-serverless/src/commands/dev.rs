@@ -6,9 +6,9 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 use std::process::Stdio;
 use std::thread;
+use std::time::Duration;
 use tokio::fs;
 use tokio::time::sleep;
-use std::time::Duration;
 use tracing::{error, info, warn};
 
 #[derive(Args)]
@@ -72,7 +72,6 @@ fn stream_logs(container_id: String) {
     });
 }
 
-
 pub async fn run_dev(args: DevArgs) -> Result<()> {
     // Check if worker.js exists in current directory
     let worker_path = std::env::current_dir()?.join("worker.js");
@@ -96,7 +95,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
     let port = pick_unused_port().context("No free ports available")?;
 
     info!("Starting development server on port : {}", port);
-    
+
     let docker_process = Command::new("docker")
         .arg("run")
         .arg("-d")
@@ -125,7 +124,6 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         .trim()
         .to_string();
 
-
     let container_id_clone = container_id.clone();
 
     // Start log streaming
@@ -137,7 +135,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
 
     // Wait for the container to be ready
     info!("Waiting for container to be ready...");
-    
+
     // Check if the port is accepting connections
     let mut retries = 10;
     let mut is_ready = false;
@@ -158,11 +156,14 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
 
     if !is_ready {
         cleanup_container(&container_id);
-        anyhow::bail!("Service did not start properly (port {} is not accessible)", port);
+        anyhow::bail!(
+            "Service did not start properly (port {} is not accessible)",
+            port
+        );
     }
 
     info!("Service is ready. Executing request...");
-    
+
     let client = reqwest::Client::new();
     let mut request = client.post(format!("http://127.0.0.1:{}", port));
 
@@ -177,7 +178,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
 
     // Get the response as bytes instead of text
     let response_bytes = response.bytes().await?;
-    
+
     // Write the response to output.bin in the current directory
     let output_path = std::env::current_dir()?.join("output");
     fs::write(&output_path, response_bytes)
