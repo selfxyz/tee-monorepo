@@ -20,6 +20,13 @@ impl Platform {
             Platform::ARM64 => "aarch64-linux",
         }
     }
+
+    pub fn base_dev_image(&self) -> &'static str {
+        match self {
+            Platform::AMD64 => "marlinorg/local-dev-image@sha256:6b65a799a20eef7dba4cf637933075d32334456aeee7d994ebbc5d914cf46eec",
+            Platform::ARM64 => "marlinorg/local-dev-image@sha256:63c780fd06a46889ad6fbca77105fb681e87014c48ec96cb7e0a729190a00b8c",
+        }
+    }
 }
 
 impl ValueEnum for Platform {
