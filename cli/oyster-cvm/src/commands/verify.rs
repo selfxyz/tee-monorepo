@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use hex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,11 +11,21 @@ use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 use crate::types::Platform;
 
 /// Verify Oyster Enclave Attestation
+///
+/// For verifying a running enclave (among other flags):
+///   --enclave-ip <ENCLAVE_IP>
+///
+/// For verifying an existing attestation (among other flags):
+///   --attestation-hex <ATTESTATION_HEX>
 #[derive(Args)]
 pub struct VerifyArgs {
+    /// Hex encoded attestation
+    #[arg(short = 'x', long, conflicts_with = "enclave_ip")]
+    attestation_hex: Option<String>,
+
     /// Enclave IP
-    #[arg(short = 'e', long, required = true)]
-    enclave_ip: String,
+    #[arg(short = 'e', long, conflicts_with = "attestation_hex")]
+    enclave_ip: Option<String>,
 
     #[command(flatten)]
     pcr: PcrArgs,
@@ -56,17 +66,30 @@ pub struct VerifyArgs {
 pub async fn verify(args: VerifyArgs) -> Result<()> {
     let pcrs = get_pcrs(args.pcr, args.preset, args.arch).context("Failed to load PCR data")?;
 
-    let attestation_endpoint = format!(
-        "http://{}:{}/attestation/raw",
-        args.enclave_ip, args.attestation_port
-    );
-    info!(
-        "Connecting to attestation endpoint: {}",
-        attestation_endpoint
-    );
+    // parse or fetch attestation
+    let attestation = if let Some(attestation_hex) = args.attestation_hex {
+        info!("Parsing attestation");
+        let attestation = hex::decode(attestation_hex)?.into_boxed_slice();
+        info!("Successfully parsed attestation");
 
-    let attestation_doc = get(attestation_endpoint.parse()?).await?;
-    info!("Successfully fetched attestation document");
+        attestation
+    } else if let Some(enclave_ip) = args.enclave_ip {
+        let attestation_endpoint = format!(
+            "http://{}:{}/attestation/raw",
+            enclave_ip, args.attestation_port
+        );
+        info!(
+            "Connecting to attestation endpoint: {}",
+            attestation_endpoint
+        );
+
+        let attestation_doc = get(attestation_endpoint.parse()?).await?;
+        info!("Successfully fetched attestation document");
+
+        attestation_doc
+    } else {
+        bail!("Could not get attestation, either enclave-ip or attestation-hex must be specified")
+    };
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as usize;
     let user_data = args
@@ -95,7 +118,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         image_id: image_id.as_ref(),
     };
 
-    let decoded = oyster::attestation::verify(&attestation_doc, attestation_expectations)
+    let decoded = oyster::attestation::verify(&attestation, attestation_expectations)
         .context("Failed to verify attestation document")?;
 
     info!("Root public key: {}", hex::encode(decoded.root_public_key));
