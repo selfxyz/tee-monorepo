@@ -50,6 +50,7 @@ sol!(
     "src/abis/oyster_market_abi.json"
 );
 
+/// Deploy an Oyster CVM instance
 #[derive(Args, Debug)]
 pub struct DeployArgs {
     /// Preset for parameters (e.g. blue)
@@ -190,6 +191,7 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
             .context("Configuration not supported by operator")?;
 
     // Calculate costs
+    // SAFETY: will be some value if simulation is not opted
     let duration_seconds = (args.duration_in_minutes.unwrap() as u64) * 60;
     let (total_cost, total_rate) = calculate_total_cost(
         &selected_instance,

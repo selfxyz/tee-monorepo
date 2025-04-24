@@ -33,35 +33,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Check optional system dependencies like Docker & Nix
     Doctor(DoctorArgs),
     /// Simulate oyster environment locally
     Simulate(SimulateArgs),
-    /// Build enclave image
     Build(BuildArgs),
-    /// Upload enclave image to IPFS
     Upload(UploadArgs),
-    /// Deploy an Oyster CVM instance
     Deploy(DeployArgs),
-    /// Verify Oyster Enclave Attestation
     Verify(VerifyArgs),
-    /// List active jobs for a wallet address
     List(ListArgs),
-    /// Update existing deployments
     Update(UpdateArgs),
-    /// Stream logs from an Oyster CVM instance
     Logs(LogArgs),
-    /// Deposit funds to an existing job
     Deposit(DepositArgs),
-    /// Stop an Oyster CVM instance
     Stop(StopArgs),
-    /// Withdraw funds from an existing job
     Withdraw(WithdrawArgs),
-    /// Get Image ID
     ComputeImageId(ImageArgs),
-    /// Get KMS derived public keys or addresses
     KmsDerive(KmsDeriveArgs),
-    /// KMS verify contract commands
     KmsContract(KmsContractArgs),
 }
 
