@@ -143,7 +143,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
     // Wait for the container to be ready
     info!("Waiting for container to be ready...");
     sleep(Duration::from_millis(1000)).await;
-    info!("Container is ready, executing request...");
+    info!("Executing request...");
 
     let client = reqwest::Client::new();
     let mut request = client.post(format!("http://127.0.0.1:{}", port));
