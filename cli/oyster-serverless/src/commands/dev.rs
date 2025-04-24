@@ -90,6 +90,13 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         anyhow::bail!("worker.js not found in current directory");
     }
 
+    // Check if input file exists if provided
+    if let Some(input_path) = &args.input_file {
+        if !std::path::Path::new(input_path).exists() {
+            anyhow::bail!("Input file '{}' not found", input_path);
+        }
+    }
+
     // Get absolute path
     let worker_abs_path = worker_path
         .canonicalize()
