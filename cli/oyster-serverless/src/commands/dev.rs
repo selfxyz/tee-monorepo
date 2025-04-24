@@ -31,7 +31,7 @@ fn cleanup_container(container_id: &str) {
     }
 }
 
-fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
+fn stream_logs(container_id: String) {
     thread::spawn(move || {
         let logs = Command::new("docker")
             .arg("logs")
@@ -53,13 +53,9 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
         let stderr = child.stderr.take().unwrap();
 
         // Stream stdout
-        let stdout_running = running.clone();
         thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
-                if !stdout_running.load(Ordering::SeqCst) {
-                    break;
-                }
                 if let Ok(line) = line {
                     info!("{}", line);
                 }
@@ -67,13 +63,9 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
         });
 
         // Stream stderr
-        let stderr_running = running.clone();
         thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
-                if !stderr_running.load(Ordering::SeqCst) {
-                    break;
-                }
                 if let Ok(line) = line {
                     error!("{}", line);
                 }
@@ -142,7 +134,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
     let container_id_clone = container_id.clone();
 
     // Start log streaming
-    stream_logs(container_id.clone(), running.clone());
+    stream_logs(container_id.clone());
 
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
