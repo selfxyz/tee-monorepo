@@ -118,7 +118,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         image_id: image_id.as_ref(),
     };
 
-    let decoded = oyster::attestation::verify(&attestation, attestation_expectations)
+    let decoded = oyster::attestation::verify(&attestation, attestation_expectations.clone())
         .context("Failed to verify attestation document")?;
 
     info!("Root public key: {}", hex::encode(decoded.root_public_key));
@@ -132,6 +132,20 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
     info!("PCR1: {}", hex::encode(decoded.pcrs[1]));
     info!("PCR2: {}", hex::encode(decoded.pcrs[2]));
     info!("Verification successful ✓");
+    info!(
+        timestamp = attestation_expectations.timestamp,
+        age = attestation_expectations.age.map(|x| x.0),
+        pcr0 = attestation_expectations.pcrs.map(|x| hex::encode(x[0])),
+        pcr1 = attestation_expectations.pcrs.map(|x| hex::encode(x[1])),
+        pcr2 = attestation_expectations.pcrs.map(|x| hex::encode(x[2])),
+        enclave_public_key = attestation_expectations.public_key.map(|x| hex::encode(x)),
+        user_data = attestation_expectations.user_data.map(|x| hex::encode(x)),
+        root_public_key = attestation_expectations
+            .root_public_key
+            .map(|x| hex::encode(x)),
+        image_id = attestation_expectations.image_id.map(|x| hex::encode(x)),
+        "Verified against expectations: "
+    );
     Ok(())
 }
 
