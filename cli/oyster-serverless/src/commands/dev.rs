@@ -150,7 +150,6 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
             Ok(_) => {
                 info!("Container is ready on port {}", port);
                 is_ready = true;
-                sleep(Duration::from_millis(500)).await;
                 break;
             }
             Err(_) => {
