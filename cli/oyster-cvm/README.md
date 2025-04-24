@@ -75,7 +75,7 @@ Optional args:
 - `--base-image` (local dev base image to use in format `<image_name>:<image_tag>`)
 - `--container-memory` (memory limit for the local dev container)
 - `--job-name` (job and local dev container name)
-- `--cleanup` (cleanup base dev image and local cache after testing)
+- `--cleanup-cache` (cleanup local images cache after testing)
 - `--no-local-images` (Pull relevant local images or just the docker hub published)
 
 #### `build`
@@ -145,8 +145,8 @@ Optional args:
 - `--docker-compose`: Path to custom docker-compose.yml file
 - `--contract-address`: Enclave verifier contract address
 - `--chain-id`: Chain ID for KMS contract root server
-- `--dry-run`: Dry run the oyster cvm enclave locally before deployment
-- `--expose-ports`: Application ports to expose out of the local oyster simulation
+- `--simulate`: Simulate the oyster cvm enclave locally before deployment
+- `--simulate-expose-ports`: Application ports to expose out of the local oyster simulation
 \
 <br>
 - `--pcr0` (-0): PCR0 value
@@ -370,8 +370,8 @@ Required args:
   --job-name "my-custom-job" \
   --init-params secret:1:0:utf8:hello \
   --docker-compose ./docker-compose.yml \
-  --dry-run \ 
-  --expose-ports 5000
+  --simulate \ 
+  --simulate-expose-ports 5000
 
 # Update an existing job
 ./oyster-cvm update \
