@@ -10,6 +10,7 @@ use crate::args::pcr::{preset_to_pcr_preset, PcrArgs};
 use crate::configs::global::DEFAULT_ATTESTATION_PORT;
 use crate::types::Platform;
 
+/// Verify Oyster Enclave Attestation
 #[derive(Args)]
 pub struct VerifyArgs {
     /// Enclave IP

@@ -48,6 +48,7 @@ sol!(
     "src/abis/oyster_market_abi.json"
 );
 
+/// Deploy an Oyster CVM instance
 #[derive(Args, Debug)]
 pub struct DeployArgs {
     /// Preset for parameters (e.g. blue)
