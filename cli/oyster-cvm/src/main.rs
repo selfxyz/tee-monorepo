@@ -34,7 +34,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Doctor(DoctorArgs),
-    /// Simulate oyster environment locally
     Simulate(SimulateArgs),
     Build(BuildArgs),
     Upload(UploadArgs),

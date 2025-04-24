@@ -19,6 +19,7 @@ const LOCAL_DEV_DIRECTORY: &str = ".marlin";
 const DOCKER_IMAGE_CACHE_DIRECTORY: &str = "local_dev_images";
 const INIT_PARAMS_DIRECTORY: &str = "init_params";
 
+/// Simulate oyster environment locally
 #[derive(Args)]
 pub struct SimulateArgs {
     /// Preset for parameters (e.g. blue)
