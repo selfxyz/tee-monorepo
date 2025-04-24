@@ -1,11 +1,15 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use commands::deploy::DeployArgs;
 use commands::dev::DevArgs;
 use commands::doctor::DoctorArgs;
 use commands::new_project::NewArgs;
 
+mod args;
 mod commands;
+mod configs;
 mod types;
+mod utils;
 
 use tracing_subscriber::EnvFilter;
 
@@ -33,6 +37,8 @@ enum Commands {
     New(NewArgs),
     /// Start development server
     Dev(DevArgs),
+    /// Deploy code to contract
+    Deploy(DeployArgs),
 }
 
 #[tokio::main]
@@ -45,6 +51,7 @@ async fn main() -> Result<()> {
         Commands::Doctor(args) => commands::doctor::run_doctor(args),
         Commands::New(args) => commands::new_project::run_new(args).await,
         Commands::Dev(args) => commands::dev::run_dev(args).await,
+        Commands::Deploy(args) => commands::deploy::run_deploy(args).await,
     };
 
     if let Err(e) = result {

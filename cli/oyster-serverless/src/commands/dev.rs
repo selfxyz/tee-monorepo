@@ -8,9 +8,9 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 use tokio::fs;
 use tokio::time::sleep;
-use std::time::Duration;
 use tracing::{error, info};
 
 #[derive(Args)]
@@ -82,7 +82,6 @@ fn stream_logs(container_id: String, running: Arc<AtomicBool>) {
     });
 }
 
-
 pub async fn run_dev(args: DevArgs) -> Result<()> {
     // Check if worker.js exists in current directory
     let worker_path = std::env::current_dir()?.join("worker.js");
@@ -99,7 +98,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
     let port = pick_unused_port().context("No free ports available")?;
 
     info!("Starting development server on port : {}", port);
-    
+
     let docker_process = Command::new("docker")
         .arg("run")
         .arg("-d")
