@@ -164,10 +164,18 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
 
     let response = request.send().await.context("Failed to make API request")?;
 
-    let response_text = response.text().await?;
-    info!("Response: {}", response_text);
+    // Get the response as bytes instead of text
+    let response_bytes = response.bytes().await?;
+    
+    // Write the response to output.bin in the current directory
+    let output_path = std::env::current_dir()?.join("output");
+    fs::write(&output_path, response_bytes)
+        .await
+        .context("Failed to write response to output file")?;
 
-    // Clean up and exit after getting response
+    info!("Response saved to: {}", output_path.display());
+
+    // Clean up and exit after saving response
     cleanup_container(&container_id);
     Ok(())
 }
