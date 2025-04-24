@@ -5,8 +5,6 @@ use reqwest;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::thread;
 use tokio::fs;
 use tokio::time::sleep;
@@ -127,15 +125,13 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         .trim()
         .to_string();
 
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+
     let container_id_clone = container_id.clone();
 
     // Start log streaming
     stream_logs(container_id.clone());
 
     ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
         cleanup_container(&container_id_clone);
     })?;
 
