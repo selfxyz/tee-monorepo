@@ -7,14 +7,14 @@ use lazy_static::lazy_static;
 use tracing::info;
 
 /// Get KMS derived public keys or addresses
-/// 
+///
 /// For image based KMS:
 ///   --image-id <IMAGE_ID>
 ///
 /// For contract based KMS:
 ///   --contract-address <ADDRESS> --chain-id <ID>
 #[derive(Args, Debug)]
-pub struct KmsDeriveArgs {  
+pub struct KmsDeriveArgs {
     /// KMS endpoint for fetching public key for encryption
     #[arg(short = 'k', long)]
     pub kms_endpoint: Option<String>,
