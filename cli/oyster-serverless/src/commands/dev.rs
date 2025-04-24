@@ -11,7 +11,7 @@ use std::thread;
 use tokio::fs;
 use tokio::time::sleep;
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Args)]
 pub struct DevArgs {
@@ -150,11 +150,14 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
     while retries > 0 {
         match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
             Ok(_) => {
+                info!("Container is ready on port {}", port);
                 is_ready = true;
+                sleep(Duration::from_millis(500)).await;
                 break;
             }
             Err(_) => {
-                sleep(Duration::from_millis(300)).await;
+                warn!("Service not ready yet. Retrying...");
+                sleep(Duration::from_millis(500)).await;
                 retries -= 1;
             }
         }
