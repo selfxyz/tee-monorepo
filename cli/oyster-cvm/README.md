@@ -72,7 +72,7 @@ Optional args:
 - `--docker-images` (list of Docker image .tar file paths)
 - `--init-params` (list of init params in format `<path>:<attest>:<encrypt>:<type>:<value>`)
 - `--expose-ports` (application ports to expose out of the local container)
-- `--base-image` (local dev base image to use in format `<image_name>:<image_tag>`)
+- `--dev-image` (local dev base image to use in format `<image_name>:<image_tag>`)
 - `--container-memory` (memory limit for the local dev container)
 - `--job-name` (job and local dev container name)
 - `--cleanup-cache` (cleanup local images cache after testing)
