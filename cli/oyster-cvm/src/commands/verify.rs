@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use hex;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::fs::read;
 use tracing::info;
 
 use oyster::attestation::{get, AttestationExpectations, AWS_ROOT_KEY};
@@ -17,14 +18,21 @@ use crate::types::Platform;
 ///
 /// For verifying an existing attestation (among other flags):
 ///   --attestation-hex <ATTESTATION_HEX>
+///
+/// For verifying an existing attestation, read from a file (among other flags):
+///   --attestation-hex-file <ATTESTATION_HEX_FILE>
 #[derive(Args)]
 pub struct VerifyArgs {
     /// Hex encoded attestation
-    #[arg(short = 'x', long, conflicts_with = "enclave_ip")]
+    #[arg(short = 'x', long, conflicts_with_all = ["enclave_ip", "attestation_hex_file"])]
     attestation_hex: Option<String>,
 
+    /// Path to file containing a hex encoded attestation
+    #[arg(long, conflicts_with_all = ["enclave_ip", "attestation_hex"])]
+    attestation_hex_file: Option<String>,
+
     /// Enclave IP
-    #[arg(short = 'e', long, conflicts_with = "attestation_hex")]
+    #[arg(short = 'e', long, conflicts_with_all = ["attestation_hex", "attestation_hex_file"])]
     enclave_ip: Option<String>,
 
     #[command(flatten)]
@@ -71,6 +79,13 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         info!("Parsing attestation");
         let attestation = hex::decode(attestation_hex)?.into_boxed_slice();
         info!("Successfully parsed attestation");
+
+        attestation
+    } else if let Some(attestation_hex_file) = args.attestation_hex_file {
+        info!("Reading attestation from {attestation_hex_file}");
+        let attestation_hex = read(&attestation_hex_file).await?.into_boxed_slice();
+        let attestation = hex::decode(attestation_hex)?.into_boxed_slice();
+        info!("Read attestation from {attestation_hex_file}");
 
         attestation
     } else if let Some(enclave_ip) = args.enclave_ip {
