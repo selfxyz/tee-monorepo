@@ -63,6 +63,7 @@ oyster-serverless deploy
 
 - `wallet-private-key`: Private key for transactions.
 - `contract-address` *(optional)*: Overrides the default serverless contract address.
+- `minified` *(optional)*: Minify the JS file.
 
 > Note : Defaults to worker.js created by the new project command
 

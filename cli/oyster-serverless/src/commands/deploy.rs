@@ -22,6 +22,10 @@ pub struct DeployArgs {
     /// Contract address to deploy to (optional, uses default if not specified)
     #[clap(short, long)]
     contract_address: Option<String>,
+
+    /// Whether to minify the code before deployment
+    #[clap(long)]
+    minified: bool,
 }
 
 pub async fn run_deploy(args: DeployArgs) -> Result<()> {
@@ -36,21 +40,24 @@ pub async fn run_deploy(args: DeployArgs) -> Result<()> {
         .await
         .context("Failed to read worker.js")?;
 
-    // Minify the JS code
-    let session = Session::new();
-    let mut output = Vec::new();
-    minify(
-        &session,
-        TopLevelMode::Global,
-        worker_code.as_bytes(),
-        &mut output,
-    )
-    .map_err(|e| anyhow::anyhow!("Failed to minify JS code: {}", e))?;
+    let final_code = if args.minified {
+        info!("Minifying worker code...");
+        // Minify the JS code
+        let session = Session::new();
+        let mut output = Vec::new();
+        minify(
+            &session,
+            TopLevelMode::Global,
+            worker_code.as_bytes(),
+            &mut output,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to minify JS code: {}", e))?;
 
-    let minified_code =
-        String::from_utf8(output).context("Failed to convert minified code to string")?;
-
-    info!("Minified worker code: {}", minified_code);
+        String::from_utf8(output).context("Failed to convert minified code to string")?
+    } else {
+        info!("Skipping minification");
+        worker_code
+    };
 
     // Load wallet private key
     let wallet_private_key = &args.wallet.load_required()?;
@@ -70,17 +77,17 @@ pub async fn run_deploy(args: DeployArgs) -> Result<()> {
     // Create contract instance
     let contract = OysterServerlessCodeContract::new(contract_address, provider);
     info!("Deploying code to contract...");
-    // Call saveCodeInCallData with minified code
+    
+    // Call saveCodeInCallData with code
     let tx = contract
-        .saveCodeInCallData(minified_code)
+        .saveCodeInCallData(final_code)
         .send()
         .await
         .context("Failed to send transaction")?;
 
-    info!(
-        "Transaction hash for the deployed code on arbitrum one: {}",
-        tx.tx_hash()
-    );
+    let receipt = tx.get_receipt().await?;
+
+    info!("Transaction sent to arbitrum one: {:?}", receipt.transaction_hash);
 
     Ok(())
 }
