@@ -103,7 +103,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
 
         attestation_doc
     } else {
-        bail!("Could not get attestation, either enclave-ip or attestation-hex must be specified")
+        bail!("Could not get attestation, either enclave-ip, attestation-hex or attestation-hex-file must be specified")
     };
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as usize;
