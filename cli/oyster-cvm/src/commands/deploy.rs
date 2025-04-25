@@ -26,7 +26,7 @@ use std::time::Duration as StdDuration;
 use tokio::net::TcpStream;
 use tracing::info;
 
-use super::simulate::{simulate, SimulateArgs};
+use super::simulate::{simulate, SimulateArgs, LOCAL_DEV_IMAGE};
 
 // Retry Configuration
 const IP_CHECK_RETRIES: u32 = 20;
@@ -289,7 +289,7 @@ async fn start_simulation(args: DeployArgs) -> Result<()> {
         docker_images: Vec::new(),
         init_params: args.init_params.init_params.unwrap_or_default(),
         expose_ports: args.simulate_expose_ports,
-        base_image: None,
+        dev_image: LOCAL_DEV_IMAGE.to_string(),
         container_memory: None,
         job_name: if args.job_name == "" {
             "oyster_local_dev_container".to_string()

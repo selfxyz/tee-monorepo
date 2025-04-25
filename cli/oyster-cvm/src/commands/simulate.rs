@@ -15,6 +15,8 @@ use tracing::info;
 
 use crate::types::Platform;
 
+pub const LOCAL_DEV_IMAGE: &str = "marlinorg/local-dev-image:v1";
+
 const LOCAL_DEV_DIRECTORY: &str = ".marlin";
 const DOCKER_IMAGE_CACHE_DIRECTORY: &str = "local_dev_images";
 const INIT_PARAMS_DIRECTORY: &str = "init_params";
@@ -49,8 +51,8 @@ pub struct SimulateArgs {
     pub expose_ports: Vec<String>,
 
     /// Local dev base image
-    #[arg(short, long)]
-    pub base_image: Option<String>,
+    #[arg(short, long, default_value = LOCAL_DEV_IMAGE)]
+    pub dev_image: String,
 
     /// Memory limit for the local dev container
     #[arg(long)]
@@ -109,20 +111,12 @@ pub async fn simulate(args: SimulateArgs) -> Result<()> {
         info!("  Init params: {}", init_params_list);
     }
 
-    // Pull the base dev image
-    let mut base_image = arch.base_dev_image().to_owned();
-    if args.base_image.is_some() {
-        base_image = args.base_image.unwrap();
-    }
-    if !base_image.contains(':') {
-        base_image.push_str(":latest");
-    }
     info!(
         "Pulling dev base image {} to local docker daemon",
-        base_image
+        args.dev_image
     );
     let mut pull_image = Command::new("docker")
-        .args(["pull", &base_image])
+        .args(["pull", &args.dev_image])
         .stdout(Stdio::inherit())
         .spawn()
         .context("Failed to pull docker image")?;
@@ -389,7 +383,7 @@ pub async fn simulate(args: SimulateArgs) -> Result<()> {
         .args(&port_args)
         .args(&*mount_args.lock().unwrap())
         .args(&config_args)
-        .arg(&base_image)
+        .arg(&args.dev_image)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
