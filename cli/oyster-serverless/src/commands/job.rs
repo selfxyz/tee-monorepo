@@ -179,7 +179,12 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
 
     let receipt = tx.get_receipt().await?;
 
-    let job_id = receipt.inner.logs()[1].topics()[1];
+    let logs = receipt.inner.logs();
+    let job_id = if !logs.is_empty() && logs.len() > 1 && !logs[1].topics().is_empty() {
+        logs[1].topics()[1]
+    } else {
+        return Err(anyhow::anyhow!("Failed to find job ID in transaction logs"));
+    };
 
     info!(
         "Job submitted successfully in transaction: {:?}",
