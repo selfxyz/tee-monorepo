@@ -28,7 +28,7 @@ Below are the steps for developing and testing your oyster-serverless functions.
     cd first-example-project
     ```
 
-3. **Modify the JS file** as needed by following the worked guideline.
+3. **Modify the JS file** as needed by following the workerd guideline.
 
 
 4. **Test the setup locally** by running the following command:
