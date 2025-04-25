@@ -77,7 +77,7 @@ pub async fn run_deploy(args: DeployArgs) -> Result<()> {
     // Create contract instance
     let contract = OysterServerlessCodeContract::new(contract_address, provider);
     info!("Deploying code to contract...");
-    
+
     // Call saveCodeInCallData with code
     let tx = contract
         .saveCodeInCallData(final_code)
@@ -87,7 +87,10 @@ pub async fn run_deploy(args: DeployArgs) -> Result<()> {
 
     let receipt = tx.get_receipt().await?;
 
-    info!("Transaction sent to arbitrum one: {:?}", receipt.transaction_hash);
+    info!(
+        "Transaction sent to arbitrum one: {:?}",
+        receipt.transaction_hash
+    );
 
     Ok(())
 }
