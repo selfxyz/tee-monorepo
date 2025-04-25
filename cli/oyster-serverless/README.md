@@ -30,16 +30,46 @@ Below are the steps for developing and testing your oyster-serverless functions.
 
 3. **Modify the JS file** as needed by following the worked guideline.
 
-4. **Test the setup locally** with the following command:
 
-    > **Note:** Docker must be installed.
+4. **Test the setup locally** by running the following command:
+
+    > ⚠️ **Note:** Depending on your Docker setup, you might need to run this command with root privileges.
 
     ```bash
     oyster-serverless dev
     ```
 
+    If you encounter issues, try running it with `sudo`:
+
+    ```bash
+    sudo oyster-serverless dev
+    ```
+
+
     **Arguments:**
     - `input-file` (Optional) : Input file path for the workerd program.
+
+
+
+## 🚀 Deploy Function
+
+Deploy JavaScript code to the Oyster Serverless platform.
+
+```bash
+oyster-serverless deploy
+```
+
+**Arguments:**
+
+- `wallet-private-key`: Private key for transactions.
+- `contract-address` *(optional)*: Overrides the default serverless contract address.
+- `minified` *(optional)*: Minify the JS file.
+
+> Note : Defaults to worker.js created by the new project command
+
+**Output:**
+
+- Transaction hash of the saved code.
 
 
 
