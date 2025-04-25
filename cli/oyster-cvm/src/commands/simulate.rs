@@ -111,17 +111,12 @@ pub async fn simulate(args: SimulateArgs) -> Result<()> {
         info!("  Init params: {}", init_params_list);
     }
 
-    // Pull the base dev image
-    let mut dev_image = args.dev_image;
-    if !dev_image.contains(':') {
-        dev_image.push_str(":latest");
-    }
     info!(
         "Pulling dev base image {} to local docker daemon",
-        dev_image
+        args.dev_image
     );
     let mut pull_image = Command::new("docker")
-        .args(["pull", &dev_image])
+        .args(["pull", &args.dev_image])
         .stdout(Stdio::inherit())
         .spawn()
         .context("Failed to pull docker image")?;
@@ -388,7 +383,7 @@ pub async fn simulate(args: SimulateArgs) -> Result<()> {
         .args(&port_args)
         .args(&*mount_args.lock().unwrap())
         .args(&config_args)
-        .arg(&dev_image)
+        .arg(&args.dev_image)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
