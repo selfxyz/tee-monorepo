@@ -103,6 +103,10 @@ Verifies an Oyster enclave's attestation document.
 
 Required args:
 - `--enclave-ip` (-e): Enclave IP address
+OR
+- `--attestation-hex` (-x): Hex encoded attestation
+OR
+- `--attestation-hex-file`: File containing hex encoded attestation
 
 Optional args:
 - `--pcr0` (-0): PCR0 value
