@@ -1,11 +1,11 @@
 use crate::args::wallet::WalletArgs;
 use crate::configs::global::RELAY_CONTRACT_ADDRESS;
-use crate::utils::conversion::{to_eth, to_usdc, to_usdc_units, to_wei};
+use crate::utils::conversion::{to_eth, to_usdc_units, to_wei};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
 use alloy::primitives::{Address, FixedBytes, U256};
-use alloy::providers::WalletProvider;
+use alloy::providers::{Provider, WalletProvider};
 use alloy::sol;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -113,8 +113,6 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
         None => signer_address,
     };
 
-    info!("Using relay contract address: {}", contract_address);
-
     // Create contract instance
     let contract = Relay::new(contract_address, provider.clone());
 
@@ -126,57 +124,24 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
         .map_err(|_| anyhow::anyhow!("Code hash must be exactly 32 bytes"))?;
     let code_hash = FixedBytes::from(code_hash);
 
-    info!("Submitting job to relay contract...");
-    info!("env : {}", &args.env);
-    info!("user timeout : {}", &args.user_timeout);
-    info!("code hash : {}", code_hash);
-    info!("callback contract address : {}", callback_contract);
-    info!("callback gas limit : {}", &args.callback_gas_limit);
-    info!("usdc for job (raw) : {}", &args.usdc_for_job);
-    info!(
-        "usdc for job (base units) : {}",
-        to_usdc_units(args.usdc_for_job)
-    );
-    info!("callback deposit (raw ETH) : {}", &args.callback_deposit);
-    info!("callback deposit (wei) : {}", to_wei(args.callback_deposit));
-    info!("refund account : {}", refund_account);
-
     // Convert numeric values to U256
     let user_timeout = U256::from(args.user_timeout);
-    info!("user_timeout (U256): {}", user_timeout);
 
-    let max_gas_price = U256::from(args.max_gas_price);
-    info!("max_gas_price (U256): {}", max_gas_price);
+    // Get current gas price and calculate max gas price
+    let current_gas_price = U256::from(
+        provider
+            .get_gas_price()
+            .await
+            .context("Failed to get current gas price")?,
+    );
+    let max_gas_price = current_gas_price * U256::from(args.max_gas_price);
 
     let callback_gas_limit = U256::from(args.callback_gas_limit);
-    info!("callback_gas_limit (U256): {}", callback_gas_limit);
-
     let callback_deposit = to_wei(args.callback_deposit);
-    info!("callback_deposit (wei): {}", callback_deposit);
-
     let usdc_amount = to_usdc_units(args.usdc_for_job);
-    info!("usdc_amount (base units): {}", usdc_amount);
-
-    // Get execution fee per ms for the environment
-    let execution_fee_per_ms = contract
-        .getJobExecutionFeePerMs(args.env)
-        .call()
-        .await
-        .context("Failed to get execution fee per ms")?;
-    info!("Execution fee per ms : {:?}", execution_fee_per_ms._0);
-
-    let usdc_required = execution_fee_per_ms._0 * user_timeout;
-    info!("USDC required for job : {:?}", usdc_required);
-    if usdc_amount < usdc_required {
-        anyhow::bail!(
-            "Insufficient USDC amount provided. Required: {}, Provided: {}",
-            to_usdc(usdc_required),
-            to_usdc(usdc_amount)
-        );
-    }
 
     //Approve USDC to the relay contract
-    approve_usdc(usdc_required, provider.clone())
+    approve_usdc(usdc_amount, provider.clone())
         .await
         .context("Failed to approve required USDC")?;
 
@@ -185,30 +150,43 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
         to_eth(callback_deposit)
     );
 
-    // // Call relayJob with all parameters
-    // info!("Submitting job to relay contract...");
-    // let tx = contract
-    //     .relayJob(
-    //         args.env,
-    //         code_hash,
-    //         code_inputs.into(),
-    //         user_timeout,
-    //         max_gas_price,
-    //         refund_account,
-    //         callback_contract,
-    //         callback_gas_limit,
-    //     )
-    //     .value(callback_deposit)
-    //     .send()
-    //     .await
-    //     .context("Failed to send transaction")?;
+    info!("Preparing to call relayJob with parameters:");
+    info!("1. env (uint8): {}", args.env);
+    info!("2. code_hash (bytes32): {:?}", code_hash);
+    info!("4. user_timeout (uint256): {}", user_timeout);
+    info!("5. max_gas_price (uint256): {}", max_gas_price);
+    info!("6. refund_account (address): {}", refund_account);
+    info!("7. callback_contract (address): {}", callback_contract);
+    info!("8. callback_gas_limit (uint256): {}", callback_gas_limit);
+    info!("9. callback_deposit (value in wei): {}", callback_deposit);
 
-    // let receipt = tx.get_receipt().await?;
+    // Call relayJob with all parameters
+    info!("Submitting job to relay contract...");
+    let tx = contract
+        .relayJob(
+            args.env,
+            code_hash,
+            code_inputs.into(),
+            user_timeout,
+            max_gas_price,
+            refund_account,
+            callback_contract,
+            callback_gas_limit,
+        )
+        .value(callback_deposit)
+        .send()
+        .await?;
 
-    // info!(
-    //     "Job submitted successfully in transaction: {:?}",
-    //     receipt.transaction_hash
-    // );
+    let receipt = tx.get_receipt().await?;
+
+    let job_id = receipt.inner.logs()[1].topics()[1];
+
+    info!(
+        "Job submitted successfully in transaction: {:?}",
+        receipt.transaction_hash
+    );
+
+    info!("Job ID: {:?}", job_id);
 
     Ok(())
 }
