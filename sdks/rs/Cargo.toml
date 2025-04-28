@@ -35,10 +35,6 @@ axum = ["dep:axum"]
 [lib]
 name = "oyster"
 
-[[bin]]
-name = "verifier"
-path = "src/main.rs"
-
 [[example]]
 name = "scallop"
 path = "examples/scallop.rs"
