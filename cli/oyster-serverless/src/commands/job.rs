@@ -1,16 +1,16 @@
 use crate::args::wallet::WalletArgs;
-use crate::configs::global::RELAY_CONTRACT_ADDRESS;
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS};
 use crate::utils::conversion::{to_eth, to_usdc_units, to_wei};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
 use alloy::primitives::{Address, FixedBytes, U256};
-use alloy::providers::{Provider, WalletProvider};
+use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
 use alloy::sol;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use tokio::fs;
-use tracing::info;
+use tracing::{error, info};
 
 sol!(
     #[allow(missing_docs)]
@@ -29,6 +29,8 @@ pub struct JobArgs {
 pub enum JobCommands {
     /// Create a new job
     Create(CreateJobArgs),
+    /// Fetch response for a job
+    FetchResponse(FetchResponseArgs),
 }
 
 #[derive(Args)]
@@ -77,9 +79,17 @@ pub struct CreateJobArgs {
     refund_account: Option<String>,
 }
 
+#[derive(Args)]
+pub struct FetchResponseArgs {
+    /// Job ID to fetch the response for
+    #[arg(long, required = true)]
+    job_id: String,
+}
+
 pub async fn run_job(args: JobArgs) -> Result<()> {
     match args.command {
         JobCommands::Create(create_args) => create_job(create_args).await,
+        JobCommands::FetchResponse(fetch_args) => fetch_response(fetch_args).await,
     }
 }
 
@@ -179,12 +189,8 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
 
     let receipt = tx.get_receipt().await?;
 
-    let logs = receipt.inner.logs();
-    let job_id = if !logs.is_empty() && logs.len() > 1 && !logs[1].topics().is_empty() {
-        logs[1].topics()[1]
-    } else {
-        return Err(anyhow::anyhow!("Failed to find job ID in transaction logs"));
-    };
+    let data = receipt.inner.logs()[1].log_decode::<Relay::JobRelayed>()?;
+    let job_id = data.data().jobId;
 
     info!(
         "Job submitted successfully in transaction: {:?}",
@@ -192,6 +198,55 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
     );
 
     info!("Job ID: {:?}", job_id);
+
+    Ok(())
+}
+
+async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
+    // Create provider with no wallet (read-only)
+    let rpc_url = ARBITRUM_ONE_RPC_URL
+        .parse()
+        .context("Failed to parse RPC URL")?;
+    let provider = ProviderBuilder::new().on_http(rpc_url);
+
+    // Create contract instance
+    let contract_address = RELAY_CONTRACT_ADDRESS
+        .parse()
+        .context("Failed to parse relay contract address")?;
+    let contract = Relay::new(contract_address, provider.clone());
+
+    // Parse job_id to U256
+    let job_id_str = args.job_id;
+    let job_id =
+        U256::from_str_radix(job_id_str.as_str(), 10).context("Failed to parse job ID as U256")?;
+
+    info!("Fetching job response for job ID: {:?}", job_id);
+
+    // Get JobResponded events filtered by job ID
+    info!("Searching for job response...");
+
+    let log = contract
+        .JobResponded_filter()
+        .from_block(330057100)
+        .topic1(job_id);
+
+    let events = log.query().await?;
+
+    if events.is_empty() {
+        error!("No response found for job ID: {:?}", job_id);
+        return Ok(());
+    }
+
+    let job_output = &events[0].0.output;
+
+    info!("Job response found!");
+
+    let output_path = std::env::current_dir()?.join("output");
+    fs::write(&output_path, job_output)
+        .await
+        .context("Failed to write response to output file")?;
+
+    info!("Response saved to: {}", output_path.display());
 
     Ok(())
 }

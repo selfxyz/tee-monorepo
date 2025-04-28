@@ -40,7 +40,7 @@ enum Commands {
     Dev(DevArgs),
     /// Deploy code to contract
     Deploy(DeployArgs),
-    /// Submit a new job to the Relay contract
+    /// Handle oyster serverless jobs
     Job(JobArgs),
 }
 
