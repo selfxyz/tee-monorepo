@@ -1,8 +1,8 @@
 ![Marlin Oyster Logo](./logo.svg)
 
-# Init Params Manager
+# Init Params Decoder
 
-This project provides an encoder and decoder for initialization parameters for enclaves. The encoder is expected to be used by users to encode their initialization parameters before deployment. The decoder is expected to be used inside enclaves to decode the initialization parameters and extract them onto the enclave filesystem.
+This project provides a decoder for initialization parameters for enclaves. It is expected to be used inside enclaves to decode the initialization parameters and extract them onto the enclave filesystem.
 
 ## Build
 
