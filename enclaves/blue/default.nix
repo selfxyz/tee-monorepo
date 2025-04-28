@@ -9,7 +9,7 @@
   attestation-server,
   vet,
   derive-server,
-  init-params-manager,
+  init-params-decoder,
   kernels,
 }: let
   system = systemConfig.system;
@@ -24,7 +24,7 @@
   attestationServer = "${attestation-server}/bin/oyster-attestation-server";
   keygenSecp256k1 = "${keygen}/bin/keygen-secp256k1";
   deriveServer = "${derive-server}/bin/kms-derive-server";
-  initParamsDecoder = "${init-params-manager}/bin/init-params-decoder";
+  initParamsDecoder = "${init-params-decoder}/bin/init-params-decoder";
   vet' = "${vet}/bin/vet";
   kernel = kernels.kernel;
   kernelConfig = kernels.kernelConfig;

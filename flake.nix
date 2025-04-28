@@ -47,7 +47,7 @@
       attestation.verifier = import ./attestation/verifier {
         inherit nixpkgs systemConfig fenix naersk;
       };
-      initialization.init-params-manager = import ./initialization/init-params-manager {
+      initialization.init-params-decoder = import ./initialization/init-params-decoder {
         inherit nixpkgs systemConfig fenix naersk;
       };
       initialization.init-server = import ./initialization/init-server {
@@ -189,7 +189,7 @@
         attestation-server = attestation.server.compressed;
         vet = initialization.vet.compressed;
         derive-server = kms.derive-server.compressed;
-        init-params-manager = initialization.init-params-manager.compressed;
+        init-params-decoder = initialization.init-params-decoder.compressed;
         kernels = kernels.tuna;
       };
       enclaves.blue = nixpkgs.legacyPackages.${systemConfig.system}.callPackage ./enclaves/blue {
@@ -201,7 +201,7 @@
         attestation-server = attestation.server.compressed;
         vet = initialization.vet.compressed;
         derive-server = kms.derive-server.compressed;
-        init-params-manager = initialization.init-params-manager.compressed;
+        init-params-decoder = initialization.init-params-decoder.compressed;
         kernels = kernels.tuna;
       };
       cli.oyster-cvm = import ./cli/oyster-cvm {
