@@ -550,7 +550,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "init-params-manager"
+name = "init-params-decoder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
