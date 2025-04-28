@@ -83,7 +83,7 @@ pub struct CreateJobArgs {
 pub struct FetchResponseArgs {
     /// Job ID to fetch the response for
     #[arg(long, required = true)]
-    job_id: String,
+    job_transaction_hash: String,
 }
 
 pub async fn run_job(args: JobArgs) -> Result<()> {
@@ -209,16 +209,24 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
         .context("Failed to parse RPC URL")?;
     let provider = ProviderBuilder::new().on_http(rpc_url);
 
+    //Fetch tx receipt
+    let tx_receipt = provider
+        .get_transaction_receipt(args.job_transaction_hash.parse()?)
+        .await?
+        .context("Failed to fetch transaction receipt")?;
+
+    //Fetch job ID and tx block number from the transaction receipt
+    let tx_block_number = tx_receipt.block_number
+        .context("Transaction receipt does not have a block number")?;
+
+    let data = tx_receipt.inner.logs()[1].log_decode::<Relay::JobRelayed>()?;
+    let job_id = data.data().jobId;
+
     // Create contract instance
     let contract_address = RELAY_CONTRACT_ADDRESS
         .parse()
         .context("Failed to parse relay contract address")?;
     let contract = Relay::new(contract_address, provider.clone());
-
-    // Parse job_id to U256
-    let job_id_str = args.job_id;
-    let job_id =
-        U256::from_str_radix(job_id_str.as_str(), 10).context("Failed to parse job ID as U256")?;
 
     info!("Fetching job response for job ID: {:?}", job_id);
 
@@ -227,7 +235,7 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
 
     let log = contract
         .JobResponded_filter()
-        .from_block(330057100)
+        .from_block(tx_block_number)
         .topic1(job_id);
 
     let events = log.query().await?;
