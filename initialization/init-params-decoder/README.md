@@ -15,7 +15,7 @@ cargo build --release
 Reproducible builds can be done using Nix. The monorepo provides a Nix flake which includes this project and can be used to trigger builds:
 
 ```bash
-nix build -v .#<flavor>.initialization.init-params-manager.<output>
+nix build -v .#<flavor>.initialization.init-params-decoder.<output>
 ```
 
 Supported flavors:
