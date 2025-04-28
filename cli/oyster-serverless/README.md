@@ -95,7 +95,33 @@ oyster-serverless job create
 
 **Sample command:**
 ```
-cargo run job create --wallet-private-key *** --code-hash 0x6a7478d2ad9c041bef6f0d975ad6d787c42609ec4f700afcba1679eb18ac08d1 --input-file input.json --user-timeout 5000 --usdc-for-job 0.005 --callback-contract-address 0x67a0cc925b787eCdb470315E4e7DBc107370A8f4 --callback-gas-limit 1000 --callback-deposit 0.0001
+oyster-serverless job create --wallet-private-key *** --code-hash 0x6a7478d2ad9c041bef6f0d975ad6d787c42609ec4f700afcba1679eb18ac08d1 --input-file input.json --user-timeout 5000 --usdc-for-job 0.0051 --callback-contract-address 0x67a0cc925b787eCdb470315E4e7DBc107370A8f4 --callback-gas-limit 1000 --callback-deposit 0.0001
 ```
+
+## 📬 Fetch Job Response
+
+Fetch the response of a serverless job.
+
+
+```bash
+oyster-serverless job fetch-response
+```
+
+**Arguments:**
+
+- `job-transaction-hash`: Transaction hash returned by the create job command.
+
+## 🚫 Cancel Job
+
+Cancel a serverless job.
+
+> ⚠️ **Note:** : Need to wait for a 10-minute timeout after the job is created.
+```bash
+oyster-serverless job cancel
+```
+
+**Arguments:**
+- `wallet-private-key`: Private key for transactions.
+- `job-transaction-hash`: Transaction hash returned by the create job command.
 
 

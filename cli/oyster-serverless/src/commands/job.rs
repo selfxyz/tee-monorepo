@@ -1,6 +1,6 @@
 use crate::args::wallet::WalletArgs;
 use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS};
-use crate::utils::conversion::{to_eth, to_usdc_units, to_wei};
+use crate::utils::conversion::{to_eth, to_usdc, to_usdc_units, to_wei};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
@@ -31,6 +31,8 @@ pub enum JobCommands {
     Create(CreateJobArgs),
     /// Fetch response for a job
     FetchResponse(FetchResponseArgs),
+    /// Cancel a job
+    Cancel(CancelArgs),
 }
 
 #[derive(Args)]
@@ -86,10 +88,21 @@ pub struct FetchResponseArgs {
     job_transaction_hash: String,
 }
 
+#[derive(Args)]
+pub struct CancelArgs {
+    #[command(flatten)]
+    wallet: WalletArgs,
+
+    /// Job ID to cancel (transaction hash of job creation)
+    #[arg(long, required = true)]
+    job_transaction_hash: String,
+}
+
 pub async fn run_job(args: JobArgs) -> Result<()> {
     match args.command {
         JobCommands::Create(create_args) => create_job(create_args).await,
         JobCommands::FetchResponse(fetch_args) => fetch_response(fetch_args).await,
+        JobCommands::Cancel(cancel_args) => cancel_job(cancel_args).await,
     }
 }
 
@@ -150,8 +163,33 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
     let callback_deposit = to_wei(args.callback_deposit);
     let usdc_amount = to_usdc_units(args.usdc_for_job);
 
+    // Get execution fee per ms for the environment
+    let execution_fee_per_ms = contract
+        .getJobExecutionFeePerMs(args.env)
+        .call()
+        .await
+        .context("Failed to get execution fee per ms")?;
+
+    let gateway_fee_per_job = contract
+        .GATEWAY_FEE_PER_JOB()
+        .call()
+        .await
+        .context("Failed to get gateway fee per job")?;
+
+    info!("Gateway fee per job: {:?}", gateway_fee_per_job._0);
+
+    let usdc_required = execution_fee_per_ms._0 * user_timeout + gateway_fee_per_job._0;
+    info!("USDC required for job : {:?}", to_usdc(usdc_required));
+    if usdc_amount < usdc_required {
+        anyhow::bail!(
+            "Insufficient USDC amount provided. Required: {}, Provided: {}",
+            to_usdc(usdc_required),
+            to_usdc(usdc_amount)
+        );
+    }
+
     //Approve USDC to the relay contract
-    approve_usdc(usdc_amount, provider.clone())
+    approve_usdc(usdc_required, provider.clone())
         .await
         .context("Failed to approve required USDC")?;
 
@@ -159,16 +197,6 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
         "{} ETH provided for callback deposit",
         to_eth(callback_deposit)
     );
-
-    info!("Preparing to call relayJob with parameters:");
-    info!("1. env (uint8): {}", args.env);
-    info!("2. code_hash (bytes32): {:?}", code_hash);
-    info!("4. user_timeout (uint256): {}", user_timeout);
-    info!("5. max_gas_price (uint256): {}", max_gas_price);
-    info!("6. refund_account (address): {}", refund_account);
-    info!("7. callback_contract (address): {}", callback_contract);
-    info!("8. callback_gas_limit (uint256): {}", callback_gas_limit);
-    info!("9. callback_deposit (value in wei): {}", callback_deposit);
 
     // Call relayJob with all parameters
     info!("Submitting job to relay contract...");
@@ -192,12 +220,12 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
     let data = receipt.inner.logs()[1].log_decode::<Relay::JobRelayed>()?;
     let job_id = data.data().jobId;
 
+    info!("Job ID: {:?}", job_id);
+
     info!(
         "Job submitted successfully in transaction: {:?}",
         receipt.transaction_hash
     );
-
-    info!("Job ID: {:?}", job_id);
 
     Ok(())
 }
@@ -216,7 +244,8 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
         .context("Failed to fetch transaction receipt")?;
 
     //Fetch job ID and tx block number from the transaction receipt
-    let tx_block_number = tx_receipt.block_number
+    let tx_block_number = tx_receipt
+        .block_number
         .context("Transaction receipt does not have a block number")?;
 
     let data = tx_receipt.inner.logs()[1].log_decode::<Relay::JobRelayed>()?;
@@ -255,6 +284,47 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
         .context("Failed to write response to output file")?;
 
     info!("Response saved to: {}", output_path.display());
+
+    Ok(())
+}
+
+async fn cancel_job(args: CancelArgs) -> Result<()> {
+    // Create provider with wallet
+    let wallet_private_key = &args.wallet.load_required()?;
+    let provider = create_provider(wallet_private_key)
+        .await
+        .context("Failed to create provider")?;
+
+    // Get transaction receipt to extract job ID
+    let tx_receipt = provider
+        .get_transaction_receipt(args.job_transaction_hash.parse()?)
+        .await?
+        .context("Failed to fetch transaction receipt")?;
+
+    // Extract job ID from the transaction receipt logs
+    let data = tx_receipt.inner.logs()[1].log_decode::<Relay::JobRelayed>()?;
+    let job_id = data.data().jobId;
+
+    // Create contract instance
+    let contract_address = RELAY_CONTRACT_ADDRESS
+        .parse()
+        .context("Failed to parse relay contract address")?;
+    let contract = Relay::new(contract_address, provider.clone());
+
+    info!("Canceling job with ID: {:?}", job_id);
+
+    // Call cancelJob on the contract
+    let tx = contract
+        .jobCancel(job_id)
+        .send()
+        .await
+        .context("Failed to send cancel transaction")?;
+    let receipt = tx.get_receipt().await?;
+
+    info!(
+        "Job canceled successfully in transaction: {:?}",
+        receipt.transaction_hash
+    );
 
     Ok(())
 }

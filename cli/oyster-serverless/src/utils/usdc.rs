@@ -50,7 +50,7 @@ pub async fn approve_usdc(
     // Only approve if the current allowance is less than the required amount
     if current_allowance < amount {
         info!(
-            "Current allowance {}USDC is less than required amount {}USDC, approving USDC transfer...",
+            "Current allowance {} USDC is less than required amount {} USDC, approving USDC transfer...",
             to_usdc(current_allowance), to_usdc(amount)
         );
         let tx_hash = usdc
