@@ -1,20 +1,8 @@
 [package]
-name = "init-params-manager"
+name = "init-params-decoder"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-
-[[bin]]
-name = "init-params-decoder"
-path = "src/decoder.rs"
-
-[[bin]]
-name = "init-params-encoder"
-path = "src/encoder.rs"
-
-[[bin]]
-name = "init-params-encoder-contract"
-path = "src/encoder-contract.rs"
 
 [dependencies]
 anyhow = "1.0.95"
