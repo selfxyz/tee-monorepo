@@ -62,6 +62,9 @@
       initialization.logger = import ./initialization/logger {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      initialization.pcr-manager = import ./initialization/pcr-manager {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       kernels.vanilla = import ./kernels/vanilla.nix {
         inherit nixpkgs systemConfig;
       };
