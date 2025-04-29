@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use commands::deploy::DeployArgs;
 use commands::dev::DevArgs;
 use commands::doctor::DoctorArgs;
+use commands::job::JobArgs;
 use commands::new_project::NewArgs;
 
 mod args;
@@ -39,6 +40,8 @@ enum Commands {
     Dev(DevArgs),
     /// Deploy code to contract
     Deploy(DeployArgs),
+    /// Handle oyster serverless jobs
+    Job(JobArgs),
 }
 
 #[tokio::main]
@@ -52,6 +55,7 @@ async fn main() -> Result<()> {
         Commands::New(args) => commands::new_project::run_new(args).await,
         Commands::Dev(args) => commands::dev::run_dev(args).await,
         Commands::Deploy(args) => commands::deploy::run_deploy(args).await,
+        Commands::Job(args) => commands::job::run_job(args).await,
     };
 
     if let Err(e) = result {
