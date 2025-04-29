@@ -214,6 +214,20 @@ fn parse_pcrs(
             .map_err(|e| AttestationError::ParseFailed(format!("pcr{i} not 48 bytes: {e}")))?;
     }
 
+    // check if pcr16 exists, leave as zero if not
+    if let Some(pcr) = pcrs_arr.remove(&16.into()) {
+        let pcr = (match pcr {
+            Value::Bytes(b) => Ok(b),
+            _ => Err(AttestationError::ParseFailed(format!(
+                "pcr16 decode failure"
+            ))),
+        })?;
+        result[3] = pcr
+            .as_slice()
+            .try_into()
+            .map_err(|e| AttestationError::ParseFailed(format!("pcr16 not 48 bytes: {e}")))?;
+    }
+
     Ok(result)
 }
 
