@@ -19,12 +19,12 @@ pub const MOCK_ROOT_KEY: [u8; 96] = hex_literal::hex!("6c79411ebaae7489a4e835554
 
 #[derive(Debug)]
 pub struct AttestationDecoded {
-    pub timestamp: usize,
-    pub pcrs: [[u8; 48]; 4],
     pub root_public_key: Box<[u8]>,
+    pub image_id: [u8; 32],
+    pub pcrs: [[u8; 48]; 4],
+    pub timestamp: usize,
     pub public_key: Box<[u8]>,
     pub user_data: Box<[u8]>,
-    pub image_id: [u8; 32],
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -41,14 +41,14 @@ pub enum AttestationError {
 
 #[derive(Debug, Default, Clone)]
 pub struct AttestationExpectations<'a> {
+    pub root_public_key: Option<&'a [u8]>,
+    pub pcrs: Option<[[u8; 48]; 4]>,
+    pub image_id: Option<&'a [u8; 32]>,
     pub timestamp: Option<usize>,
     // (max age, current timestamp)
     pub age: Option<(usize, usize)>,
-    pub pcrs: Option<[[u8; 48]; 4]>,
     pub public_key: Option<&'a [u8]>,
     pub user_data: Option<&'a [u8]>,
-    pub root_public_key: Option<&'a [u8]>,
-    pub image_id: Option<&'a [u8; 32]>,
 }
 
 pub fn verify(
@@ -56,12 +56,12 @@ pub fn verify(
     expectations: AttestationExpectations,
 ) -> Result<AttestationDecoded, AttestationError> {
     let mut result = AttestationDecoded {
+        root_public_key: Default::default(),
+        image_id: Default::default(),
         pcrs: [[0; 48]; 4],
         timestamp: 0,
-        root_public_key: Default::default(),
         public_key: Default::default(),
         user_data: Default::default(),
-        image_id: Default::default(),
     };
 
     // parse attestation doc
@@ -91,6 +91,21 @@ pub fn verify(
     if let Some(pcrs) = expectations.pcrs {
         if result.pcrs != pcrs {
             return Err(AttestationError::VerifyFailed("pcrs mismatch".into()));
+        }
+    }
+
+    // compute image id
+    let mut hasher = Sha256::new();
+    // bitflags denoting what pcrs are part of the computation
+    // this one has 0, 1, 2 and 16
+    hasher.update(&0b00000000000000010000000000000111u32.to_be_bytes());
+    hasher.update(result.pcrs.as_flattened());
+    result.image_id = hasher.finish();
+
+    // check image id if exists
+    if let Some(image_id) = expectations.image_id {
+        if &result.image_id != image_id {
+            return Err(AttestationError::VerifyFailed("image id mismatch".into()));
         }
     }
 
@@ -126,20 +141,6 @@ pub fn verify(
     if let Some(user_data) = expectations.user_data {
         if result.user_data.as_ref() != user_data {
             return Err(AttestationError::VerifyFailed("user data mismatch".into()));
-        }
-    }
-
-    let mut hasher = Sha256::new();
-    // bitflags denoting what pcrs are present
-    // this one has 0, 1, 2 and 16
-    hasher.update(&0b00000000000000010000000000000111u32.to_be_bytes());
-    hasher.update(result.pcrs.as_flattened());
-    result.image_id = hasher.finish();
-
-    // check image id if exists
-    if let Some(image_id) = expectations.image_id {
-        if &result.image_id != image_id {
-            return Err(AttestationError::VerifyFailed("image id mismatch".into()));
         }
     }
 
