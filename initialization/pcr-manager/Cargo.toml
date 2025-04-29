@@ -8,5 +8,6 @@ name = "pcr-extender"
 path = "src/extender.rs"
 
 [dependencies]
+anyhow = "1.0.98"
 aws-nitro-enclaves-nsm-api = "0.4.0"
 clap = { version = "4.5.37", features = ["derive"] }
