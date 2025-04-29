@@ -20,7 +20,7 @@ pub const MOCK_ROOT_KEY: [u8; 96] = hex_literal::hex!("6c79411ebaae7489a4e835554
 #[derive(Debug)]
 pub struct AttestationDecoded {
     pub timestamp: usize,
-    pub pcrs: [[u8; 48]; 3],
+    pub pcrs: [[u8; 48]; 4],
     pub root_public_key: Box<[u8]>,
     pub public_key: Box<[u8]>,
     pub user_data: Box<[u8]>,
@@ -44,7 +44,7 @@ pub struct AttestationExpectations<'a> {
     pub timestamp: Option<usize>,
     // (max age, current timestamp)
     pub age: Option<(usize, usize)>,
-    pub pcrs: Option<[[u8; 48]; 3]>,
+    pub pcrs: Option<[[u8; 48]; 4]>,
     pub public_key: Option<&'a [u8]>,
     pub user_data: Option<&'a [u8]>,
     pub root_public_key: Option<&'a [u8]>,
@@ -56,7 +56,7 @@ pub fn verify(
     expectations: AttestationExpectations,
 ) -> Result<AttestationDecoded, AttestationError> {
     let mut result = AttestationDecoded {
-        pcrs: [[0; 48]; 3],
+        pcrs: [[0; 48]; 4],
         timestamp: 0,
         root_public_key: Default::default(),
         public_key: Default::default(),
@@ -190,14 +190,14 @@ fn parse_timestamp(
 
 fn parse_pcrs(
     attestation_doc: &mut BTreeMap<Value, Value>,
-) -> Result<[[u8; 48]; 3], AttestationError> {
+) -> Result<[[u8; 48]; 4], AttestationError> {
     let pcrs_arr = attestation_doc
         .remove(&"pcrs".to_owned().into())
         .ok_or(AttestationError::ParseFailed("pcrs not found".into()))?;
     let mut pcrs_arr = value::from_value::<BTreeMap<Value, Value>>(pcrs_arr)
         .map_err(|e| AttestationError::ParseFailed(format!("pcrs: {e}")))?;
 
-    let mut result = [[0; 48]; 3];
+    let mut result = [[0; 48]; 4];
     for i in 0..3 {
         let pcr = pcrs_arr
             .remove(&(i as u32).into())
@@ -432,6 +432,7 @@ mod tests {
                     hex!("189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6"),
                     hex!("5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16"),
                     hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"),
+                    [0; 48],
                 ]),
                 public_key: Some(&hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb")),
                 user_data: Some(&[0; 0]),
@@ -490,7 +491,7 @@ mod tests {
             AttestationExpectations {
                 timestamp: Some(0x00000193bf444e30),
                 age: Some((300000, 0x00000193bf444e30 + 300000)),
-                pcrs: Some([[0; 48], [1; 48], [2; 48]]),
+                pcrs: Some([[0; 48], [1; 48], [2; 48], [0; 48]]),
                 public_key: Some(&hex!("12345678")),
                 user_data: Some(&hex!("abcdef")),
                 root_public_key: Some(&MOCK_ROOT_KEY),
