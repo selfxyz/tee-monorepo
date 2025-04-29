@@ -7,6 +7,10 @@ edition = "2024"
 name = "pcr-extender"
 path = "src/extender.rs"
 
+[[bin]]
+name = "pcr-locker"
+path = "src/locker.rs"
+
 [dependencies]
 anyhow = "1.0.98"
 aws-nitro-enclaves-nsm-api = "0.4.0"
