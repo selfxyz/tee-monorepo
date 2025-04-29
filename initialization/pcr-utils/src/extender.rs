@@ -12,7 +12,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// PCR index, should be within [16, 31] inclusive
-    #[arg(short, long, value_parser = 16..32)]
+    #[arg(short, long)]
     index: u8,
 
     /// path to file whose contents to extend the PCR with
