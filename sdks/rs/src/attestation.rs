@@ -413,6 +413,7 @@ mod tests {
         assert_eq!(decoded.pcrs[0], hex!("189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6"));
         assert_eq!(decoded.pcrs[1], hex!("5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16"));
         assert_eq!(decoded.pcrs[2], hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"));
+        assert_eq!(decoded.pcrs[3], [0u8; 48]);
         assert_eq!(decoded.user_data, [0u8; 0].into());
         assert_eq!(decoded.public_key.as_ref(), hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"));
         assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
@@ -456,6 +457,7 @@ mod tests {
         assert_eq!(decoded.pcrs[0], hex!("189038eccf28a3a098949e402f3b3d86a876f4915c5b02d546abb5d8c507ceb1755b8192d8cfca66e8f226160ca4c7a6"));
         assert_eq!(decoded.pcrs[1], hex!("5d3938eb05288e20a981038b1861062ff4174884968a39aee5982b312894e60561883576cc7381d1a7d05b809936bd16"));
         assert_eq!(decoded.pcrs[2], hex!("6c3ef363c488a9a86faa63a44653fd806e645d4540b40540876f3b811fc1bceecf036a4703f07587c501ee45bb56a1aa"));
+        assert_eq!(decoded.pcrs[3], [0u8; 48]);
         assert_eq!(decoded.user_data, [0u8; 0].into());
         assert_eq!(decoded.public_key.as_ref(), hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb"));
         assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
@@ -479,6 +481,7 @@ mod tests {
         assert_eq!(decoded.pcrs[0], [0; 48]);
         assert_eq!(decoded.pcrs[1], [1; 48]);
         assert_eq!(decoded.pcrs[2], [2; 48]);
+        assert_eq!(decoded.pcrs[3], [0u8; 48]);
         assert_eq!(decoded.user_data.as_ref(), hex!("abcdef"));
         assert_eq!(decoded.public_key.as_ref(), hex!("12345678"));
         assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
@@ -516,6 +519,7 @@ mod tests {
         assert_eq!(decoded.pcrs[0], [0; 48]);
         assert_eq!(decoded.pcrs[1], [1; 48]);
         assert_eq!(decoded.pcrs[2], [2; 48]);
+        assert_eq!(decoded.pcrs[3], [0u8; 48]);
         assert_eq!(decoded.user_data.as_ref(), hex!("abcdef"));
         assert_eq!(decoded.public_key.as_ref(), hex!("12345678"));
         assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
