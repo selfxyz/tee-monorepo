@@ -418,7 +418,7 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
         assert_eq!(
             decoded.image_id,
-            hex!("10aff51b369137fcb2d71372829300c543b1f8c586d77080f00ba31140621b9c")
+            hex!("a6b0824d3c47f51542b3a18e6245c408490bef88ddc8d5e1bf8b95ec7eba1602")
         );
     }
 
@@ -447,7 +447,7 @@ mod tests {
                 public_key: Some(&hex!("e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd36d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb")),
                 user_data: Some(&[0; 0]),
                 root_public_key: Some(&AWS_ROOT_KEY),
-                image_id: Some(&hex!("10aff51b369137fcb2d71372829300c543b1f8c586d77080f00ba31140621b9c")),
+                image_id: Some(&hex!("a6b0824d3c47f51542b3a18e6245c408490bef88ddc8d5e1bf8b95ec7eba1602")),
             },
         )
         .unwrap();
@@ -461,7 +461,7 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), AWS_ROOT_KEY);
         assert_eq!(
             decoded.image_id,
-            hex!("10aff51b369137fcb2d71372829300c543b1f8c586d77080f00ba31140621b9c")
+            hex!("a6b0824d3c47f51542b3a18e6245c408490bef88ddc8d5e1bf8b95ec7eba1602")
         );
     }
 
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
         assert_eq!(
             decoded.image_id,
-            hex!("79fc2e5fd8deb77d38890bdb4e4b1a1bddb08b5854d81d97b24167b449ddd372")
+            hex!("b45dfd1807c1f4b81ef28b44682fba5d4d5522baac808a44b7302cbfda5144e7")
         );
     }
 
@@ -506,7 +506,7 @@ mod tests {
                 user_data: Some(&hex!("abcdef")),
                 root_public_key: Some(&MOCK_ROOT_KEY),
                 image_id: Some(&hex!(
-                    "79fc2e5fd8deb77d38890bdb4e4b1a1bddb08b5854d81d97b24167b449ddd372"
+                    "b45dfd1807c1f4b81ef28b44682fba5d4d5522baac808a44b7302cbfda5144e7"
                 )),
             },
         )
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
         assert_eq!(
             decoded.image_id,
-            hex!("79fc2e5fd8deb77d38890bdb4e4b1a1bddb08b5854d81d97b24167b449ddd372")
+            hex!("b45dfd1807c1f4b81ef28b44682fba5d4d5522baac808a44b7302cbfda5144e7")
         );
     }
 }
