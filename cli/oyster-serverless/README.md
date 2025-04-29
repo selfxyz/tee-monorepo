@@ -88,14 +88,12 @@ oyster-serverless job create
 - `code-hash`: Transaction hash of the deployed JS code.
 - `input-file`: Path for worker input file
 - `user-timeout`: Maximum time allowed for executors to complete the computation.
-- `max-gas-price` *(optional)*: Multiplier (e.g: 1.5x,2x).
-- `callback-deposit`: ETH to be deposited for callback response.
+- `max-gas-price` *(optional)*: Multiplier (e.g: 2,3).
 - `callback-gas-limit`: Gas limit for the callback function.
-- `usdc-for-job` : USDC that need to approved for the job.
 
 **Sample command:**
 ```
-oyster-serverless job create --wallet-private-key *** --code-hash 0x6a7478d2ad9c041bef6f0d975ad6d787c42609ec4f700afcba1679eb18ac08d1 --input-file input.json --user-timeout 5000 --usdc-for-job 0.0051 --callback-contract-address 0x67a0cc925b787eCdb470315E4e7DBc107370A8f4 --callback-gas-limit 1000 --callback-deposit 0.0001
+oyster-serverless job create --wallet-private-key *** --code-hash 0x6a7478d2ad9c041bef6f0d975ad6d787c42609ec4f700afcba1679eb18ac08d1 --input-file input.json --user-timeout 5000 --callback-contract-address 0x67a0cc925b787eCdb470315E4e7DBc107370A8f4 --callback-gas-limit 1000
 ```
 
 ## 📬 Fetch Job Response

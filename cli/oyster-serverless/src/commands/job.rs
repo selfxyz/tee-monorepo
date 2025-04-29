@@ -1,12 +1,11 @@
 use crate::args::wallet::WalletArgs;
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS};
-use crate::utils::conversion::{to_eth, to_wei};
+use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS, USDC_ADDRESS};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
 use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
-use alloy::sol;
+use alloy::{hex, sol};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use tokio::fs;
@@ -17,6 +16,13 @@ sol!(
     #[sol(rpc)]
     Relay,
     "src/abis/Relay.json"
+);
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    USDC,
+    "src/abis/Token.json"
 );
 
 #[derive(Args)]
@@ -56,7 +62,7 @@ pub struct CreateJobArgs {
     #[arg(long, required = true)]
     user_timeout: u64,
 
-    /// Max gas price multiplier (e.g: 1.5, 2)
+    /// Max gas price multiplier (e.g: 2, 3, 4)
     #[arg(long, default_value = "2")]
     max_gas_price: u64,
 
@@ -67,10 +73,6 @@ pub struct CreateJobArgs {
     /// Gas limit for callback function
     #[arg(long, required = true)]
     callback_gas_limit: u64,
-
-    /// Callback deposit amount
-    #[arg(long, required = true)]
-    callback_deposit: f64,
 
     /// Address to receive compensation if job fails (defaults to sender's address)
     #[arg(long)]
@@ -153,10 +155,10 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
             .await
             .context("Failed to get current gas price")?,
     );
+
     let max_gas_price = current_gas_price * U256::from(args.max_gas_price);
 
     let callback_gas_limit = U256::from(args.callback_gas_limit);
-    let callback_deposit = to_wei(args.callback_deposit);
 
     // Get execution fee per ms for the environment
     let execution_fee_per_ms = contract
@@ -171,19 +173,54 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
         .await
         .context("Failed to get gateway fee per job")?;
 
-    info!("Gateway fee per job: {:?}", gateway_fee_per_job._0);
+    let fixed_gas = contract
+        .FIXED_GAS()
+        .call()
+        .await
+        .context("Failed to get fixed gas")?;
+
+    let callback_measure_gas = contract
+        .CALLBACK_MEASURE_GAS()
+        .call()
+        .await
+        .context("Failed to get callback measure gas")?;
+
+    let callback_deposit =
+        max_gas_price * (callback_gas_limit + fixed_gas._0 + callback_measure_gas._0);
+
+    let wallet_eth_balance = provider
+        .get_balance(signer_address)
+        .await
+        .context("Failed to get wallet balance")?;
+
+    if wallet_eth_balance < callback_deposit {
+        error!(
+            "Insufficient ETH balance. Required: {} ETH, Available: {} ETH",
+            callback_deposit, wallet_eth_balance
+        );
+        return Ok(());
+    }
 
     let usdc_required = execution_fee_per_ms._0 * user_timeout + gateway_fee_per_job._0;
 
+    let usdc_contract = USDC::new(USDC_ADDRESS.parse()?, &provider);
+
+    let usdc_balace = usdc_contract.balanceOf(signer_address).call().await?._0;
+
+    if usdc_balace < usdc_required {
+        error!(
+            "Insufficient USDC balance. Required: {} USDC, Available: {} USDC",
+            usdc_required, usdc_balace
+        );
+        return Ok(());
+    }
+
+    
+
     //Approve USDC to the relay contract
-    approve_usdc(usdc_required, provider.clone())
+    approve_usdc(usdc_required, provider)
         .await
         .context("Failed to approve required USDC")?;
-
-    info!(
-        "{} ETH provided for callback deposit",
-        to_eth(callback_deposit)
-    );
 
     // Call relayJob with all parameters
     info!("Submitting job to relay contract...");
