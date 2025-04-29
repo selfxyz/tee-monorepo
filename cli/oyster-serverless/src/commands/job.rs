@@ -1,6 +1,6 @@
 use crate::args::wallet::WalletArgs;
 use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS};
-use crate::utils::conversion::{to_eth, to_usdc, to_usdc_units, to_wei};
+use crate::utils::conversion::{to_eth, to_wei};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
@@ -59,10 +59,6 @@ pub struct CreateJobArgs {
     /// Max gas price multiplier (e.g: 1.5, 2)
     #[arg(long, default_value = "2")]
     max_gas_price: u64,
-
-    /// USDC amount to deposit
-    #[arg(long, required = true)]
-    usdc_for_job: f64,
 
     /// Callback contract address
     #[arg(long, required = true)]
@@ -161,7 +157,6 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
 
     let callback_gas_limit = U256::from(args.callback_gas_limit);
     let callback_deposit = to_wei(args.callback_deposit);
-    let usdc_amount = to_usdc_units(args.usdc_for_job);
 
     // Get execution fee per ms for the environment
     let execution_fee_per_ms = contract
@@ -179,14 +174,6 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
     info!("Gateway fee per job: {:?}", gateway_fee_per_job._0);
 
     let usdc_required = execution_fee_per_ms._0 * user_timeout + gateway_fee_per_job._0;
-    info!("USDC required for job : {:?}", to_usdc(usdc_required));
-    if usdc_amount < usdc_required {
-        anyhow::bail!(
-            "Insufficient USDC amount provided. Required: {}, Provided: {}",
-            to_usdc(usdc_required),
-            to_usdc(usdc_amount)
-        );
-    }
 
     //Approve USDC to the relay contract
     approve_usdc(usdc_required, provider.clone())

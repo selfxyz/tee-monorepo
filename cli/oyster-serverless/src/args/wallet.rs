@@ -7,11 +7,7 @@ use clap::Args;
 #[group(multiple = true)]
 pub struct WalletArgs {
     /// Wallet private key for transaction signing
-    #[arg(
-        long,
-        conflicts_with = "wallet_file",
-        required_unless_present = "wallet_file"
-    )]
+    #[arg(long, conflicts_with = "wallet_file")]
     wallet_private_key: Option<String>,
 
     /// Wallet private key file containing hex encoded private key

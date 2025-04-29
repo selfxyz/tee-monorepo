@@ -54,7 +54,7 @@ pub async fn approve_usdc(
             to_usdc(current_allowance), to_usdc(amount)
         );
         let tx_hash = usdc
-            .approve(relay_contract_address, amount)
+            .increaseAllowance(relay_contract_address, amount)
             .send()
             .await
             .context("Failed to send USDC approval transaction")?
