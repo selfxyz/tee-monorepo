@@ -1,5 +1,8 @@
 use crate::args::wallet::WalletArgs;
-use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS, USDC_ADDRESS};
+use crate::configs::global::{
+    ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS, RELAY_OVERALL_TIMEOUT_NOT_OVER_SIGNATURE,
+    USDC_ADDRESS,
+};
 use crate::utils::conversion::{to_eth, to_usdc};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
@@ -64,9 +67,9 @@ pub struct CreateJobArgs {
     #[arg(long, required = true)]
     user_timeout: u64,
 
-    /// Max gas price multiplier (e.g: 2, 3, 4)
-    #[arg(long, default_value = "2")]
-    max_gas_price: u64,
+    /// Max gas price multiplier (e.g: 1.5, 2, 2.5)
+    #[arg(long, default_value = "1.5")]
+    max_gas_price: f64,
 
     /// Callback contract address
     #[arg(long, required = true)]
@@ -158,7 +161,9 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
             .context("Failed to get current gas price")?,
     );
 
-    let max_gas_price = current_gas_price * U256::from(args.max_gas_price);
+    let max_gas_price = U256::from(
+        (current_gas_price.to_string().parse::<f64>().unwrap() * args.max_gas_price).round() as u64,
+    );
 
     let callback_gas_limit = U256::from(args.callback_gas_limit);
 
@@ -207,24 +212,25 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
 
     let usdc_contract = USDC::new(USDC_ADDRESS.parse()?, &provider);
 
-    let usdc_balace = usdc_contract.balanceOf(signer_address).call().await?._0;
+    let usdc_balance = usdc_contract.balanceOf(signer_address).call().await?._0;
 
-    if usdc_balace < usdc_required {
+    if usdc_balance < usdc_required {
         error!(
             "Insufficient USDC balance. Required: {} USDC, Available: {} USDC",
-            usdc_required, usdc_balace
+            usdc_required, usdc_balance
         );
         return Ok(());
     }
 
-    info!(
-        "Required deposits: {} USDC for the job and {} ETH for the callback deposit",
+    let prompt_message = format!(
+        "The required deposits are {} USDC for the job and {} ETH for the callback deposit. Would you like to continue?",
         to_usdc(usdc_required)?,
         to_eth(callback_deposit)?
     );
 
     let options = vec!["Yes", "No"];
-    let answer = Select::new("Do you want to continue?", options)
+
+    let answer = Select::new(&prompt_message, options)
         .prompt()
         .context("Failed to get user confirmation")?;
 
@@ -358,8 +364,10 @@ async fn cancel_job(args: CancelArgs) -> Result<()> {
         Ok(tx) => tx,
         Err(e) => {
             // Check for RelayOverallTimeoutNotOver error signature
-            if e.to_string().contains("0xd856047b") {
-                error!("Job cancellation is not allowed yet: The overall timeout period has not elapsed. Please wait at least 10 minutes before attempting to cancel.");
+            if e.to_string()
+                .contains(RELAY_OVERALL_TIMEOUT_NOT_OVER_SIGNATURE)
+            {
+                error!("Job cancellation is not allowed yet: The overall timeout period has not elapsed.");
                 return Ok(());
             }
             error!("Failed to cancel job: {:?}", e);

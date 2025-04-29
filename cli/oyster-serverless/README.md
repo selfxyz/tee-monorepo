@@ -88,7 +88,7 @@ oyster-serverless job create
 - `code-hash`: Transaction hash of the deployed JS code.
 - `input-file`: Path for worker input file
 - `user-timeout`: Maximum time allowed for executors to complete the computation.
-- `max-gas-price` *(optional)*: Multiplier (e.g: 2,3).
+- `max-gas-price` *(optional)*: Multiplier (e.g: 1.5,2,2.5).
 - `callback-gas-limit`: Gas limit for the callback function.
 
 **Sample command:**
