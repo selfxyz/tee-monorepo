@@ -1,5 +1,6 @@
 use crate::args::wallet::WalletArgs;
 use crate::configs::global::{ARBITRUM_ONE_RPC_URL, RELAY_CONTRACT_ADDRESS, USDC_ADDRESS};
+use crate::utils::conversion::{to_eth, to_usdc};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
@@ -8,6 +9,7 @@ use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
 use alloy::{hex, sol};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use inquire::Select;
 use tokio::fs;
 use tracing::{error, info};
 
@@ -215,7 +217,21 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
         return Ok(());
     }
 
-    
+    info!(
+        "Required deposits: {} USDC for the job and {} ETH for callback deposit",
+        to_usdc(usdc_required)?,
+        to_eth(callback_deposit)?
+    );
+
+    let options = vec!["Yes", "No"];
+    let answer = Select::new("Do you want to continue?", options)
+        .prompt()
+        .context("Failed to get user confirmation")?;
+
+    if answer == "No" {
+        info!("Operation cancelled by user!");
+        return Ok(());
+    }
 
     //Approve USDC to the relay contract
     approve_usdc(usdc_required, provider)

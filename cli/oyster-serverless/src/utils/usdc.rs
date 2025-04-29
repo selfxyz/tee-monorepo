@@ -1,4 +1,7 @@
-use crate::configs::global::{RELAY_CONTRACT_ADDRESS, USDC_ADDRESS};
+use crate::{
+    configs::global::{RELAY_CONTRACT_ADDRESS, USDC_ADDRESS},
+    utils::conversion::to_usdc,
+};
 use alloy::{
     network::Ethereum,
     primitives::{Address, U256},
@@ -48,7 +51,7 @@ pub async fn approve_usdc(
     if current_allowance < amount {
         info!(
             "Current allowance {} USDC is less than required amount {} USDC, approving USDC transfer...",
-            current_allowance, amount
+            to_usdc(current_allowance)?, to_usdc(amount)?
         );
         let tx_hash = usdc
             .increaseAllowance(relay_contract_address, amount)
@@ -63,7 +66,7 @@ pub async fn approve_usdc(
     } else {
         info!(
             "Current allowance {} USDC is sufficient for the required amount {} USDC, skipping approval",
-            current_allowance, amount
+            to_usdc(current_allowance)?, to_usdc(amount)?
         );
     }
     Ok(())
