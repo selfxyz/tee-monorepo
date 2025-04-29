@@ -218,7 +218,7 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
     }
 
     info!(
-        "Required deposits: {} USDC for the job and {} ETH for callback deposit",
+        "Required deposits: {} USDC for the job and {} ETH for the callback deposit",
         to_usdc(usdc_required)?,
         to_eth(callback_deposit)?
     );
@@ -354,11 +354,19 @@ async fn cancel_job(args: CancelArgs) -> Result<()> {
     info!("Canceling job with ID: {:?}", job_id);
 
     // Call cancelJob on the contract
-    let tx = contract
-        .jobCancel(job_id)
-        .send()
-        .await
-        .context("Failed to send cancel transaction")?;
+    let tx = match contract.jobCancel(job_id).send().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            // Check for RelayOverallTimeoutNotOver error signature
+            if e.to_string().contains("0xd856047b") {
+                error!("Job cancellation is not allowed yet: The overall timeout period has not elapsed. Please wait at least 10 minutes before attempting to cancel.");
+                return Ok(());
+            }
+            error!("Failed to cancel job: {:?}", e);
+            return Ok(());
+        }
+    };
+
     let receipt = tx.get_receipt().await?;
 
     info!(
