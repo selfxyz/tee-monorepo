@@ -3,5 +3,9 @@ name = "pcr-manager"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "pcr-extender"
+path = "src/extender.rs"
+
 [dependencies]
 aws-nitro-enclaves-nsm-api = "0.4.0"
