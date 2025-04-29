@@ -130,6 +130,9 @@ pub fn verify(
     }
 
     let mut hasher = Sha256::new();
+    // bitflags denoting what pcrs are present
+    // this one has 0, 1, 2 and 16
+    hasher.update(&0b00000000000000010000000000000111u32.to_be_bytes());
     hasher.update(result.pcrs.as_flattened());
     hasher.update(
         &u16::try_from(result.user_data.len())
