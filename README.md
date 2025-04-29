@@ -21,6 +21,7 @@ The repository is organized into projects:
 - [initialization/init-server](./initialization/init-server/): Server that provides data endpoints over vsocks during enclave initialization.
 - [initialization/vet](./initialization/vet/): Curl-like utility that makes http queries over vsocks instead of TCP sockets.
 - [initialization/keygen](./initialization/keygen/): Keypair generators.
+- [initialization/pcr-utils](./initialization/pcr-utils/): Utilities for extending and locking PCRs.
 - [kernels](./kernels/): Linux kernels for different classes of enclave images and different use cases.
 - [kms/creator](./kms/creator): Encrypted seed generator for the KMS root servers.
 - [kms/creator-enclave](./kms/creator-enclave): KMS creator enclave.
