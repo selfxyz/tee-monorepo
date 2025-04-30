@@ -113,7 +113,7 @@ oyster-serverless job fetch-response
 
 Cancel a serverless job.
 
-> ⚠️ **Note:** : Need to wait for a 10-minute timeout after the job is created.
+> ⚠️ **Note:** Need to wait for rellay overall timeout after the job is created.
 ```bash
 oyster-serverless job cancel
 ```
