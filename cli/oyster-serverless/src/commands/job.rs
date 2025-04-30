@@ -240,7 +240,7 @@ async fn create_job(args: CreateJobArgs) -> Result<()> {
     }
 
     //Approve USDC to the relay contract
-    approve_usdc(usdc_required, provider)
+    approve_usdc(usdc_required, provider, contract_address)
         .await
         .context("Failed to approve required USDC")?;
 

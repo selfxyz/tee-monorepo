@@ -113,7 +113,7 @@ oyster-serverless job fetch-response
 
 Cancel a serverless job.
 
-> ⚠️ **Note:** : Need to wait for a 10-minute timeout after the job is created.
+> ⚠️ **Note:** Need to wait for relay overall timeout after the job is created.
 ```bash
 oyster-serverless job cancel
 ```
@@ -123,3 +123,31 @@ oyster-serverless job cancel
 - `job-transaction-hash`: Transaction hash returned by the create job command.
 
 
+## 🔁 Create Subscription
+
+Create a recurring serverless job (subscription).
+
+```bash
+oyster-serverless subscription create
+```
+
+**Arguments:**
+- `wallet-private-key`: Private key for transactions.
+- `env` *(optional)*: Execution environment (defaults to 1).
+- `callback-contract-address`: Any address.
+- `start-timestamp` *(optional)*: Timestamp for starting the sub.
+- `code-hash`: Transaction hash of the deployed JS code.
+- `input-file`: Path for worker input file
+- `periodic-gap` *(optional)*: Interval at which the function will be executed (e.g., every 30 seconds).
+- `termination-timestamp`*(optional)*: Timestamp to terminate the subscription.
+- `user-timeout`: Time limit for executors.
+- `max-gas-price` *(optional)*: Multiplier (e.g: 1.5,2,2.5).
+- `callback-gas-limit`: Gas limit for the callback function.
+- `refund-account` *(optional)*: Address to receive compensation if the job fails (defaults to sender's address).
+
+**Sample command:**
+```
+oyster-serverless subscription create --wallet-private-key **** --code-hash 0x6a7478d2ad9c041bef6f0d975ad6d787c42609ec4f700afcba1679eb18ac08d1 --input-file input.json --user-timeout 5000 --callback-contract-address 0x67a0cc925b787eCdb470315E4e7DBc107370A8f4 --callback-gas-limit 1000
+```
+
+> **Note:** If not provided as arguments, the `start-timestamp`, `termination-timestamp`, and `periodic-gap` values can be entered through interactive prompts.
