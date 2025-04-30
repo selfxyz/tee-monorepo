@@ -604,4 +604,68 @@ mod tests {
             hex!("c28909dc8803cf0edf6113f3fb81d0494f4c92b63087242200e18a5be347aacd")
         );
     }
+
+    // generated using `curl <ip>:<port>/attestation/raw?public_key=12345678&user_data=abcdef`
+    // on a custom mock attestation server running locally
+    #[test]
+    fn test_mock_pcr16_none_specified() {
+        let attestation = std::fs::read(
+            file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/custom_pcr16.bin",
+        )
+        .unwrap();
+
+        let decoded = verify(&attestation, Default::default()).unwrap();
+
+        assert_eq!(decoded.timestamp, 0x00000196870610d9);
+        assert_eq!(decoded.pcrs[0], [0; 48]);
+        assert_eq!(decoded.pcrs[1], [1; 48]);
+        assert_eq!(decoded.pcrs[2], [2; 48]);
+        assert_eq!(decoded.pcrs[3], [16; 48]);
+        assert_eq!(decoded.user_data.as_ref(), hex!("abcdef"));
+        assert_eq!(decoded.public_key.as_ref(), hex!("12345678"));
+        assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
+        assert_eq!(
+            decoded.image_id,
+            hex!("20a182763745f956ddee6f8e9d14a66e23db836c0eb1a769a2ef4d3ab77bef1b")
+        );
+    }
+
+    // generated using `curl <ip>:<port>/attestation/raw?public_key=12345678&user_data=abcdef`
+    // on a custom mock attestation server running locally
+    #[test]
+    fn test_mock_pcr16_all_specified() {
+        let attestation = std::fs::read(
+            file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/custom_pcr16.bin",
+        )
+        .unwrap();
+
+        let decoded = verify(
+            &attestation,
+            AttestationExpectations {
+                timestamp: Some(0x00000196870610d9),
+                age: Some((300000, 0x00000196870610d9 + 300000)),
+                pcrs: Some([[0; 48], [1; 48], [2; 48], [16; 48]]),
+                public_key: Some(&hex!("12345678")),
+                user_data: Some(&hex!("abcdef")),
+                root_public_key: Some(&MOCK_ROOT_KEY),
+                image_id: Some(&hex!(
+                    "20a182763745f956ddee6f8e9d14a66e23db836c0eb1a769a2ef4d3ab77bef1b"
+                )),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(decoded.timestamp, 0x00000196870610d9);
+        assert_eq!(decoded.pcrs[0], [0; 48]);
+        assert_eq!(decoded.pcrs[1], [1; 48]);
+        assert_eq!(decoded.pcrs[2], [2; 48]);
+        assert_eq!(decoded.pcrs[3], [16; 48]);
+        assert_eq!(decoded.user_data.as_ref(), hex!("abcdef"));
+        assert_eq!(decoded.public_key.as_ref(), hex!("12345678"));
+        assert_eq!(decoded.root_public_key.as_ref(), MOCK_ROOT_KEY);
+        assert_eq!(
+            decoded.image_id,
+            hex!("20a182763745f956ddee6f8e9d14a66e23db836c0eb1a769a2ef4d3ab77bef1b")
+        );
+    }
 }
