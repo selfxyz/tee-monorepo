@@ -64,7 +64,7 @@ pub struct CreateSubscriptionArgs {
     #[arg(long)]
     periodic_gap: Option<u64>,
 
-    /// Maximum time allowed for executors to complete computation
+    /// Maximum time allowed for executors to complete computation in milliseconds
     #[arg(long, required = true)]
     user_timeout: u64,
 
@@ -189,16 +189,13 @@ async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
         .context("Failed to get callback measure gas")?;
 
     // Get interactive input for start_timestamp if not provided
-    let start_timestamp_secs = get_start_timestamp(args.start_timestamp).await?;
-    let start_timestamp = U256::from(start_timestamp_secs);
+    let start_timestamp = get_start_timestamp(args.start_timestamp).await?;
 
     // Get interactive input for termination_timestamp if not provided
-    let termination_timestamp = U256::from(
-        get_termination_timestamp(start_timestamp_secs, args.termination_timestamp).await?,
-    );
+    let termination_timestamp = get_termination_timestamp(start_timestamp, args.termination_timestamp).await?;
 
     // Get interactive input for periodic_gap if not provided
-    let periodic_gap = U256::from(get_periodic_gap(args.periodic_gap).await?);
+    let periodic_gap = get_periodic_gap(args.periodic_gap).await?;
 
     let user_timeout = U256::from(args.user_timeout);
 
@@ -312,9 +309,9 @@ fn get_current_timestamp() -> u64 {
 }
 
 /// Get start timestamp from user input if not provided
-async fn get_start_timestamp(provided_timestamp: Option<u64>) -> Result<u64> {
+async fn get_start_timestamp(provided_timestamp: Option<u64>) -> Result<U256> {
     if let Some(timestamp) = provided_timestamp {
-        return Ok(timestamp);
+        return Ok(U256::from(timestamp));
     }
 
     let options = vec!["Start subscription now", "Start with some delay"];
@@ -325,7 +322,7 @@ async fn get_start_timestamp(provided_timestamp: Option<u64>) -> Result<u64> {
     let current_time = get_current_timestamp();
 
     match answer {
-        "Start subscription now" => Ok(current_time),
+        "Start subscription now" => Ok(U256::from(current_time)),
         "Start with some delay" => {
             let delay_input = Text::new("Enter delay in seconds:")
                 .prompt()
@@ -335,19 +332,19 @@ async fn get_start_timestamp(provided_timestamp: Option<u64>) -> Result<u64> {
                 .parse::<u64>()
                 .context("Invalid delay format. Please enter a number.")?;
 
-            Ok(current_time + delay)
+            Ok(U256::from(current_time + delay))
         }
-        _ => Ok(current_time), // Default fallback
+        _ => Ok(U256::from(current_time)), // Default fallback
     }
 }
 
 /// Get termination timestamp from user input if not provided
 async fn get_termination_timestamp(
-    start_timestamp: u64,
+    start_timestamp: U256,
     provided_timestamp: Option<u64>,
-) -> Result<u64> {
+) -> Result<U256> {
     if let Some(timestamp) = provided_timestamp {
-        return Ok(timestamp);
+        return Ok(U256::from(timestamp));
     }
 
     let options = vec!["Predefined duration", "Custom termination timestamp"];
@@ -372,7 +369,7 @@ async fn get_termination_timestamp(
                 _ => 60 * 60, // Default to 1 hour
             };
 
-            Ok(start_timestamp + duration_seconds)
+            Ok(start_timestamp + U256::from(duration_seconds))
         }
         "Custom termination timestamp" => {
             let timestamp_input =
@@ -391,16 +388,16 @@ async fn get_termination_timestamp(
                 ));
             }
 
-            Ok(timestamp)
+            Ok(U256::from(timestamp))
         }
-        _ => Ok(start_timestamp + 60 * 60), // Default to 1 hour
+        _ => Ok(start_timestamp + U256::from(60 * 60)), // Default to 1 hour
     }
 }
 
 /// Get periodic gap from user input if not provided
-async fn get_periodic_gap(provided_gap: Option<u64>) -> Result<u64> {
+async fn get_periodic_gap(provided_gap: Option<u64>) -> Result<U256> {
     if let Some(gap) = provided_gap {
-        return Ok(gap);
+        return Ok(U256::from(gap));
     }
 
     let options = vec!["Predefined interval", "Custom periodic gap (sec)"];
@@ -431,7 +428,7 @@ async fn get_periodic_gap(provided_gap: Option<u64>) -> Result<u64> {
                 _ => 60, // Default to 60 seconds
             };
 
-            Ok(interval_seconds)
+            Ok(U256::from(interval_seconds))
         }
         "Custom periodic gap (sec)" => {
             let gap_input = Text::new("Enter periodic gap in seconds:")
@@ -446,8 +443,8 @@ async fn get_periodic_gap(provided_gap: Option<u64>) -> Result<u64> {
                 return Err(anyhow::anyhow!("Periodic gap must be greater than zero"));
             }
 
-            Ok(gap)
+            Ok(U256::from(gap))
         }
-        _ => Ok(60), // Default to 60 seconds
+        _ => Ok(U256::from(60)), // Default to 60 seconds
     }
 }
