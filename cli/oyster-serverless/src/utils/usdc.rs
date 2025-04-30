@@ -1,4 +1,4 @@
-use crate::configs::global::{RELAY_CONTRACT_ADDRESS, USDC_ADDRESS};
+use crate::configs::global::USDC_ADDRESS;
 use alloy::{
     network::Ethereum,
     primitives::{Address, U256},
@@ -21,20 +21,18 @@ sol!(
 pub async fn approve_usdc(
     amount: U256,
     provider: impl Provider<Http<Client>, Ethereum> + WalletProvider,
+    spender: Address,
 ) -> Result<()> {
     let usdc_address: Address = USDC_ADDRESS
         .parse()
         .context("Failed to parse USDC address")?;
-    let relay_contract_address: Address = RELAY_CONTRACT_ADDRESS
-        .parse()
-        .context("Failed to parse market address")?;
 
     let usdc = USDC::new(usdc_address, provider);
 
     info!("USDC increase allowance transaction in progress...");
 
     let tx_hash = usdc
-        .increaseAllowance(relay_contract_address, amount)
+        .increaseAllowance(spender, amount)
         .send()
         .await
         .context("Failed to send USDC approval transaction")?

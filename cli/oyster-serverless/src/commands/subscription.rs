@@ -6,14 +6,16 @@ use crate::utils::conversion::{to_eth, to_usdc};
 use crate::utils::provider::create_provider;
 use crate::utils::usdc::approve_usdc;
 use alloy::network::NetworkWallet;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::providers::{Provider, WalletProvider};
-use alloy::sol;
+use alloy::{hex, sol};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use inquire::{Select, Text};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::fs;
 use tracing::{error, info};
+use RelaySubscriptions::JobSubscriptionParams;
 
 sol!(
     #[allow(missing_docs)]
@@ -98,6 +100,11 @@ pub async fn run_subscription(args: SubscriptionArgs) -> Result<()> {
 }
 
 async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
+    // Load input file contents
+    let code_inputs = fs::read(&args.input_file)
+        .await
+        .context("Failed to read input file")?;
+
     // Load wallet private key
     let wallet_private_key = &args.wallet.load_required()?;
 
@@ -127,6 +134,14 @@ async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
         Some(addr) => addr.parse()?,
         None => signer_address,
     };
+
+    // Parse code hash from hex to bytes32
+    let code_hash_str = args.code_hash.strip_prefix("0x").unwrap_or(&args.code_hash);
+    let decoded = hex::decode(code_hash_str).context("Failed to decode code hash hex string")?;
+    let code_hash: [u8; 32] = decoded
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Code hash must be exactly 32 bytes"))?;
+    let code_hash = FixedBytes::from(code_hash);
 
     // Create contract instances
     let relay_subscription_contract =
@@ -176,31 +191,24 @@ async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
     // Get interactive input for start_timestamp if not provided
     let start_timestamp_secs = get_start_timestamp(args.start_timestamp).await?;
     let start_timestamp = U256::from(start_timestamp_secs);
-    
+
     // Get interactive input for termination_timestamp if not provided
     let termination_timestamp = U256::from(
-        get_termination_timestamp(start_timestamp_secs, args.termination_timestamp).await?
+        get_termination_timestamp(start_timestamp_secs, args.termination_timestamp).await?,
     );
-    
+
     // Get interactive input for periodic_gap if not provided
     let periodic_gap = U256::from(get_periodic_gap(args.periodic_gap).await?);
-    
+
     let user_timeout = U256::from(args.user_timeout);
 
     // Calculate total runs based on provided or interactively gathered parameters
     let total_runs = ((termination_timestamp - start_timestamp) / periodic_gap) + U256::from(1);
-    
-    info!(
-        "Subscription details:\n\
-         - Start time: {} \n\
-         - End time: {} \n\
-         - Interval: {} seconds\n\
-         - Total runs: {}",
-        start_timestamp,
-        termination_timestamp,
-        periodic_gap,
-        total_runs
-    );
+
+    info!("Subscription start time: {}", start_timestamp);
+    info!("Subscription end time: {}", termination_timestamp);
+    info!("Subscription interval: {} seconds", periodic_gap);
+    info!("Total subscription runs: {}", total_runs);
 
     // Calculate the callback deposit amount
     let callback_deposit =
@@ -226,7 +234,7 @@ async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
     let usdc_balance = usdc_contract.balanceOf(signer_address).call().await?._0;
 
     let usdc_required =
-        (execution_fee_per_ms._0 * user_timeout + gateway_fee_per_job._0) * total_runs;
+        ((user_timeout * execution_fee_per_ms._0) + gateway_fee_per_job._0) * total_runs;
 
     if usdc_balance < usdc_required {
         error!(
@@ -255,6 +263,43 @@ async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
         return Ok(());
     }
 
+    //Approve USDC to the relay contract
+    approve_usdc(usdc_required, provider, relay_subscription_contract_address)
+        .await
+        .context("Failed to approve required USDC")?;
+
+    info!("Submitting subscription to relay subscription contract...");
+
+    let job_subs_params = {
+        JobSubscriptionParams {
+            env: args.env,
+            startTime: start_timestamp,
+            maxGasPrice: max_gas_price,
+            usdcDeposit: usdc_required,
+            callbackGasLimit: callback_gas_limit,
+            callbackContract: callback_contract,
+            codehash: code_hash,
+            codeInputs: code_inputs.into(),
+            periodicGap: periodic_gap,
+            terminationTimestamp: termination_timestamp,
+            userTimeout: user_timeout,
+            refundAccount: refund_account,
+        }
+    };
+
+    let tx = relay_subscription_contract
+        .startJobSubscription(job_subs_params)
+        .value(callback_deposit)
+        .send()
+        .await?;
+
+    let receipt = tx.get_receipt().await?;
+
+    info!(
+        "Job submitted successfully in transaction: {:?}",
+        receipt.transaction_hash
+    );
+
     Ok(())
 }
 
@@ -278,18 +323,18 @@ async fn get_start_timestamp(provided_timestamp: Option<u64>) -> Result<u64> {
         .context("Failed to get start time preference")?;
 
     let current_time = get_current_timestamp();
-    info!("Current timestamp: {}", current_time);
-    
+
     match answer {
         "Start subscription now" => Ok(current_time),
         "Start with some delay" => {
             let delay_input = Text::new("Enter delay in seconds:")
                 .prompt()
                 .context("Failed to get delay input")?;
-            
-            let delay = delay_input.parse::<u64>()
+
+            let delay = delay_input
+                .parse::<u64>()
                 .context("Invalid delay format. Please enter a number.")?;
-            
+
             Ok(current_time + delay)
         }
         _ => Ok(current_time), // Default fallback
@@ -297,7 +342,10 @@ async fn get_start_timestamp(provided_timestamp: Option<u64>) -> Result<u64> {
 }
 
 /// Get termination timestamp from user input if not provided
-async fn get_termination_timestamp(start_timestamp: u64, provided_timestamp: Option<u64>) -> Result<u64> {
+async fn get_termination_timestamp(
+    start_timestamp: u64,
+    provided_timestamp: Option<u64>,
+) -> Result<u64> {
     if let Some(timestamp) = provided_timestamp {
         return Ok(timestamp);
     }
@@ -309,18 +357,12 @@ async fn get_termination_timestamp(start_timestamp: u64, provided_timestamp: Opt
 
     match answer {
         "Predefined duration" => {
-            let durations = vec![
-                "15 minutes", 
-                "1 hour",
-                "6 hours",
-                "1 day",
-                "7 days"
-            ];
-            
+            let durations = vec!["15 minutes", "1 hour", "6 hours", "1 day", "7 days"];
+
             let selected_duration = Select::new("Select duration:", durations)
                 .prompt()
                 .context("Failed to get predefined duration")?;
-            
+
             let duration_seconds = match selected_duration {
                 "15 minutes" => 15 * 60,
                 "1 hour" => 60 * 60,
@@ -329,22 +371,26 @@ async fn get_termination_timestamp(start_timestamp: u64, provided_timestamp: Opt
                 "7 days" => 7 * 24 * 60 * 60,
                 _ => 60 * 60, // Default to 1 hour
             };
-            
+
             Ok(start_timestamp + duration_seconds)
         }
         "Custom termination timestamp" => {
-            let timestamp_input = Text::new("Enter termination timestamp (in seconds since epoch):")
-                .prompt()
-                .context("Failed to get custom timestamp")?;
-            
-            let timestamp = timestamp_input.parse::<u64>()
+            let timestamp_input =
+                Text::new("Enter termination timestamp (in seconds since epoch):")
+                    .prompt()
+                    .context("Failed to get custom timestamp")?;
+
+            let timestamp = timestamp_input
+                .parse::<u64>()
                 .context("Invalid timestamp format. Please enter a number.")?;
-            
+
             let current_time = get_current_timestamp();
             if timestamp <= current_time {
-                return Err(anyhow::anyhow!("Termination timestamp must be in the future"));
+                return Err(anyhow::anyhow!(
+                    "Termination timestamp must be in the future"
+                ));
             }
-            
+
             Ok(timestamp)
         }
         _ => Ok(start_timestamp + 60 * 60), // Default to 1 hour
@@ -369,13 +415,13 @@ async fn get_periodic_gap(provided_gap: Option<u64>) -> Result<u64> {
                 "60 seconds",
                 "10 minutes",
                 "1 hour",
-                "3 hours"
+                "3 hours",
             ];
-            
+
             let selected_interval = Select::new("Select interval:", intervals)
                 .prompt()
                 .context("Failed to get predefined interval")?;
-            
+
             let interval_seconds = match selected_interval {
                 "10 seconds" => 10,
                 "60 seconds" => 60,
@@ -384,21 +430,22 @@ async fn get_periodic_gap(provided_gap: Option<u64>) -> Result<u64> {
                 "3 hours" => 3 * 60 * 60,
                 _ => 60, // Default to 60 seconds
             };
-            
+
             Ok(interval_seconds)
         }
         "Custom periodic gap (sec)" => {
             let gap_input = Text::new("Enter periodic gap in seconds:")
                 .prompt()
                 .context("Failed to get custom gap")?;
-            
-            let gap = gap_input.parse::<u64>()
+
+            let gap = gap_input
+                .parse::<u64>()
                 .context("Invalid gap format. Please enter a number.")?;
-            
+
             if gap == 0 {
                 return Err(anyhow::anyhow!("Periodic gap must be greater than zero"));
             }
-            
+
             Ok(gap)
         }
         _ => Ok(60), // Default to 60 seconds
