@@ -360,110 +360,80 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
 
     let events = log.query().await?;
 
-    if events.is_empty() {
-        error!(
-            "No response found for subscription ID: {:?}",
-            subscription_id
-        );
-        return Ok(());
+    // Save existing responses
+    let mut seen_runs = std::collections::HashSet::new();
+    let mut last_processed_block = tx_block_number;
+
+    for event in events {
+        let current_run = event.0.currentRuns;
+        seen_runs.insert(current_run);
+        let output = event.0.output;
+        info!("Saving response for run {}", current_run);
+        let file_name = format!("output_{}", current_run);
+        let output_path = std::env::current_dir()?.join(file_name);
+        fs::write(&output_path, output)
+            .await
+            .context("Failed to write response to output file")?;
+
+        info!("Response saved to: {}", output_path.display());
+
+        // Check if this is the final run
+        if current_run == total_runs - U256::from(1) {
+            info!("Received final run response. Subscription is complete.");
+            return Ok(());
+        }
     }
 
-    info!(
-        "Found {} responses out of {} total runs",
-        events.len(),
-        total_runs
-    );
+    // Poll for new events
+    info!("Watching for new responses (Press Ctrl+C to stop)...");
+    loop {
+        let latest_block = provider.get_block_number().await?;
 
-    // Handle completed subscriptions
-    if events.len() as u128 == total_runs.to_string().parse::<u128>().unwrap() {
-        info!("Subscription is complete. Saving all responses...");
-        for event in events {
-            let current_run = event.0.currentRuns;
-            let output = event.0.output;
-            info!("Saving response for run {}", current_run);
-            let file_name = format!("output_{}", current_run);
-            let output_path = std::env::current_dir()?.join(file_name);
-            fs::write(&output_path, output)
-                .await
-                .context("Failed to write response to output file")?;
-
-            info!("Response saved to: {}", output_path.display());
-        }
-    } else {
-        // Handle in-progress subscriptions
-        info!("Subscription is still in progress. Saving existing responses and watching for new ones...");
-
-        // Save existing responses
-        let mut seen_runs = std::collections::HashSet::new();
-        let mut last_processed_block = tx_block_number;
-
-        for event in events {
-            let current_run = event.0.currentRuns;
-            seen_runs.insert(current_run);
-            let output = event.0.output;
-            info!("Saving response for run {}", current_run);
-            let file_name = format!("output_{}", current_run);
-            let output_path = std::env::current_dir()?.join(file_name);
-            fs::write(&output_path, output)
-                .await
-                .context("Failed to write response to output file")?;
-
-            info!("Response saved to: {}", output_path.display());
+        // Don't query if no new blocks
+        if latest_block <= last_processed_block {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
         }
 
-        // Poll for new events
-        info!("Watching for new responses (Press Ctrl+C to stop)...");
-        loop {
-            let latest_block = provider.get_block_number().await?;
+        let new_events = contract
+            .JobSubscriptionResponded_filter()
+            .from_block(last_processed_block + 1)
+            .to_block(latest_block)
+            .topic1(subscription_id)
+            .query()
+            .await?;
 
-            // Don't query if no new blocks
-            if latest_block <= last_processed_block {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        for event in new_events {
+            let current_run = event.0.currentRuns;
+
+            // Skip if we've already seen this run
+            if seen_runs.contains(&current_run) {
                 continue;
             }
 
-            let new_events = contract
-                .JobSubscriptionResponded_filter()
-                .from_block(last_processed_block + 1)
-                .to_block(latest_block)
-                .topic1(subscription_id)
-                .query()
-                .await?;
+            seen_runs.insert(current_run);
+            let output = event.0.output;
+            info!("Received new response for run {}", current_run);
+            let file_name = format!("output_{}", current_run);
+            let output_path = std::env::current_dir()?.join(file_name);
+            fs::write(&output_path, output)
+                .await
+                .context("Failed to write response to output file")?;
 
-            for event in new_events {
-                let current_run = event.0.currentRuns;
+            info!("Response saved to: {}", output_path.display());
 
-                // Skip if we've already seen this run
-                if seen_runs.contains(&current_run) {
-                    continue;
-                }
-
-                seen_runs.insert(current_run);
-                let output = event.0.output;
-                info!("Received new response for run {}", current_run);
-                let file_name = format!("output_{}", current_run);
-                let output_path = std::env::current_dir()?.join(file_name);
-                fs::write(&output_path, output)
-                    .await
-                    .context("Failed to write response to output file")?;
-
-                info!("Response saved to: {}", output_path.display());
-
-                // Check if this is the final run
-                if current_run == total_runs - U256::from(1) {
-                    info!("Received final run response. Subscription is complete.");
-                    return Ok(());
-                }
+            // Check if this is the final run
+            if current_run == total_runs - U256::from(1) {
+                info!("Received final run response. Subscription is complete.");
+                return Ok(());
             }
-
-            last_processed_block = latest_block;
-
-            // Sleep for a shorter duration since we're tracking blocks explicitly
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
-    }
 
-    Ok(())
+        last_processed_block = latest_block;
+
+        // Sleep for a shorter duration since we're tracking blocks explicitly
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
 }
 
 /// Get current Unix timestamp in seconds
