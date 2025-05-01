@@ -353,39 +353,10 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
     // Get JobSubscriptionResponded events filtered by subscription ID
     info!("Searching for subscription response...");
 
-    let log = contract
-        .JobSubscriptionResponded_filter()
-        .from_block(tx_block_number)
-        .topic1(subscription_id);
-
-    let events = log.query().await?;
-
     // Save existing responses
-    let mut seen_runs = std::collections::HashSet::new();
     let mut last_processed_block = tx_block_number;
 
-    for event in events {
-        let current_run = event.0.currentRuns;
-        seen_runs.insert(current_run);
-        let output = event.0.output;
-        info!("Saving response for run {}", current_run);
-        let file_name = format!("output_{}", current_run);
-        let output_path = std::env::current_dir()?.join(file_name);
-        fs::write(&output_path, output)
-            .await
-            .context("Failed to write response to output file")?;
-
-        info!("Response saved to: {}", output_path.display());
-
-        // Check if this is the final run
-        if current_run == total_runs - U256::from(1) {
-            info!("Received final run response. Subscription is complete.");
-            return Ok(());
-        }
-    }
-
     // Poll for new events
-    info!("Watching for new responses (Press Ctrl+C to stop)...");
     loop {
         let latest_block = provider.get_block_number().await?;
 
@@ -406,14 +377,8 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
         for event in new_events {
             let current_run = event.0.currentRuns;
 
-            // Skip if we've already seen this run
-            if seen_runs.contains(&current_run) {
-                continue;
-            }
-
-            seen_runs.insert(current_run);
             let output = event.0.output;
-            info!("Received new response for run {}", current_run);
+            info!("Received response for run {}", current_run);
             let file_name = format!("output_{}", current_run);
             let output_path = std::env::current_dir()?.join(file_name);
             fs::write(&output_path, output)
