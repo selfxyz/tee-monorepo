@@ -422,8 +422,6 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
                 continue;
             }
 
-            info!("From block: {}", last_processed_block + 1);
-            info!("To block: {}", latest_block);
             let new_events = contract
                 .JobSubscriptionResponded_filter()
                 .from_block(last_processed_block + 1)
