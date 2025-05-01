@@ -399,7 +399,7 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
 
         for event in events {
             let current_run = event.0.currentRuns;
-            seen_runs.insert(current_run.to_string());
+            seen_runs.insert(current_run);
             let output = event.0.output;
             info!("Saving response for run {}", current_run);
             let file_name = format!("output_{}", current_run);
@@ -434,11 +434,11 @@ async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
                 let current_run = event.0.currentRuns;
 
                 // Skip if we've already seen this run
-                if seen_runs.contains(&current_run.to_string()) {
+                if seen_runs.contains(&current_run) {
                     continue;
                 }
 
-                seen_runs.insert(current_run.to_string());
+                seen_runs.insert(current_run);
                 let output = event.0.output;
                 info!("Received new response for run {}", current_run);
                 let file_name = format!("output_{}", current_run);
