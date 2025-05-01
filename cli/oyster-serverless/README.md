@@ -163,4 +163,4 @@ oyster-serverless subscription fetch-response
 
 **Arguments:**
 
-- `subscription fetch-response`: Transaction hash returned by the create subscription command.
+- `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
