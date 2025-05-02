@@ -92,4 +92,8 @@ pub struct FetchResponseArgs {
     /// Subscription ID to fetch the response for
     #[arg(long, required = true)]
     pub subscription_transaction_hash: String,
+
+    /// Stream the response
+    #[arg(long)]
+    pub stream: bool,
 }
