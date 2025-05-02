@@ -19,13 +19,11 @@ async fn fetch_and_process_subscription_events(
         impl Provider<Http<Client>> + Clone,
     >,
     subscription_id: U256,
-    from_block: u64,
-    to_block: u64,
+    from_block: u64
 ) -> Result<()> {
     let events = subscription_contract
         .JobSubscriptionResponded_filter()
         .from_block(from_block)
-        .to_block(to_block)
         .topic1(subscription_id)
         .query()
         .await?;
@@ -115,8 +113,7 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
             fetch_and_process_subscription_events(
                 &realy_subscription_contract,
                 subscription_id,
-                last_processed_block + 1,
-                latest_block,
+                last_processed_block + 1
             )
             .await?;
 
@@ -134,13 +131,10 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
         // Non-stream mode: fetch all existing responses at once
         info!("Fetching all existing responses...");
 
-        let latest_block = provider.get_block_number().await?;
-
         fetch_and_process_subscription_events(
             &realy_subscription_contract,
             subscription_id,
-            tx_block_number,
-            latest_block,
+            tx_block_number
         )
         .await?;
 
