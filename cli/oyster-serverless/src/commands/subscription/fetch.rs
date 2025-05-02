@@ -52,6 +52,8 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
     // Save existing responses
     let mut last_processed_block = tx_block_number;
 
+    let mut outputs_found = 0;
+
     // Poll for new events
     loop {
         let latest_block = provider.get_block_number().await?;
@@ -62,7 +64,7 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
             continue;
         }
 
-        let new_events = contract
+        let events = contract
             .JobSubscriptionResponded_filter()
             .from_block(last_processed_block + 1)
             .to_block(latest_block)
@@ -70,9 +72,9 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
             .query()
             .await?;
 
-        for event in new_events {
+        for event in events {
+            outputs_found += 1;
             let current_run = event.0.currentRuns;
-
             let output = event.0.output;
             info!("Received response for run {}", current_run);
             let file_name = format!("output_{}", current_run);
@@ -82,9 +84,8 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
                 .context("Failed to write response to output file")?;
 
             info!("Response saved to: {}", output_path.display());
-
             // Check if this is the final run
-            if current_run == total_runs - U256::from(1) {
+            if U256::from(outputs_found) == total_runs {
                 info!("Received final run response. Subscription is complete.");
                 return Ok(());
             }
