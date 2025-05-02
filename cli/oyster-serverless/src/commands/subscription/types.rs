@@ -5,6 +5,13 @@ use clap::{Args, Subcommand};
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
+    RelayContract,
+    "src/abis/Relay.json"
+);
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
     RelaySubscriptions,
     "src/abis/RelaySubscriptions.json"
 );
