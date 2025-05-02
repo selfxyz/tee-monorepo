@@ -151,3 +151,17 @@ oyster-serverless subscription create --wallet-private-key **** --code-hash 0x6a
 ```
 
 > **Note:** If not provided as arguments, the `start-timestamp`, `termination-timestamp`, and `periodic-gap` values can be entered through interactive prompts.
+
+## 📬 Fetch Subscription Response
+
+Fetch the response of a serverless subscription.
+
+
+```bash
+oyster-serverless subscription fetch-response
+```
+
+**Arguments:**
+
+- `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
+- `stream` : If set, listen for job responses until subscription is terminated. Else, get the responses received till the current time. 
