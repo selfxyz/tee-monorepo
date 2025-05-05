@@ -1,7 +1,6 @@
 use crate::commands::subscription::types::{
     RelayContract, RelaySubscriptions, UpdateSubscriptionArgs,
 };
-use crate::commands::subscription::utils::get_current_timestamp;
 use crate::configs::global::{RELAY_CONTRACT_ADDRESS, RELAY_SUBSCRIPTIONS_CONTRACT_ADDRESS};
 use crate::utils::conversion::{to_eth, to_usdc};
 use crate::utils::provider::create_provider;
@@ -15,13 +14,6 @@ use tracing::info;
 /// Update an existing subscription
 pub async fn update_subscription(args: UpdateSubscriptionArgs) -> Result<()> {
     let termination_timestamp = U256::from(args.termination_timestamp);
-    let current_timestamp = get_current_timestamp();
-
-    if termination_timestamp <= U256::from(current_timestamp) {
-        return Err(anyhow::anyhow!(
-            "Termination timestamp must be greater than the current timestamp"
-        ));
-    }
 
     // Load wallet private key
     let wallet_private_key = &args.wallet.load_required()?;
@@ -65,10 +57,30 @@ pub async fn update_subscription(args: UpdateSubscriptionArgs) -> Result<()> {
         .await
         .context("Failed to fetch job subscription data")?;
 
-    let current_runs = job_subscription_data.currentRuns;
+    let old_termination_timestamp = job_subscription_data.terminationTimestamp;
     let user_timeout = job_subscription_data.userTimeout;
     let max_gas_price = job_subscription_data.job.maxGasPrice;
     let callback_gas_limit = job_subscription_data.job.callbackGasLimit;
+
+    if termination_timestamp == old_termination_timestamp {
+        info!("The new termination timestamp is the same as the old one. No update needed.");
+        return Ok(());
+    } else if termination_timestamp < old_termination_timestamp {
+        info!("Updating the subscription termination timestamp...");
+        let tx = realy_subscription_contract
+            .updateJobSubsTerminationParams(subscription_id, termination_timestamp, U256::from(0))
+            .send()
+            .await?;
+
+        let receipt = tx.get_receipt().await?;
+
+        info!(
+            "Job updated successfully in transaction: {:?}",
+            receipt.transaction_hash
+        );
+
+        return Ok(());
+    }
 
     // Get execution fee per ms for the environment
     let execution_fee_per_ms = relay_contract
@@ -96,19 +108,20 @@ pub async fn update_subscription(args: UpdateSubscriptionArgs) -> Result<()> {
         .await
         .context("Failed to get callback measure gas")?;
 
-    let total_runs = ((termination_timestamp - start_time) / periodic_gap) + U256::from(1);
+    let old_total_runs = ((old_termination_timestamp - start_time) / periodic_gap) + U256::from(1);
+    let new_total_runs = ((termination_timestamp - start_time) / periodic_gap) + U256::from(1);
 
-    let remaining_runs = total_runs - current_runs;
+    let additional_runs = new_total_runs - old_total_runs;
 
     let usdc_required =
-        ((user_timeout * execution_fee_per_ms._0) + gateway_fee_per_job._0) * remaining_runs;
+        ((user_timeout * execution_fee_per_ms._0) + gateway_fee_per_job._0) * additional_runs;
 
     // Calculate the callback deposit amount
     let callback_deposit = max_gas_price
         * (callback_gas_limit + fixed_gas._0 + callback_measure_gas._0)
-        * remaining_runs;
+        * additional_runs;
 
-    info!("Remaining Runs: {}", remaining_runs);
+    info!("Additional Runs: {}", additional_runs);
 
     // Prompt user for confirmation
     let prompt_message = format!(
