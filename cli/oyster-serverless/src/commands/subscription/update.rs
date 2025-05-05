@@ -66,7 +66,7 @@ pub async fn update_subscription(args: UpdateSubscriptionArgs) -> Result<()> {
         info!("The new termination timestamp is the same as the old one. No update needed.");
         return Ok(());
     } else if termination_timestamp < old_termination_timestamp {
-        info!("Updating the subscription termination timestamp...,1");
+        info!("Updating the subscription termination timestamp...");
         let tx = realy_subscription_contract
             .updateJobSubsTerminationParams(subscription_id, termination_timestamp, U256::from(0))
             .send()
