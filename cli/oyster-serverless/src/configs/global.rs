@@ -8,5 +8,3 @@ pub const USDC_ADDRESS: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 
 // RPC URLs
 pub const ARBITRUM_ONE_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-
-pub const RELAY_OVERALL_TIMEOUT_NOT_OVER_SIGNATURE: &str = "0xd856047b";
