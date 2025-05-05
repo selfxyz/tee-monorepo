@@ -35,6 +35,8 @@ pub enum SubscriptionCommands {
     Create(CreateSubscriptionArgs),
     /// Fetch response for a subscription
     FetchResponse(FetchResponseArgs),
+    /// Update the termination timestamp for the serverless subscription.
+    Update(UpdateSubscriptionArgs),
 }
 
 #[derive(Args)]
@@ -90,10 +92,24 @@ pub struct CreateSubscriptionArgs {
 #[derive(Args)]
 pub struct FetchResponseArgs {
     /// Subscription ID to fetch the response for
-    #[arg(long, required = true)]
+    #[arg(short, long, required = true)]
     pub subscription_transaction_hash: String,
 
     /// Stream the response
     #[arg(long)]
     pub stream: bool,
+}
+
+#[derive(Args)]
+pub struct UpdateSubscriptionArgs {
+    #[command(flatten)]
+    pub wallet: WalletArgs,
+
+    /// Subscription transaction hash to update
+    #[arg(short, long, required = true)]
+    pub subscription_transaction_hash: String,
+
+    /// termination timestamp
+    #[arg(long, required = true)]
+    pub termination_timestamp: u64,
 }

@@ -165,3 +165,17 @@ oyster-serverless subscription fetch-response
 
 - `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
 - `stream` : If set, listen for job responses until subscription is terminated. Else, get the responses received till the current time. 
+
+
+## ⬆️ Update Subscription
+
+Update the termination timestamp for the serverless subscription.
+
+```bash
+oyster-serverless update
+```
+
+**Arguments:**
+- `wallet-private-key`: Private key for transactions.
+- `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
+- `termination-timestamp` - Timestamp for terminating the job.
