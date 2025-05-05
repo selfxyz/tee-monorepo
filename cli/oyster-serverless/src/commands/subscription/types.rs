@@ -37,6 +37,10 @@ pub enum SubscriptionCommands {
     FetchResponse(FetchResponseArgs),
     /// Update the termination timestamp for the serverless subscription.
     Update(UpdateSubscriptionArgs),
+    /// Only terminate subscription
+    Terminate(TerminateArgs),
+    /// Only refund deposits for a terminated subscription
+    RefundDeposits(RefundDepositsArgs),
 }
 
 #[derive(Args)]
@@ -112,4 +116,24 @@ pub struct UpdateSubscriptionArgs {
     /// termination timestamp
     #[arg(long, required = true)]
     pub termination_timestamp: u64,
+}
+
+#[derive(Args)]
+pub struct TerminateArgs {
+    #[command(flatten)]
+    pub wallet: WalletArgs,
+
+    /// Subscription transaction hash to terminate
+    #[arg(short, long, required = true)]
+    pub subscription_transaction_hash: String,
+}
+
+#[derive(Args)]
+pub struct RefundDepositsArgs {
+    #[command(flatten)]
+    pub wallet: WalletArgs,
+
+    /// Subscription transaction hash to refund deposits for
+    #[arg(short, long, required = true)]
+    pub subscription_transaction_hash: String,
 }

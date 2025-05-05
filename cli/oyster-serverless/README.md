@@ -179,3 +179,28 @@ oyster-serverless update
 - `wallet-private-key`: Private key for transactions.
 - `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
 - `termination-timestamp` - Timestamp for terminating the job.
+
+
+## 🛑 Terminate subscription
+
+Terminate a subscription
+
+```bash
+oyster-serverless terminate
+```
+
+**Arguments:**
+- `wallet-private-key`: Private key for transactions.
+- `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
+
+## 💸 Refund subscription deposits
+
+Refund subscription deposits
+
+```bash
+oyster-serverless refund-deposits
+```
+
+**Arguments:**
+- `wallet-private-key`: Private key for transactions.
+- `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
