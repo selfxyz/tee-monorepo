@@ -2,6 +2,7 @@ use crate::commands::subscription::types::{RelayContract, RelaySubscriptions, Te
 use crate::configs::global::{RELAY_CONTRACT_ADDRESS, RELAY_SUBSCRIPTIONS_CONTRACT_ADDRESS};
 use crate::utils::provider::create_provider;
 use alloy::hex;
+use alloy::primitives::U256;
 use alloy::providers::Provider;
 use alloy::sol_types::SolError;
 use anyhow::{anyhow, Context, Result};
@@ -41,7 +42,9 @@ pub async fn terminate(args: TerminateArgs) -> Result<()> {
         .call()
         .await
         .context("Failed to get overall timeout")?
-        ._0;
+        ._0
+        * U256::from(2);
+
     let terminate_tx = match relay_subscription_contract
         .terminateJobSubscription(subscription_id)
         .send()
