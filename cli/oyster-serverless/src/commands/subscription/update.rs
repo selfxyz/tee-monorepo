@@ -121,7 +121,7 @@ pub async fn update_subscription(args: UpdateSubscriptionArgs) -> Result<()> {
         * (callback_gas_limit + fixed_gas._0 + callback_measure_gas._0)
         * additional_runs;
 
-    info!("Remaining Runs: {}", additional_runs);
+    info!("Additional Runs: {}", additional_runs);
 
     // Prompt user for confirmation
     let prompt_message = format!(
