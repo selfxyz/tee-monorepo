@@ -37,9 +37,9 @@ pub enum SubscriptionCommands {
     FetchResponse(FetchResponseArgs),
     /// Update the termination timestamp for the serverless subscription.
     Update(UpdateSubscriptionArgs),
-    /// Only terminate subscription
+    /// Terminate subscription
     Terminate(TerminateArgs),
-    /// Only refund deposits for a terminated subscription
+    /// Refund deposits for a terminated subscription
     RefundDeposits(RefundDepositsArgs),
 }
 

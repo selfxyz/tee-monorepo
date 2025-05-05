@@ -195,7 +195,7 @@ oyster-serverless terminate
 
 ## 💸 Refund subscription deposits
 
-Refund subscription deposits
+Refund deposits for a terminated subscription
 
 ```bash
 oyster-serverless refund-deposits
