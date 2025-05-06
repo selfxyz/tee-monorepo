@@ -33,9 +33,6 @@ nix build .#packages.aarch64-linux.default.cli.oyster-serverless.default
 nix build .#packages.aarch64-darwin.default.cli.oyster-serverless.default
 ```
 
-Note: macOS build can't be used to build custom oyster-serverless images.
-
-
 ## 👨‍⚕️ Doctor
 
 ```
