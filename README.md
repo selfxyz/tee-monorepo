@@ -13,6 +13,7 @@ The repository is organized into projects:
 - [attestation/verifier](./attestation/verifier/): Attestation verifier server that verifies attestations.
 - [attestation/verifier-enclave](./attestation/verifier-enclave/): Attestation verifier enclave that packages the attestation verifier server.
 - [attestation/verifier-risczero](./attestation/verifier-risczero/): Attestation verifier that generates a ZK proof of attestation verification using RISCZero.
+- [cli/oyster-serverless](./cli/oyster-serverless/): CLI for interacting with Oyster Serverless.
 - [contracts/contracts](./contracts/contracts/): Most of the Oyster contracts are included here.
 - [contracts/contracts-foundry](./contracts/contracts-foundry/): Contains KMS related contracts.
 - [contracts/indexer](./contracts/indexer/): Indexer for the Oyster contracts.
