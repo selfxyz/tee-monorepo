@@ -283,6 +283,8 @@ contract RelaySubscriptions is
     error RelaySubscriptionsNotJobSubscriptionOwner();
     /// @notice Error for when the job subscription does not exists corresponding to a job subscription id.
     error RelaySubscriptionsNotExists();
+    /// @notice Error for when the job subscription is about to be terminated(within OVERALL_TIMEOUT).
+    error RelaySubscriptionsAboutToTerminate();
     /// @notice Error for when the job subscription owner tries to terminate the subscription
     ///         before the termination condition is reached.
     error RelaySubscriptionsTerminationConditionPending();
@@ -593,6 +595,9 @@ contract RelaySubscriptions is
 
         uint256 currentTerminationTimestamp = jobSubscriptions[_jobSubsId].terminationTimestamp;
         if (block.timestamp > currentTerminationTimestamp) revert RelaySubscriptionsJobSubscriptionTerminated();
+
+        if(currentTerminationTimestamp <= block.timestamp + RELAY.OVERALL_TIMEOUT())
+            revert RelaySubscriptionsAboutToTerminate();
 
         // won't be executed if called from terminateJobSubscription()
         if (_terminationTimestamp > currentTerminationTimestamp) {

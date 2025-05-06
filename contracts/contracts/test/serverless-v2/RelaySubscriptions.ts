@@ -1036,7 +1036,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
         let jobSubsParams = {
             startTime: 0,
             maxGasPrice: (await signers[0].provider?.getFeeData())?.gasPrice || parseUnits("1", 9),
-            usdcDeposit: 2000000,
+            usdcDeposit: 4000000,
             callbackGasLimit: 0,
             callbackContract: addrs[1],
             env,
@@ -1045,7 +1045,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
             userTimeout: 50000,
             refundAccount: addrs[1],
             periodicGap: 50,
-            terminationTimestamp: await time.latest() + 100
+            terminationTimestamp: await time.latest() + 200
         };
         callbackDeposit = parseUnits("1", 15);
         await setNextBlockBaseFeePerGas(1);
@@ -1080,7 +1080,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
 
     it("can update job termination params", async function () {
         let jobSubsId: any = await relaySubscriptions.jobSubsCount(),
-            terminationTimestamp = await time.latest() + 110,
+            terminationTimestamp = await time.latest() + 210,
             usdcDeposit = 2000000n;
 
         let jobSubsInitial = await relaySubscriptions.jobSubscriptions(jobSubsId);
@@ -1132,15 +1132,35 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
 
     it("cannot update job termination params after the termination condition is reached", async function () {
         let jobSubsId: any = await relaySubscriptions.jobSubsCount(),
-            terminationTimestamp = await time.latest() + 250, // invalid termination timestamp as it doesn't exceed atleast OVERALL_TIMEOUT from the current timestamp
+            terminationTimestamp = await time.latest() + 350, // invalid termination timestamp as it doesn't exceed atleast OVERALL_TIMEOUT from the current timestamp
             usdcDeposit = 2000000;
 
-        await time.increase(120);
+        await time.increase(220);
         let tx = relaySubscriptions.connect(signers[2])
             .updateJobSubsTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit,
                 { value: callbackDeposit }
             );
         await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsJobSubscriptionTerminated");
+    });
+
+    it("cannot update job subscription params after early termination", async function () {
+        let jobSubsId: any = await relaySubscriptions.jobSubsCount(),
+            terminationTimestamp = await time.latest() + 100;
+
+        let tx = relaySubscriptions.connect(signers[2])
+            .terminateJobSubscription(jobSubsId);
+        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionTerminationParamsUpdated")
+            .withArgs(jobSubsId, terminationTimestamp);
+
+        // try to update job subscription params after termination
+        terminationTimestamp = await time.latest() + 100;
+        let usdcDeposit = 2000000n;
+
+        tx = relaySubscriptions.connect(signers[2])
+            .updateJobSubsTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit,
+                { value: callbackDeposit }
+            );
+        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsAboutToTerminate");
     });
 
     it("cannot update job termination params with insufficient callback deposit", async function () {
@@ -1453,7 +1473,7 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
             userTimeout: 50000,
             refundAccount: addrs[1],
             periodicGap: 50,
-            terminationTimestamp: await time.latest() + 100
+            terminationTimestamp: await time.latest() + 110
         };
         callbackDeposit = parseUnits("1", 15);
         await setNextBlockBaseFeePerGas(1);
@@ -1486,6 +1506,20 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
         let tx = relaySubscriptions.connect(signers[1])
             .terminateJobSubscription(jobSubsId);
         await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsNotJobSubscriptionOwner");
+    });
+
+    it("cannot terminate job subscription twice", async function () {
+        let jobSubsId = await relaySubscriptions.jobSubsCount(),
+            terminationTimestamp = await time.latest() + 100;
+
+        let tx = relaySubscriptions.connect(signers[2])
+            .terminateJobSubscription(jobSubsId);
+        await expect(tx).to.emit(relaySubscriptions, "JobSubscriptionTerminationParamsUpdated")
+            .withArgs(jobSubsId, terminationTimestamp);
+
+        tx = relaySubscriptions.connect(signers[2])
+            .terminateJobSubscription(jobSubsId);
+        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsAboutToTerminate");
     });
 });
 
