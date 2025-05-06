@@ -277,14 +277,12 @@ contract RelaySubscriptions is
     error RelaySubscriptionsInvalidTerminationTimestamp();
     /// @notice Error for when the periodic gap is an invalid value.
     error RelaySubscriptionsInvalidPeriodicGap();
-    /// @notice Error for when the termination timestamp is being updated after the termination condition is reached.
-    error RelaySubscriptionsJobSubscriptionTerminated();
     /// @notice Error for when the msg.sender isn't the job subscription owner
     error RelaySubscriptionsNotJobSubscriptionOwner();
     /// @notice Error for when the job subscription does not exists corresponding to a job subscription id.
     error RelaySubscriptionsNotExists();
     /// @notice Error for when the job subscription is about to be terminated(within OVERALL_TIMEOUT).
-    error RelaySubscriptionsAboutToTerminate();
+    error RelaySubscriptionsUpdateDeadlineOver();
     /// @notice Error for when the job subscription owner tries to terminate the subscription
     ///         before the termination condition is reached.
     error RelaySubscriptionsTerminationConditionPending();
@@ -575,6 +573,9 @@ contract RelaySubscriptions is
         if (jobSubscriptions[_jobSubsId].job.jobOwner != _msgSender())
             revert RelaySubscriptionsNotJobSubscriptionOwner();
 
+        if(jobSubscriptions[_jobSubsId].terminationTimestamp <= block.timestamp + RELAY.OVERALL_TIMEOUT())
+            revert RelaySubscriptionsUpdateDeadlineOver();
+
         jobSubscriptions[_jobSubsId].job.codehash = _codehash;
         jobSubscriptions[_jobSubsId].job.codeInputs = _codeInputs;
 
@@ -594,10 +595,9 @@ contract RelaySubscriptions is
             revert RelaySubscriptionsInvalidTerminationTimestamp();
 
         uint256 currentTerminationTimestamp = jobSubscriptions[_jobSubsId].terminationTimestamp;
-        if (block.timestamp > currentTerminationTimestamp) revert RelaySubscriptionsJobSubscriptionTerminated();
 
         if(currentTerminationTimestamp <= block.timestamp + RELAY.OVERALL_TIMEOUT())
-            revert RelaySubscriptionsAboutToTerminate();
+            revert RelaySubscriptionsUpdateDeadlineOver();
 
         // won't be executed if called from terminateJobSubscription()
         if (_terminationTimestamp > currentTerminationTimestamp) {

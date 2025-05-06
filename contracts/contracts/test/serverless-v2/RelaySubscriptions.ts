@@ -1078,6 +1078,18 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
         await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsNotJobSubscriptionOwner");
     });
 
+    it("cannot update job params when termination is pending by OVERALL_TIMEOUT", async function () {
+        let jobSubsId: any = await relaySubscriptions.jobSubsCount(),
+            codeHash = keccak256(solidityPacked(["string"], ["codehash1"])),
+            codeInputs = solidityPacked(["string"], ["codeInput1"]);
+
+        // increasing time such that (block.timestamp + OVERALL_TIMEOUT >= terminationTimestamp)
+        await time.increase(180);
+
+        let tx = relaySubscriptions.connect(signers[2]).updateJobSubsJobParams(jobSubsId, codeHash, codeInputs);
+        await expect(tx).to.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsUpdateDeadlineOver");
+    });
+
     it("can update job termination params", async function () {
         let jobSubsId: any = await relaySubscriptions.jobSubsCount(),
             terminationTimestamp = await time.latest() + 210,
@@ -1140,7 +1152,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
             .updateJobSubsTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit,
                 { value: callbackDeposit }
             );
-        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsJobSubscriptionTerminated");
+        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsUpdateDeadlineOver");
     });
 
     it("cannot update job subscription params after early termination", async function () {
@@ -1160,7 +1172,7 @@ describe("RelaySubscriptions - Update Job Subscription Params", function () {
             .updateJobSubsTerminationParams(jobSubsId, terminationTimestamp, usdcDeposit,
                 { value: callbackDeposit }
             );
-        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsAboutToTerminate");
+        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsUpdateDeadlineOver");
     });
 
     it("cannot update job termination params with insufficient callback deposit", async function () {
@@ -1519,7 +1531,7 @@ describe("RelaySubscriptions - Job Subscription Termination", function () {
 
         tx = relaySubscriptions.connect(signers[2])
             .terminateJobSubscription(jobSubsId);
-        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsAboutToTerminate");
+        await expect(tx).to.be.revertedWithCustomError(relaySubscriptions, "RelaySubscriptionsUpdateDeadlineOver");
     });
 });
 
