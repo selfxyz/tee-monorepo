@@ -1,8 +1,10 @@
 use crate::commands::job::types::{CancelArgs, Relay};
-use crate::configs::global::{RELAY_CONTRACT_ADDRESS, RELAY_OVERALL_TIMEOUT_NOT_OVER_SIGNATURE};
+use crate::configs::global::RELAY_CONTRACT_ADDRESS;
 use crate::utils::provider::create_provider;
+use alloy::hex;
 use alloy::providers::Provider;
-use anyhow::{Context, Result};
+use alloy::sol_types::SolError;
+use anyhow::{anyhow, Context, Result};
 use tracing::{error, info};
 
 /// Cancels a job
@@ -36,11 +38,10 @@ pub async fn cancel_job(args: CancelArgs) -> Result<()> {
         Ok(tx) => tx,
         Err(e) => {
             // Check for RelayOverallTimeoutNotOver error signature
-            if e.to_string()
-                .contains(RELAY_OVERALL_TIMEOUT_NOT_OVER_SIGNATURE)
-            {
-                error!("Job cancellation is not allowed yet: The overall timeout period has not elapsed.");
-                return Ok(());
+            let relay_overall_timeout_not_over =
+                hex::encode(Relay::RelayOverallTimeoutNotOver::SELECTOR);
+            if e.to_string().contains(&relay_overall_timeout_not_over) {
+                return Err(anyhow!("Job cancellation is not allowed yet: The overall timeout period has not elapsed."));
             }
             error!("Failed to cancel job: {:?}", e);
             return Ok(());
