@@ -22,10 +22,18 @@ use RelaySubscriptions::JobSubscriptionParams;
 
 /// Handles the creation of a new subscription
 pub async fn create_subscription(args: CreateSubscriptionArgs) -> Result<()> {
-    // Load input file contents
-    let code_inputs = fs::read(&args.input_file)
-        .await
-        .context("Failed to read input file")?;
+    // Check if input file exists if provided
+    if let Some(input_path) = &args.input_file {
+        if !std::path::Path::new(input_path).exists() {
+            anyhow::bail!("Input file '{}' not found", input_path);
+        }
+    }
+
+    // Load input file contents - empty vec if no file provided
+    let code_inputs = match &args.input_file {
+        Some(path) => fs::read(path).await.context("Failed to read input file")?,
+        None => Vec::new(),
+    };
 
     // Load wallet private key
     let wallet_private_key = &args.wallet.load_required()?;

@@ -144,6 +144,6 @@ pub async fn fetch_response(args: FetchResponseArgs) -> Result<()> {
         )
         .await?;
 
-        return Ok(());
+        Ok(())
     }
 }
