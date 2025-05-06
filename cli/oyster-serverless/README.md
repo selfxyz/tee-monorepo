@@ -2,6 +2,37 @@
 
 The Oyster Serverless CLI is a command-line tool that simplifies the development and deployment of serverless functions on the Oyster Severless platform. It supports local testing, Job deployment, and recurring job scheduling, enabling developers to efficiently build and manage secure, scalable serverless applications.
 
+
+## 🛠️ Installation
+
+### From source
+
+
+To build from source, ensure you have the following installed:
+- **Rust**: The programming language required for building the project.
+- **Cargo**: The Rust package manager and build system.
+
+```bash
+git clone https://github.com/marlinprotocol/oyster-monorepo.git
+cd cli/oyster-serverless
+cargo build --release
+```
+
+### Using nix
+
+Supports both Linux and MacOS builds.
+
+```
+# linux amd64
+nix build .#packages.x86_64-linux.default.cli.oyster-serverless.default
+
+# linux arm64
+nix build .#packages.aarch64-linux.default.cli.oyster-serverless.default
+
+# macOS arm64 (Apple Silicon)
+nix build .#packages.aarch64-darwin.default.cli.oyster-serverless.default
+```
+
 ## 👨‍⚕️ Doctor
 
 ```
@@ -86,7 +117,7 @@ oyster-serverless job create
 - `env` *(optional)*: Execution environment (defaults to 1).
 - `refund-account` *(optional)*: Address to receive compensation if the job fails (defaults to sender's address).
 - `code-hash`: Transaction hash of the deployed JS code.
-- `input-file`: Path for worker input file
+- `input-file` *(optional)*: Path for worker input file
 - `user-timeout`: Maximum time allowed for executors to complete the computation.
 - `max-gas-price` *(optional)*: Multiplier (e.g: 1.5,2,2.5).
 - `callback-gas-limit`: Gas limit for the callback function.
@@ -137,7 +168,7 @@ oyster-serverless subscription create
 - `callback-contract-address`: Any address.
 - `start-timestamp` *(optional)*: Timestamp for starting the sub.
 - `code-hash`: Transaction hash of the deployed JS code.
-- `input-file`: Path for worker input file
+- `input-file` *(optional)*: Path for worker input file
 - `periodic-gap` *(optional)*: Interval at which the function will be executed (e.g., every 30 seconds).
 - `termination-timestamp`*(optional)*: Timestamp to terminate the subscription.
 - `user-timeout`: Time limit for executors.

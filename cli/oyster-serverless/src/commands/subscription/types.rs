@@ -89,8 +89,8 @@ pub struct CreateSubscriptionArgs {
     pub code_hash: String,
 
     /// Code inputs for the worker
-    #[arg(long, required = true)]
-    pub input_file: String,
+    #[arg(long)]
+    pub input_file: Option<String>,
 }
 
 #[derive(Args)]

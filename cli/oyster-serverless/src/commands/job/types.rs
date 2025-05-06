@@ -46,8 +46,8 @@ pub struct CreateJobArgs {
     pub code_hash: String,
 
     /// Code inputs for the worker
-    #[arg(long, required = true)]
-    pub input_file: String,
+    #[arg(long)]
+    pub input_file: Option<String>,
 
     /// Maximum time allowed for executors to complete computation
     #[arg(long, required = true)]
@@ -73,7 +73,7 @@ pub struct CreateJobArgs {
 #[derive(Args)]
 pub struct FetchResponseArgs {
     /// Job ID to fetch the response for
-    #[arg(long, required = true)]
+    #[arg(short, long, required = true)]
     pub job_transaction_hash: String,
 }
 
@@ -83,6 +83,6 @@ pub struct CancelArgs {
     pub wallet: WalletArgs,
 
     /// Job ID to cancel (transaction hash of job creation)
-    #[arg(long, required = true)]
+    #[arg(short, long, required = true)]
     pub job_transaction_hash: String,
 }

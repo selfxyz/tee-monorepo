@@ -210,6 +210,9 @@
       cli.oyster-cvm = import ./cli/oyster-cvm {
         inherit nixpkgs systemConfig fenix naersk;
       };
+      cli.oyster-serverless = import ./cli/oyster-serverless {
+        inherit nixpkgs systemConfig fenix naersk;
+      };
       serverless.executor = import ./serverless/executor {
         inherit nixpkgs systemConfig fenix naersk;
       };
