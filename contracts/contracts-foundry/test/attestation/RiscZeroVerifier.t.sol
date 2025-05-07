@@ -6,6 +6,7 @@ import {RiscZeroVerifier, RiscZeroVerifierDefault} from "../../src/attestation/R
 
 import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
+import {IAttestationVerifier} from "../../src/attestation/IAttestationVerifier.sol";
 
 contract TestRiscZeroVerifier is RiscZeroVerifierDefault {
     bool public authorized;
@@ -30,11 +31,11 @@ contract TestRiscZeroVerifier is RiscZeroVerifierDefault {
         require(authorized, NotAuthorized());
     }
 
-    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes calldata _userData, bytes32 _imageId, uint64 _timestampMs)
+    function verify(bytes calldata _seal, IAttestationVerifier.Attestation calldata _attestation)
         external
         view
     {
-        return _verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+        return _verify(_seal, _attestation);
     }
 }
 
@@ -225,7 +226,7 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectCall(address(verifier), _calldata, 1);
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, _userData));
     }
 
     function test_Verify_TooOld(
@@ -240,7 +241,7 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, _userData));
     }
 
     function test_Verify_PubkeyTooLong(
@@ -257,7 +258,7 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierPubkeyTooLong.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, _userData));
     }
 
     function test_Verify_UserDataTooLong(
@@ -279,7 +280,7 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierUserDataTooLong.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, _userData));
     }
 
     function test_Verify_InvalidSeal(
@@ -295,6 +296,6 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectRevert("0x12345678");
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, _userData));
     }
 }
