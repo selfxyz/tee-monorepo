@@ -7,6 +7,7 @@ import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZer
 
 import {RiscZeroVerifier, RiscZeroVerifierDefault} from "../attestation/RiscZeroVerifier.sol";
 import {VerifiedKeys, VerifiedKeysDefault} from "../attestation/VerifiedKeys.sol";
+import {IAttestationVerifier} from "../attestation/IAttestationVerifier.sol";
 
 /// @title KMS Root Contract
 /// @notice Manages list of KMS servers allowed to decrypt root key
@@ -61,15 +62,13 @@ contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault 
 
     /// @notice Verifies a KMS attestation
     /// @param _seal Proof seal from RiscZero
-    /// @param _pubkey Attestation public key
-    /// @param _imageId Enclave image ID
-    /// @param _timestampMs Attestation timestamp in milliseconds
+    /// @param _attestation Attestation data structure to verify
     /// @dev Verifies the attestation and marks the derived address as verified if successful
-    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
+    function verify(bytes calldata _seal, IAttestationVerifier.Attestation memory _attestation)
         external
     {
-        _verify(_seal, _pubkey, new bytes(0), _imageId, _timestampMs);
-        _setKeyVerified(_pubkey, _imageId);
+        _verify(_seal, _attestation);
+        _setKeyVerified(_attestation.publicKey, _attestation.imageId);
     }
 
     /// @notice Check if a key is verified
