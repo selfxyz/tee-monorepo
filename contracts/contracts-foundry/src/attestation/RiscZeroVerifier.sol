@@ -133,15 +133,20 @@ abstract contract RiscZeroVerifier {
     /// @dev Reverts if attestation is expired, pubkey too long, or verification fails
     /// @param _seal Proof seal from RiscZero
     /// @param _attestation Attestation data structure to verify
-    function _verify(bytes memory _seal, IAttestationVerifier.Attestation memory _attestation)
-        internal
-        view
-    {
+    function _verify(bytes memory _seal, IAttestationVerifier.Attestation memory _attestation) internal view {
         require(_attestation.timestampMs > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
         require(_attestation.publicKey.length < 256, RiscZeroVerifierPubkeyTooLong());
         require(_attestation.userData.length < 65536, RiscZeroVerifierUserDataTooLong());
         bytes32 _journalDigest = sha256(
-            abi.encodePacked(_attestation.timestampMs, _attestation.imageId, _rzvGetRootKey(), uint8(_attestation.publicKey.length), _attestation.publicKey, uint16(_attestation.userData.length), _attestation.userData)
+            abi.encodePacked(
+                _attestation.timestampMs,
+                _attestation.imageId,
+                _rzvGetRootKey(),
+                uint8(_attestation.publicKey.length),
+                _attestation.publicKey,
+                uint16(_attestation.userData.length),
+                _attestation.userData
+            )
         );
         _rzvGetVerifier().verify(_seal, _rzvGetGuestId(), _journalDigest);
     }

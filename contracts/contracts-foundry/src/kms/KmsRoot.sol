@@ -64,9 +64,7 @@ contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault 
     /// @param _seal Proof seal from RiscZero
     /// @param _attestation Attestation data structure to verify
     /// @dev Verifies the attestation and marks the derived address as verified if successful
-    function verify(bytes calldata _seal, IAttestationVerifier.Attestation calldata _attestation)
-        external
-    {
+    function verify(bytes calldata _seal, IAttestationVerifier.Attestation calldata _attestation) external {
         _verify(_seal, _attestation);
         _setKeyVerified(_attestation.publicKey, _attestation.imageId);
     }

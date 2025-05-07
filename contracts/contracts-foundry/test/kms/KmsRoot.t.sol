@@ -363,12 +363,9 @@ contract KmsRootTestVerify is Test {
         kmsRoot = new KmsRoot(admin, approver, revoker, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
-    function test_Verify_Valid(
-        bytes calldata _seal,
-        bytes calldata _pubkey,
-        bytes32 _imageId,
-        uint64 _timestampMs
-    ) public {
+    function test_Verify_Valid(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
+        public
+    {
         vm.assume(_pubkey.length == 64);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
@@ -388,12 +385,9 @@ contract KmsRootTestVerify is Test {
         assertEq(kmsRoot.keys(_addr), _imageId);
     }
 
-    function test_Verify_TooOld(
-        bytes calldata _seal,
-        bytes calldata _pubkey,
-        bytes32 _imageId,
-        uint64 _timestampMs
-    ) public {
+    function test_Verify_TooOld(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
+        public
+    {
         vm.assume(_pubkey.length == 64);
         _timestampMs = uint64(bound(_timestampMs, 0, 2000));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
@@ -463,9 +457,7 @@ contract KmsRootTestIsKeyVerified is Test {
         kmsRoot = new KmsRoot(admin, approver, revoker, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
-    function test_IsKeyVerified_Verified(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampMs)
-        public
-    {
+    function test_IsKeyVerified_Verified(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampMs) public {
         vm.assume(_pubkey.length == 64);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         address _addr = address(uint160(uint256(keccak256(_pubkey))));
@@ -484,9 +476,7 @@ contract KmsRootTestIsKeyVerified is Test {
         assertFalse(res);
     }
 
-    function test_IsKeyVerified_Revoked(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampMs)
-        public
-    {
+    function test_IsKeyVerified_Revoked(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampMs) public {
         vm.assume(_pubkey.length == 64);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         address _addr = address(uint160(uint256(keccak256(_pubkey))));

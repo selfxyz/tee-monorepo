@@ -31,10 +31,7 @@ contract TestRiscZeroVerifier is RiscZeroVerifierDefault {
         require(authorized, NotAuthorized());
     }
 
-    function verify(bytes calldata _seal, IAttestationVerifier.Attestation calldata _attestation)
-        external
-        view
-    {
+    function verify(bytes calldata _seal, IAttestationVerifier.Attestation calldata _attestation) external view {
         return _verify(_seal, _attestation);
     }
 }
@@ -217,8 +214,11 @@ contract RiscZeroVerifierTestVerify is Test {
     ) public {
         vm.assume(_pubkey.length < 256);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
-        bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampMs, _imageId, rootKey, uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData));
+        bytes32 _journalDigest = sha256(
+            abi.encodePacked(
+                _timestampMs, _imageId, rootKey, uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData
+            )
+        );
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
