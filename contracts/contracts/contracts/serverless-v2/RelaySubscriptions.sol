@@ -281,7 +281,8 @@ contract RelaySubscriptions is
     error RelaySubscriptionsNotJobSubscriptionOwner();
     /// @notice Error for when the job subscription does not exists corresponding to a job subscription id.
     error RelaySubscriptionsNotExists();
-    /// @notice Error for when the job subscription is about to be terminated(within OVERALL_TIMEOUT).
+    /// @notice Error for when the job subscription is about to be terminated and no updates are allowed 
+    ///         i.e. (block.timestamp >= terminationTimestamp  - OVERALL_TIMEOUT)
     error RelaySubscriptionsUpdateDeadlineOver();
     /// @notice Error for when the job subscription owner tries to terminate the subscription
     ///         before the termination condition is reached.
