@@ -9,9 +9,10 @@ interface IAttestationVerifier {
     /// @param imageId Image id of the enclave
     /// @param timestampInMilliseconds Attestation timestamp in milliseconds
     struct Attestation {
-        bytes enclavePubKey;
         bytes32 imageId;
-        uint256 timestampInMilliseconds;
+        uint256 timestampMs;
+        bytes publicKey;
+        bytes userData;
     }
 
     /// @notice Verifies the signature against the attestation
