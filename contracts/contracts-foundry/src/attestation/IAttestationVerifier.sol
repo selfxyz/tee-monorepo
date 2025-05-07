@@ -5,9 +5,10 @@ pragma solidity ^0.8.0;
 /// @title Interface for verifying attestations through enclave signatures
 interface IAttestationVerifier {
     /// @notice Attestation data structure containing enclave information
-    /// @param enclavePubKey Public key of the enclave
     /// @param imageId Image id of the enclave
     /// @param timestampMs Attestation timestamp in milliseconds
+    /// @param publicKey Public key of the attestation
+    /// @param userData User data of the attestation
     struct Attestation {
         bytes32 imageId;
         uint256 timestampMs;
