@@ -97,8 +97,8 @@ contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKe
     /// @param _signature Signature
     /// @param _attestation Attestation to verify
     function verifyEnclave(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation) external {
-        require(_attestation.timestampInMilliseconds > block.timestamp * 1000 - maxAgeMs, AttestationAutherTooOld());
+        require(_attestation.timestampMs > block.timestamp * 1000 - maxAgeMs, AttestationAutherTooOld());
         attestationVerifier.verify(_signature, _attestation);
-        _setKeyVerified(_attestation.enclavePubKey, _attestation.imageId);
+        _setKeyVerified(_attestation.publicKey, _attestation.imageId);
     }
 }
