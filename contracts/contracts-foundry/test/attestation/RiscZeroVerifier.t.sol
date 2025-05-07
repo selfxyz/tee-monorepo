@@ -243,7 +243,7 @@ contract RiscZeroVerifierTestVerify is Test {
         riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
     }
 
-    function test_Verify_TooLong(
+    function test_Verify_PubkeyTooLong(
         bytes calldata _seal,
         bytes memory _pubkey,
         bytes calldata _userData,
@@ -255,6 +255,28 @@ contract RiscZeroVerifierTestVerify is Test {
         _pubkey = bytes.concat(_pubkey, _pubkey, _pubkey, _pubkey);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierPubkeyTooLong.selector));
+        vm.warp(4);
+
+        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
+    }
+
+    function test_Verify_UserDataTooLong(
+        bytes calldata _seal,
+        bytes memory _pubkey,
+        bytes memory _userData,
+        bytes32 _imageId,
+        uint64 _timestampMs
+    ) public {
+        vm.assume(_pubkey.length < 256);
+        // foundry does not generate data >65536 length, concat to emulate it
+        vm.assume(_userData.length > 64);
+        _userData = bytes.concat(_userData, _userData, _userData, _userData); // 256
+        _userData = bytes.concat(_userData, _userData, _userData, _userData); // 1024
+        _userData = bytes.concat(_userData, _userData, _userData, _userData); // 4096
+        _userData = bytes.concat(_userData, _userData, _userData, _userData); // 16384
+        _userData = bytes.concat(_userData, _userData, _userData, _userData); // 65536
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
+        vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierUserDataTooLong.selector));
         vm.warp(4);
 
         riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
