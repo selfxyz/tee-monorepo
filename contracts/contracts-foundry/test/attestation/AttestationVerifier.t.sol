@@ -85,7 +85,7 @@ contract AttestationVerifierTestVerify is Test {
             IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
-        verifier.verifyEnclave(new bytes(0), _enclavePubkey, _userData, imageId, uint64(_timestamp));
+        verifier.verifyEnclave(new bytes(0), _enclavePubkey, _userData, imageId, _timestamp);
 
         verifier.verify(_signature, attestation);
     }
@@ -105,7 +105,7 @@ contract AttestationVerifierTestVerify is Test {
             IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
-        verifier.verifyEnclave(new bytes(0), _enclavePubkey, _userData, imageId, uint64(_timestamp));
+        verifier.verifyEnclave(new bytes(0), _enclavePubkey, _userData, imageId, _timestamp);
         vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
 
         verifier.verify(_signature, attestation);
@@ -142,7 +142,7 @@ contract AttestationVerifierTestVerify is Test {
             IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
-        verifier.verifyEnclave(new bytes(0), _enclavePubkey, _userData, imageId, uint64(_timestamp));
+        verifier.verifyEnclave(new bytes(0), _enclavePubkey, _userData, imageId, _timestamp);
         vm.prank(revoker);
         verifier.revokeImage(imageId);
         vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
