@@ -30,11 +30,11 @@ contract TestRiscZeroVerifier is RiscZeroVerifierDefault {
         require(authorized, NotAuthorized());
     }
 
-    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
+    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
         external
         view
     {
-        return _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        return _verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 }
 
@@ -211,12 +211,12 @@ contract RiscZeroVerifierTestVerify is Test {
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length <= 256);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
+            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -224,51 +224,51 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectCall(address(verifier), _calldata, 1);
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 
     function test_Verify_TooOld(
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length <= 256);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
+        _timestampMs = uint64(bound(_timestampMs, 0, 2000));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 
     function test_Verify_TooLong(
         bytes calldata _seal,
         bytes memory _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         // foundry does not generate data >256 length, concat to emulate it
         vm.assume(_pubkey.length > 64);
         _pubkey = bytes.concat(_pubkey, _pubkey, _pubkey, _pubkey);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierPubkeyTooLong.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 
     function test_Verify_InvalidSeal(
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length <= 256);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
         vm.expectRevert("0x12345678");
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 }

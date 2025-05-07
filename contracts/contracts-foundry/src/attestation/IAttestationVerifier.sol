@@ -7,7 +7,7 @@ interface IAttestationVerifier {
     /// @notice Attestation data structure containing enclave information
     /// @param enclavePubKey Public key of the enclave
     /// @param imageId Image id of the enclave
-    /// @param timestampInMilliseconds Attestation timestamp in milliseconds
+    /// @param timestampMs Attestation timestamp in milliseconds
     struct Attestation {
         bytes32 imageId;
         uint256 timestampMs;

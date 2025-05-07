@@ -428,12 +428,12 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
     function test_VerifyEnclaveRiscZero_Valid(
         bytes calldata _seal,
         bytes calldata _pubkey,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(64), _pubkey, imageId));
+            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(64), _pubkey, imageId));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -445,7 +445,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectEmit();
         emit VerifiedKeys.VerifiedKeysVerified(_addr, imageId, _pubkey);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
 
         assertEq(auther.keys(_addr), imageId);
     }
@@ -453,25 +453,25 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
     function test_VerifyEnclaveRiscZero_TooOld(
         bytes calldata _seal,
         bytes calldata _pubkey,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
+        _timestampMs = uint64(bound(_timestampMs, 0, 2000));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
     }
 
     function test_VerifyEnclaveRiscZero_InvalidLength(
         bytes calldata _seal,
         bytes calldata _pubkey,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length != 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, imageId));
+            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, imageId));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -480,25 +480,25 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert(abi.encodeWithSelector(AttestationAuther.AttestationAutherPubkeyInvalid.selector));
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
     }
 
     function test_VerifyEnclaveRiscZero_FailedVerification(
         bytes calldata _seal,
         bytes calldata _pubkey,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, imageId));
+            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, imageId));
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
         vm.mockCallRevert(address(verifier), _calldata, "not verified");
         vm.expectRevert("not verified");
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
     }
 }
 

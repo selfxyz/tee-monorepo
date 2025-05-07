@@ -366,12 +366,12 @@ contract KmsRootTestVerify is Test {
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(64), _pubkey, _imageId));
+            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(64), _pubkey, _imageId));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -382,7 +382,7 @@ contract KmsRootTestVerify is Test {
         emit VerifiedKeys.VerifiedKeysVerified(_addr, _imageId, _pubkey);
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
 
         assertEq(kmsRoot.keys(_addr), _imageId);
     }
@@ -391,27 +391,27 @@ contract KmsRootTestVerify is Test {
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
+        _timestampMs = uint64(bound(_timestampMs, 0, 2000));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 
     function test_Verify_InvalidLength(
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length != 64);
         vm.assume(_pubkey.length < 256);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampInMilliseconds, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
+            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -420,22 +420,22 @@ contract KmsRootTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector));
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 
     function test_Verify_InvalidSeal(
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
         vm.expectRevert("0x12345678");
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
     }
 }
 
@@ -462,15 +462,15 @@ contract KmsRootTestIsKeyVerified is Test {
         kmsRoot = new KmsRoot(admin, approver, revoker, verifier, guestId, rootKey, maxAgeMs, imageId);
     }
 
-    function test_IsKeyVerified_Verified(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampInMilliseconds)
+    function test_IsKeyVerified_Verified(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampMs)
         public
     {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         address _addr = address(uint160(uint256(keccak256(_pubkey))));
         vm.mockCall(address(verifier), abi.encode(), abi.encode());
         vm.warp(4);
-        kmsRoot.verify(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, imageId, _timestampMs);
 
         bool res = kmsRoot.isVerified(_addr);
 
@@ -483,15 +483,15 @@ contract KmsRootTestIsKeyVerified is Test {
         assertFalse(res);
     }
 
-    function test_IsKeyVerified_Revoked(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampInMilliseconds)
+    function test_IsKeyVerified_Revoked(bytes calldata _seal, bytes calldata _pubkey, uint64 _timestampMs)
         public
     {
         vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         address _addr = address(uint160(uint256(keccak256(_pubkey))));
         vm.mockCall(address(verifier), abi.encode(), abi.encode());
         vm.warp(4);
-        kmsRoot.verify(_seal, _pubkey, imageId, _timestampInMilliseconds);
+        kmsRoot.verify(_seal, _pubkey, imageId, _timestampMs);
         vm.prank(revoker);
         kmsRoot.revokeImage(imageId);
 

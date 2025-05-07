@@ -130,15 +130,15 @@ abstract contract RiscZeroVerifier {
     /// @param _seal Proof seal from RiscZero
     /// @param _pubkey Attestation public key
     /// @param _imageId Enclave image ID
-    /// @param _timestampInMilliseconds Attestation timestamp in milliseconds
-    function _verify(bytes memory _seal, bytes memory _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
+    /// @param _timestampMs Attestation timestamp in milliseconds
+    function _verify(bytes memory _seal, bytes memory _pubkey, bytes32 _imageId, uint64 _timestampMs)
         internal
         view
     {
-        require(_timestampInMilliseconds > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
+        require(_timestampMs > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
         require(_pubkey.length <= 256, RiscZeroVerifierPubkeyTooLong());
         bytes32 _journalDigest = sha256(
-            abi.encodePacked(_timestampInMilliseconds, _rzvGetRootKey(), uint8(_pubkey.length), _pubkey, _imageId)
+            abi.encodePacked(_timestampMs, _rzvGetRootKey(), uint8(_pubkey.length), _pubkey, _imageId)
         );
         _rzvGetVerifier().verify(_seal, _rzvGetGuestId(), _journalDigest);
     }

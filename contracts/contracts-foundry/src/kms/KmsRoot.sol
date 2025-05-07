@@ -63,12 +63,12 @@ contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault 
     /// @param _seal Proof seal from RiscZero
     /// @param _pubkey Attestation public key
     /// @param _imageId Enclave image ID
-    /// @param _timestampInMilliseconds Attestation timestamp in milliseconds
+    /// @param _timestampMs Attestation timestamp in milliseconds
     /// @dev Verifies the attestation and marks the derived address as verified if successful
-    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampInMilliseconds)
+    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
         external
     {
-        _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        _verify(_seal, _pubkey, _imageId, _timestampMs);
         _setKeyVerified(_pubkey, _imageId);
     }
 

@@ -82,14 +82,14 @@ contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKe
     /// @param _seal ZK proof seal
     /// @param _pubkey Enclave public key to verify
     /// @param _imageId Image ID for the enclave
-    /// @param _timestampInMilliseconds Attestation timestamp
+    /// @param _timestampMs Attestation timestamp
     function verifyEnclave(
         bytes calldata _seal,
         bytes calldata _pubkey,
         bytes32 _imageId,
-        uint64 _timestampInMilliseconds
+        uint64 _timestampMs
     ) external {
-        _verify(_seal, _pubkey, _imageId, _timestampInMilliseconds);
+        _verify(_seal, _pubkey, _imageId, _timestampMs);
         _setKeyVerified(_pubkey, _imageId);
     }
 
