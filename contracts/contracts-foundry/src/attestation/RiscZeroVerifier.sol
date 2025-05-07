@@ -33,8 +33,10 @@ abstract contract RiscZeroVerifier {
 
     /// @notice Thrown when attestation is too old
     error RiscZeroVerifierTooOld();
-    /// @notice Thrown when public key exceeds maximum length of 256 bytes
+    /// @notice Thrown when public key exceeds maximum length of 255 bytes
     error RiscZeroVerifierPubkeyTooLong();
+    /// @notice Thrown when user data exceeds maximum length of 65535 bytes
+    error RiscZeroVerifierUserDataTooLong();
 
     /// @notice Emitted when verifier contract is updated
     /// @param verifier New verifier contract address
@@ -131,14 +133,15 @@ abstract contract RiscZeroVerifier {
     /// @param _pubkey Attestation public key
     /// @param _imageId Enclave image ID
     /// @param _timestampMs Attestation timestamp in milliseconds
-    function _verify(bytes memory _seal, bytes memory _pubkey, bytes32 _imageId, uint64 _timestampMs)
+    function _verify(bytes memory _seal, bytes memory _pubkey, bytes memory _userData, bytes32 _imageId, uint64 _timestampMs)
         internal
         view
     {
         require(_timestampMs > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
-        require(_pubkey.length <= 256, RiscZeroVerifierPubkeyTooLong());
+        require(_pubkey.length < 256, RiscZeroVerifierPubkeyTooLong());
+        require(_userData.length < 65536, RiscZeroVerifierUserDataTooLong());
         bytes32 _journalDigest = sha256(
-            abi.encodePacked(_timestampMs, _rzvGetRootKey(), uint8(_pubkey.length), _pubkey, _imageId)
+            abi.encodePacked(_timestampMs, _imageId, _rzvGetRootKey(), uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData)
         );
         _rzvGetVerifier().verify(_seal, _rzvGetGuestId(), _journalDigest);
     }
