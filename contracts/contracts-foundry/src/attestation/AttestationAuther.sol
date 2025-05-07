@@ -81,6 +81,7 @@ contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKe
     /// @notice Verifies an enclave using RISC Zero proof verification
     /// @param _seal ZK proof seal
     /// @param _pubkey Enclave public key to verify
+    /// @param _userData Attestation user data
     /// @param _imageId Image ID for the enclave
     /// @param _timestampMs Attestation timestamp
     function verifyEnclave(
