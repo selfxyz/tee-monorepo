@@ -4,6 +4,8 @@ pragma solidity ^0.8.0;
 
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 
+import {IAttestationVerifier} from "./IAttestationVerifier.sol";
+
 /// @title RiscZero based attestation verifier
 /// @notice Contract for verifying RiscZero proofs of attestation verification
 abstract contract RiscZeroVerifier {
@@ -130,19 +132,16 @@ abstract contract RiscZeroVerifier {
     /// @notice Verifies a RiscZero proof of attestation verification
     /// @dev Reverts if attestation is expired, pubkey too long, or verification fails
     /// @param _seal Proof seal from RiscZero
-    /// @param _pubkey Attestation public key
-    /// @param _userData Attestation user data
-    /// @param _imageId Enclave image ID
-    /// @param _timestampMs Attestation timestamp in milliseconds
-    function _verify(bytes memory _seal, bytes memory _pubkey, bytes memory _userData, bytes32 _imageId, uint64 _timestampMs)
+    /// @param _attestation Attestation data structure to verify
+    function _verify(bytes memory _seal, IAttestationVerifier.Attestation memory _attestation)
         internal
         view
     {
-        require(_timestampMs > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
-        require(_pubkey.length < 256, RiscZeroVerifierPubkeyTooLong());
-        require(_userData.length < 65536, RiscZeroVerifierUserDataTooLong());
+        require(_attestation.timestampMs > block.timestamp * 1000 - _rzvGetMaxAgeMs(), RiscZeroVerifierTooOld());
+        require(_attestation.publicKey.length < 256, RiscZeroVerifierPubkeyTooLong());
+        require(_attestation.userData.length < 65536, RiscZeroVerifierUserDataTooLong());
         bytes32 _journalDigest = sha256(
-            abi.encodePacked(_timestampMs, _imageId, _rzvGetRootKey(), uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData)
+            abi.encodePacked(_attestation.timestampMs, _attestation.imageId, _rzvGetRootKey(), uint8(_attestation.publicKey.length), _attestation.publicKey, uint16(_attestation.userData.length), _attestation.userData)
         );
         _rzvGetVerifier().verify(_seal, _rzvGetGuestId(), _journalDigest);
     }
