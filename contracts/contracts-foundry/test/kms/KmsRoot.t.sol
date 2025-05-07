@@ -8,6 +8,7 @@ import {IAccessControl} from "../../lib/openzeppelin-contracts/contracts/access/
 import {IRiscZeroVerifier} from "../../lib/risc0-ethereum/contracts/src/IRiscZeroVerifier.sol";
 import {RiscZeroVerifier} from "../../src/attestation/RiscZeroVerifier.sol";
 import {VerifiedKeys} from "../../src/attestation/VerifiedKeys.sol";
+import {IAttestationVerifier} from "../../src/attestation/IAttestationVerifier.sol";
 
 contract KmsRootTestConstruction is Test {
     function test_Construction(
@@ -382,7 +383,7 @@ contract KmsRootTestVerify is Test {
         emit VerifiedKeys.VerifiedKeysVerified(_addr, _imageId, _pubkey);
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
+        kmsRoot.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, new bytes(0)));
 
         assertEq(kmsRoot.keys(_addr), _imageId);
     }
@@ -398,7 +399,7 @@ contract KmsRootTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
+        kmsRoot.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, new bytes(0)));
     }
 
     function test_Verify_InvalidLength(
@@ -420,7 +421,7 @@ contract KmsRootTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(KmsRoot.KmsRootLengthInvalid.selector));
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
+        kmsRoot.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, new bytes(0)));
     }
 
     function test_Verify_InvalidSeal(
@@ -435,7 +436,7 @@ contract KmsRootTestVerify is Test {
         vm.expectRevert("0x12345678");
         vm.warp(4);
 
-        kmsRoot.verify(_seal, _pubkey, _imageId, _timestampMs);
+        kmsRoot.verify(_seal, IAttestationVerifier.Attestation(_imageId, _timestampMs, _pubkey, new bytes(0)));
     }
 }
 
@@ -470,7 +471,7 @@ contract KmsRootTestIsKeyVerified is Test {
         address _addr = address(uint160(uint256(keccak256(_pubkey))));
         vm.mockCall(address(verifier), abi.encode(), abi.encode());
         vm.warp(4);
-        kmsRoot.verify(_seal, _pubkey, imageId, _timestampMs);
+        kmsRoot.verify(_seal, IAttestationVerifier.Attestation(imageId, _timestampMs, _pubkey, new bytes(0)));
 
         bool res = kmsRoot.isVerified(_addr);
 
@@ -491,7 +492,7 @@ contract KmsRootTestIsKeyVerified is Test {
         address _addr = address(uint160(uint256(keccak256(_pubkey))));
         vm.mockCall(address(verifier), abi.encode(), abi.encode());
         vm.warp(4);
-        kmsRoot.verify(_seal, _pubkey, imageId, _timestampMs);
+        kmsRoot.verify(_seal, IAttestationVerifier.Attestation(imageId, _timestampMs, _pubkey, new bytes(0)));
         vm.prank(revoker);
         kmsRoot.revokeImage(imageId);
 
