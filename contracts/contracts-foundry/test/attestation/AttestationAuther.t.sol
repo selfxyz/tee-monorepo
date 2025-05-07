@@ -428,6 +428,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
     function test_VerifyEnclaveRiscZero_Valid(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
@@ -445,7 +446,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectEmit();
         emit VerifiedKeys.VerifiedKeysVerified(_addr, imageId, _pubkey);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
+        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
 
         assertEq(auther.keys(_addr), imageId);
     }
@@ -453,6 +454,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
     function test_VerifyEnclaveRiscZero_TooOld(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
@@ -460,12 +462,13 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
+        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
     }
 
     function test_VerifyEnclaveRiscZero_InvalidLength(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length != 64);
@@ -480,12 +483,13 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert(abi.encodeWithSelector(AttestationAuther.AttestationAutherPubkeyInvalid.selector));
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
+        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
     }
 
     function test_VerifyEnclaveRiscZero_FailedVerification(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         uint64 _timestampMs
     ) public {
         vm.assume(_pubkey.length == 64);
@@ -498,7 +502,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert("not verified");
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, imageId, _timestampMs);
+        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
     }
 }
 
