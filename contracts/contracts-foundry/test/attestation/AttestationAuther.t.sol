@@ -434,7 +434,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.assume(_pubkey.length == 64);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(64), _pubkey, imageId));
+            sha256(abi.encodePacked(_timestampMs, imageId, rootKey, uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -474,7 +474,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.assume(_pubkey.length != 64);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, imageId));
+            sha256(abi.encodePacked(_timestampMs, imageId, rootKey, uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData));
         vm.mockCallRevert(address(verifier), abi.encode(), abi.encode());
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
@@ -495,7 +495,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.assume(_pubkey.length == 64);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
-            sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, imageId));
+            sha256(abi.encodePacked(_timestampMs, imageId, rootKey, uint8(_pubkey.length), _pubkey, uint16(_userData.length), _userData));
         bytes memory _calldata =
             abi.encodeWithSelector(IRiscZeroVerifier.verify.selector, _seal, guestId, _journalDigest);
         vm.mockCallRevert(address(verifier), _calldata, "not verified");
