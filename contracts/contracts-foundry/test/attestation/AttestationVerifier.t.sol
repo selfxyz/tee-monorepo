@@ -76,11 +76,13 @@ contract AttestationVerifierTestVerify is Test {
             hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
         bytes memory _attestationPubkey =
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
+        bytes memory _userData =
+            hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         uint256 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"8059a71d1ce806ca5163136d20e2d6f099ae1d028d2a8a26e42c2526f2c9d022686e304c48e0d8e3e803c5abc34c31c42ac1192848271b9cd7880c567c8f9b991b";
         IAttestationVerifier.Attestation memory attestation =
-            IAttestationVerifier.Attestation(_attestationPubkey, imageId, _timestamp);
+            IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
         verifier.verifyEnclave(new bytes(0), _enclavePubkey, imageId, uint64(_timestamp));
@@ -94,11 +96,13 @@ contract AttestationVerifierTestVerify is Test {
             hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
         bytes memory _attestationPubkey =
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
+        bytes memory _userData =
+            hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         uint256 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"8059a71d1ce806ca5163136d20e2d6f099ae1d028d2a8a26e42c2526f2c9d022686e304c48e0d8e3e803c5abc34c31c42ac1192848271b9cd7880c567c8f9b981b";
         IAttestationVerifier.Attestation memory attestation =
-            IAttestationVerifier.Attestation(_attestationPubkey, imageId, _timestamp);
+            IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
         verifier.verifyEnclave(new bytes(0), _enclavePubkey, imageId, uint64(_timestamp));
@@ -111,11 +115,13 @@ contract AttestationVerifierTestVerify is Test {
         // generated using attestation-verifier.test.js
         bytes memory _attestationPubkey =
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
+        bytes memory _userData =
+            hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         uint256 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"8059a71d1ce806ca5163136d20e2d6f099ae1d028d2a8a26e42c2526f2c9d022686e304c48e0d8e3e803c5abc34c31c42ac1192848271b9cd7880c567c8f9b991b";
         IAttestationVerifier.Attestation memory attestation =
-            IAttestationVerifier.Attestation(_attestationPubkey, imageId, _timestamp);
+            IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.expectRevert(VerifiedKeys.VerifiedKeysNotVerified.selector);
 
         verifier.verify(_signature, attestation);
@@ -127,11 +133,13 @@ contract AttestationVerifierTestVerify is Test {
             hex"9d17c9747a93e74b4065164eaf1df2e22bd36dc17772cf3fb99bfe6ff47bbd3ce8034234fa46b89c99d6e81393e60e7bcc83680e7b15bfd0fbcb01ae78aa9c76";
         bytes memory _attestationPubkey =
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
+        bytes memory _userData =
+            hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         uint256 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"8059a71d1ce806ca5163136d20e2d6f099ae1d028d2a8a26e42c2526f2c9d022686e304c48e0d8e3e803c5abc34c31c42ac1192848271b9cd7880c567c8f9b991b";
         IAttestationVerifier.Attestation memory attestation =
-            IAttestationVerifier.Attestation(_attestationPubkey, imageId, _timestamp);
+            IAttestationVerifier.Attestation(imageId, _timestamp, _attestationPubkey, _userData);
         vm.mockCall(address(riscZeroVerifier), abi.encode(), abi.encode());
         vm.warp(_timestamp / 1000);
         verifier.verifyEnclave(new bytes(0), _enclavePubkey, imageId, uint64(_timestamp));
