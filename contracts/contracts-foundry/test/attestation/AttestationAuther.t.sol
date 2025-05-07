@@ -532,19 +532,21 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
 
     function test_VerifyEnclaveSignature_Valid(
         bytes memory _signature,
-        bytes memory _pubkey,
-        uint64 _timestampInMilliseconds
+        bytes memory _publicKey,
+        bytes memory _userData,
+        uint64 _timestampMs
     ) public {
-        vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        vm.assume(_publicKey.length == 64);
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         IAttestationVerifier.Attestation memory attestation = IAttestationVerifier.Attestation({
-            enclavePubKey: _pubkey,
             imageId: imageId,
-            timestampInMilliseconds: _timestampInMilliseconds
+            timestampMs: _timestampMs,
+            publicKey: _publicKey,
+            userData: _userData
         });
-        bytes32 _addr = bytes32(uint256(uint160(uint256(keccak256(_pubkey)))));
+        bytes32 _addr = bytes32(uint256(uint160(uint256(keccak256(_publicKey)))));
         vm.expectEmit();
-        emit VerifiedKeys.VerifiedKeysVerified(_addr, imageId, _pubkey);
+        emit VerifiedKeys.VerifiedKeysVerified(_addr, imageId, _publicKey);
         vm.warp(4);
 
         auther.verifyEnclave(_signature, attestation);
@@ -554,16 +556,18 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
 
     function test_VerifyEnclaveSignature_Invalid(
         bytes memory _signature,
-        bytes memory _pubkey,
-        uint64 _timestampInMilliseconds
+        bytes memory _publicKey,
+        bytes memory _userData,
+        uint64 _timestampMs
     ) public {
-        vm.assume(_pubkey.length == 64);
+        vm.assume(_publicKey.length == 64);
         auther.setShouldVerify(false);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 2001, type(uint64).max));
+        _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         IAttestationVerifier.Attestation memory attestation = IAttestationVerifier.Attestation({
-            enclavePubKey: _pubkey,
             imageId: imageId,
-            timestampInMilliseconds: _timestampInMilliseconds
+            timestampMs: _timestampMs,
+            publicKey: _publicKey,
+            userData: _userData
         });
         vm.expectRevert("auther not verified");
         vm.warp(4);
@@ -573,15 +577,17 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
 
     function test_VerifyEnclaveSignature_Expired(
         bytes memory _signature,
-        bytes memory _pubkey,
-        uint64 _timestampInMilliseconds
+        bytes memory _publicKey,
+        bytes memory _userData,
+        uint64 _timestampMs
     ) public {
-        vm.assume(_pubkey.length == 64);
-        _timestampInMilliseconds = uint64(bound(_timestampInMilliseconds, 0, 2000));
+        vm.assume(_publicKey.length == 64);
+        _timestampMs = uint64(bound(_timestampMs, 0, 2000));
         IAttestationVerifier.Attestation memory attestation = IAttestationVerifier.Attestation({
-            enclavePubKey: _pubkey,
             imageId: imageId,
-            timestampInMilliseconds: _timestampInMilliseconds
+            timestampMs: _timestampMs,
+            publicKey: _publicKey,
+            userData: _userData
         });
         vm.warp(4);
 
