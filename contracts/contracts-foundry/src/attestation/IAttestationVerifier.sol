@@ -20,5 +20,5 @@ interface IAttestationVerifier {
     /// @dev Should revert if signature verification fails
     /// @param signature ECDSA signature of the attestation data
     /// @param attestation Attestation data structure to verify
-    function verify(bytes memory signature, Attestation memory attestation) external view;
+    function verify(bytes calldata signature, Attestation calldata attestation) external view;
 }

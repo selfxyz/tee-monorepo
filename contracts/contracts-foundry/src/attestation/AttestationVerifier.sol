@@ -61,7 +61,7 @@ contract AttestationVerifier is AttestationAuther, IAttestationVerifier {
     /// @notice Verifies a signed attestation using EIP-712 signatures
     /// @param _signature ECDSA signature of the attestation
     /// @param _attestation Attestation data structure to verify
-    function verify(bytes memory _signature, Attestation memory _attestation) external view {
+    function verify(bytes calldata _signature, Attestation calldata _attestation) external view {
         bytes32 _hashStruct = keccak256(
             abi.encode(
                 ATTESTATION_TYPEHASH,
