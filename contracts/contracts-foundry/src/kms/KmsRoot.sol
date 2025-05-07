@@ -68,7 +68,7 @@ contract KmsRoot is AccessControl, RiscZeroVerifierDefault, VerifiedKeysDefault 
     function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
         external
     {
-        _verify(_seal, _pubkey, _imageId, _timestampMs);
+        _verify(_seal, _pubkey, new bytes(0), _imageId, _timestampMs);
         _setKeyVerified(_pubkey, _imageId);
     }
 
