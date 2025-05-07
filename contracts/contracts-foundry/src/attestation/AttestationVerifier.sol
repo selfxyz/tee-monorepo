@@ -56,7 +56,7 @@ contract AttestationVerifier is AttestationAuther, IAttestationVerifier {
 
     /// @notice EIP-712 typehash for attestation struct
     bytes32 public constant ATTESTATION_TYPEHASH =
-        keccak256("Attestation(bytes32 imageId,uint256 timestampMs,bytes publicKey,bytes userData)");
+        keccak256("Attestation(bytes32 imageId,uint64 timestampMs,bytes publicKey,bytes userData)");
 
     /// @notice Verifies a signed attestation using EIP-712 signatures
     /// @param _signature ECDSA signature of the attestation

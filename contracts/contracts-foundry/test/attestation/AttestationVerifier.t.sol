@@ -78,7 +78,7 @@ contract AttestationVerifierTestVerify is Test {
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         bytes memory _userData =
             hex"12345678";
-        uint256 _timestamp = 0x4e43046b;
+        uint64 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"0910eea2715b84ce4021eac266f49f8692f293d9513d72d3ecefbc9388d6920240e9746d7d3e706d305dd015f568265e327853da046a0d8b1a67360982d718c41b";
         IAttestationVerifier.Attestation memory attestation =
@@ -98,7 +98,7 @@ contract AttestationVerifierTestVerify is Test {
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         bytes memory _userData =
             hex"12345678";
-        uint256 _timestamp = 0x4e43046b;
+        uint64 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"0910eea2715b84ce4021eac266f49f8692f293d9513d72d3ecefbc9388d6920240e9746d7d3e706d305dd015f568265e327853da046a0d8b1a67360982d718c31b";
         IAttestationVerifier.Attestation memory attestation =
@@ -117,7 +117,7 @@ contract AttestationVerifierTestVerify is Test {
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         bytes memory _userData =
             hex"12345678";
-        uint256 _timestamp = 0x4e43046b;
+        uint64 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"0910eea2715b84ce4021eac266f49f8692f293d9513d72d3ecefbc9388d6920240e9746d7d3e706d305dd015f568265e327853da046a0d8b1a67360982d718c41b";
         IAttestationVerifier.Attestation memory attestation =
@@ -135,7 +135,7 @@ contract AttestationVerifierTestVerify is Test {
             hex"9f82020b6e9431e8abcc0f1ce313248a10bc9e96e59b720dc3653398496c3c52dea402c5ef3a6780ccf1f0aeeaa68ae4e3f132496d011df322e84b171e82750d";
         bytes memory _userData =
             hex"12345678";
-        uint256 _timestamp = 0x4e43046b;
+        uint64 _timestamp = 0x4e43046b;
         bytes memory _signature =
             hex"0910eea2715b84ce4021eac266f49f8692f293d9513d72d3ecefbc9388d6920240e9746d7d3e706d305dd015f568265e327853da046a0d8b1a67360982d718c41b";
         IAttestationVerifier.Attestation memory attestation =

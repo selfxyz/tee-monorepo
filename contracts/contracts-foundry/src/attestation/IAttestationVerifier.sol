@@ -11,7 +11,7 @@ interface IAttestationVerifier {
     /// @param userData User data of the attestation
     struct Attestation {
         bytes32 imageId;
-        uint256 timestampMs;
+        uint64 timestampMs;
         bytes publicKey;
         bytes userData;
     }

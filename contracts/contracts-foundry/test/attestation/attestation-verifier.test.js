@@ -15,7 +15,7 @@ const DOMAIN = {
 const TYPES = {
   Attestation: [
     { name: 'imageId', type: 'bytes32' },
-    { name: 'timestampMs', type: 'uint256' },
+    { name: 'timestampMs', type: 'uint64' },
     { name: 'publicKey', type: 'bytes' },
     { name: 'userData', type: 'bytes' },
   ],
