@@ -131,6 +131,7 @@ abstract contract RiscZeroVerifier {
     /// @dev Reverts if attestation is expired, pubkey too long, or verification fails
     /// @param _seal Proof seal from RiscZero
     /// @param _pubkey Attestation public key
+    /// @param _userData Attestation user data
     /// @param _imageId Enclave image ID
     /// @param _timestampMs Attestation timestamp in milliseconds
     function _verify(bytes memory _seal, bytes memory _pubkey, bytes memory _userData, bytes32 _imageId, uint64 _timestampMs)
