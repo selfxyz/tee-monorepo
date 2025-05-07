@@ -80,25 +80,19 @@ contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKe
 
     /// @notice Verifies an enclave using RISC Zero proof verification
     /// @param _seal ZK proof seal
-    /// @param _pubkey Enclave public key to verify
-    /// @param _userData Attestation user data
-    /// @param _imageId Image ID for the enclave
-    /// @param _timestampMs Attestation timestamp
-    function verifyEnclave(
+    /// @param _attestation Attestation data structure to verify
+    function verifyEnclaveRiscZero(
         bytes calldata _seal,
-        bytes calldata _pubkey,
-        bytes calldata _userData,
-        bytes32 _imageId,
-        uint64 _timestampMs
+        IAttestationVerifier.Attestation memory _attestation
     ) external {
-        _verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
-        _setKeyVerified(_pubkey, _imageId);
+        _verify(_seal, _attestation);
+        _setKeyVerified(_attestation.publicKey, _attestation.imageId);
     }
 
     /// @notice Verifies an enclave using a signed attestation
     /// @param _signature Signature
     /// @param _attestation Attestation to verify
-    function verifyEnclave(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation) external {
+    function verifyEnclaveSignature(bytes memory _signature, IAttestationVerifier.Attestation memory _attestation) external {
         require(_attestation.timestampMs > block.timestamp * 1000 - maxAgeMs, AttestationAutherTooOld());
         attestationVerifier.verify(_signature, _attestation);
         _setKeyVerified(_attestation.publicKey, _attestation.imageId);
