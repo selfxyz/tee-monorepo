@@ -86,10 +86,11 @@ contract AttestationAuther is AccessControl, RiscZeroVerifierDefault, VerifiedKe
     function verifyEnclave(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         bytes32 _imageId,
         uint64 _timestampMs
     ) external {
-        _verify(_seal, _pubkey, _imageId, _timestampMs);
+        _verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
         _setKeyVerified(_pubkey, _imageId);
     }
 
