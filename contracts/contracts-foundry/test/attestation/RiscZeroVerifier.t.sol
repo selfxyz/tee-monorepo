@@ -30,11 +30,11 @@ contract TestRiscZeroVerifier is RiscZeroVerifierDefault {
         require(authorized, NotAuthorized());
     }
 
-    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes32 _imageId, uint64 _timestampMs)
+    function verify(bytes calldata _seal, bytes calldata _pubkey, bytes calldata _userData, bytes32 _imageId, uint64 _timestampMs)
         external
         view
     {
-        return _verify(_seal, _pubkey, _imageId, _timestampMs);
+        return _verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
     }
 }
 
@@ -210,10 +210,11 @@ contract RiscZeroVerifierTestVerify is Test {
     function test_Verify_Valid(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         bytes32 _imageId,
         uint64 _timestampMs
     ) public {
-        vm.assume(_pubkey.length <= 256);
+        vm.assume(_pubkey.length < 256);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         bytes32 _journalDigest =
             sha256(abi.encodePacked(_timestampMs, rootKey, uint8(_pubkey.length), _pubkey, _imageId));
@@ -224,26 +225,28 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectCall(address(verifier), _calldata, 1);
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
     }
 
     function test_Verify_TooOld(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         bytes32 _imageId,
         uint64 _timestampMs
     ) public {
-        vm.assume(_pubkey.length <= 256);
+        vm.assume(_pubkey.length < 256);
         _timestampMs = uint64(bound(_timestampMs, 0, 2000));
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
     }
 
     function test_Verify_TooLong(
         bytes calldata _seal,
         bytes memory _pubkey,
+        bytes calldata _userData,
         bytes32 _imageId,
         uint64 _timestampMs
     ) public {
@@ -254,21 +257,22 @@ contract RiscZeroVerifierTestVerify is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierPubkeyTooLong.selector));
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
     }
 
     function test_Verify_InvalidSeal(
         bytes calldata _seal,
         bytes calldata _pubkey,
+        bytes calldata _userData,
         bytes32 _imageId,
         uint64 _timestampMs
     ) public {
-        vm.assume(_pubkey.length <= 256);
+        vm.assume(_pubkey.length < 256);
         _timestampMs = uint64(bound(_timestampMs, 2001, type(uint64).max));
         vm.mockCallRevert(address(verifier), abi.encode(), "0x12345678");
         vm.expectRevert("0x12345678");
         vm.warp(4);
 
-        riscZeroVerifier.verify(_seal, _pubkey, _imageId, _timestampMs);
+        riscZeroVerifier.verify(_seal, _pubkey, _userData, _imageId, _timestampMs);
     }
 }
