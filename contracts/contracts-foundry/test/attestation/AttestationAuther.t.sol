@@ -446,7 +446,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectEmit();
         emit VerifiedKeys.VerifiedKeysVerified(_addr, imageId, _pubkey);
 
-        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
+        auther.verifyEnclaveRiscZero(_seal, IAttestationVerifier.Attestation(imageId, _timestampMs, _pubkey, _userData));
 
         assertEq(auther.keys(_addr), imageId);
     }
@@ -462,7 +462,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert(abi.encodeWithSelector(RiscZeroVerifier.RiscZeroVerifierTooOld.selector));
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
+        auther.verifyEnclaveRiscZero(_seal, IAttestationVerifier.Attestation(imageId, _timestampMs, _pubkey, _userData));
     }
 
     function test_VerifyEnclaveRiscZero_InvalidLength(
@@ -483,7 +483,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert(abi.encodeWithSelector(AttestationAuther.AttestationAutherPubkeyInvalid.selector));
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
+        auther.verifyEnclaveRiscZero(_seal, IAttestationVerifier.Attestation(imageId, _timestampMs, _pubkey, _userData));
     }
 
     function test_VerifyEnclaveRiscZero_FailedVerification(
@@ -502,7 +502,7 @@ contract AttestationAutherTestVerifyEnclaveRiscZero is Test {
         vm.expectRevert("not verified");
         vm.warp(4);
 
-        auther.verifyEnclave(_seal, _pubkey, _userData, imageId, _timestampMs);
+        auther.verifyEnclaveRiscZero(_seal, IAttestationVerifier.Attestation(imageId, _timestampMs, _pubkey, _userData));
     }
 }
 
@@ -553,7 +553,7 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
         emit VerifiedKeys.VerifiedKeysVerified(_addr, imageId, _publicKey);
         vm.warp(4);
 
-        auther.verifyEnclave(_signature, attestation);
+        auther.verifyEnclaveSignature(_signature, attestation);
 
         assertEq(auther.keys(_addr), imageId);
     }
@@ -576,7 +576,7 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
         vm.expectRevert("auther not verified");
         vm.warp(4);
 
-        auther.verifyEnclave(_signature, attestation);
+        auther.verifyEnclaveSignature(_signature, attestation);
     }
 
     function test_VerifyEnclaveSignature_Expired(
@@ -596,6 +596,6 @@ contract AttestationAutherTestVerifyEnclaveSignature is Test {
         vm.warp(4);
 
         vm.expectRevert(abi.encodeWithSelector(AttestationAuther.AttestationAutherTooOld.selector));
-        auther.verifyEnclave(_signature, attestation);
+        auther.verifyEnclaveSignature(_signature, attestation);
     }
 }
