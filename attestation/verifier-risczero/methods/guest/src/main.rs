@@ -536,4 +536,38 @@ mod tests {
             hex::encode(journal.borrow_mut().as_slice())
         );
     }
+
+    #[test]
+    fn test_aws_pcr16() {
+        // generated using `curl <ip>:<port>/attestation/raw` on the attestation server of a
+        // real Nitro enclave
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/aws_pcr16.bin")
+                .unwrap();
+
+        let (journal, committer) = create_committer();
+
+        verify(&attestation, committer);
+
+        let expected_journal = [
+            // timestamp
+            "00000196811b1c0b",
+            // image id
+            "c28909dc8803cf0edf6113f3fb81d0494f4c92b63087242200e18a5be347aacd",
+            // root pubkey
+            "fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b17607",
+            "0ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4",
+            // pubkey len
+            "20",
+            // pubkey
+            "2af77183f4772f00e269c7ffadb0eca298bf76711bbe94471a4944ede5ada084",
+            // user data len
+            "0000",
+        ].join("");
+
+        assert_eq!(
+            expected_journal,
+            hex::encode(journal.borrow_mut().as_slice())
+        );
+    }
 }
