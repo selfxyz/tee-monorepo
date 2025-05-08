@@ -570,4 +570,40 @@ mod tests {
             hex::encode(journal.borrow_mut().as_slice())
         );
     }
+
+    #[test]
+    fn test_custom_pcr16() {
+        // generated using `curl <ip>:<port>/attestation/raw?public_key=12345678&user_data=abcdef`
+        // on a custom mock attestation server running locally
+        let attestation =
+            std::fs::read(file!().rsplit_once('/').unwrap().0.to_owned() + "/testcases/custom_pcr16.bin")
+                .unwrap();
+
+        let (journal, committer) = create_committer();
+
+        verify(&attestation, committer);
+
+        let expected_journal = [
+            // timestamp
+            "00000196870610d9",
+            // image id
+            "20a182763745f956ddee6f8e9d14a66e23db836c0eb1a769a2ef4d3ab77bef1b",
+            // root pubkey
+            "6c79411ebaae7489a4e8355545c0346784b31df5d08cb1f7c0097836a82f67240f2a7201862880a1d09a0bb326637188",
+            "fbbafab47a10abe3630fcf8c18d35d96532184985e582c0dce3dace8441f37b9cc9211dff935baae69e4872cc3494410",
+            // pubkey len
+            "04",
+            // pubkey
+            "12345678",
+            // user data len
+            "0003",
+            // user data
+            "abcdef",
+        ].join("");
+
+        assert_eq!(
+            expected_journal,
+            hex::encode(journal.borrow_mut().as_slice())
+        );
+    }
 }
