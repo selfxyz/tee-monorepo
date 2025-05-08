@@ -124,14 +124,14 @@ mod tests {
         let parsed: VerifyAttestationResponse =
             serde_json::from_slice(&body).expect("failed to parse response");
 
-        assert_eq!(parsed.signature, "1901d2f64fd27ca9dd7240e6e3782dd989f824942fa050bb8f5dee81d31a70c438b41b2a322d4ffe079320da9259bb4eb45366c643911b20761b2f39c49477ac1b");
+        assert_eq!(parsed.signature, "edad19608a92065ae1dc617742bf7bdc464ff9a5067dc347bf704bf5ec28458b740330bea1339a54a48e4fb75c3bf2b55d1000fa20926341b5c069001ef623211b");
         assert_eq!(parsed.public_key, "57febcf9e7f5081d3d24182817df526a1c9c3df7e46b64613acd13f9aa53b81de888a8562ba7b4a0e42c48d24d7e444ffcba311ceddb5068eca2ea899379ab50");
         assert_eq!(
             parsed.image_id,
-            "66108020995009b982f24f929900dc974a9a610d6d5a5b9b29209c1bc5154a21"
+            "de66275048b83171dee9dc3efd599c64413fce98177ff1f662875c153b80d117"
         );
         assert_eq!(parsed.verifier_public_key, hex::encode(secp256k1_public));
-        assert_eq!(parsed.timestamp, 1723012689640);
+        assert_eq!(parsed.timestamp_ms, 1723012689640);
     }
 
     #[tokio::test]
@@ -175,13 +175,13 @@ mod tests {
         let parsed: VerifyAttestationResponse =
             serde_json::from_slice(&body).expect("failed to parse response");
 
-        assert_eq!(parsed.signature, "86ff271ec63c8e8f7010b1edaa70d75f1ca88bdda66463a7cd2a237a53369e20385ad493e37760a017663b4a49c9329b02f91559eabfb7164e8e48d57de760791b");
+        assert_eq!(parsed.signature, "e3c75548a608bfb129d45c037c77f623e4ebb940800f5fa4fee4d9bd655afcca160689f9d44d481c6b947501d6a0052ae9b92f0bc0adbda819ade0d52962f7201b");
         assert_eq!(parsed.public_key, "57febcf9e7f5081d3d24182817df526a1c9c3df7e46b64613acd13f9aa53b81de888a8562ba7b4a0e42c48d24d7e444ffcba311ceddb5068eca2ea899379ab50");
         assert_eq!(
             parsed.image_id,
-            "66108020995009b982f24f929900dc974a9a610d6d5a5b9b29209c1bc5154a21"
+            "de66275048b83171dee9dc3efd599c64413fce98177ff1f662875c153b80d117"
         );
         assert_eq!(parsed.verifier_public_key, hex::encode(secp256k1_public));
-        assert_eq!(parsed.timestamp, 1723012992231);
+        assert_eq!(parsed.timestamp_ms, 1723012992231);
     }
 }
