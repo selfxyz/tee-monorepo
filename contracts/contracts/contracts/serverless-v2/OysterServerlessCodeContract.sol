@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract OysterServerlessCodeContract {
+import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 
-    event CodeCreated(bytes indexed metadata);
+contract OysterServerlessCodeContract is 
+    ContextUpgradeable, // _msgSender, _msgData 
+{
+    event CodeCreated(address indexed owner, bytes metadata);
 
     function saveCodeInCallData(string calldata inputData, bytes calldata metadata) external {
-        emit CodeCreated(metadata);
+        emit CodeCreated(_msgSender(), metadata);
     }
 }
