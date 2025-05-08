@@ -152,6 +152,7 @@ fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
         assert_eq!(attestation[offset..offset + 3], [0x10, 0x58, 0x30]);
         println!("PCR16: {:?}", &attestation[offset + 3..offset + 51]);
         image_id_hasher.update(&attestation[offset + 3..offset + 51]);
+        offset += 51;
     } else {
         image_id_hasher.update(&[0u8; 48]);
     }
