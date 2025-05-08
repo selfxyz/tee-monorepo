@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 
 contract OysterServerlessCodeContract is 
-    ContextUpgradeable, // _msgSender, _msgData 
+    ContextUpgradeable, // _msgSender  
 {
     event CodeCreated(address indexed owner, bytes metadata);
 
