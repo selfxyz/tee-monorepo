@@ -101,7 +101,7 @@ $ curl <attestation_server_ip:attestation_server_port>/attestation/raw -vs | cur
 < date: Sun, 07 Apr 2024 06:36:44 GMT
 < 
 * Connection #0 to host <attestation_verifier_ip> left intact
-{"signature":"15383a7af2c33e80eba2637c9e3fb0c246ecedfbb183879f9dc9b18d25635b3871212cfab51db0fd75dded5be870febe19226c92d38425c37689fb7c1e86f74f1c","public_key":"435ed75cf1be0c58b97d372b153ad4e43101895e481e7dd7d27519605e859f34d7b5491586faa887257178bbb6daa1e212f35aa2a60308cd76df5db522abb139","image_id":"3fe8419454c44a36782f2b9a307cad84ee8c226e0351cb0861c50fb6b13a3a3e","timestamp":1738845553218,"verifier_public_key":"60b77877f624b4eaf776a6afef1dd727f969c7557b88b05cc27c51366eafd72a2328b054bd2f6cec47b3b82b61bbfc898b5b32d604446ebf59e50195345a8d98"}
+{"signature":"15383a7af2c33e80eba2637c9e3fb0c246ecedfbb183879f9dc9b18d25635b3871212cfab51db0fd75dded5be870febe19226c92d38425c37689fb7c1e86f74f1c","image_id":"3fe8419454c44a36782f2b9a307cad84ee8c226e0351cb0861c50fb6b13a3a3e","timestamp_ms":1738845553218,"public_key":"435ed75cf1be0c58b97d372b153ad4e43101895e481e7dd7d27519605e859f34d7b5491586faa887257178bbb6daa1e212f35aa2a60308cd76df5db522abb139","user_data":"12345678","verifier_public_key":"60b77877f624b4eaf776a6afef1dd727f969c7557b88b05cc27c51366eafd72a2328b054bd2f6cec47b3b82b61bbfc898b5b32d604446ebf59e50195345a8d98"}
 ```
 
 ### Hex
@@ -145,7 +145,7 @@ $ curl <attestation_server_ip:attestation_server_port>/attestation/hex -vs | cur
 < date: Sun, 07 Apr 2024 06:44:25 GMT
 < 
 * Connection #0 to host <attestation_verifier_ip> left intact
-{"signature":"15383a7af2c33e80eba2637c9e3fb0c246ecedfbb183879f9dc9b18d25635b3871212cfab51db0fd75dded5be870febe19226c92d38425c37689fb7c1e86f74f1c","public_key":"435ed75cf1be0c58b97d372b153ad4e43101895e481e7dd7d27519605e859f34d7b5491586faa887257178bbb6daa1e212f35aa2a60308cd76df5db522abb139","image_id":"3fe8419454c44a36782f2b9a307cad84ee8c226e0351cb0861c50fb6b13a3a3e","timestamp":1738845553218,"verifier_public_key":"60b77877f624b4eaf776a6afef1dd727f969c7557b88b05cc27c51366eafd72a2328b054bd2f6cec47b3b82b61bbfc898b5b32d604446ebf59e50195345a8d98"}
+{"signature":"15383a7af2c33e80eba2637c9e3fb0c246ecedfbb183879f9dc9b18d25635b3871212cfab51db0fd75dded5be870febe19226c92d38425c37689fb7c1e86f74f1c","image_id":"3fe8419454c44a36782f2b9a307cad84ee8c226e0351cb0861c50fb6b13a3a3e","timestamp_ms":1738845553218,"public_key":"435ed75cf1be0c58b97d372b153ad4e43101895e481e7dd7d27519605e859f34d7b5491586faa887257178bbb6daa1e212f35aa2a60308cd76df5db522abb139","user_data":"12345678","verifier_public_key":"60b77877f624b4eaf776a6afef1dd727f969c7557b88b05cc27c51366eafd72a2328b054bd2f6cec47b3b82b61bbfc898b5b32d604446ebf59e50195345a8d98"}
 ```
 
 ## Response format
@@ -153,18 +153,20 @@ $ curl <attestation_server_ip:attestation_server_port>/attestation/hex -vs | cur
 ```json
 {
     "signature": "...",
-    "public_key": "...",
     "image_id": "...",
-    "timestamp": ...,
+    "timestamp_ms": ...,
+    "public_key": "...",
+    "user_data": "...",
     "verifier_public_key": "..."
 }
 ```
 
 The verifier responds with JSON with the following fields:
 - `signature`: signature provided by the verifier
+- `image_id`: hash of PCRs encoded in the attestation
+- `timestamp_ms`: timestamp that was encoded in the attestation
 - `public_key`: public key that was encoded in the attestation
-- `image_id`: hash of PCRs and user data encoded in the attestation
-- `timestamp`: timestamp that was encoded in the attestation
+- `user_data`: user data that was encoded in the attestation
 - `verifier_public_key`: public key of the verifier corresponding to the signature
 
 ## Signature format
@@ -186,9 +188,10 @@ The `chainId`, `verifyingContract` and `salt` fields are omitted because we do n
 
 ```typescript
 struct Attestation {
-    bytes enclavePubKey;
     bytes32 imageId;
-    uint256 timestampInMilliseconds;
+    uint64 timestampMs;
+    bytes publicKey;
+    bytes userData;
 }
 ```
 
@@ -208,18 +211,19 @@ It is designed to be verified by the following solidity code (taken from the [At
 
     /// @notice EIP-712 typehash for attestation struct
     bytes32 public constant ATTESTATION_TYPEHASH =
-        keccak256("Attestation(bytes enclavePubKey,bytes32 imageId,uint256 timestampInMilliseconds)");
+        keccak256("Attestation(bytes32 imageId,uint64 timestampMs,bytes publicKey,bytes userData)");
 
     /// @notice Verifies a signed attestation using EIP-712 signatures
     /// @param _signature ECDSA signature of the attestation
     /// @param _attestation Attestation data structure to verify
-    function verify(bytes memory _signature, Attestation memory _attestation) external view {
+    function verify(bytes calldata _signature, Attestation calldata _attestation) external view {
         bytes32 _hashStruct = keccak256(
             abi.encode(
                 ATTESTATION_TYPEHASH,
-                keccak256(_attestation.enclavePubKey),
                 _attestation.imageId,
-                _attestation.timestampInMilliseconds
+                _attestation.timestampMs,
+                keccak256(_attestation.publicKey),
+                keccak256(_attestation.userData)
             )
         );
         bytes32 _digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, _hashStruct));
