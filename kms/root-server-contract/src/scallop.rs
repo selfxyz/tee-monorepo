@@ -1,6 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use alloy::signers::k256::sha2::{Digest, Sha256};
 use oyster::{
     attestation::{self, AttestationExpectations, AWS_ROOT_KEY},
     scallop::{Key, ScallopAuthStore},
