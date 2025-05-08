@@ -4,6 +4,12 @@
         "inputs": [
             {
                 "indexed": true,
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": false,
                 "internalType": "bytes",
                 "name": "metadata",
                 "type": "bytes"
