@@ -3,7 +3,7 @@ use std::num::TryFromIntError;
 
 use alloy::{
     dyn_abi::Eip712Domain,
-    primitives::{B256, U256},
+    primitives::B256,
     signers::{local::PrivateKeySigner, SignerSync},
     sol,
     sol_types::{eip712_domain, SolStruct},
