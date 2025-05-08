@@ -13,8 +13,6 @@ use std::thread;
 use std::time::Duration;
 use tracing::info;
 
-use crate::types::Platform;
-
 pub const LOCAL_DEV_IMAGE: &str = "marlinorg/local-dev-image:v1";
 
 const LOCAL_DEV_DIRECTORY: &str = ".marlin";
@@ -24,14 +22,6 @@ const INIT_PARAMS_DIRECTORY: &str = "init_params";
 /// Simulate oyster environment locally
 #[derive(Args)]
 pub struct SimulateArgs {
-    /// Preset for parameters (e.g. blue)
-    #[arg(long, default_value = "blue")]
-    pub preset: String,
-
-    /// Platform architecture (e.g. amd64, arm64)
-    #[arg(long)]
-    pub arch: Option<Platform>,
-
     /// Path to docker-compose.yml file
     #[arg(short = 'c', long)]
     pub docker_compose: Option<String>,
@@ -87,12 +77,6 @@ struct DockerInspectStats {
 
 pub async fn simulate(args: SimulateArgs) -> Result<()> {
     info!("Simulating oyster local dev environment with:");
-    let arch = match args.arch {
-        Some(arch) => arch,
-        None => get_system_arch()?,
-    };
-
-    info!("  Platform: {}", arch.as_str());
 
     let Some(docker_compose) = args.docker_compose else {
         return Err(anyhow!(
@@ -413,21 +397,6 @@ pub async fn simulate(args: SimulateArgs) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn get_system_arch() -> Result<Platform> {
-    let output = Command::new("uname")
-        .arg("-m")
-        .output()
-        .context("Failed to run uname -m to get system architecture")?;
-
-    let arch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    match arch.as_str() {
-        "x86_64" => Ok(Platform::AMD64),
-        "aarch64" => Ok(Platform::ARM64),
-        _ => Err(anyhow!("Unsupported architecture: {}", arch)),
-    }
 }
 
 // Parse the docker-compose file and fetch the images specified

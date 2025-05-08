@@ -64,11 +64,9 @@ Optional args:
 Simulates the oyster-cvm environment locally inside a docker container.
 
 Required args:
-- `--arch` (platform architecture (e.g. amd64, arm64))
 - `--docker-compose` (path to docker-compose.yml file)
 
 Optional args:
-- `--preset`: (preset for parameters (e.g. blue) [default: blue])
 - `--docker-images` (list of Docker image .tar file paths)
 - `--init-params` (list of init params in format `<path>:<attest>:<encrypt>:<type>:<value>`)
 - `--expose-ports` (application ports to expose out of the local container)
@@ -76,7 +74,7 @@ Optional args:
 - `--container-memory` (memory limit for the local dev container)
 - `--job-name` (job and local dev container name)
 - `--cleanup-cache` (cleanup local images cache after testing)
-- `--no-local-images` (Pull relevant local images or just the docker hub published)
+- `--no-local-images` (pull relevant local images or just the docker hub published)
 
 #### `build`
 Builds an oyster-cvm image. Only needed for custom enclave images - you can use the base image for standard deployments.
