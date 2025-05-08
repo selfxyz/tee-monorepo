@@ -37,9 +37,10 @@ struct HexAttestation {
 #[derive(Serialize, Deserialize)]
 pub struct VerifyAttestationResponse {
     pub signature: String,
-    pub public_key: String,
     pub image_id: String,
-    pub timestamp: usize,
+    pub timestamp_ms: u64,
+    pub public_key: String,
+    pub user_data: String,
     pub verifier_public_key: String,
 }
 
@@ -154,9 +155,10 @@ fn verify(
 
     Ok(VerifyAttestationResponse {
         signature: hex::encode(signature),
-        public_key: hex::encode(decoded.public_key),
         image_id: hex::encode(decoded.image_id),
-        timestamp: decoded.timestamp,
+        timestamp_ms: decoded.timestamp_ms,
+        public_key: hex::encode(decoded.public_key),
+        user_data: hex::encode(decoded.user_data),
         verifier_public_key: hex::encode(public),
     }
     .into())
