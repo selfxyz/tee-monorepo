@@ -109,15 +109,17 @@ sol! {
 }
 
 fn compute_signature(
-    enclave_pubkey: &[u8],
     image_id: B256,
-    timestamp: usize,
+    timestamp_ms: u64,
+    public_key: &[u8],
+    user_data: &[u8],
     signer: &PrivateKeySigner,
 ) -> Result<[u8; 65], UserError> {
     let attestation = Attestation {
-        enclavePubKey: enclave_pubkey.to_owned().into(),
         imageId: image_id,
-        timestampInMilliseconds: U256::from(timestamp),
+        timestampMs: timestamp_ms,
+        publicKey: public_key.to_owned().into(),
+        userData: user_data.to_owned().into(),
     };
     let hash = attestation.eip712_signing_hash(&DOMAIN);
     let signature = signer
@@ -143,9 +145,10 @@ fn verify(
     .map_err(UserError::AttestationVerification)?;
 
     let signature = compute_signature(
-        &decoded.public_key.as_ref(),
         decoded.image_id.into(),
-        decoded.timestamp,
+        decoded.timestamp_ms,
+        &decoded.public_key.as_ref(),
+        &decoded.user_data.as_ref(),
         signer,
     )?;
 
