@@ -26,7 +26,7 @@ pub struct AttestationDecoded {
     pub root_public_key: Box<[u8]>,
     pub image_id: [u8; 32],
     pub pcrs: [[u8; 48]; 4],
-    pub timestamp: usize,
+    pub timestamp_ms: u64,
     pub public_key: Box<[u8]>,
     pub user_data: Box<[u8]>,
 }
@@ -48,9 +48,9 @@ pub struct AttestationExpectations<'a> {
     pub root_public_key: Option<&'a [u8]>,
     pub pcrs: Option<[[u8; 48]; 4]>,
     pub image_id: Option<&'a [u8; 32]>,
-    pub timestamp: Option<usize>,
-    // (max age, current timestamp)
-    pub age: Option<(usize, usize)>,
+    pub timestamp_ms: Option<u64>,
+    // (max age, current timestamp), in ms
+    pub age_ms: Option<(u64, u64)>,
     pub public_key: Option<&'a [u8]>,
     pub user_data: Option<&'a [u8]>,
 }
@@ -63,7 +63,7 @@ pub fn verify(
         root_public_key: Default::default(),
         image_id: Default::default(),
         pcrs: [[0; 48]; 4],
-        timestamp: 0,
+        timestamp_ms: 0,
         public_key: Default::default(),
         user_data: Default::default(),
     };
@@ -72,18 +72,18 @@ pub fn verify(
     let (cosesign1, mut attestation_doc) = parse_attestation_doc(attestation_doc)?;
 
     // parse timestamp
-    result.timestamp = parse_timestamp(&mut attestation_doc)?;
+    result.timestamp_ms = parse_timestamp(&mut attestation_doc)?;
 
     // check expected timestamp if exists
-    if let Some(expected_ts) = expectations.timestamp {
-        if result.timestamp != expected_ts {
+    if let Some(expected_ts) = expectations.timestamp_ms {
+        if result.timestamp_ms != expected_ts {
             return Err(AttestationError::VerifyFailed("timestamp mismatch".into()));
         }
     }
 
     // check age if exists
-    if let Some((max_age, current_ts)) = expectations.age {
-        if result.timestamp <= current_ts && current_ts - result.timestamp > max_age {
+    if let Some((max_age, current_ts)) = expectations.age_ms {
+        if result.timestamp_ms <= current_ts && current_ts - result.timestamp_ms > max_age {
             return Err(AttestationError::VerifyFailed("too old".into()));
         }
     }
@@ -115,7 +115,7 @@ pub fn verify(
 
     // verify signature and cert chain
     result.root_public_key =
-        verify_root_of_trust(&mut attestation_doc, &cosesign1, result.timestamp)?;
+        verify_root_of_trust(&mut attestation_doc, &cosesign1, result.timestamp_ms)?;
 
     // check root public key if exists
     if let Some(root_public_key) = expectations.root_public_key {
@@ -167,9 +167,7 @@ fn parse_attestation_doc(
     Ok((cosesign1, attestation_doc))
 }
 
-fn parse_timestamp(
-    attestation_doc: &mut BTreeMap<Value, Value>,
-) -> Result<usize, AttestationError> {
+fn parse_timestamp(attestation_doc: &mut BTreeMap<Value, Value>) -> Result<u64, AttestationError> {
     let timestamp = attestation_doc
         .remove(&"timestamp".to_owned().into())
         .ok_or(AttestationError::ParseFailed(
@@ -234,7 +232,7 @@ fn parse_pcrs(
 fn verify_root_of_trust(
     attestation_doc: &mut BTreeMap<Value, Value>,
     cosesign1: &CoseSign1,
-    timestamp: usize,
+    timestamp: u64,
 ) -> Result<Box<[u8]>, AttestationError> {
     // verify attestation doc signature
     let enclave_certificate = attestation_doc
@@ -283,7 +281,7 @@ fn verify_root_of_trust(
 fn verify_cert_chain(
     cert: X509,
     cabundle: &[Value],
-    timestamp: usize,
+    timestamp: u64,
 ) -> Result<Box<[u8]>, AttestationError> {
     let certs = get_all_certs(cert, cabundle)?;
 
@@ -413,7 +411,7 @@ mod tests {
 
         let decoded = verify(&attestation, Default::default()).unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000193bef3f3b0);
+        assert_eq!(decoded.timestamp_ms, 0x00000193bef3f3b0);
         assert_eq!(
             decoded.pcrs[0],
             hex!(
@@ -458,8 +456,8 @@ mod tests {
         let decoded = verify(
             &attestation,
             AttestationExpectations {
-                timestamp: Some(0x00000193bef3f3b0),
-                age: Some((
+                timestamp_ms: Some(0x00000193bef3f3b0),
+                age_ms: Some((
                     300000,
                     0x00000193bef3f3b0 + 300000,
                 )),
@@ -477,7 +475,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000193bef3f3b0);
+        assert_eq!(decoded.timestamp_ms, 0x00000193bef3f3b0);
         assert_eq!(
             decoded.pcrs[0],
             hex!(
@@ -521,7 +519,7 @@ mod tests {
 
         let decoded = verify(&attestation, Default::default()).unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000193bf444e30);
+        assert_eq!(decoded.timestamp_ms, 0x00000193bf444e30);
         assert_eq!(decoded.pcrs[0], [0; 48]);
         assert_eq!(decoded.pcrs[1], [1; 48]);
         assert_eq!(decoded.pcrs[2], [2; 48]);
@@ -546,8 +544,8 @@ mod tests {
         let decoded = verify(
             &attestation,
             AttestationExpectations {
-                timestamp: Some(0x00000193bf444e30),
-                age: Some((300000, 0x00000193bf444e30 + 300000)),
+                timestamp_ms: Some(0x00000193bf444e30),
+                age_ms: Some((300000, 0x00000193bf444e30 + 300000)),
                 pcrs: Some([[0; 48], [1; 48], [2; 48], [0; 48]]),
                 public_key: Some(&hex!("12345678")),
                 user_data: Some(&hex!("abcdef")),
@@ -559,7 +557,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000193bf444e30);
+        assert_eq!(decoded.timestamp_ms, 0x00000193bf444e30);
         assert_eq!(decoded.pcrs[0], [0; 48]);
         assert_eq!(decoded.pcrs[1], [1; 48]);
         assert_eq!(decoded.pcrs[2], [2; 48]);
@@ -584,7 +582,7 @@ mod tests {
 
         let decoded = verify(&attestation, Default::default()).unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000196811b1c0b);
+        assert_eq!(decoded.timestamp_ms, 0x00000196811b1c0b);
         assert_eq!(
             decoded.pcrs[0],
             hex!(
@@ -633,8 +631,8 @@ mod tests {
         let decoded = verify(
             &attestation,
             AttestationExpectations {
-                timestamp: Some(0x00000196811b1c0b),
-                age: Some((
+                timestamp_ms: Some(0x00000196811b1c0b),
+                age_ms: Some((
                     300000,
                     0x00000196811b1c0b + 300000,
                 )),
@@ -652,7 +650,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000196811b1c0b);
+        assert_eq!(decoded.timestamp_ms, 0x00000196811b1c0b);
         assert_eq!(
             decoded.pcrs[0],
             hex!(
@@ -700,7 +698,7 @@ mod tests {
 
         let decoded = verify(&attestation, Default::default()).unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000196870610d9);
+        assert_eq!(decoded.timestamp_ms, 0x00000196870610d9);
         assert_eq!(decoded.pcrs[0], [0; 48]);
         assert_eq!(decoded.pcrs[1], [1; 48]);
         assert_eq!(decoded.pcrs[2], [2; 48]);
@@ -726,8 +724,8 @@ mod tests {
         let decoded = verify(
             &attestation,
             AttestationExpectations {
-                timestamp: Some(0x00000196870610d9),
-                age: Some((300000, 0x00000196870610d9 + 300000)),
+                timestamp_ms: Some(0x00000196870610d9),
+                age_ms: Some((300000, 0x00000196870610d9 + 300000)),
                 pcrs: Some([[0; 48], [1; 48], [2; 48], [16; 48]]),
                 public_key: Some(&hex!("12345678")),
                 user_data: Some(&hex!("abcdef")),
@@ -739,7 +737,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(decoded.timestamp, 0x00000196870610d9);
+        assert_eq!(decoded.timestamp_ms, 0x00000196870610d9);
         assert_eq!(decoded.pcrs[0], [0; 48]);
         assert_eq!(decoded.pcrs[1], [1; 48]);
         assert_eq!(decoded.pcrs[2], [2; 48]);
