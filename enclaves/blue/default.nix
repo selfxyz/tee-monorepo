@@ -11,6 +11,7 @@
   derive-server,
   init-params-decoder,
   kernels,
+  pcr-utils,
 }: let
   system = systemConfig.system;
   nitro = nitro-util.lib.${system};
