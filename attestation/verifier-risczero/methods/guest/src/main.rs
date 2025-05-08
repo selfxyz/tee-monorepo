@@ -382,12 +382,9 @@ fn verify(attestation: &[u8], commit_slice: impl Fn(&[u8])) {
         (size, &attestation[offset + 13..offset + 13 + size as usize])
     };
     println!("User data: {} bytes: {:?}", user_data_size, user_data);
-    // accumulate 2 byte length, then data
-    image_id_hasher.update(&user_data_size.to_be_bytes());
-    image_id_hasher.update(user_data);
-
-    // commit image id
-    commit_slice(&image_id_hasher.finalize());
+    // commit 2 byte length, then data
+    commit_slice(&user_data_size.to_be_bytes());
+    commit_slice(user_data);
 
     // prepare COSE verification hash
     let mut hasher = sha2::Sha384::new();
