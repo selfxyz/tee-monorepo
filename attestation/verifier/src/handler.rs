@@ -101,9 +101,10 @@ const DOMAIN: Eip712Domain = eip712_domain! {
 
 sol! {
     struct Attestation {
-        bytes enclavePubKey;
         bytes32 imageId;
-        uint256 timestampInMilliseconds;
+        uint64 timestampMs;
+        bytes publicKey;
+        bytes userData;
     }
 }
 
