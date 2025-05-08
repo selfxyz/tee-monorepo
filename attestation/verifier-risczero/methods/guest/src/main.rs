@@ -480,6 +480,8 @@ mod tests {
         let expected_journal = [
             // timestamp
             "00000193bef3f3b0",
+            // image id
+            "a6b0824d3c47f51542b3a18e6245c408490bef88ddc8d5e1bf8b95ec7eba1602",
             // root pubkey
             "fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b17607",
             "0ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4",
@@ -488,8 +490,8 @@ mod tests {
             // pubkey
             "e646f8b0071d5ba75931402522cc6a5c42a84a6fea238864e5ac9a0e12d83bd3",
             "6d0c8109d3ca2b699fce8d082bf313f5d2ae249bb275b6b6e91e0fcd9262f4bb",
-            // image id
-            "10aff51b369137fcb2d71372829300c543b1f8c586d77080f00ba31140621b9c"
+            // user data len
+            "0000",
         ].join("");
 
         assert_eq!(
@@ -513,6 +515,8 @@ mod tests {
         let expected_journal = [
             // timestamp
             "00000193bf444e30",
+            // image id
+            "b45dfd1807c1f4b81ef28b44682fba5d4d5522baac808a44b7302cbfda5144e7",
             // root pubkey
             "6c79411ebaae7489a4e8355545c0346784b31df5d08cb1f7c0097836a82f67240f2a7201862880a1d09a0bb326637188",
             "fbbafab47a10abe3630fcf8c18d35d96532184985e582c0dce3dace8441f37b9cc9211dff935baae69e4872cc3494410",
@@ -520,8 +524,10 @@ mod tests {
             "04",
             // pubkey
             "12345678",
-            // image id
-            "79fc2e5fd8deb77d38890bdb4e4b1a1bddb08b5854d81d97b24167b449ddd372"
+            // user data len
+            "0003",
+            // user data
+            "abcdef",
         ].join("");
 
         assert_eq!(
