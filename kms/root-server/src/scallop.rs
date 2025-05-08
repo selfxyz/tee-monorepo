@@ -41,18 +41,6 @@ impl ScallopAuthStore for AuthStore {
             return None;
         };
 
-        if decoded.user_data.len() > 65535 {
-            return None;
-        }
-
-        let mut hasher = Sha256::new();
-        hasher.update(decoded.pcrs[0]);
-        hasher.update(decoded.pcrs[1]);
-        hasher.update(decoded.pcrs[2]);
-        hasher.update((decoded.user_data.len() as u16).to_be_bytes());
-        hasher.update(decoded.user_data);
-        let image_id = hasher.finalize().into();
-
-        return Some(image_id);
+        return Some(decoded.image_id);
     }
 }
