@@ -283,8 +283,6 @@ pub async fn deploy(args: DeployArgs) -> Result<()> {
 
 async fn start_simulation(args: DeployArgs) -> Result<()> {
     let simulate_args = SimulateArgs {
-        preset: args.preset,
-        arch: Some(args.arch),
         docker_compose: args.init_params.docker_compose,
         docker_images: Vec::new(),
         init_params: args.init_params.init_params.unwrap_or_default(),
