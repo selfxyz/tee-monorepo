@@ -33,7 +33,7 @@ Supported outputs:
 $ ./target/release/oyster-attestation-server --help
 http server for handling attestation document requests
 
-Usage: oyster-attestation-server --ip-addr <IP_ADDR> --pub-key <PUB_KEY> --user-data <USER_DATA>
+Usage: oyster-attestation-server --ip-addr <IP_ADDR> --pub-key <PUB_KEY>
 
 Options:
   -i, --ip-addr <IP_ADDR>      ip address of the server (e.g. 127.0.0.1:1300)

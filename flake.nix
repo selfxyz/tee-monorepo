@@ -206,6 +206,7 @@
         derive-server = kms.derive-server.compressed;
         init-params-decoder = initialization.init-params-decoder.compressed;
         kernels = kernels.tuna;
+        pcr-utils = initialization.pcr-utils.compressed;
       };
       cli.oyster-cvm = import ./cli/oyster-cvm {
         inherit nixpkgs systemConfig fenix naersk;

@@ -11,6 +11,7 @@
   derive-server,
   init-params-decoder,
   kernels,
+  pcr-utils,
 }: let
   system = systemConfig.system;
   nitro = nitro-util.lib.${system};
@@ -26,6 +27,8 @@
   deriveServer = "${derive-server}/bin/kms-derive-server";
   initParamsDecoder = "${init-params-decoder}/bin/init-params-decoder";
   vet' = "${vet}/bin/vet";
+  pcrExtender = "${pcr-utils}/bin/pcr-extender";
+  pcrLocker = "${pcr-utils}/bin/pcr-locker";
   kernel = kernels.kernel;
   kernelConfig = kernels.kernelConfig;
   nsmKo = kernels.nsmKo;
@@ -49,6 +52,8 @@
     cp ${keygenSecp256k1} $out/app/keygen-secp256k1
     cp ${deriveServer} $out/app/kms-derive-server
     cp ${initParamsDecoder} $out/app/init-params-decoder
+    cp ${pcrExtender} $out/app/pcr-extender
+    cp ${pcrLocker} $out/app/pcr-locker
     cp ${setup} $out/app/setup.sh
     chmod +x $out/app/*
     cp ${supervisorConf} $out/etc/supervisord.conf
