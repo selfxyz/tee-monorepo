@@ -15,7 +15,6 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use crate::cgroups::Cgroups;
-use crate::constant::SAVE_CODE_FUNCTION_SELECTOR;
 
 // Define errors that might arise during a job execution
 #[derive(Error, Debug)]
@@ -91,14 +90,15 @@ pub async fn create_code_file(
         _ => Err(ServerlessError::InvalidTxCalldataType),
     }?;
 
-    // Ensure the function selector is correct
-    if !input.starts_with(SAVE_CODE_FUNCTION_SELECTOR) {
-        return Err(ServerlessError::InvalidTxCalldata);
-    }
     let input_bytes = hex::decode(&input[2..])?;
 
     // Get the Function object corresponding to function saveCodeInCallData(string calldata inputData, bytes calldata metadata)
     let save_code_function = code_contract_abi.function("saveCodeInCallData").unwrap();
+
+    // Ensure the function selector is correct
+    if input_bytes.len() < 4 || save_code_function.short_signature() != input_bytes[..4] {
+        return Err(ServerlessError::InvalidTxCalldata);
+    }
 
     // Now decode the data
     let Ok(tokens) = save_code_function.decode_input(&input_bytes[4..]) else {
