@@ -143,6 +143,8 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
             Ok(_) => {
                 info!("Container is ready on port {}", port);
+                // Without a sleep delay, the request would sometimes fail even after checking if the port was ready (mostly on macs).
+                sleep(Duration::from_millis(500)).await;
                 is_ready = true;
                 break;
             }
