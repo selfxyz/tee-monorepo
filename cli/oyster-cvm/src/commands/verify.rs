@@ -39,6 +39,10 @@ pub struct VerifyArgs {
     pcr: PcrArgs,
 
     /// Attestation user data, hex encoded
+    #[arg(short = 'd', long)]
+    digest: Option<String>,
+
+    /// Attestation user data, hex encoded
     #[arg(short = 'u', long)]
     user_data: Option<String>,
 
@@ -52,11 +56,11 @@ pub struct VerifyArgs {
 
     /// Maximum age of attestation (in milliseconds) (default: 300000)
     #[arg(short = 'a', long, default_value = "300000")]
-    max_age: usize,
+    max_age: u64,
 
     /// Attestation timestamp (in milliseconds)
     #[arg(short = 't', long, default_value = "0")]
-    timestamp: usize,
+    timestamp: u64,
 
     /// Root public key
     #[arg(short = 'r', long, default_value_t = hex::encode(AWS_ROOT_KEY))]
@@ -72,7 +76,8 @@ pub struct VerifyArgs {
 }
 
 pub async fn verify(args: VerifyArgs) -> Result<()> {
-    let pcrs = get_pcrs(args.pcr, args.preset, args.arch).context("Failed to load PCR data")?;
+    let pcrs = get_pcrs(args.pcr, args.digest, args.preset, args.arch)
+        .context("Failed to load PCR data")?;
 
     // parse or fetch attestation
     let attestation = if let Some(attestation_hex) = args.attestation_hex {
@@ -106,7 +111,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         bail!("Could not get attestation, either enclave-ip, attestation-hex or attestation-hex-file must be specified")
     };
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as usize;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
     let user_data = args
         .user_data
         .map(|d| hex::decode(d).map_err(|_| anyhow::anyhow!("User data must be hex encoded")))
@@ -124,11 +129,11 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         .transpose()?;
 
     let attestation_expectations = AttestationExpectations {
-        age: Some((args.max_age, now)),
+        age_ms: Some((args.max_age, now)),
         pcrs,
         user_data: user_data.as_deref(),
         root_public_key: Some(root_public_key.as_slice()),
-        timestamp: (!args.timestamp.eq(&0)).then_some(args.timestamp),
+        timestamp_ms: (!args.timestamp.eq(&0)).then_some(args.timestamp),
         public_key: None,
         image_id: image_id.as_ref(),
     };
@@ -146,10 +151,11 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
     info!("PCR0: {}", hex::encode(decoded.pcrs[0]));
     info!("PCR1: {}", hex::encode(decoded.pcrs[1]));
     info!("PCR2: {}", hex::encode(decoded.pcrs[2]));
+    info!("PCR16: {}", hex::encode(decoded.pcrs[3]));
     info!("Verification successful ✓");
     info!(
-        timestamp = attestation_expectations.timestamp,
-        age = attestation_expectations.age.map(|x| x.0),
+        timestamp = attestation_expectations.timestamp_ms,
+        age = attestation_expectations.age_ms.map(|x| x.0),
         pcr0 = attestation_expectations.pcrs.map(|x| hex::encode(x[0])),
         pcr1 = attestation_expectations.pcrs.map(|x| hex::encode(x[1])),
         pcr2 = attestation_expectations.pcrs.map(|x| hex::encode(x[2])),
@@ -164,7 +170,22 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
     Ok(())
 }
 
-fn get_pcrs(pcr: PcrArgs, preset: Option<String>, arch: Platform) -> Result<Option<[[u8; 48]; 3]>> {
+fn get_pcrs(
+    pcr: PcrArgs,
+    digest: Option<String>,
+    preset: Option<String>,
+    arch: Platform,
+) -> Result<Option<[[u8; 48]; 4]>> {
+    let digest: [u8; 48] = digest
+        .map(|x| {
+            hex::decode(x)
+                .context("failed to decode digest")?
+                .try_into()
+                .map_err(|_| anyhow!("digest should be 32 bytes"))
+        })
+        .transpose()
+        .context("failed to decode digest")?
+        .unwrap_or([0; 48]);
     let Some((pcr0, pcr1, pcr2)) =
         pcr.load(preset.and_then(|x| preset_to_pcr_preset(&x, &arch)))?
     else {
@@ -189,5 +210,6 @@ fn get_pcrs(pcr: PcrArgs, preset: Option<String>, arch: Platform) -> Result<Opti
         hex::decode(pcr2)?
             .try_into()
             .map_err(|_| anyhow::anyhow!("PCR2 must be 48 bytes"))?,
+        digest,
     ]))
 }
