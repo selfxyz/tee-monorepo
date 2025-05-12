@@ -143,6 +143,7 @@ pub async fn run_dev(args: DevArgs) -> Result<()> {
         match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
             Ok(_) => {
                 info!("Container is ready on port {}", port);
+                sleep(Duration::from_millis(500)).await;
                 is_ready = true;
                 break;
             }
