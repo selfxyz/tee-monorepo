@@ -74,6 +74,16 @@ impl PcrArgs {
         if let Some(ref name) = self.pcr_preset.or(default_preset) {
             info!(name, "PCR preset");
             return match name.as_str() {
+                "base/blue/v3.0.0/amd64" => Ok(Some((
+                    PCRS_BASE_BLUE_V3_0_0_AMD64.0.into(),
+                    PCRS_BASE_BLUE_V3_0_0_AMD64.1.into(),
+                    PCRS_BASE_BLUE_V3_0_0_AMD64.2.into(),
+                ))),
+                "base/blue/v3.0.0/arm64" => Ok(Some((
+                    PCRS_BASE_BLUE_V3_0_0_ARM64.0.into(),
+                    PCRS_BASE_BLUE_V3_0_0_ARM64.1.into(),
+                    PCRS_BASE_BLUE_V3_0_0_ARM64.2.into(),
+                ))),
                 "base/blue/v2.0.0/amd64" => Ok(Some((
                     PCRS_BASE_BLUE_V2_0_0_AMD64.0.into(),
                     PCRS_BASE_BLUE_V2_0_0_AMD64.1.into(),
@@ -117,14 +127,26 @@ impl PcrArgs {
 pub fn preset_to_pcr_preset(preset: &str, arch: &Platform) -> Option<String> {
     match preset {
         "blue" => match arch {
-            Platform::AMD64 => Some("base/blue/v2.0.0/amd64"),
-            Platform::ARM64 => Some("base/blue/v2.0.0/arm64"),
+            Platform::AMD64 => Some("base/blue/v3.0.0/amd64"),
+            Platform::ARM64 => Some("base/blue/v3.0.0/arm64"),
         },
         "debug" => Some("debug"),
         _ => None,
     }
     .map(str::to_owned)
 }
+
+pub static PCRS_BASE_BLUE_V3_0_0_AMD64: (&str, &str, &str) = (
+    "7d08525c48ff4b28d4539924f9944957cb30973be51a3bcefa2a284e504d91636d35be6d17fed21a520a755f115b0330",
+    "ed7759aa996a2e94c6086f24f61f354f75f9ea7f93a74f55d65c2cb5590d1af3930c9adbc57bb543764fa1f5c444f495",
+    "4b23d52967848dbbb7a4b8373282c9fa1629e65febf04d4887ac3f58e4a98ca7519b3d0512fec4008dfa09b5c41b99c1",
+);
+
+pub static PCRS_BASE_BLUE_V3_0_0_ARM64: (&str, &str, &str) = (
+    "3aa0e6e6ed7d8301655fced7e6ddcc443a3e57bf62f070caa6becf337069e859c0f03d68136440ff1cab8adefd20634c",
+    "b0d319fa64f9c2c9d7e9187bc21001ddacfab4077e737957fa1b8b97cc993bed43a79019aebfd40ee5f6f213147909f8",
+    "fdb2295dc5d9b67a653ed5f3ead5fc8166ec3cae1de1c7c6f31c3b43b2eb26ab5d063f414f3d2b93163426805dfe057e",
+);
 
 pub static PCRS_BASE_BLUE_V2_0_0_AMD64: (&str, &str, &str) = (
     "862b295eefd03db5132be44464d8280728ccd7cc4513284ad4e9dfa923c93e8df2ebcf37b8728f2de75e48e0ea1d2c1c",
