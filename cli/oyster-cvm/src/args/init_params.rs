@@ -12,6 +12,7 @@ use alloy::{
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Args;
+use k256::sha2::Sha384;
 use lazy_static::lazy_static;
 use libsodium_sys::{crypto_box_SEALBYTES, crypto_box_seal, sodium_init};
 use serde::{Deserialize, Serialize};
@@ -169,12 +170,19 @@ impl InitParamsArgs {
             .context("Failed to load PCRs")?;
 
         // calculate the image id
+        let mut pcr_hasher = Sha384::new();
+        pcr_hasher.update([0u8; 48]);
+        pcr_hasher.update(digest);
+        let pcr16: [u8; 48] = pcr_hasher.finalize().into();
+
         let mut hasher = Sha256::new();
+        // bitflags denoting what pcrs are part of the computation
+        // this one has 0, 1, 2 and 16
+        hasher.update(&((1u32 << 0) | (1 << 1) | (1 << 2) | (1 << 16)).to_be_bytes());
         hasher.update(hex::decode(pcrs.0).context("failed to decode PCR")?);
         hasher.update(hex::decode(pcrs.1).context("failed to decode PCR")?);
         hasher.update(hex::decode(pcrs.2).context("failed to decode PCR")?);
-        hasher.update((digest.len() as u16).to_be_bytes());
-        hasher.update(digest);
+        hasher.update(pcr16);
         let image_id: [u8; 32] = hasher.finalize().into();
         info!(image_id = hex::encode(image_id), "Computed image id");
         // fetch key
