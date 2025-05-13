@@ -153,6 +153,19 @@ oyster-serverless job cancel
 - `wallet-private-key`: Private key for transactions.
 - `job-transaction-hash`: Transaction hash returned by the create job command.
 
+## 📋 List Jobs 
+
+Retrieve a user's jobs based on their wallet address. (TESTNENT ONLY)
+
+```bash
+oyster-serverless job list
+```
+
+**Arguments:**
+
+- `address`: Address to list jobs for
+- `status` *(optional)*: Status of jobs to list [default: pending] [possible values: success, pending, failed, cancelled]
+
 
 ## 🔁 Create Subscription
 
