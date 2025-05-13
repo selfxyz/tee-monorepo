@@ -202,10 +202,11 @@ fn get_pcrs(
     };
 
     tracing::info!(
-        "Loaded PCR data: pcr0: {}, pcr1: {}, pcr2: {}",
+        "Loaded PCR data: pcr0: {}, pcr1: {}, pcr2: {}, pcr16: {}",
         pcr0,
         pcr1,
-        pcr2
+        pcr2,
+        hex::encode(pcr16),
     );
 
     Ok(Some([
