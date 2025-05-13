@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use hex;
+use k256::sha2::{Digest, Sha384};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs::read;
 use tracing::info;
@@ -176,16 +177,23 @@ fn get_pcrs(
     preset: Option<String>,
     arch: Platform,
 ) -> Result<Option<[[u8; 48]; 4]>> {
-    let digest: [u8; 48] = digest
+    let pcr16 = digest
         .map(|x| {
             hex::decode(x)
                 .context("failed to decode digest")?
                 .try_into()
                 .map_err(|_| anyhow!("digest should be 32 bytes"))
+                .map(|digest: [u8; 48]| {
+                    let mut pcr_hasher = Sha384::new();
+                    pcr_hasher.update([0u8; 48]);
+                    pcr_hasher.update(digest);
+                    pcr_hasher.finalize().into()
+                })
         })
         .transpose()
         .context("failed to decode digest")?
         .unwrap_or([0; 48]);
+
     let Some((pcr0, pcr1, pcr2)) =
         pcr.load(preset.and_then(|x| preset_to_pcr_preset(&x, &arch)))?
     else {
@@ -210,6 +218,6 @@ fn get_pcrs(
         hex::decode(pcr2)?
             .try_into()
             .map_err(|_| anyhow::anyhow!("PCR2 must be 48 bytes"))?,
-        digest,
+        pcr16,
     ]))
 }
