@@ -184,7 +184,7 @@ impl InitParamsArgs {
                 .unwrap_or(&"http://image-v4.kms.box:1101".into()),
             self.kms_verification_key
                 .as_ref()
-                .unwrap_or(&"2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85".into()),
+                .unwrap_or(&"14eadecaec620fac17b084dcd423b0a75ed2c248b0f73be1bb9b408476567ffc221f420612dd995555650dc19dbe972e7277cb6bfe5ce26650ec907be759b276".into()),
             &hex::encode(image_id),
         )
         .context("failed to fetch key")?;
