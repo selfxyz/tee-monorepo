@@ -181,7 +181,7 @@ impl InitParamsArgs {
         let pk = fetch_encryption_key_with_pcr(
             self.kms_endpoint
                 .as_ref()
-                .unwrap_or(&"http://image-v3.kms.box:1101".into()),
+                .unwrap_or(&"http://image-v4.kms.box:1101".into()),
             self.kms_verification_key
                 .as_ref()
                 .unwrap_or(&"2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85".into()),
