@@ -342,8 +342,8 @@ lazy_static! {
         root_servers.insert(
             42161,
             serde_json::json!({
-                "kms_endpoint": "arbone-v3.kms.box:1100",
-                "kms_pubkey": "ddba991e640f24f4cac8cf4c3596d99eea83f37cb7ad6fb68061fca1ef110e08"
+                "kms_endpoint": "arbone-v4.kms.box:1100",
+                "kms_pubkey": "5ee189d3b990c284ebfe7fc4c2e1cecdb2a6908d0a1aa152592d30066061b92c"
             })
             .to_string(),
         );

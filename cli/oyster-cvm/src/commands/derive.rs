@@ -144,8 +144,8 @@ lazy_static! {
         root_servers.insert(
             42161,
             KmsRootServer {
-                endpoint: "http://arbone-v3.kms.box:1101".to_string(),
-                pubkey: "b5acf905d0dbd17e606bb801e67a9221d24dac50adfba8188d5bb61010388bc19ce66146e58346b3e11dd4c7170949414a14f3c3eb75ee642597408aaf04d9e8".to_string()
+                endpoint: "http://arbone-v4.kms.box:1101".to_string(),
+                pubkey: "4ade7c22061165358c46fce1c7e9d4c2c6c12ffbe7e61d76ea98a68659c09a777da06b15df2cd621c5988534fb0716230e9eaa6ae562f625bba3e63ebb2ebc4f".to_string()
             }
         );
         root_servers
