@@ -39,7 +39,7 @@ pub struct VerifyArgs {
     #[command(flatten)]
     pcr: PcrArgs,
 
-    /// Attestation user data, hex encoded
+    /// Digest, hex encoded
     #[arg(short = 'd', long)]
     digest: Option<String>,
 
@@ -160,6 +160,7 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
         pcr0 = attestation_expectations.pcrs.map(|x| hex::encode(x[0])),
         pcr1 = attestation_expectations.pcrs.map(|x| hex::encode(x[1])),
         pcr2 = attestation_expectations.pcrs.map(|x| hex::encode(x[2])),
+        pcr16 = attestation_expectations.pcrs.map(|x| hex::encode(x[3])),
         enclave_public_key = attestation_expectations.public_key.map(|x| hex::encode(x)),
         user_data = attestation_expectations.user_data.map(|x| hex::encode(x)),
         root_public_key = attestation_expectations
