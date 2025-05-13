@@ -169,12 +169,13 @@ impl InitParamsArgs {
             .load_required(preset_to_pcr_preset(&preset, &arch))
             .context("Failed to load PCRs")?;
 
-        // calculate the image id
+        // calculate pcr16 by extending the digest onto zero pcrs
         let mut pcr_hasher = Sha384::new();
         pcr_hasher.update([0u8; 48]);
         pcr_hasher.update(digest);
         let pcr16: [u8; 48] = pcr_hasher.finalize().into();
 
+        // calculate the image id
         let mut hasher = Sha256::new();
         // bitflags denoting what pcrs are part of the computation
         // this one has 0, 1, 2 and 16
