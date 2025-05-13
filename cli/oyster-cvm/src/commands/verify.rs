@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use hex;
-use k256::sha2::{Digest, Sha384};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs::read;
 use tracing::info;
@@ -39,9 +38,9 @@ pub struct VerifyArgs {
     #[command(flatten)]
     pcr: PcrArgs,
 
-    /// Digest, hex encoded
-    #[arg(short = 'd', long)]
-    digest: Option<String>,
+    /// Optional PCR16, hex encoded
+    #[arg(long)]
+    pcr16: Option<String>,
 
     /// Attestation user data, hex encoded
     #[arg(short = 'u', long)]
@@ -77,7 +76,7 @@ pub struct VerifyArgs {
 }
 
 pub async fn verify(args: VerifyArgs) -> Result<()> {
-    let pcrs = get_pcrs(args.pcr, args.digest, args.preset, args.arch)
+    let pcrs = get_pcrs(args.pcr, args.pcr16, args.preset, args.arch)
         .context("Failed to load PCR data")?;
 
     // parse or fetch attestation
@@ -174,33 +173,20 @@ pub async fn verify(args: VerifyArgs) -> Result<()> {
 
 fn get_pcrs(
     pcr: PcrArgs,
-    digest: Option<String>,
+    pcr16: Option<String>,
     preset: Option<String>,
     arch: Platform,
 ) -> Result<Option<[[u8; 48]; 4]>> {
-    let pcr16 = digest
-        .map(|x| {
-            hex::decode(x)
-                .context("failed to decode digest")?
-                .try_into()
-                .map_err(|_| anyhow!("digest should be 32 bytes"))
-                .map(|digest: [u8; 48]| {
-                    let mut pcr_hasher = Sha384::new();
-                    pcr_hasher.update([0u8; 48]);
-                    pcr_hasher.update(digest);
-                    pcr_hasher.finalize().into()
-                })
-        })
-        .transpose()
-        .context("failed to decode digest")?
-        .unwrap_or([0; 48]);
-
     let Some((pcr0, pcr1, pcr2)) =
         pcr.load(preset.and_then(|x| preset_to_pcr_preset(&x, &arch)))?
     else {
         tracing::info!("No PCR values provided - skipping PCR verification");
         return Ok(None);
     };
+
+    let pcr16 = hex::decode(pcr16.unwrap_or("00".repeat(48)))?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("PCR16 must be 48 bytes"))?;
 
     tracing::info!(
         "Loaded PCR data: pcr0: {}, pcr1: {}, pcr2: {}, pcr16: {}",
