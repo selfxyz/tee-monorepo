@@ -248,3 +248,19 @@ oyster-serverless refund-deposits
 **Arguments:**
 - `wallet-private-key`: Private key for transactions.
 - `subscription-transaction-hash`: Transaction hash returned by the create subscription command.
+
+
+## 📋 List Subscriptions
+
+Retrieve and display all subscriptions associated with a specific wallet address. (TESTNET ONLY)
+
+```bash
+oyster-serverless subscription list
+```
+
+**Arguments:**
+
+- `address`: Wallet address to list subscriptions for (required)
+- `completed` *(optional)*: Boolean flag to filter subscriptions
+  - If provided: Shows completed subscriptions (terminated and either refunded or refundable)
+  - If not provided: Shows active subscriptions (default)
