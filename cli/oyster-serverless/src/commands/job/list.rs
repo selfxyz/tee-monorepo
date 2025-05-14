@@ -1,6 +1,7 @@
 use crate::{
     commands::job::types::{ListArgs, Relay},
-    configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS}
+    configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS},
+    utils::conversion::string_epoch_to_utc_datetime,
 };
 use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
@@ -140,7 +141,11 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
                 job.status.to_uppercase()
             };
 
-            table.add_row(row![job.tx_hash, job.start_time, status]);
+            table.add_row(row![
+                job.tx_hash,
+                string_epoch_to_utc_datetime(job.start_time)?,
+                status
+            ]);
         }
         if all_jobs.total_count > 0 {
             table.printstd();

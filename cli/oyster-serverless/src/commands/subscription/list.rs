@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::{
     commands::subscription::types::ListSubscriptionArgs,
     configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS},
+    utils::conversion::string_epoch_to_utc_datetime,
 };
 use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
@@ -77,16 +78,27 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
         .context("Failed to fetch overall timeout")?
         ._0;
 
-    let _time_condition = U256::from(get_current_timestamp()) - overall_timeout;
+    let time_condition = U256::from(get_current_timestamp()) - overall_timeout;
 
     let client = reqwest::Client::new();
 
+    let termination_filter = if args.completed {
+        json!({
+            "lessThan": time_condition,
+        })
+    } else {
+        json!({
+            "greaterThan": time_condition
+        })
+    };
+
     let query = json!({
         "query": r#"
-            query($address: String!) {
+            query($address: String!, $terminationFilter: BigFloatFilter!) {
                 allSubscriptions(
                     filter: {
                         owner: { equalToInsensitive: $address },
+                        terminationTime: $terminationFilter
                     }
                 ) {
                     totalCount
@@ -104,7 +116,8 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
             }
         "#,
         "variables": {
-            "address": args.address
+            "address": args.address,
+            "terminationFilter": termination_filter
         }
     });
 
@@ -127,7 +140,8 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
         "Start time",
         "Termination time",
         "Periodicity",
-        "Number of runs"
+        "Number of runs",
+        "Status"
     ]);
 
     if let Some(data) = response_data.data {
@@ -138,12 +152,23 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
 
         for edge in all_subscriptions.edges {
             let subscription = edge.node;
+            let status = if args.completed {
+                if subscription.is_completed {
+                    "REFUNDED"
+                } else {
+                    "REFUNDABLE"
+                }
+            } else {
+                "ACTIVE"
+            };
+
             table.add_row(row![
                 subscription.tx_hash,
-                subscription.start_time,
-                subscription.termination_time,
+                string_epoch_to_utc_datetime(subscription.start_time)?,
+                string_epoch_to_utc_datetime(subscription.termination_time)?,
                 subscription.periodicity,
-                subscription.number_of_runs
+                subscription.number_of_runs,
+                status
             ]);
         }
         if all_subscriptions.total_count > 0 {
