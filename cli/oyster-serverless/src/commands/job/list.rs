@@ -6,16 +6,10 @@ use crate::{
 use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
 use prettytable::{row, Table};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
-
-#[derive(Serialize, Debug)]
-struct GraphQLRequest {
-    query: String,
-    variables: serde_json::Value
-}
 
 #[derive(Deserialize, Debug)]
 struct JobNode {
@@ -114,15 +108,10 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
         }
     });
 
-    let request_body = GraphQLRequest {
-        query: query["query"].as_str().unwrap().to_string(),
-        variables: query["variables"].clone()
-    };
-
     let response = client
         .post(INDEXER_URL)
         .header("Content-Type", "application/json")
-        .json(&request_body)
+        .json(&query)
         .send()
         .await?;
 
