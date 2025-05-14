@@ -96,7 +96,6 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
                             status
                             txHash
                             startTime
-                            jobOwner
                         }
                     }
                 }

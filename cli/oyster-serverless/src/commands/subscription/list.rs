@@ -23,6 +23,10 @@ struct SubscriptionNode {
     termination_time: String,
     #[serde(rename = "periodicity")]
     periodicity: String,
+    #[serde(rename = "isCompleted")]
+    is_completed: bool,
+    #[serde(rename = "numberOfRuns")]
+    number_of_runs: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -92,6 +96,8 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
                             startTime
                             terminationTime
                             periodicity
+                            isCompleted
+                            numberOfRuns
                         }
                     }
                 }
@@ -120,7 +126,8 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
         "Transaction hash",
         "Start time",
         "Termination time",
-        "Periodicity"
+        "Periodicity",
+        "Number of runs"
     ]);
 
     if let Some(data) = response_data.data {
@@ -135,7 +142,8 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
                 subscription.tx_hash,
                 subscription.start_time,
                 subscription.termination_time,
-                subscription.periodicity
+                subscription.periodicity,
+                subscription.number_of_runs
             ]);
         }
         if all_subscriptions.total_count > 0 {
