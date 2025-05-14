@@ -1,7 +1,6 @@
 use crate::{
     commands::job::types::{ListArgs, Relay},
-    configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS},
-    utils::conversion::iso8601_to_epoch,
+    configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS}
 };
 use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
@@ -38,18 +37,19 @@ struct GraphQLResponse {
     errors: Option<Vec<serde_json::Value>>,
 }
 
-fn get_current_timestamp() -> i64 {
+fn get_current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| std::time::Duration::from_secs(0))
-        .as_secs() as i64
+        .as_secs() as u64
 }
 
-fn determine_job_status(start_time_epoch: i64, overall_timeout: U256) -> String {
-    let current_time = get_current_timestamp();
-    let timeout_seconds = overall_timeout.to_string().parse::<i64>().unwrap_or(0);
+fn determine_job_status(start_time_epoch: u64, overall_timeout: U256) -> String {
+    let current_time = U256::from(get_current_timestamp());
+    let timeout_seconds = overall_timeout;
+    let start_time_u256 = U256::from(start_time_epoch);
 
-    if current_time - (start_time_epoch + timeout_seconds) > 0 {
+    if current_time - (start_time_u256 + timeout_seconds) > U256::from(0) {
         "CANCELLABLE".to_string()
     } else {
         "PENDING".to_string()
@@ -135,8 +135,7 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
         for edge in all_jobs.edges {
             let job = edge.node;
             let status = if args.status.to_string() == "pending" {
-                let start_time_in_epoch = iso8601_to_epoch(&job.start_time)
-                    .context("Failed to convert start time to epoch")?;
+                let start_time_in_epoch = job.start_time.parse::<u64>()?;
                 determine_job_status(start_time_in_epoch, overall_timeout)
             } else {
                 job.status.to_uppercase()
