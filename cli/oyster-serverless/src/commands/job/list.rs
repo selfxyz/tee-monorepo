@@ -7,15 +7,14 @@ use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
 use prettytable::{row, Table};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
 #[derive(Serialize, Debug)]
 struct GraphQLRequest {
     query: String,
-    variables: Option<serde_json::Value>,
-    #[serde(rename = "operationName")]
-    operation_name: String,
+    variables: serde_json::Value
 }
 
 #[derive(Deserialize, Debug)]
@@ -88,28 +87,36 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
 
     let client = reqwest::Client::new();
 
-    let query = r#"query MyQuery {
-        allJobs(
-            filter: {jobOwner: {equalToInsensitive: "%ADDRESS%"}, status: {equalTo: "%STATUS%"}}
-        ) {
-            totalCount
-            edges {
-                node {
-                    status
-                    txHash
-                    startTime
-                    jobOwner
+    let query = json!({
+        "query": r#"
+            query($address: String!, $status: String!) {
+                allJobs(
+                    filter: {
+                        jobOwner: { equalToInsensitive: $address },
+                        status: { equalTo: $status }
+                    }
+                ) {
+                    totalCount
+                    edges {
+                        node {
+                            status
+                            txHash
+                            startTime
+                            jobOwner
+                        }
+                    }
                 }
             }
+        "#,
+        "variables": {
+            "address": args.address.to_string(),
+            "status": args.status.to_string()
         }
-    }"#
-    .replace("%ADDRESS%", &args.address)
-    .replace("%STATUS%", &args.status.to_string());
+    });
 
     let request_body = GraphQLRequest {
-        query,
-        variables: None,
-        operation_name: "MyQuery".to_string(),
+        query: query["query"].as_str().unwrap().to_string(),
+        variables: query["variables"].clone()
     };
 
     let response = client
