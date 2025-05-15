@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::{
     commands::subscription::types::ListSubscriptionArgs,
     configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS},
-    utils::conversion::string_epoch_to_utc_datetime,
+    utils::conversion::string_epoch_to_local_datetime,
 };
 use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
@@ -164,8 +164,8 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
 
             table.add_row(row![
                 subscription.tx_hash,
-                string_epoch_to_utc_datetime(subscription.start_time)?,
-                string_epoch_to_utc_datetime(subscription.termination_time)?,
+                string_epoch_to_local_datetime(subscription.start_time)?,
+                string_epoch_to_local_datetime(subscription.termination_time)?,
                 subscription.periodicity,
                 subscription.number_of_runs,
                 status

@@ -1,7 +1,7 @@
 use crate::{
     commands::job::types::{ListArgs, Relay},
     configs::global::{ARBITRUM_ONE_RPC_URL, INDEXER_URL, RELAY_CONTRACT_ADDRESS},
-    utils::conversion::string_epoch_to_utc_datetime,
+    utils::conversion::string_epoch_to_local_datetime,
 };
 use alloy::{primitives::U256, providers::ProviderBuilder};
 use anyhow::{Context, Result};
@@ -143,7 +143,7 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
 
             table.add_row(row![
                 job.tx_hash,
-                string_epoch_to_utc_datetime(job.start_time)?,
+                string_epoch_to_local_datetime(job.start_time)?,
                 status
             ]);
         }

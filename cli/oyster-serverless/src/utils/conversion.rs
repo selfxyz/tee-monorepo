@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 
 pub fn to_eth(wei: U256) -> Result<f64> {
     let wei_f64: f64 = wei
@@ -18,13 +18,10 @@ pub fn to_usdc(base_units: U256) -> Result<f64> {
     Ok(units_f64 / 1e6)
 }
 
-pub fn string_epoch_to_utc_datetime(epoch: String) -> Result<String> {
-    let epoch_i64 = epoch
-        .parse::<i64>()
-        .context("Failed to parse epoch string to i64")?;
-
-    let datetime = DateTime::<Utc>::from_timestamp(epoch_i64, 0)
+pub fn string_epoch_to_local_datetime(epoch: String) -> Result<String> {
+    let epoch_i64 = epoch.parse::<i64>()?;
+    let utc_time = DateTime::<Utc>::from_timestamp(epoch_i64, 0)
         .ok_or_else(|| anyhow::anyhow!("Invalid epoch timestamp"))?;
-
-    Ok(datetime.to_string())
+    let local_time = utc_time.with_timezone(&Local);
+    Ok(local_time.to_string())
 }
