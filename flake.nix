@@ -69,7 +69,7 @@
         dnsproxy = musl.external.dnsproxy.default;
         supervisord = musl.external.supervisord.default;
         vet = musl.initialization.vet.default;
-        tuna = musl.kernels.tuna.default;
+        tuna = musl.kernels.tuna.kernel;
         raw-proxy = musl.networking.raw-proxy.default;
       };
     };
