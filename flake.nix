@@ -64,12 +64,12 @@
           eif_arch = "x86_64";
           static = true;
         };
-        tuna = musl.kernels.tuna;
       in {
         attestation-server = musl.attestation-server.default;
         dnsproxy = musl.external.dnsproxy.default;
         supervisord = musl.external.supervisord.default;
         vet = musl.initialization.vet.default;
+        tuna = musl.kernels.tuna.default;
         raw-proxy = musl.networking.raw-proxy.default;
       };
     };
