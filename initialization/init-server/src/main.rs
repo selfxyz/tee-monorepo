@@ -106,15 +106,9 @@ struct Cli {
     /// vsock address to listen on <cid:port>
     #[clap(short, long, value_parser = VsockAddrParser{})]
     vsock_addr: (u32, u32),
-    /// job id served by the enclave
-    #[clap(short, long, value_parser)]
-    job_id: String,
     /// path to init params file
     #[clap(short, long, value_parser)]
     init_params_path: String,
-    /// path to extra init params file
-    #[clap(short, long, value_parser)]
-    extra_init_params_path: String,
 }
 
 #[tokio::main]
@@ -127,9 +121,8 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("{ip}");
 
     let app = Router::new()
-        .route("/oyster/job", get(|| async { cli.job_id }))
         .route(
-            "/oyster/init-params",
+            "/self/init-params",
             get(|| async {
                 fs::read(cli.init_params_path)
                     .await
@@ -137,18 +130,6 @@ async fn main() -> Result<(), anyhow::Error> {
                     .unwrap_or((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Vec::from(b"could not read init params"),
-                    ))
-            }),
-        )
-        .route(
-            "/oyster/extra-init-params",
-            get(|| async {
-                fs::read(cli.extra_init_params_path)
-                    .await
-                    .map(|data| (StatusCode::OK, data))
-                    .unwrap_or((
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Vec::from(b"could not read extra init params"),
                     ))
             }),
         )
