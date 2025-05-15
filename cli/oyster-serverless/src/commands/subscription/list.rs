@@ -88,7 +88,7 @@ pub async fn list_subscriptions(args: ListSubscriptionArgs) -> Result<()> {
         })
     } else {
         json!({
-            "greaterThan": time_condition
+            "greaterThanOrEqualTo": time_condition
         })
     };
 
