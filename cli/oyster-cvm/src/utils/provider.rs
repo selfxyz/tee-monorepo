@@ -11,7 +11,7 @@ use reqwest::Client;
 
 pub async fn create_provider(
     wallet_private_key: &str,
-) -> Result<impl Provider<Http<Client>, Ethereum> + WalletProvider + Clone> {
+) -> Result<impl Provider<Http<Client>, Ethereum> + WalletProvider + Clone + use<>> {
     let private_key = FixedBytes::<32>::from_slice(
         &hex::decode(wallet_private_key).context("Failed to decode private key")?,
     );
