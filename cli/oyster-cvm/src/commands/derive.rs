@@ -72,7 +72,7 @@ pub async fn kms_derive(args: KmsDeriveArgs) -> Result<()> {
             .endpoint
             .clone()
     } else {
-        "http://image-v3.kms.box:1101".into()
+        "http://image-v4.kms.box:1101".into()
     };
 
     let mut response = ureq::get(kms_endpoint + &uri)
@@ -119,7 +119,7 @@ pub async fn kms_derive(args: KmsDeriveArgs) -> Result<()> {
             .pubkey
             .clone()
     } else {
-        "2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85".to_string()
+        "14eadecaec620fac17b084dcd423b0a75ed2c248b0f73be1bb9b408476567ffc221f420612dd995555650dc19dbe972e7277cb6bfe5ce26650ec907be759b276".to_string()
     };
 
     if pubkey != kms_verification_key.to_lowercase() {
@@ -144,8 +144,8 @@ lazy_static! {
         root_servers.insert(
             42161,
             KmsRootServer {
-                endpoint: "http://arbone-v3.kms.box:1101".to_string(),
-                pubkey: "b5acf905d0dbd17e606bb801e67a9221d24dac50adfba8188d5bb61010388bc19ce66146e58346b3e11dd4c7170949414a14f3c3eb75ee642597408aaf04d9e8".to_string()
+                endpoint: "http://arbone-v4.kms.box:1101".to_string(),
+                pubkey: "4ade7c22061165358c46fce1c7e9d4c2c6c12ffbe7e61d76ea98a68659c09a777da06b15df2cd621c5988534fb0716230e9eaa6ae562f625bba3e63ebb2ebc4f".to_string()
             }
         );
         root_servers

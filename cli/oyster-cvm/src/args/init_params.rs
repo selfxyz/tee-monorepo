@@ -12,6 +12,7 @@ use alloy::{
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Args;
+use k256::sha2::Sha384;
 use lazy_static::lazy_static;
 use libsodium_sys::{crypto_box_SEALBYTES, crypto_box_seal, sodium_init};
 use serde::{Deserialize, Serialize};
@@ -168,23 +169,31 @@ impl InitParamsArgs {
             .load_required(preset_to_pcr_preset(&preset, &arch))
             .context("Failed to load PCRs")?;
 
+        // calculate pcr16 by extending the digest onto zero pcrs
+        let mut pcr_hasher = Sha384::new();
+        pcr_hasher.update([0u8; 48]);
+        pcr_hasher.update(digest);
+        let pcr16: [u8; 48] = pcr_hasher.finalize().into();
+
         // calculate the image id
         let mut hasher = Sha256::new();
+        // bitflags denoting what pcrs are part of the computation
+        // this one has 0, 1, 2 and 16
+        hasher.update(&((1u32 << 0) | (1 << 1) | (1 << 2) | (1 << 16)).to_be_bytes());
         hasher.update(hex::decode(pcrs.0).context("failed to decode PCR")?);
         hasher.update(hex::decode(pcrs.1).context("failed to decode PCR")?);
         hasher.update(hex::decode(pcrs.2).context("failed to decode PCR")?);
-        hasher.update((digest.len() as u16).to_be_bytes());
-        hasher.update(digest);
+        hasher.update(pcr16);
         let image_id: [u8; 32] = hasher.finalize().into();
         info!(image_id = hex::encode(image_id), "Computed image id");
         // fetch key
         let pk = fetch_encryption_key_with_pcr(
             self.kms_endpoint
                 .as_ref()
-                .unwrap_or(&"http://image-v3.kms.box:1101".into()),
+                .unwrap_or(&"http://image-v4.kms.box:1101".into()),
             self.kms_verification_key
                 .as_ref()
-                .unwrap_or(&"2c7cc79f1c356334ca484b66ded16f779f69352560640dae072d2937d6f3dc6e7e34466466309015673412bdec2f1ef9b508b0d87799173d4da77f2da91c4c85".into()),
+                .unwrap_or(&"14eadecaec620fac17b084dcd423b0a75ed2c248b0f73be1bb9b408476567ffc221f420612dd995555650dc19dbe972e7277cb6bfe5ce26650ec907be759b276".into()),
             &hex::encode(image_id),
         )
         .context("failed to fetch key")?;
@@ -334,8 +343,8 @@ lazy_static! {
         root_servers.insert(
             42161,
             serde_json::json!({
-                "kms_endpoint": "arbone-v3.kms.box:1100",
-                "kms_pubkey": "ddba991e640f24f4cac8cf4c3596d99eea83f37cb7ad6fb68061fca1ef110e08"
+                "kms_endpoint": "arbone-v4.kms.box:1100",
+                "kms_pubkey": "5ee189d3b990c284ebfe7fc4c2e1cecdb2a6908d0a1aa152592d30066061b92c"
             })
             .to_string(),
         );
