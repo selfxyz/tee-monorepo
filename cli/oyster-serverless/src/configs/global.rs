@@ -1,5 +1,3 @@
-// TODO : Change contract address for code contract to mainnet and RPC URL to mainnet
-
 // Oyster Serverless Contract Addresses
 pub const OYSTER_SERVERLESS_CODE_CONTRACT_ADDRESS: &str =
     "0x061868A3387c5F6a875c111a2FDDEB70C66344F4";
