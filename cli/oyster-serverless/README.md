@@ -155,7 +155,7 @@ oyster-serverless job cancel
 
 ## 📋 List Jobs 
 
-Retrieve a user's jobs based on their wallet address. (TESTNENT ONLY)
+Retrieve a user's jobs based on their wallet address.
 
 ```bash
 oyster-serverless job list
@@ -252,7 +252,7 @@ oyster-serverless refund-deposits
 
 ## 📋 List Subscriptions
 
-Retrieve and display all subscriptions associated with a specific wallet address. (TESTNET ONLY)
+Retrieve and display all subscriptions associated with a specific wallet address.
 
 ```bash
 oyster-serverless subscription list
