@@ -17,7 +17,8 @@ struct JobNode {
     tx_hash: String,
     #[serde(rename = "startTime")]
     start_time: String,
-    status: String,
+    #[serde(rename = "jobStatus")]
+    job_status: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -65,6 +66,7 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
         .context("Failed to parse RPC URL")?;
     let provider = ProviderBuilder::new().on_http(rpc_url);
 
+
     // Parse addresses
     let contract_address = RELAY_CONTRACT_ADDRESS
         .parse()
@@ -88,13 +90,13 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
                 allJobs(
                     filter: {
                         jobOwner: { equalToInsensitive: $address },
-                        status: { equalTo: $status }
+                        jobStatus: { equalTo: $status }
                     }
                 ) {
                     totalCount
                     edges {
                         node {
-                            status
+                            jobStatus
                             txHash
                             startTime
                         }
@@ -138,7 +140,7 @@ pub async fn list_jobs(args: ListArgs) -> Result<()> {
                 let start_time_in_epoch = job.start_time.parse::<u64>()?;
                 determine_job_status(start_time_in_epoch, overall_timeout)
             } else {
-                job.status.to_uppercase()
+                job.job_status.to_uppercase()
             };
 
             table.add_row(row![
