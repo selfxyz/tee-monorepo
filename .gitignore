@@ -1,2 +1,6 @@
 /result
 .aider*
+/attestation-server/target
+/initialization/vet/target
+/initialization/init-server/target
+/initialization/init-server/.env
